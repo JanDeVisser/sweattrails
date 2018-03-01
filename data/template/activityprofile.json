@@ -1,0 +1,83 @@
+{
+    "_author": "Jan de Visser",
+    "_version": "1.0",
+    "_description": "...",
+    "data": [
+        {
+            "name": "Triathlon",
+            "isdefault": true,
+            "description": "Triathlon activity profile",
+            "sessionType": [
+                { "name": "Run", "isA": null, "intervalpart": "sweattrails.session.RunPart", "defaultfor": "running" },
+                { "name": "Treadmill Run", "isA": { "sessionType": "Run" } },
+                { "name": "Track Session", "isA": { "sessionType": "Run" } },
+                { "name": "Trail Run", "isA": { "sessionType": "Run" } },
+                { "name": "Walk", "isA": { "sessionType": "Run" } },
+                { "name": "Hike", "isA": { "sessionType": "Run" } },
+                { "name": "Bike Ride", "isA": null, "intervalpart": "sweattrails.session.BikePart", "defaultfor": "cycling" },
+                { "name": "Road Ride", "isA": { "sessionType": "Bike Ride" } },
+                { "name": "Trainer Session", "isA": { "sessionType": "Road Ride" } },
+                { "name": "Commute/Transportation", "isA": { "sessionType": "Road Ride" } },
+                { "name": "Trail/Mountain Ride", "isA": { "sessionType": "Bike Ride" } },
+                { "name": "Swim", "isA": null, "intervalpart": "sweattrails.session.SwimPart", "defaultfor": "swimming" },
+                { "name": "Pool Swim", "isA": { "sessionType": "Swim" } },
+                { "name": "Pool Swim (20m)", "isA": { "sessionType": "Pool Swim" } },
+                { "name": "Pool Swim (20y)", "isA": { "sessionType": "Pool Swim" } },
+                { "name": "Pool Swim (SCM)", "isA": { "sessionType": "Pool Swim" } },
+                { "name": "Pool Swim (SCY)", "isA": { "sessionType": "Pool Swim" } },
+                { "name": "Pool Swim (LCM)", "isA": { "sessionType": "Pool Swim" } },
+                { "name": "Pool Swim (LCY)", "isA": { "sessionType": "Pool Swim" } },
+                { "name": "Open Water Swim", "isA": { "sessionType": "Swim" } },
+                { "name": "Other", "isA": null },
+                { "name": "Weights", "isA": { "sessionType": "Other" } },
+                { "name": "Core", "isA": { "sessionType": "Other" } },
+                { "name": "Transition", "isA": { "sessionType": "Other" }, "defaultfor": "transition" }
+            ],
+            "gearType": [
+                { "name": "Bike", "isA": null, "userFor": { "sessionType": "Bike Ride" }, "partOf": null },
+                { "name": "Road Bike", "isA": null, "userFor": { "sessionType": "Road Ride" }, "partOf": null },
+                { "name": "TT/Tri Bike", "isA": null, "userFor": { "sessionType": "Road Ride" }, "partOf": null },
+                { "name": "Mountain Bike", "isA": null, "userFor": { "sessionType": "Trail/Mountain Ride" }, "partOf": null },
+                { "name": "Chain", "isA": null, "userFor": { "sessionType": "Bike Ride" }, "partOf": { "gearType": "Bike" } },
+                { "name": "Cassette", "isA": null, "userFor": { "sessionType": "Bike Ride" }, "partOf": { "gearType": "Bike" } },
+                { "name": "Bike Shoes", "isA": null, "userFor": { "sessionType": "Bike Ride" }, "partOf": null },
+                { "name": "Mountain Bike Shoes", "isA": { "name": "Bike Shoes" }, "userFor": { "sessionType": "Trail/Mountain Ride" }, "partOf": null },
+                { "name": "Running Shoes", "isA": null, "userFor": { "sessionType": "Run" }, "partOf": null },
+                { "name": "Wetsuit", "isA": null, "userFor": { "sessionType": "Open Water Swim" }, "partOf": null }
+            ],
+            "criticalPowerInterval": [
+                { "name": "5 seconds" },
+                { "name": "10 seconds" },
+                { "name": "30 seconds" },
+                { "name": "1 minute" },
+                { "name": "3 minutes" },
+                { "name": "5 minutes" },
+                { "name": "10 minutes" },
+                { "name": "20 minutes" },
+                { "name": "30 minutes" },
+                { "name": "1 hour" },
+                { "name": "2 hours" },
+                { "name": "3 hours" }
+            ],
+            "criticalPace": [
+                { "name": "100 meter" },
+                { "name": "200 meter" },
+                { "name": "400 meter" },
+                { "name": "800 meter" },
+                { "name": "1 kilometer" },
+                { "name": "1500 meter" },
+                { "name": "1 mile" },
+                { "name": "2 kilometer" },
+                { "name": "5 kilometer" },
+                { "name": "10 kilometer" },
+                { "name": "15 kilometer" },
+                { "name": "20 kilometer" },
+                { "name": "Half Marathon" },
+                { "name": "25 kilometer" },
+                { "name": "30 kilometer" },
+                { "name": "Marathon" },
+                { "name": "50 kilometer" }            
+            ]
+        }
+    ]
+}

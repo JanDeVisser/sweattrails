@@ -1,0 +1,36 @@
+{% extends "base.html.j2" %}
+
+{% block imports %}
+    {{ import_script("sweattrails/sweattrails") }}
+    {{ import_script("sweattrails/session") }}
+{% endblock %}
+
+{% block tabs %}
+
+<script>
+    function upload_file() {
+        st_show_form("frm_upload_file");
+    }
+</script>
+
+<st:tab code="sessions" label="Activities">
+    <st:form name="upload_file" url="/st/upload" modal="true" mode="new" type="json" submit="upload">
+        <st:field id="activity" type="file" label="Activity file(s)" required="true" multiple="false"/>
+        <st:footer>
+            <st:action mode="new" label="Upload" action="save"/>
+            <st:action mode="new" label="Cancel" action="cancel"/>
+        </st:footer>
+    </st:form>
+    <st:table name="sessions" url="/json/session" debug="true">
+        <st:sort name="start_time" descending="true"/>
+        <st:header>
+            <st:action label="Upload" action="form" form="upload_file"/>
+        </st:header>
+        <st:column label="Date/time" type="datetime" property="start_time" width="25%" select="/st/activity/$key"/>
+        <st:column label="Distance" type="distance" digits="2" property="distance" width="10%"/>
+        <st:column label="Time" type="time" property="duration" width="10%"/>
+        <st:column label="Description" type="text" property="description" select="/st/activity/$key" width="55%"/>
+    </st:table>
+</st:tab>
+
+{% endblock tabs %}

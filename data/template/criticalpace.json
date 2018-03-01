@@ -1,0 +1,30 @@
+{
+    "_author": "Jan de Visser",
+    "_version": "1.0",
+    "_description": "...",
+    "data": [
+        {
+            "model": "criticalpace",
+            "data": [
+                { "name": "100 meter", "distance": 100 },
+                { "name": "200 meter", "distance": 200 },
+                { "name": "400 meter", "distance": 400 },
+                { "name": "800 meter", "distance": 800 },
+                { "name": "1 kilometer", "distance": 1000 },
+                { "name": "1500 meter", "distance": 1500 },
+                { "name": "1 mile", "distance": 1609 },
+                { "name": "2 kilometer", "distance": 2000 },
+                { "name": "5 kilometer", "distance": 5000 },
+                { "name": "10 kilometer", "distance": 10000 },
+                { "name": "15 kilometer", "distance": 15000 },
+                { "name": "20 kilometer", "distance": 20000 },
+                { "name": "Half Marathon", "distance": 21097 },
+                { "name": "25 kilometer", "distance": 25000 },
+                { "name": "30 kilometer", "distance": 30000 },
+                { "name": "40 kilometer", "distance": 40000 },
+                { "name": "Marathon", "distance": 42195 },
+                { "name": "50 kilometer", "distance": 50000 }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,180 @@
+{% extends "base.html.j2" %}
+
+{% block css %}
+    #map-route            { height: 720px;}
+    #graph-graph          { height: 720px; width: 100%; }
+{% endblock %}t
+
+{% block imports %}
+    {{ import_maps() }}
+    {{ import_graphs() }}
+    {{ import_script("sweattrails/sweattrails") }}
+    {{ import_script("sweattrails/session") }}
+{% endblock %}
+
+{% block javascript %}
+    <script type="text/javascript">
+        com.sweattrails.app.current_unitsystem = "{{ user._userprofile.units }}";
+        com.sweattrails.app.session.activity = {
+            "duration": {{ object.duration.total_seconds() }},
+            "distance": {{ object.distance }},
+            "average_heartrate": {{ object.average_heartrate }},
+            "max_heartrate": {{ object.max_heartrate }},
+            "average_speed": {{ object.average_speed }},
+            "max_speed": {{ object.max_speed }},
+            {% if has_power %}
+                "average_power": {{ object.intervalpart.average_power }},
+                "max_power": {{ object.intervalpart.max_power }},
+                "normalized_power": {{ object.intervalpart.normalized_power|default(0) }},
+            {% endif %}
+            "work": {{ object.work }},
+            "calories_burnt": {{ object.calories_burnt }}
+        };
+        {% if intervals is defined and intervals is not none %}
+            com.sweattrails.app.session.intervals = [ {%  for interval in intervals %}
+                {
+                    "key": "{{ interval.key().id }}",
+                    "timestamp": {{ interval.timestamp.total_seconds() }},
+                    "offset": {{ interval.offset }},
+                    "duration": {{ interval.duration.total_seconds() }},
+                    "distance": {{ interval.distance }},
+                    "average_heartrate": {{ interval.average_heartrate }},
+                    "max_heartrate": {{ interval.max_heartrate }},
+                    "average_speed": {{ interval.average_speed }},
+                    "max_speed": {{ interval.max_speed }},
+                    {% if has_power %}
+                        "average_power": {{ interval.intervalpart.average_power }},
+                        "max_power": {{ interval.intervalpart.max_power }},
+                        "normalized_power": {{ interval.intervalpart.normalized_power|default(0) }},
+                    {% endif %}
+                    "work": {{ interval.work }},
+                    "calories_burnt": {{ interval.calories_burnt }}
+                }{% if not loop.last %},{% endif %} {% endfor %}
+            ];
+        {% endif %}
+        {% set waypoints = query('Waypoint', session=key, named_search="map") %}
+        {% if waypoints %}
+            com.sweattrails.app.session.waypoints = {{ waypoints | tojson }};
+        {% endif %}
+        {% if activitytype == "run" and paces is defined and paces is not none %}
+            com.sweattrails.app.session.paces = [{%  for pace in paces %}
+                {
+                    "key": "{{ pace.key().id }}",
+                    "timestamp": {{ pace.timestamp.total_seconds() }},
+                    "distance": {{ pace.distance }},
+                    "atdistance": {{ pace.atdistance }},
+                    "duration": {{ pace.duration }},
+                    "speed": {{ pace.speed }}
+                }{% if not loop.last %},{% endif %}{% endfor %}
+            ];
+        {% endif %}
+    </script>
+{% endblock %}
+
+{% block tabs %}
+    <st:tab code="activity" label="Activity">
+        <div>
+            <st:form name="session" url="/json/session/{{ key }}" layout="none" afterdelete="/st/activities">
+                <div>
+                    <div style="width: 10%; float: left">
+                        <st:field id="icon" type="icon" property="sessiontype.icon" readonly="true"/>
+                    </div>
+                    <div style="width: 90%; float: left">
+                        <table>
+                            <tr>
+                                <td class="formlabel"><st:field type="label" field="description"/></td>
+                                <td class="formdata"><st:field type="text" property="description" label="Description"/></td>
+                            </tr>
+                            <tr>
+                                <td class="formlabel"><st:field type="label" field="start_time"/></td>
+                                <td class="formdata"><st:field type="datetime" property="start_time" label="Date/time" readonly="true"/></td>
+                            </tr>
+                            <tr>
+                                <td class="formlabel"><st:field type="label" field="distance"/></td>
+                                <td class="formdata"><st:field type="distance" property="distance" label="Distance" readonly="true"/></td>
+                            </tr>
+                            <tr>
+                                <td class="formlabel"><st:field type="label" field="duration"/></td>
+                                <td class="formdata"><st:field type="time" timeformat="duration" property="duration" label="Duration" readonly="true"/></td>
+                            </tr>
+                            <tr>
+                                <td class="formlabel"><st:field type="label" label="Pace" field="average_speed"/></td>
+                                <td class="formdata"><st:field type="pace" property="average_speed" readonly="true"/></td>
+                            </tr>
+                        </table>
+                    </div>
+                    <st:footer position="right">
+                        <st:action mode="view" label="Edit" action="edit"/>
+                        <st:action mode="view" label="Delete" action="delete"/>
+                        <st:action mode="view" label="Re-analyze" action="reanalyze"/>
+                        <st:action mode="edit" label="Save" action="save"/>
+                        <st:action mode="edit" label="Cancel" action="cancel"/>
+                    </st:footer>
+                </div>
+            </st:form>
+        </div>
+        {% if intervals is defined and intervals is not none %}
+            <div style="float: left;">
+                <st:graph name="laps" object="com.sweattrails.app.session.intervals" xcoordinate="timestamp"
+                          bucketwidth="duration" height="250px" width="600px"
+                          decorate="com.sweattrails.app.session.durationTicks()" unit="time">
+                    <st:parameter name="parent" value="{{ key }}"/>
+                    <st:series label="Pace" coordinate="average_speed" color="red" style="bar"
+                               ticks="com.sweattrails.app.session.lapPaceTicks()" unit="min/km"/>
+                </st:graph>
+            </div>
+            <div style="float: left;">
+                <st:table name="laps-table" object="com.sweattrails.app.session.intervals" counter="true">
+                    <st:column label="Start" type="time" property="timestamp" select="xxxx"/>
+                    <st:column label="Offset" type="distance" digits="2" property="offset" select="xxxx"/>
+                    <st:column label="Distance" type="distance" digits="2" property="distance"/>
+                    <st:column label="Time" type="time" property="duration"/>
+                    <st:column label="Pace" type="pace" property="average_speed"/>
+                    {% if has_power %}
+                        <st:column label="Avg.Pwr" property="average_power"/>
+                    {% endif %}
+                    {% if has_heartrate %}
+                        <st:column label="Avg.HR" property="average_heartrate"/>
+                        <st:column label="Max.HR" property="max_heartrate"/>
+                    {% endif %}
+                </st:table>
+            </div>
+            <div style="clear: left;"></div>
+        {% endif %}
+    </st:tab>
+
+    <st:tab code="graphs" label="Graphs">
+        <st:graph name="graph" object="com.sweattrails.app.session.waypoints" xcoordinate="timestamp"
+                  ticks="com.sweattrails.app.session.timestampTicks()"
+                  height="700px" width="1500px" grid="true">
+            <st:series coordinate="elevation" color="#2b2b2b" type="line" fill="true"
+                       ticks="com.sweattrails.app.session.elevationTicks()" unit="m"/>
+            {% if has_power %}
+                <st:series coordinate="power" color="red" type="line" grid="true" unit="W"
+                           ticks="com.sweattrails.app.session.powerTicks()"/>
+            {% endif %}
+            <st:series label="Pace" coordinate="speed" color="blue" grid="true"
+                       ticks="com.sweattrails.app.session.paceTicks()" unit="min/km"/>
+            {% if has_heartrate %}
+                <st:series coordinate="heartrate" color="magenta" type="line" unit="BPM"/>
+            {% endif %}
+        </st:graph>
+    </st:tab>
+
+    {% if activitytype == "run" and paces is defined and paces is not none %}
+        <st:tab code="paces" label="Paces">
+            <st:table name="paces" object="com.sweattrails.app.session.paces">
+                <st:column label="Distance" type="distance" digits="2" property="distance"/>
+                <st:column label="Start" type="time" property="timestamp"/>
+                <st:column label="At Distance" type="distance" digits="2" property="atdistance"/>
+                <st:column label="Time" type="time" property="duration"/>
+                <st:column label="Pace" type="pace" property="speed"/>
+            </st:table>
+        </st:tab>
+    {% endif %}
+
+    <st:tab code="route" label="Route">
+        <st:map name="route" object="com.sweattrails.app.session.waypoints" coordinate="location"/>
+    </st:tab>
+
+{% endblock tabs %}

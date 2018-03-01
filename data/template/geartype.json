@@ -1,0 +1,40 @@
+{
+    "_author": "Jan de Visser",
+    "_version": "1.0",
+    "_description": "...",
+    "data": [
+        {
+            "model": "geartype",
+            "data": [
+                { "name": "Bike" },
+                { "name": "Road Bike" },
+                { "name": "TT/Tri Bike" },
+                { "name": "Mountain Bike" },
+                { "name": "Chain" },
+                { "name": "Cassette" },
+                { "name": "Helmet" },
+                { "name": "Aero Helmet" },
+                { "name": "Bike Shoes" },
+                { "name": "Mountain Bike Shoes" },
+                { "name": "Running Shoes" },
+                { "name": "Wetsuit" },
+                { "name": "Aerobar" },
+                { "name": "Shifters (bar end)"},
+                { "name": "Brake levers (tri)"},
+                { "name": "STI shifers/brake levers"},
+                { "name": "Saddle"},
+                { "name": "Front derailleur"},
+                { "name": "Rear derailleur"},
+                { "name": "Front brake calliper"},
+                { "name": "Rear brake calliper"},
+                { "name": "Wheel"},
+                { "name": "Front Wheel" },
+                { "name": "Rear Wheel"},
+                { "name": "Inner tube"},
+                { "name": "Tire"},
+                { "name": "Clincher Tire"},
+                { "name": "Tubular Tire"}
+            ]
+        }
+    ]
+}

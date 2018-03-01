@@ -1,0 +1,32 @@
+{% extends "base.html.j2" %}
+
+{% block imports %}
+<!-- <script src="/js/users.js" type="text/javascript"></script> -->
+{% endblock %}
+
+{% block tabs %}
+
+<st:tab code="weightracking" label="Weight Tracking">
+    <st:table name="history" url="/json/weighthistory">
+        <st:sort name="snapshotdate" order="desc"/>
+        <st:parameter name="parent" value="{{object._weightmgmt.id()}}"/>
+        <st:submitparameter name="parent" value="{{object._weightmgmt.id()}}"/>
+        <st:column label="Date" type="date" property="snapshotdate" select="true"/>
+        <st:column label="Weight" type="weight" property="weight"/>
+        <st:column label="Bodyfat %" property="bfPercentage" type="float" digits="1"/>
+        <st:column label="Waist" type="length" property="waist"/>
+        <st:column label="BMI" property="bmi" type="float" digits="2"/>
+        <st:dataform>
+            <st:field id="snapshotdate" type="date" property="snapshotdate" label="Date"/>
+            <st:field id="weight" type="weight" property="weight" label="Weight"/>
+            <st:field id="bodyfat" type="text" size="4" maxlength="5" property="bfPercentage" label="Bodyfat %"/>
+            <st:field id="waist" type="length" property="waist" label="Waist"/>
+            <st:action mode="view" label="Edit" action="edit"/>
+            <st:action mode="new;edit" label="Save" action="save"/>
+            <st:action mode="view;new;edit" label="Cancel" action="cancel"/>
+        </st:dataform>
+        <st:action label="Add" action="new"/>
+    </st:table>
+</st:tab>
+
+{% endblock tabs %}

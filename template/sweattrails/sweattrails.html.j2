@@ -1,0 +1,15 @@
+{% extends "base.html.j2" %}
+
+{% block imports %}
+    {{ import_script("sweattrails/sweattrails") }}
+{% endblock %}
+
+{% block javascript %}
+    <script type="text/javascript">
+        console.log(" -- {{ user.display_name }} --");
+        console.log(" -- {{ user._userprofile.country }} --");
+        console.log(" -- {{ user._userprofile.units }} --");
+        com.sweattrails.app.current_unitsystem = "{{ user._userprofile.units }}";
+    </script>
+{% endblock %}
+

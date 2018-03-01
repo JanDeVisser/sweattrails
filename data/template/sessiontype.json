@@ -1,0 +1,36 @@
+{
+    "_author": "Jan de Visser",
+    "_version": "1.0",
+    "_description": "...",
+    "data": [
+        {
+            "model": "sessiontype",
+            "data": [
+                { "name": "Run",                    "trackDistance": true, "speedPace": "Pace", "icon": "image/run.png" },
+                { "name": "Treadmill Run",          "trackDistance": true, "speedPace": "Pace" },
+                { "name": "Track Session",          "trackDistance": true, "speedPace": "Pace" },
+                { "name": "Trail Run",              "trackDistance": true, "speedPace": "Pace" },
+                { "name": "Walk",                   "trackDistance": true, "speedPace": "Pace" },
+                { "name": "Hike",                   "trackDistance": true, "speedPace": "Pace" },
+                { "name": "Bike Ride",              "trackDistance": true, "speedPace": "Speed", "icon": "image/bike_ride.png" },
+                { "name": "Road Ride",              "trackDistance": true, "speedPace": "Speed" },
+                { "name": "Trainer Session",        "trackDistance": true, "speedPace": "Speed" },
+                { "name": "Commute/Transportation", "trackDistance": true, "speedPace": "Speed" },
+                { "name": "Trail/Mountain Ride",    "trackDistance": true, "speedPace": "Speed" },
+                { "name": "Swim",                   "trackDistance": true, "speedPace": "Swim Pace", "icon": "image/swim.png" },
+                { "name": "Pool Swim",              "trackDistance": true, "speedPace": "Swim Pace" },
+                { "name": "Pool Swim (20m)",        "trackDistance": true, "speedPace": "Swim Pace" },
+                { "name": "Pool Swim (20y)",        "trackDistance": true, "speedPace": "Swim Pace" },
+                { "name": "Pool Swim (SCM)",        "trackDistance": true, "speedPace": "Swim Pace" },
+                { "name": "Pool Swim (SCY)",        "trackDistance": true, "speedPace": "Swim Pace" },
+                { "name": "Pool Swim (LCM)",        "trackDistance": true, "speedPace": "Swim Pace" },
+                { "name": "Pool Swim (LCY)",        "trackDistance": true, "speedPace": "Swim Pace" },
+                { "name": "Open Water Swim",        "trackDistance": true, "speedPace": "Swim Pace" },
+                { "name": "Other",                  "trackDistance": false, "speedPace": null },
+                { "name": "Weights",                "trackDistance": false, "speedPace": null },
+                { "name": "Core",                   "trackDistance": false, "speedPace": null },
+                { "name": "Transition",             "trackDistance": false, "speedPace": null }
+            ]
+        }
+    ]
+}
