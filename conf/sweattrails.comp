@@ -3,21 +3,37 @@
     "version": "1.0",
     "mounts": [
         { "path": "/jscr/sweattrails/.+", "roles": [], "relpath": "/sweattrails/js" },
-        { "path": "/st/.+",  "app": "sweattrails.web.handlers.app", "roles": [ "athlete" ]}
+        { "path": "/st/.+",               "app": "sweattrails.web.handlers.app", "roles": [ "athlete" ]},
+        { "path": "/weight",              "app": "sweattrails.web.app", "roles": [ "user" ]}
     ],
     "roles": {
         "athlete": {
-        	"urls": [ { "id": "activities", "label": "Activities", "url": "/st/activities", "level": 20 } ],
-        	"label": "Athlete",
-        	"has_roles": [ "user" ]
-    	},
+            "urls": [ { "id": "activities", "label": "Activities", "url": "/st/activities", "level": 20 } ],
+            "label": "Athlete",
+            "has_roles": [ "user" ]
+        },
         "coach": {
-        	"label": "Coach",
-        	"has_roles": [ "user" ]
-    	},
+              "label": "Coach",
+              "has_roles": [ "user" ]
+        },
         "admin": {
-    	}
+        }
     },
+
+    "grizzle": {
+        "userparts": {
+            "sweattrails.userprofile.UserProfile": { "default": true, "configurable": false },
+            "sweattrails.config.ActivityProfile": { "default": true, "configurable": false },
+            "sweattrails.userprofile.WeightMgmt": {
+                "default": true, "configurable": true,
+                "label": "Weight Tracking",
+                "urls": [
+                    { "id": "weighttracking", "label": "Weight Tracking", "url": "/weight", "level": 10 }
+                ]
+            }
+        },
+    }
+
     "sweattrails": {
         "activityprofileparts": {
             "sessionType": {
