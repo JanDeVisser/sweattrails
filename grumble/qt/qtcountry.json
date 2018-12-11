@@ -1,0 +1,20 @@
+{
+    "_author": "Jan de Visser",
+    "_version": "1.0",
+    "_description": "...",
+    "data": [
+        {
+            "model": "qtcountry",
+            "data": [
+                { "countryname": "United States", "countrycode": "US" },
+                { "countryname": "Canada", "countrycode": "CA" },
+                { "countryname": "United Kingdom", "countrycode": "GB" },
+                { "countryname": "Netherlands", "countrycode": "NL" },
+                { "countryname": "Germany", "countrycode": "DE" },
+                { "countryname": "Switzerland", "countrycode": "CH" },
+                { "countryname": "Austria", "countrycode": "AT" },
+                { "countryname": "Belgium", "countrycode": "BE" }
+            ]
+        }
+    ]
+}

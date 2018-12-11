@@ -1,0 +1,10 @@
+{
+    "_description": "SMTP mail configuration",
+    "author": "jan",
+    "version": "1.0",
+    "username": "sweattrails@finiandarcy.com",
+    "fromname": "Sweattrails",
+    "password": "a2jeM=EP",
+    "smtphost": "smtp.gmail.com",
+    "smtpport": 587
+}

@@ -1,0 +1,35 @@
+{
+    "author": "Jan de Visser",
+    "version": "1.0",
+    "dbtype": "postgresql",
+    "postgresql": {
+        "user": {
+            "user_id": "jan",
+            "password": "wbw417"
+        },
+        "admin": {
+            "user_id": "jan",
+            "password": "wbw417"
+        },
+        "host": "localhost",
+        "database": "jan",
+        "schema": "grumble",
+        "wipe_schema": true,
+        "wipe_database": false
+    },
+    "__sqlite3": {
+        "user": {
+            "user_id": "jan",
+            "password": "wbw417"
+        },
+        "admin": {
+            "user_id": "jan",
+            "password": "wbw417"
+        },
+        "host": "localhost",
+        "database": "jan",
+        "schema": "grumble",
+        "_wipe_schema": true,
+        "wipe_database": false
+    }
+}

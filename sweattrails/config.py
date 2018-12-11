@@ -16,8 +16,6 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
-import sys
-
 import gripe
 import gripe.db
 import grizzle
@@ -55,7 +53,7 @@ class Country(grumble.model.Model):
 # ----------------------------------------------------------------------------
 
 
-class ProfileReference(object):
+class ProfileReference:
     @classmethod
     def get_node_definition(cls):
         return NodeTypeRegistry.get_by_ref_class(cls)
@@ -163,7 +161,7 @@ class NodeTypeRegistry(object):
         return cls._by_ref_name.values()
 
 
-class NodeTypeDefinition(object):
+class NodeTypeDefinition:
     def __init__(self, ref_name, ref_class, node_class):
         self._ref_name = ref_name
         self._ref_class = ref_class
@@ -205,11 +203,14 @@ class NodeTypeDefinition(object):
         return [getattr(node, self.name()) for node in q]
 
     def get_or_create_node(self, profile, descriptor, parent=None):
-        ref = self.ref_class().get(descriptor[self.name()]) \
-            if self.name() in descriptor \
-            else self.get_reference_by_name(profile, descriptor[self.name_property()])
-        if not ref:
-            ref = self.ref_class()(parent=profile.parent())
+        try:
+            ref = self.ref_class().get(descriptor[self.name()]) \
+                if self.name() in descriptor \
+                else self.get_reference_by_name(profile, descriptor[self.name_property()])
+            if not ref:
+                ref = self.ref_class()(parent=profile.parent())
+        except KeyError:
+            raise
         assert ref, "No reference found for %s in %s" % (self.name(), descriptor)
         node = self.get_or_create_node_for_reference(profile, ref, parent)
         self.update_node(node, descriptor)
@@ -219,8 +220,9 @@ class NodeTypeDefinition(object):
         ref = getattr(node, self.name())
         assert ref, "%s.update_node: no reference" % self.name()
         profile = node.get_profile()
-        if ref.parent_key() == profile.parent_key():
-            ref.update(descriptor)
+        # FIXME Why??
+        # if ref.parent_key() == profile.parent_key():
+        #     ref.update(descriptor)
         dirty = False
         d = dict(descriptor)
         for (prop, t) in self.link_properties().items():

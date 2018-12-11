@@ -1,0 +1,26 @@
+{
+    "_author": "Jan de Visser",
+    "_version": "1.0",
+    "_description": "...",
+    "data": [
+        {
+            "model": "user",
+            "data": [
+                {
+                    "email": "jan@de-visser.net",
+                    "password": "wbw417",
+                    "display_name": "Jan de Visser",
+                    "status": "Active",
+                    "has_roles": [ "admin" ]
+                },
+                {
+                    "email": "user@de-visser.net",
+                    "password": "password",
+                    "display_name": "Some User",
+                    "status": "Active",
+                    "has_roles": [ "user" ]
+                }
+            ]
+        }
+    ]
+}

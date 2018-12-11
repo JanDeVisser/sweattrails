@@ -16,12 +16,13 @@
 
 import math
 import zipfile
-import cStringIO
+import io
 
 import gripe
 logger = gripe.get_logger(__name__)
 
 ONE_DEGREE = 1000. * 10000.8 / 90.
+
 
 def distance(latitude_1, longitude_1, latitude_2, longitude_2):
     """
@@ -46,7 +47,7 @@ def get_color_between(color1, color2, i):
 
 def zip(contents, file_name):
     logger.debug('Zipping %s bytes' % len(contents))
-    result = cStringIO.StringIO()
+    result = io.StringIO()
     zip_file = zipfile.ZipFile(result, 'w', zipfile.ZIP_DEFLATED, False)
     zip_file.writestr(file_name, contents)
     zip_file.close()
@@ -56,7 +57,7 @@ def zip(contents, file_name):
 
 def unzip(contents):
     logger.debug('Unzipping %s bytes' % len(contents))
-    zip_file = zipfile.ZipFile(cStringIO.StringIO(contents))
+    zip_file = zipfile.ZipFile(io.StringIO(contents))
     zip_info_list = zip_file.infolist()
     zip_info = zip_info_list[0]
     result = zip_file.open(zip_info).read()

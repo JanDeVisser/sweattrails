@@ -40,13 +40,13 @@ from PyQt5.QtWidgets import QWidget
 
 import gripe
 # import grizzle
-import sweattrails.qt.async.bg
-import sweattrails.qt.async.job
+import sweattrails.qt.bg.bg
+import sweattrails.qt.bg.job
 import sweattrails.qt.fitnesstab
 import sweattrails.qt.imports
 import sweattrails.qt.profiletab
 import sweattrails.qt.session.tab
-import sweattrails.qt.strava
+#import sweattrails.qt.strava
 import sweattrails.qt.usertab
 
 logger = gripe.get_logger(__name__)

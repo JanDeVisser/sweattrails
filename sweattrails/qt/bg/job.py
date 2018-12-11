@@ -23,7 +23,7 @@ from PyQt5.QtCore import QObject
 from PyQt5.QtCore import pyqtSignal
 
 import gripe
-import sweattrails.qt.async.bg
+import sweattrails.qt.bg.bg
 
 logger = gripe.get_logger(__name__)
 
@@ -90,4 +90,4 @@ class Job(QObject):
             self.thread.progress_end()
 
     def submit(self):
-        sweattrails.qt.async.bg.BackgroundThread.add_backgroundjob(self)
+        sweattrails.qt.bg.bg.BackgroundThread.add_backgroundjob(self)

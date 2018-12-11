@@ -1,0 +1,6 @@
+{
+    "author": "Jan de Visser",
+    "version": "1.0",
+    "defaultuser": "test@finiandarcy.com",
+    "defaultroles": [ "admin", "user" ]
+}

@@ -1,0 +1,54 @@
+{
+    "author": "Jan de Visser",
+    "version": "1.0",
+    "app_id": "grumble",
+    "about": {
+        "version": "1.0",
+        "copyright": "(c) 2012-2018 finiandarcy.com",
+        "contact": "info@finiandarcy.com",
+        "contacturl": "http://www.finiandarcy.com",
+        "application_name": "Grumble test app"
+    },
+    "config": {
+        "google_api_key": "AIzaSyAGBJnvM6-HY8S_-5miEUR-uKetPVOYMRU",
+        "application_url": "http://localhost:8080"
+    },
+    "icon": "/ceilingcat.jpg",
+    "container": {
+        "pipeline": [ "grit.pipeline.RequestLogger", "grit.pipeline.TxWrapper", "grit.Session", "grit.pipeline.Auth" ]
+    },
+    "logout": { "redirect": "/" },
+    "roles": {
+        "user": { },
+        "moderator": {
+        	"label": "Moderator",
+        	"has_roles": [ "user" ]
+    	},
+        "admin": {
+        	"label": "Administrator",
+        	"urls": [ { "id": "usermgmt", "label": "User Management", "url": "/users", "level": 10 } ],
+        	"has_roles": [ "moderator" ]
+    	}
+    },
+    "workflows": {
+        "signup": "grit.usermgmt.UserSignup",
+        "usercreate": "grit.usermgmt.UserCreate",
+        "pwdreset": "grit.usermgmt.PasswordReset"
+    },
+    "mounts": [
+        { "path": "/", "app": "grit.index.app", "roles": [] },
+        { "path": "/login|/logout|/profile|/um/.+", "app": "grit.usermgmt.app", "roles": [] },
+        { "path": "/css/[^/]+", "roles": [], "static": true},
+        { "path": "/image/[^/]+", "roles": [], "static": true},
+        { "path": "/jscr/[^/]+", "roles": [], "static": true},
+        { "path": "/img/.+", "app": "grit.handlers.app", "roles": ["user"]},
+        { "path": "/json/.+", "app": "grit.handlers.app", "roles": ["user"]},
+        { "path": "/upload/.+", "app": "grit.handlers.app", "roles": ["user"]},
+        { "path": "/schema/.+", "app": "grit.handlers.app", "roles": ["user"]},
+        { "path": "/upload/.+", "app": "grit.upload.app", "roles": ["user"]},
+        { "path": "/t/.+", "roles": [], "app": "index.app" },
+        { "path": "/test/.+", "roles": [], "static": true }
+    ],
+    "_include": [ "grizzle", "application" ],
+    "include": [ "sweattrails" ]
+}

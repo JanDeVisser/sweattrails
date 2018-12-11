@@ -17,13 +17,13 @@
 #
 
 import datetime
-import httplib
+import http.client
 import json
 
 import gripe.db
 import grumble.model
 import grumble.property
-import sweattrails.qt.async.job
+import sweattrails.qt.bg.job
 import sweattrails.userprofile
 
 logger = gripe.get_logger(__name__)
@@ -40,7 +40,7 @@ class WithingsMeasurement(grumble.model.Model):
     value = grumble.property.FloatProperty()
 
 
-class WithingsJob(sweattrails.qt.async.job.Job):
+class WithingsJob(sweattrails.qt.bg.job.Job):
     def __init__(self):
         super(WithingsJob, self).__init__()
 
@@ -61,7 +61,7 @@ class WithingsJob(sweattrails.qt.async.job.Job):
             public_key = withings_public_key
             # self.error("downloading Withings data", Exception("No WithingsAuth data found."))
             # return
-        conn = httplib.HTTPConnection(withings_host)
+        conn = http.client.HTTPConnection(withings_host)
         conn.request("GET", withings_url % (user_id,  public_key))
         response = conn.getresponse()
         if response.status == 200:

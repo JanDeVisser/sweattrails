@@ -16,16 +16,16 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
-import BaseHTTPServer
-import urlparse
+import http.server
+import urllib.parse
 
 import gripe
-import sweattrails.qt.async.bg
+import sweattrails.qt.bg.bg
 
 logger = gripe.get_logger(__name__)
 
 
-class WebServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+class WebServerHandler(http.server.BaseHTTPRequestHandler):
     config = gripe.Config.app.sweattrails.background.webserver \
         if "webserver" in gripe.Config.app.sweattrails.background \
         else {}
@@ -38,9 +38,9 @@ class WebServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             raise AttributeError("Attribute " + name + " not found in WebServerHandler")
 
     def do_subhandler(self):
-        parsed_path = urlparse.urlparse(self.path)
+        parsed_path = urllib.parse.urlparse(self.path)
         subhandler = None
-        for h in handlers:
+        for h in self.handlers:
             p = h["path"]
             if parsed_path.path.startswith(p):
                 subhandler = h["handler"]
@@ -57,13 +57,13 @@ class WebServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             self.send_response(404)
 
 
-class WebServer(sweattrails.qt.async.bg.ThreadPlugin):
+class WebServer(sweattrails.qt.bg.bg.ThreadPlugin):
     def run(self):
         config = gripe.Config.app.sweattrails.background.webserver \
             if "webserver" in gripe.Config.app.sweattrails.background \
             else {}
         interface = config.get("interface", "127.0.0.1")
         port = config.get("port", 8080)
-        self.server = BaseHTTPServer.HTTPServer((interface, port), WebServerHandler)
+        self.server = http.server.HTTPServer((interface, port), WebServerHandler)
         logger.debug('Starting server at http://%s:%s', interface, port)
         self.server.serve_forever()

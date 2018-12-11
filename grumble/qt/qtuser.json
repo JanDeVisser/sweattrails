@@ -1,0 +1,24 @@
+{
+    "_author": "Jan de Visser",
+    "_version": "1.0",
+    "_description": "...",
+    "data": [
+        {
+            "model": "qtuser",
+            "data": [
+                {
+                    "email": "jan@de-visser.net",
+                    "display_name": "Jan de Visser"
+                },
+                {
+                    "email": "mod@de-visser.net",
+                    "display_name": "A. Moderator"
+                },
+                {
+                    "email": "user@de-visser.net",
+                    "display_name": "Some User"
+                }
+            ]
+        }
+    ]
+}

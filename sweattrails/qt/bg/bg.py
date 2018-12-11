@@ -16,7 +16,7 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
-import Queue
+import queue
 import traceback
 
 from PyQt5.QtCore import QCoreApplication
@@ -37,6 +37,7 @@ class LoggingThread(QThread):
 
     def __init__(self, *args):
         super(LoggingThread, self).__init__(*args)
+        self._stopped = False
         QCoreApplication.instance().aboutToQuit.connect(self.quit)
 
     def quit(self):
@@ -70,7 +71,7 @@ class BackgroundThread(LoggingThread):
 
     def __init__(self):
         super(BackgroundThread, self).__init__()
-        self._queue = Queue.Queue()
+        self._queue = queue.Queue()
         if ("sweattrails" in gripe.Config.app and
                 "background" in gripe.Config.app.sweattrails and
                 "plugins" in gripe.Config.app.sweattrails.background):
@@ -101,7 +102,7 @@ class BackgroundThread(LoggingThread):
                         traceback.print_exc()
                         job.error("Unexpected exception handling task", e)
                     self._queue.task_done()
-            except Queue.Empty:
+            except queue.Empty:
                 self.queueEmpty.emit()
         logger.debug("BackgroundThread finished")
 

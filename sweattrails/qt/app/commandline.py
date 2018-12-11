@@ -22,7 +22,7 @@ from PyQt5.QtCore import QCoreApplication
 
 import gripe.db
 import sweattrails.qt.app.core
-import sweattrails.qt.async.bg
+import sweattrails.qt.bg.bg
 import sweattrails.qt.imports
 import sweattrails.qt.mainwindow
 import sweattrails.withings
@@ -40,7 +40,7 @@ class SweatTrailsCmdLine(QCoreApplication,
         super(SweatTrailsCmdLine, self).start(args)
         if not self.is_authenticated():
             raise sweattrails.qt.app.core.NotAuthenticatedException()
-        t = sweattrails.qt.async.bg.BackgroundThread.get_thread()
+        t = sweattrails.qt.bg.bg.BackgroundThread.get_thread()
         t.queueEmpty.connect(self.quit)
         self.after_download.connect(self._after_download)
 
@@ -51,7 +51,7 @@ class SweatTrailsCmdLine(QCoreApplication,
         self.quit()
 
     def status_message(self, msg, *args):
-        print str(msg).format(*args)
+        print(str(msg).format(*args))
 
     def progress_init(self, msg, *args):
         self.curr_progress = 0

@@ -31,9 +31,8 @@
                     { "id": "weighttracking", "label": "Weight Tracking", "url": "/weight", "level": 10 }
                 ]
             }
-        },
-    }
-
+        }
+    },
     "sweattrails": {
         "activityprofileparts": {
             "sessionType": {
@@ -68,7 +67,7 @@
         "background": {
             "plugins": [
                 "sweattrails.qt.imports.ScanInbox",
-                "sweattrails.qt.async.webserver.WebServer"
+                "sweattrails.qt.bg.webserver.WebServer"
             ],
             "webserver": {
                 "handlers": { "path": "/strava/auth", "handler": "sweattrails.strava.Handler"}

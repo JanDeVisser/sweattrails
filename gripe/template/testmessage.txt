@@ -1,0 +1,11 @@
+Hi Jan,
+    
+This is a test.
+
+Thanks,
+
+jan
+
+ctx["subject"] = {{msg.subject()}}
+ctx["recipients"] = {{msg.recipients()}}
+ctx["recipient_str"] = {{msg.recipients_string()}}

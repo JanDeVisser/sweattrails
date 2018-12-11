@@ -24,8 +24,8 @@ import gripe
 import gripe.db
 import grizzle
 import grumble.property
-import sweattrails.qt.async.bg
-import sweattrails.qt.async.job
+import sweattrails.qt.bg.bg
+import sweattrails.qt.bg.job
 import sweattrails.qt.imports
 import sweattrails.qt.mainwindow
 import sweattrails.qt.session.details
@@ -77,7 +77,7 @@ class SweatTrailsCore(object):
 
     def start(self, args):
         self.init_config(args)
-        t = sweattrails.qt.async.bg.BackgroundThread.get_thread()
+        t = sweattrails.qt.bg.bg.BackgroundThread.get_thread()
         t.statusMessage.connect(self.status_message)
         t.progressInit.connect(self.progress_init)
         t.progressUpdate.connect(self.progress)
@@ -88,7 +88,7 @@ class SweatTrailsCore(object):
         t.start()
 
     def status_message(self, msg, *args):
-        print msg.format(*args)
+        print(msg.format(*args))
 
     def job_started(self, job):
         self.status_message("{0} started", job)
@@ -134,7 +134,7 @@ class SweatTrailsCore(object):
         return self.user is not None
 
     def import_files(self, *filenames):
-        t = sweattrails.qt.async.bg.BackgroundThread.get_thread()
+        t = sweattrails.qt.bg.bg.BackgroundThread.get_thread()
         for f in filenames:
             job = sweattrails.qt.imports.ImportFile(f)
             job.jobFinished.connect(self._refresh)

@@ -28,7 +28,7 @@ import gripe.conversions
 import grumble.qt.bridge
 import grumble.qt.model
 import grumble.qt.view
-import sweattrails.qt.async.job
+import sweattrails.qt.bg.job
 import sweattrails.qt.graphs
 import sweattrails.qt.session.bike
 import sweattrails.qt.session.maps
@@ -211,7 +211,7 @@ class RawDataPage(QWidget):
         self.list.refresh()
 
 
-class ReanalyzeJob(sweattrails.qt.async.job.Job):
+class ReanalyzeJob(sweattrails.qt.bg.job.Job):
     def __init__(self, interval):
         super(ReanalyzeJob, self).__init__()
         self.interval = interval

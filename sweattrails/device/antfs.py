@@ -236,7 +236,7 @@ if __name__ == "__main__":
 
     class TestBridge(GarminBridge):
         def status_message(self, msg, *args):
-            print msg.format(*args)
+            print(msg.format(*args))
 
         def progress_init(self, msg, *args):
             self.curr_progress = 0
@@ -277,7 +277,7 @@ if __name__ == "__main__":
                 bridge.stop()
         except:
             traceback.print_exc()
-            print "Interrupted"
+            print("Interrupted")
             sys.exit(1)
 
     sys.exit(main())

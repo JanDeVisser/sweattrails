@@ -31,8 +31,8 @@ import sweattrails.device.antfs
 import sweattrails.device.exceptions
 import sweattrails.device.parser
 import sweattrails.qt.app.core
-import sweattrails.qt.async.bg
-import sweattrails.qt.async.job
+import sweattrails.qt.bg.bg
+import sweattrails.qt.bg.job
 
 logger = gripe.get_logger(__name__)
 
@@ -47,7 +47,7 @@ class ImportedFITFile(grumble.model.Model):
     status = grumble.property.BooleanProperty(default=False)
 
 
-class ImportFile(sweattrails.qt.async.job.Job):
+class ImportFile(sweattrails.qt.bg.job.Job):
     def __init__(self, filename):
         super(ImportFile, self).__init__()
         self.filename = filename
@@ -97,7 +97,7 @@ class ImportFile(sweattrails.qt.async.job.Job):
                 fitfile.put()
 
 
-class ScanInbox(sweattrails.qt.async.bg.ThreadPlugin):
+class ScanInbox(sweattrails.qt.bg.bg.ThreadPlugin):
     def __init__(self, thread):
         super(ScanInbox, self).__init__(thread)
         self.user = None
@@ -138,7 +138,7 @@ class ScanInbox(sweattrails.qt.async.bg.ThreadPlugin):
                 self.addfile(os.path.join(gripe.root_dir(), self.queue, f))
 
 
-class DownloadJob(sweattrails.qt.async.job.Job):
+class DownloadJob(sweattrails.qt.bg.job.Job):
     def __init__(self, manager):
         super(DownloadJob, self).__init__()
         self.manager = manager

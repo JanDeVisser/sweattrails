@@ -24,7 +24,7 @@
 import array
 import struct
 import threading
-import Queue
+import queue
 
 import sweattrails.device.ant.fs.command
 
@@ -107,8 +107,8 @@ class Manager(object):
             self._timer_lock = threading.RLock()
 
         self._lock = threading.RLock()
-        self._queue = Queue.Queue()
-        self._beacons = Queue.Queue()
+        self._queue = queue.Queue()
+        self._beacons = queue.Queue()
 
         
     #===========================================================================

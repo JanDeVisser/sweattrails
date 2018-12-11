@@ -25,13 +25,13 @@ import collections
 import struct
 import threading
 import time
-import Queue
+import queue
 
 import usb.core
 import usb.util
 
-from message import Message
-from commons import format_list
+from .message import Message
+from .commons import format_list
 
 import gripe
 
@@ -111,7 +111,7 @@ class Ant(object):
         self._message_queue_cond = threading.Condition()
         self._message_queue      = collections.deque()
 
-        self._events = Queue.Queue()
+        self._events = queue.Queue()
     
         self._buffer = array.array('B', [])
         self._burst_data = array.array('B', [])
@@ -250,7 +250,7 @@ class Ant(object):
                     self.channel_event_function(channel, event, data)
                 else:
                     _logger.warning("Unknown message typ '%s': %r", event_type, event)
-            except Queue.Empty as e:
+            except queue.Empty as e:
                 pass
 
     def write_message_timeslot(self, message):

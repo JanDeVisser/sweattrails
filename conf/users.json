@@ -1,0 +1,29 @@
+{
+    "author": "Jan de Visser",
+    "version": "1.0",
+    "groups": {
+    	"kitchener": { "label": "Users from Kitchener" },
+    	"moderators": { "label": "Moderator group", "has_roles": [ "moderator" ] }
+    },
+    "users": {
+    	"jan@de-visser.net": {
+		    "password": "wbw417",
+		    "display_name": "Jan de Visser",
+            "status": "Active",
+		    "has_roles": [ "admin" ]
+		},
+		"mod@de-visser.net": {
+		    "password": "password",
+		    "display_name": "A. Moderator",
+            "status": "Active",
+		    "has_groups": [ "moderators" ]
+		},
+		"user@de-visser.net": {
+		    "password": "password",
+		    "display_name": "Some User",
+		    "has_roles": [ "user" ],
+            "status": "Active",
+		    "has_groups": [ "kitchener" ]
+		}    	    	    
+    }    
+}

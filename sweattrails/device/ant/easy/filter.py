@@ -28,6 +28,7 @@ import gripe
 _logger = gripe.get_logger(__name__)
 debug_protocol = False
 
+
 def wait_for_message(match, process, queue, condition, ignore_timeout = False):
     """
     Wait for a specific message in the *queue* guarded by the *condition*
@@ -43,12 +44,12 @@ def wait_for_message(match, process, queue, condition, ignore_timeout = False):
             _logger.debug("looking for matching message in %r", queue)
         #_logger.debug("wait for response to %#02x, checking", mId)
         for message in queue:
-            if match(message):
+            if match(*message):
                 if debug_protocol:
                     _logger.debug(" - response found %r", message)
                 queue.remove(message)
                 condition.release()
-                return process(message)
+                return process(*message)
             elif (message[1] == 1 and 
                  message[2][0] == Message.Code.EVENT_TRANSFER_TX_FAILED):
                 _logger.warning("Transfer send failed:")
@@ -62,36 +63,39 @@ def wait_for_message(match, process, queue, condition, ignore_timeout = False):
     condition.release()
     if not ignore_timeout:
         raise AntException("Timed out while waiting for message")
-    
+
+
 def wait_for_event(ok_codes, queue, condition, ignore_timeout = False):
-    def match((channel, event, data)):
+    def match(channel, event, data):
         return data[0] in ok_codes
-    def process((channel, event, data)):
-        return (channel, event, data)
+    def process(channel, event, data):
+        return channel, event, data
     return wait_for_message(match, process, queue, condition, ignore_timeout)
+
 
 def wait_for_response(event_id, queue, condition):
     """
     Waits for a response to a specific message sent by the channel response
     message, 0x40. It's expected to return RESPONSE_NO_ERROR, 0x00.
     """
-    def match((channel, event, data)):
+    def match(channel, event, data):
         return event == event_id
-    def process((channel, event, data)):
+    def process(channel, event, data):
         if data[0] == Message.Code.RESPONSE_NO_ERROR:
-            return (channel, event, data)
+            return channel, event, data
         else:
             raise Exception("Responded with error " + str(data[0])
                     + ":" + Message.Code.lookup(data[0]))
     return wait_for_message(match, process, queue, condition)
+
 
 def wait_for_special(event_id, queue, condition):
     """
     Waits for special responses to messages such as Channel ID, ANT
     Version, etc. This does not throw any exceptions, besides timeouts.
     """
-    def match((channel, event, data)):
+    def match(channel, event, data):
         return event == event_id
-    def process(event):
-        return event
+    def process(channel, event, data):
+        return channel, event, data
     return wait_for_message(match, process, queue, condition)

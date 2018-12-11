@@ -25,7 +25,7 @@ import collections
 import struct
 import threading
 
-from commons import format_list
+from .commons import format_list
 
 import gripe
 

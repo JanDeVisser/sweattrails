@@ -22,7 +22,7 @@
 
 import collections
 import threading
-import Queue
+import queue
 
 from sweattrails.device.ant.base.ant import Ant
 from sweattrails.device.ant.base.message import Message
@@ -42,7 +42,7 @@ class Node(object):
         self._event_cond     = threading.Condition()
         self._events         = collections.deque()
         
-        self._datas = Queue.Queue()
+        self._datas = queue.Queue()
         
         self.channels = {}
         
@@ -118,7 +118,7 @@ class Node(object):
                     self.channels[channel].on_burst_data(data)
                 else:
                     _logger.warning("Unknown data type '%s': %r", data_type, data)
-            except Queue.Empty as e:
+            except queue.Empty as e:
                 pass
 
     def start(self):
