@@ -1,4 +1,4 @@
-#from ant.base import Message
+#from ant.base imp Message
 from .. node import Node, Message
 from .. channel import Channel
 

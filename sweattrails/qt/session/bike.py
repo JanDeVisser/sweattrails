@@ -113,8 +113,8 @@ class BikePlugin(object):
                                                   smooth=3,
                                                   max=part.max_power,
                                                   color=Qt.blue)
-            series.addTrendLine(lambda x : float(part.average_power))
-            series.addTrendLine(lambda x : float(part.normalized_power),
+            series.addTrendLine(lambda x: float(part.average_power))
+            series.addTrendLine(lambda x: float(part.normalized_power),
                                 style=Qt.DashDotLine)
         if part.max_cadence:
             series = sweattrails.qt.graphs.Series(property="cadence",
@@ -123,4 +123,4 @@ class BikePlugin(object):
                                                   max=part.max_cadence,
                                                   smooth=3,
                                                   color=Qt.darkCyan)
-            series.addTrendLine(lambda x : float(part.average_cadence))
+            series.addTrendLine(lambda x: float(part.average_cadence))

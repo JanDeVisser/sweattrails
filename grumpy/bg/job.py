@@ -18,12 +18,13 @@
 
 import traceback
 
-from PyQt5.QtCore import QCoreApplication
+# from PyQt5.QtCore import QCoreApplication
 from PyQt5.QtCore import QObject
 from PyQt5.QtCore import pyqtSignal
 
 import gripe
-import sweattrails.qt.bg.bg
+import gripe.db
+import grumpy.bg
 
 logger = gripe.get_logger(__name__)
 
@@ -35,15 +36,15 @@ class Job(QObject):
 
     def __init__(self):
         super(Job, self).__init__()
-        self.user = QCoreApplication.instance().user
+        # self.user = QCoreApplication.instance().user
 
     def __str__(self):
         return self.__class__.__name__
 
     def sync(self):
-        self._handle(None)
+        self(None)
 
-    def _handle(self, thread):
+    def __call__(self, thread):
         self.thread = thread
         logger.debug("Handling job %s", self)
         try:
@@ -90,4 +91,4 @@ class Job(QObject):
             self.thread.progress_end()
 
     def submit(self):
-        sweattrails.qt.bg.bg.BackgroundThread.add_backgroundjob(self)
+        grumpy.bg.BackgroundThread.add_backgroundjob(self)

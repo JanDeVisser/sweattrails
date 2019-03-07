@@ -135,6 +135,11 @@ class ReferenceProperty(grumble.property.ModelProperty):
             assert 0, "Cannot update ReferenceProperty to %s (wrong type %s)" % (value, str(type(value)))
         return value
 
+    def display(self, value, instance=None):
+        return value().label() \
+            if isinstance(value, (grumble.Key, grumble.Model)) \
+            else str(value) if value is not None else ''
+
 
 class SelfReferenceProperty(ReferenceProperty):
     def set_kind(self, kind):

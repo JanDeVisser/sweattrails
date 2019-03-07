@@ -17,6 +17,7 @@
 #
 
 import psycopg2
+import psycopg2.extensions
 import gripe.db
 
 logger = gripe.get_logger("gripe.db")
@@ -30,11 +31,57 @@ class Cursor(gripe.db.LoggedCursor, psycopg2.extensions.cursor):
 
 
 class Connection(gripe.db.LoggedConnection, psycopg2.extensions.connection):
-    def cursor(self):
-        return super(Connection, self).cursor(cursor_factory = Cursor)
+    def cursor(self,  name=None, cursor_factory=None, withhold=False):
+        return super(Connection, self).cursor(cursor_factory=Cursor, name=name, withhold=withhold)
 
 
 class DbAdapter(object):
+    def __init__(self):
+        self.role = None
+        self.database = None
+        self.autocommit = None
+
+    @classmethod
+    def reset_database(cls, drop=None, conf=None):
+        if conf is None:
+            conf = cls.config
+        drop_schema = None
+        if conf.database:
+            database = conf.database
+            if database != 'postgres':
+                # We're assuming the postgres database exists and should
+                # never be wiped:
+                with gripe.db.Tx.begin("admin", "postgres", True) as tx:
+                    cur = tx.get_cursor()
+                    if drop if drop is not None else (isinstance(conf.wipe_database, bool) and conf.wipe_database):
+                        cur.execute('DROP DATABASE IF EXISTS "%s"' % database)
+                        create_db = True
+                    else:
+                        cur.execute("SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = %s", database)
+                        create_db = (cur.fetchone()[0] == 0)
+                    if create_db:
+                        cur.execute('CREATE DATABASE "%s"' % (database,))
+                        drop_schema = False
+        cls.reset_schema(drop_schema, conf)
+
+    @classmethod
+    def reset_schema(cls, drop=None, conf=None):
+        if conf is None:
+            conf = cls.config
+        if conf.schema:
+            with gripe.db.Tx.begin("admin") as tx:
+                cur = tx.get_cursor()
+                schema = conf.schema
+                if drop if drop is not None else (isinstance(conf.wipe_schema, bool) and conf.wipe_schema):
+                    cur.execute('DROP SCHEMA IF EXISTS "%s" CASCADE' % schema)
+                    create_schema = True
+                else:
+                    cur.execute("SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = %s", (schema,))
+                    create_schema = (cur.fetchone()[0] == 0)
+                if create_schema:
+                    cur.execute(
+                        'CREATE SCHEMA "%s" AUTHORIZATION %s' %
+                        (schema, conf["user"]["user_id"]))
 
     @classmethod
     def setup(cls, pgsql_conf):
@@ -49,42 +96,7 @@ class DbAdapter(object):
             "Config: user role is missing user_id or password in postgresql section of conf/database.json"
         assert pgsql_admin.user_id and pgsql_admin.password, \
             "Config: admin role is missing user_id or password in postgresql section of conf/database.json"
-
-        if pgsql_conf.database:
-            database = pgsql_conf.database
-            if database != 'postgres':
-                # We're assuming the postgres database exists and should
-                # never be wiped:
-                with gripe.db.Tx.begin("admin", "postgres", True) as tx:
-                    cur = tx.get_cursor()
-                    create_db = False
-                    if isinstance(pgsql_conf.wipe_database, bool) \
-                            and pgsql_conf.wipe_database:
-                        cur.execute('DROP DATABASE IF EXISTS "%s"' %
-                            (database,))
-                        create_db = True
-                    else:
-                        cur.execute("SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = %s", (database,))
-                        create_db = (cur.fetchone()[0] == 0)
-                    if create_db:
-                        cur.execute('CREATE DATABASE "%s"' % (database,))
-
-        if pgsql_conf.schema:
-            with gripe.db.Tx.begin("admin") as tx:
-                cur = tx.get_cursor()
-                create_schema = False
-                schema = pgsql_conf.schema
-                if isinstance(pgsql_conf.wipe_schema, bool) \
-                        and pgsql_conf.wipe_schema:
-                    cur.execute('DROP SCHEMA IF EXISTS "%s" CASCADE' % schema)
-                    create_schema = True
-                else:
-                    cur.execute("SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = %s", (schema,))
-                    create_schema = (cur.fetchone()[0] == 0)
-                if create_schema:
-                    cur.execute(
-                        'CREATE SCHEMA "%s" AUTHORIZATION %s' %
-                        (schema, pgsql_conf["user"]["user_id"]))
+        cls.reset_database()
 
     def initialize(self, role, database, autocommit):
         self.role = role
@@ -106,8 +118,7 @@ class DbAdapter(object):
             dsn += " host=%s" % self.config.host
         if "port" in self.config:
             dsn += " port=%s" % self.config.port
-        logger.debug("Connecting with role '%s' autocommit = %s",
-            self.role, self.autocommit)
-        conn = psycopg2.connect(dsn, connection_factory = Connection)
+        logger.debug("Connecting with role '%s' autocommit = %s", self.role, self.autocommit)
+        conn = psycopg2.connect(dsn, connection_factory=Connection)
         conn.autocommit = self.autocommit
         return conn

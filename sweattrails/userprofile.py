@@ -36,6 +36,7 @@ class UserProfile(grizzle.UserPart):
     regkey = grumble.property.StringProperty()
     uploads = grumble.property.IntegerProperty(default=0)
     last_upload = grumble.property.DateTimeProperty()
+    settings = grumble.property.JSONProperty()
 
     def after_insert(self):
         pass

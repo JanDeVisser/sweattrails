@@ -18,7 +18,6 @@
 
 
 import bisect
-import collections
 import datetime
 import sys
 import time
@@ -75,7 +74,7 @@ class Reducable(list):
 
     def report(self):
         s = """{:40.40s}{:6f}
-{:s}""".format(self, self.clock, "\n".join(["  {:38.38s}{:6f}".format(r, r.clock) for r in self]))
+{:s}""".format(str(self), self.clock, "\n".join(["  {:38.38s}{:6f}".format(str(r), r.clock) for r in self]))
         return s
 
     def started(self, timepoint):
@@ -119,7 +118,8 @@ class Reducers(list):
         self.ix = 0
         self.callback = callback
         self.started = []
-        def run(reducers, item):
+        reducers = self
+        for item in iterable:
             if reducers.callback and hasattr(reducers.callback, "progress"):
                 reducers.callback.progress(
                     int((float(reducers.ix) / float(reducers.num)) * 100.0))
@@ -128,15 +128,13 @@ class Reducers(list):
             reducers.activate(item)
             for r in self.started:
                 r.reduce(item)
-            return reducers
-        reduce(run, iterable, self)
         self.deactivate(None, True)
         self.reduce_c = time.clock() - self.reduce_c
         self.reduce_c -= (self.init_c + self.done_c)
-        self.report()
+        return self.report()
 
     def report(self):
-        rep = """
+        return """
 =================================================
   R E D U C T I O N  R E P O R T
 -------------------------------------------------
@@ -151,7 +149,6 @@ Total                                   {:.6f}
 """.format(len(self), self.init_c,
            "\n".join([r.report() for r in self]),
            self.reduce_c, self.done_c, self.total_c)
-        logger.debug(rep)
 
 
 class SimpleReducer(Reducer):
@@ -176,6 +173,9 @@ class SimpleReducer(Reducer):
 
     def finalize(self):
         return self.cur
+
+    def reducevalue(self, value):
+        return value
 
 
 class Accumulate(SimpleReducer):
@@ -220,15 +220,15 @@ class AverageOverTime(SimpleReducer):
 
 class Maximize(SimpleReducer):
     def reducevalue(self, value):
-        return max(self.cur, value) or 0
+        return max(self.cur or 0, value or 0) or 0
 
 
 class Minimize(SimpleReducer):
     def reducevalue(self, value):
-        return min(self.cur, value) or 0
+        return min(self.cur or 0, value or 0) or 0
 
 
-class UpdatePolicy():
+class UpdatePolicy:
     DONT_UPDATE, UPDATE_WITH_OFFSET, UPDATE_ABSOLUTE = range(3)
 
     def __init__(self, distance, duration):
@@ -256,6 +256,8 @@ class Timestamped(object):
 
 @grumble.abstract
 class IntervalPart(grumble.Model):
+    report = grumble.property.TextProperty()
+
     def _get_date(self):
         return self.get_session().start_time
 
@@ -274,7 +276,7 @@ class IntervalPart(grumble.Model):
     def reducers(self):
         return []
 
-    def analyze(self):
+    def analyze(self, callback):
         pass
 
 
@@ -295,7 +297,7 @@ class RollingWindow(list):
                 self.insert(0, last)
                 self._running_sum += last.term()
 
-    def pop(self, ix):
+    def pop(self, ix = -1):
         e = super(RollingWindow, self).pop(ix)
         self._running_sum -= e.term()
         return e
@@ -307,6 +309,9 @@ class RollingWindow(list):
 
     def span(self):
         return self[-1].offset() - self[0].offset()
+
+    def max_span(self):
+        pass
 
     def valid(self):
         if len(self) < 2:
@@ -407,8 +412,7 @@ class CriticalPower(grumble.Model, Timestamped):
 @grumble.property.transient
 class AvgSpeedProperty(grumble.property.FloatProperty):
     def getvalue(self, instance):
-        if not instance.distance or \
-           not instance.duration:
+        if not instance.distance or not instance.duration:
             return 0.0
         else:
             if isinstance(instance.duration, datetime.timedelta):
@@ -432,12 +436,12 @@ class WattsPerKgProperty(grumble.FloatProperty):
 
     def getvalue(self, instance):
         session = instance.get_session()
-        user = session.athlete
+        user = instance.get_athlete()
         ret = 0
         weightpart = user.get_part(sweattrails.userprofile.WeightMgmt)
         if weightpart is not None:
             weight = weightpart.get_weight(session.start_time)
-            if weight > 0:
+            if weight:
                 power = getattr(instance, self.power_prop)
                 if power is not None and power > 0:
                     ret = float(power) / weight
@@ -481,7 +485,9 @@ class TSSProperty(grumble.property.FloatProperty):
         super(TSSProperty, self).__init__(**kwargs)
 
     def getvalue(self, instance):
-        return (instance.parent().duration.seconds * (instance.intensity_factor ** 2)) / 36
+        return (instance.parent().duration.seconds * (instance.intensity_factor ** 2)) / 36 \
+            if instance.parent().duration \
+            else 0
 
     def setvalue(self, instance, value):
         pass
@@ -495,8 +501,11 @@ class NormalizedPowerReducer(Reducer):
         def _result(self):
             return (self._running_sum / self.span())**4
 
-    def __init__(self, bikepart):
-        self.bikepart = bikepart
+    def __init__(self, part):
+        self.part = part
+        self.window = None
+        self.count = 0
+        self.sum_norm = 0
 
     def __str__(self):
         return "{}()".format(self.__class__.__name__)
@@ -515,9 +524,9 @@ class NormalizedPowerReducer(Reducer):
 
     def reduction(self):
         if self.count > 0 and self.sum_norm > 0:
-            self.bikepart.normalized_power = int(round((self.sum_norm / self.count) ** 0.25))
+            self.part.normalized_power = int(round((self.sum_norm / self.count) ** 0.25))
         else:
-            self.bikepart.normalized_power = 0
+            self.part.normalized_power = 0
 
 
 class TimeInZoneReducer(Reducer):
@@ -527,6 +536,8 @@ class TimeInZoneReducer(Reducer):
         if self.minValue is None:
             self.minValue = 0
         self.maxValue = maxvalue if maxvalue is not None else sys.maxint
+        self.prev_timestamp = None
+        self.prev_distance = None
 
     def __str__(self):
         return "{}[{}, {}]".format(self.__class__.__name__, self.minValue, self.maxValue)
@@ -649,7 +660,7 @@ class BikePart(IntervalPart):
         self.max_cadence = 0
         self.average_torque = 0
         self.max_torque = 0
-
+BikePart()
 
 class RunPaceWindow(RollingWindow):
     def __init__(self, distance, min_precision = 10):
@@ -741,6 +752,12 @@ class RunPace(grumble.Model, Timestamped):
 
 
 class RunPart(IntervalPart):
+    average_power = grumble.IntegerProperty(verbose_name="Average Power", default=0, suffix="W")  # W
+    average_watts_per_kg = WattsPerKgProperty(powerproperty="average_power", suffix="W/kg")
+    normalized_power = grumble.IntegerProperty(verbose_name="Normalized Power", suffix="W")  # W
+    normalized_watts_per_kg = WattsPerKgProperty(powerproperty="normalized_power", suffix="W/kg")
+    max_power = grumble.IntegerProperty(verbose_name="Maximum Power", default=0, suffix="W")  # W
+    max_watts_per_kg = WattsPerKgProperty(powerproperty="max_power", suffix="W/kg")
     average_cadence = grumble.IntegerProperty(default=0, suffix="strides/min")  # rpm
     max_cadence = grumble.IntegerProperty(default=0, suffix="strides/min")  # rpm
 
@@ -764,13 +781,17 @@ class RunPart(IntervalPart):
             ret.append(TimeInZoneReducer(p, maxspeed))
             maxspeed = pzdef.minSpeed - 1
         ret.extend([
+            Maximize("power", self, "max_power"),
+            AverageOverTime("timestamp", "power", self, "average_power"),
+            NormalizedPowerReducer(self),
             Maximize("cadence", self, "max_cadence"),
             AverageOverTime("timestamp", "cadence", self, "average_cadence")])
         return ret
-
+RunPart()
 
 class SwimPart(IntervalPart):
     pass
+SwimPart()
 
 
 class SessionTypeReference(grumble.reference.ReferenceProperty):
@@ -781,8 +802,11 @@ class SessionTypeReference(grumble.reference.ReferenceProperty):
     def get_interval_part_type(self, sessiontype, interval):
         return sessiontype.get_interval_part_type(interval.get_activityprofile())
 
-    def after_set(self, session, old_sessiontype, new_sessiontype):
-        if not old_sessiontype or (old_sessiontype.name != new_sessiontype.name):
+    def assigned(self, session, old_sessiontype, new_sessiontype):
+        if not new_sessiontype:
+            if old_sessiontype:
+                raise grumble.errors.PropertyRequired(self.prop.name)
+        elif not old_sessiontype or (old_sessiontype.name != new_sessiontype.name):
             t = self.get_interval_part_type(new_sessiontype, session)
             sameparttype = False
             if session.intervalpart:
@@ -792,12 +816,13 @@ class SessionTypeReference(grumble.reference.ReferenceProperty):
                     part = session.intervalpart
                     session.intervalpart = None
                     grumble.delete(part)
-            for i in Interval.query(ancestor=session):
-                if i.intervalpart and not isinstance(i.intervalpart, t):
-                    part = i.intervalpart
-                    i.intervalpart = None
-                    grumble.delete(part)
-                    i.put()
+            if old_sessiontype:
+                for i in Interval.query(ancestor=session):
+                    if i.intervalpart and not isinstance(i.intervalpart, t):
+                        part = i.intervalpart
+                        i.intervalpart = None
+                        grumble.delete(part)
+                        i.put()
             if t and not sameparttype:
                 part = t(parent=session)
                 part.put()
@@ -827,6 +852,12 @@ class GeoData(grumble.Model):
 class GeoReducer(Reducer):
     def __init__(self, interval):
         self.interval = interval
+        self.min_elev = self.max_elev = self.cur_elev = None
+        self.bounding_box = None
+        self.elev_data = None
+        self.elev_gain = 0
+        self.elev_loss = 0
+        self.updated = None
 
     def __str__(self):
         return "{}()".format(self.__class__.__name__)
@@ -857,8 +888,8 @@ class GeoReducer(Reducer):
                     self.elev_gain += (elev - self.cur_elev)
                 else:
                     self.elev_loss += (self.cur_elev - elev)
-            self.min_elev = min(self.min_elev, elev)
-            self.max_elev = max(self.max_elev, elev)
+            self.min_elev = min(self.min_elev if self.min_elev is not None else 10000, elev)
+            self.max_elev = max(self.max_elev if self.max_elev is not None else -100, elev)
             self.cur_elev = elev
         return self
 
@@ -894,6 +925,7 @@ class Interval(grumble.Model, Timestamped):
     max_speed = grumble.property.FloatProperty(default=0, verbose_name="Max. Speed/Pace")  # m/s
     work = grumble.property.IntegerProperty(default=0)  # kJ
     calories_burnt = grumble.property.IntegerProperty(default = 0)  # kJ
+    report = grumble.property.TextProperty()
 
     def end_timestamp(self):
         return self.timestamp + self.elapsed_time
@@ -937,9 +969,9 @@ class Interval(grumble.Model, Timestamped):
         return sweattrails.config.ActivityProfile.get_profile(athlete)
 
     def on_delete(self):
-        GeoData.query(parent = self).delete()
-        IntervalPart.query(parent = self).delete()
-        Interval.query(parent = self).delete()
+        GeoData.query(parent=self).delete()
+        IntervalPart.query(parent=self).delete()
+        Interval.query(parent=self).delete()
         return True
 
     def reset(self):
@@ -1029,18 +1061,18 @@ class Session(Interval):
     def analyze(self, callback=None):
         logger.debug("Interval.analyze(): Getting subintervals")
         intervals = [self]
-        intervals.extend(Interval.query(ancestor = self).fetchall())
+        intervals.extend(Interval.query(ancestor=self).fetchall())
         reducers = Reducers([IntervalReducable(i) for i in intervals])
 
         logger.debug("Interval.analyze(): Getting waypoints")
         wps = self.waypoints()
         logger.debug("Interval.analyze(): Reducing")
-        reducers.reduce(wps, callback)
+        self.report = reducers.reduce(wps, callback)
+        self.put()
         for i in intervals:
             part = i.intervalpart
             if part:
-                part.analyze()
-                part.put()
+                part.analyze(callback)
             i.put()
 
     def reanalyze(self, callback=None):

@@ -16,9 +16,9 @@
  * Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-var osm_attr = 'Map data &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, <a href="http://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>';
+const osm_attr = 'Map data &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, <a href="http://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>';
 
-var tile_sources = {
+const tile_sources = {
     OSMMapnik: {
         url: 'http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         attributes: {
@@ -47,11 +47,11 @@ var tile_sources = {
     }
 };
 
-var source = 'Mapbox';
+let source = 'Mapbox';
 
-var bridge = null;
+let bridge = null;
 
-var com = {
+let com = {
     sweattrails: {
         map: new function() {
             try {
@@ -59,7 +59,7 @@ var com = {
                 this.segment = null;
                 this.marker = null;
                 this.map = L.map('map-canvas');
-                var src = tile_sources[source];
+                let src = tile_sources[source];
                 L.tileLayer(src.url, src.attributes).addTo(this.map);
             } catch (e) {
                 console.error("initialize(): " + e);
@@ -67,23 +67,29 @@ var com = {
             }
 
             this.draw = function(points, color) {
-                var options = {
+                let options = {
                     color: color,
                     fill:  false
                 };
-                var path = [];
+                let path = [];
 
                 try {
-                    for (var ix = 0; ix < points.length; ix++) {
+                    for (let ix = 0; ix < points.length; ix++) {
                         path.push(L.latLng(points[ix].location.lat, points[ix].location.lon));
                     }
-                    var line = L.polyline(path, options);
-                    line.addTo(this.map);
-                    this.map.fitBounds(line.getBounds());
-                    return line;
+                    this.line = L.polyline(path, options);
+                    this.line.addTo(this.map);
+                    this.map.fitBounds(this.line.getBounds());
+                    return this.line;
                 } catch (e) {
                     console.error("draw(): " + e);
                     throw e;
+                }
+            };
+
+            this.resized = function() {
+                if ((typeof(this.map) !== "undefined") && (typeof(this.line) !== "undefined")) {
+                    this.map.fitBounds(this.line.getBounds());
                 }
             };
 
@@ -112,11 +118,11 @@ var com = {
             };
 
             this.highlight = function(ts, duration) {
-                var wps = [];
+                let wps = [];
 
                 this.eraseSegment();
-                for (var ix = 0; ix < this.waypoints.length; ix++) {
-                    var wp = this.waypoints[ix];
+                for (let ix = 0; ix < this.waypoints.length; ix++) {
+                    let wp = this.waypoints[ix];
                     if ((wp.timestamp >= ts) && (wp.timestamp <= (ts + duration))) {
                         wps.push(wp)
                     }
@@ -128,8 +134,8 @@ var com = {
 
             this.mark = function(ts) {
                 this.eraseMarker();
-                for (var ix = 0; !this.marker && ix < this.waypoints.length; ix++) {
-                    var wp = this.waypoints[ix];
+                for (let ix = 0; !this.marker && ix < this.waypoints.length; ix++) {
+                    let wp = this.waypoints[ix];
                     if (wp.timestamp >= ts) {
                         this.marker = L.marker(L.latLng(wp.location.lat, wp.location.lon));
                         this.marker.addTo(this.map)
@@ -144,7 +150,7 @@ var com = {
 
 {% if usewebchannel %}
     (function () {
-        var baseUrl;
+        let baseUrl;
 
         if (location.search !== "")
             baseUrl = (/[?&]webChannelBaseUrl=([A-Za-z0-9\-:/\.]+)/.exec(location.search)[1]);
@@ -152,7 +158,7 @@ var com = {
             baseUrl = "ws://localhost:12345";
 
         console.log("Connecting to WebSocket server at " + baseUrl + ".");
-        var socket = new WebSocket(baseUrl);
+        let socket = new WebSocket(baseUrl);
 
         socket.onclose = function () {
             console.error("web channel closed");

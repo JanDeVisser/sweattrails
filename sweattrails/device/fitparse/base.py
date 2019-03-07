@@ -1,290 +1,453 @@
+import io
 import os
-import StringIO
 import struct
 
-from sweattrails.device.fitparse.exceptions import FitParseError, FitParseComplete
-from sweattrails.device.fitparse import records as r
+from .processors import FitFileDataProcessor
+from .profile import FIELD_TYPE_TIMESTAMP, MESSAGE_TYPES
+from .records import (
+    Crc, DataMessage, FieldData, FieldDefinition, DevFieldDefinition, DefinitionMessage, MessageHeader,
+    BASE_TYPES, BASE_TYPE_BYTE,
+    add_dev_data_id, add_dev_field_description, get_dev_type
+)
+from .utils import fileish_open, is_iterable, FitParseError, FitEOFError, FitCRCError, FitHeaderError
+num_types = (int, float)
 
 
 class FitFile(object):
-    FILE_HEADER_FMT = '2BHI4s'
-    RECORD_HEADER_FMT = 'B'
+    def __init__(self, fileish, check_crc=True, data_processor=None):
+        self._file = fileish_open(fileish, 'rb')
 
-    # First two bytes of a definition, to get endian_ness
-    DEFINITION_PART1_FMT = '2B'
-    # Second part, relies on endianness and tells us how large the rest is
-    DEFINITION_PART2_FMT = 'HB'
-    # Field definitions
-    DEFINITION_PART3_FIELDDEF_FMT = '3B'
+        self.check_crc = check_crc
+        self._crc = None
+        self._processor = data_processor or FitFileDataProcessor()
 
-    CRC_TABLE = (
-        0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401,
-        0xA001, 0x6C00, 0x7800, 0xB401, 0x5000, 0x9C01, 0x8801, 0x4400,
-    )
+        # Get total filesize
+        self._file.seek(0, os.SEEK_END)
+        self._filesize = self._file.tell()
+        self._file.seek(0, os.SEEK_SET)
+        self._messages = []
+        self.logger = None
 
-    def __init__(self, f):
-        self._filename = f
-
-    def get_records_by_type(self, t):
-        # TODO: let t be a list/tuple of arbitary types (str, num, actual type)
-        if isinstance(t, str):
-            return (rec for rec in self.records if rec.type.name == t)
-        elif isinstance(t, int):
-            return (rec for rec in self.records if rec.type.num == t)
-        elif isinstance(t, rec.MessageType):
-            return (rec for rec in self.records if rec.type == t)
-        else:
-            return ()
-
-    def get_records_as_dicts(self, t=None, with_ommited_fields=False):
-        if t is None:
-            records = self.records
-        else:
-            records = self.get_records_by_type(t)
-        return (rec for rec in (rec.as_dict(with_ommited_fields) for rec in records) if rec)
-
-    def _initialize_parser(self, buffer=None):
-        if isinstance(buffer, (str, bytearray)):
-            self._file = StringIO.StringIO(buffer)
-        elif buffer is None:
-            self._file = open(self._filename, 'rb')
-        else:
-            self._file = buffer
-
-        if isinstance(self._file, StringIO.StringIO):
-            self._file_size = len(self._file.getvalue())
-        elif isinstance(self._file, file):
-            self._file_size = os.path.getsize(self._file.name)
-        else:
-            assert 0, "Unknown FIT buffer type '%s'" % type(self._file)
-        self._data_read = 0
-        self._crc = 0
-
-        self._last_timestamp = None
-        self._global_messages = {}
-        self.definitions = []
-        self.records = []
-
-    def parse(self, buffer=None, hook_func=None, hook_definitions=False):
-        self._initialize_parser(buffer)
-        # TODO: Document hook function
+        # Start off by parsing the file header (sets initial attribute values)
         self._parse_file_header()
 
-        try:
-            while True:
-                record = self._parse_record()
-                if hook_func:
-                    if hook_definitions or isinstance(record, r.DataRecord):
-                        hook_func(record)
-        except FitParseComplete:
-            pass
-        except Exception, e:
+    def __del__(self):
+        self.close()
+
+    def close(self):
+        if hasattr(self, "_file") and self._file and hasattr(self._file, "close"):
             self._file.close()
-            raise FitParseError(e, "Unexpected exception while parsing (%s: %s)" % (
-                e.__class__.__name__, e,
-            ))
+            self._file = None
 
-        # Compare CRC (read last two bytes on _file without recalculating CRC)
-        stored_crc, = struct.unpack('H', self._file.read(2))
+    def __enter__(self):
+        return self
 
-        self._file.close()
+    def __exit__(self, *_):
+        self.close()
 
-        if stored_crc != self._crc:
-            raise FitParseError("Invalid CRC")
-
-    def _parse_record_header(self):
-        header_data, = self._struct_read(FitFile.RECORD_HEADER_FMT)
-
-        header_type = self._get_bit(header_data, 7)
-
-        if header_type == r.RECORD_HEADER_NORMAL:
-            message_type = self._get_bit(header_data, 6)
-            local_message_type = header_data & 0b11111  # Bits 0-4
-            # TODO: Should we set time_offset to 0?
-            return r.RecordHeader(
-                header_type, message_type, local_message_type, None,
-            )
-        else:
-            # Compressed timestamp
-            local_message_type = (header_data >> 5) & 0b11  # bits 5-6
-            seconds_offset = header_data & 0b1111  # bits 0-3
-            return r.RecordHeader(
-                header_type, r.MESSAGE_DATA, local_message_type, seconds_offset)
-
-    def _parse_definition_record(self, header):
-        reserved, arch = self._struct_read(FitFile.DEFINITION_PART1_FMT)
-
-        # We have the architecture now
-        global_message_num, num_fields = self._struct_read(FitFile.DEFINITION_PART2_FMT, arch)
-
-        # Fetch MessageType (unknown if it doesn't exist)
-        message_type = r.MessageType(global_message_num)
-        fields = []
-
-        for field_num in range(num_fields):
-            f_def_num, f_size, f_base_type_num = \
-                               self._struct_read(FitFile.DEFINITION_PART3_FIELDDEF_FMT, arch)
-
-            f_base_type_num = f_base_type_num & 0b11111  # bits 0-4
-
-            try:
-                field = message_type.fields[f_def_num]
-            except (KeyError, TypeError):
-                # unknown message has msg.fields as None = TypeError
-                # if a known message doesn't define such a field = KeyError
-
-                # Field type wasn't stored in message_type, fall back to a basic, unknown type
-                field = r.Field(r.UNKNOWN_FIELD_NAME, r.FieldTypeBase(f_base_type_num), None, None, None)
-
-            # XXX: -- very yucky!
-            #  Convert extremely odd types where field size != type size to a byte
-            #  field. They'll need to be handled customly. The FIT SDK has no examples
-            #  of this but Cycling.fit on my Garmin Edge 500 does it, so I'll
-            #  support it. This is probably the wrong way to do this, since it's
-            #  not endian aware. Eventually, it should be a tuple/list of the type.
-            #  Doing this will have to rethink the whole is_variable_size on FieldTypeBase
-            calculated_f_size = struct.calcsize(
-                self._get_endian_aware_struct(field.type.get_struct_fmt(f_size), arch)
-            )
-            if calculated_f_size != f_size:
-                field = field._replace(type=r.FieldTypeBase(13))  # 13 = byte
-
-            fields.append(r.AllocatedField(field, f_size))
-
-        definition = r.DefinitionRecord(header, message_type, arch, fields)
-        self._global_messages[header.local_message_type] = definition
-
-        self.definitions.append(definition)
-
-        return definition  # Do we need to return?
-
-    def _parse_data_record(self, header):
-        definition = self._global_messages[header.local_message_type]
-
-        fields = []
-        dynamic_fields = {}
-
-        for i, (field, f_size) in enumerate(definition.fields):
-            f_raw_data, = self._struct_read(field.type.get_struct_fmt(f_size), definition.arch)
-            # BoundField handles data conversion (if necessary)
-            bound_field = r.BoundField(f_raw_data, field)
-
-            if field.name == r.COMPRESSED_TIMESTAMP_FIELD_NAME and \
-               field.type.name == r.COMPRESSED_TIMESTAMP_TYPE_NAME:
-                self._last_timestamp = f_raw_data
-
-            fields.append(bound_field)
-
-            if isinstance(field, r.DynamicField):
-                dynamic_fields[i] = bound_field
-
-        # XXX -- This could probably be refactored heavily. It's slow and a bit unclear.
-        # Go through already bound fields that are dynamic fields
-        if dynamic_fields:
-            for dynamic_field_index, bound_field in dynamic_fields.iteritems():
-                # Go by the reference field name and possible values
-                for ref_field_name, possible_values in bound_field.field.possibilities.iteritems():
-                    # Go through the definitions fields looking for the reference field
-                    for field_index, (field, f_size) in enumerate(definition.fields):
-                        # Did we find the refence field in the definition?
-                        if field.name == ref_field_name:
-                            # Get the reference field's value
-                            ref_field_value = fields[field_index].data
-                            # Is the reference field's value a value for a new dynamic field type?
-                            new_field = possible_values.get(ref_field_value)
-                            if new_field:
-                                # Set it to the new type with old bound field's raw data
-                                fields[dynamic_field_index] = r.BoundField(bound_field.raw_data, new_field)
-                                break
-
-        if header.type == r.RECORD_HEADER_COMPRESSED_TS:
-            ts_field = definition.type.fields.get(r.TIMESTAMP_FIELD_DEF_NUM)
-            if ts_field:
-                timestamp = self._last_timestamp + header.seconds_offset
-                fields.append(r.BoundField(timestamp, ts_field))
-                self._last_timestamp = timestamp
-
-        # XXX -- do compressed speed distance decoding here, similar to compressed ts
-        # ie, inject the fields iff they're in definition.type.fields
-
-        data = r.DataRecord(header, definition, fields)
-
-        self.records.append(data)
-
-        return data   # Do we need to return?
-
-    def _parse_record(self):
-        record_header = self._parse_record_header()
-
-        if record_header.message_type == r.MESSAGE_DEFINITION:
-            return self._parse_definition_record(record_header)
-        else:
-            return self._parse_data_record(record_header)
-
-    @staticmethod
-    def _get_bit(byte, bit_no):
-        return (byte >> bit_no) & 1
+    ##########
+    # Private low-level utility methods for reading of fit file
 
     def _read(self, size):
-        '''Call read from the file, otherwise the CRC won't match.'''
-
-        if self._data_read >= self._file_size - 2:
-            raise FitParseComplete
-
+        if size <= 0:
+            return None
         data = self._file.read(size)
-        self._data_read += size
+        if size != len(data):
+            raise FitEOFError("Tried to read %d bytes from .FIT file but got %d" % (size, len(data)))
 
-        for byte in data:
-            self._calc_crc(ord(byte))
-
+        if self.check_crc:
+            self._crc.update(data)
+        self._bytes_left -= len(data)
+        if self.logger:
+            self.logger.progress(((self._filesize - self._bytes_left)/self._filesize) * 100)
         return data
 
-    @staticmethod
-    def _get_endian_aware_struct(fmt, endian):
-        endian = '<' if endian == r.LITTLE_ENDIAN else '>'
-        return '%s%s' % (endian, fmt)
+    def _read_struct(self, fmt, endian='<', data=None, always_tuple=False):
+        fmt_with_endian = endian + fmt
+        size = struct.calcsize(fmt_with_endian)
+        if size <= 0:
+            raise FitParseError("Invalid struct format: %s" % fmt_with_endian)
 
-    def _struct_read(self, fmt, endian=r.LITTLE_ENDIAN):
-        fmt = self._get_endian_aware_struct(fmt, endian)
-        data = self._read(struct.calcsize(fmt))
-        return struct.unpack(fmt, data)
+        if data is None:
+            data = self._read(size)
 
-    def _calc_crc(self, char):
-        # Taken almost verbatim from FITDTP section 3.3.2
-        crc = self._crc
-        tmp = FitFile.CRC_TABLE[crc & 0xF]
-        crc = (crc >> 4) & 0x0FFF
-        crc = crc ^ tmp ^ FitFile.CRC_TABLE[char & 0xF]
+        unpacked = struct.unpack(fmt_with_endian, data)
+        # Flatten tuple if it's got only one value
+        return unpacked if (len(unpacked) > 1) or always_tuple else unpacked[0]
 
-        tmp = FitFile.CRC_TABLE[crc & 0xF]
-        crc = (crc >> 4) & 0x0FFF
-        self._crc = crc ^ tmp ^ FitFile.CRC_TABLE[(char >> 4) & 0xF]
+    def _read_and_assert_crc(self, allow_zero=False):
+        # CRC Calculation is little endian from SDK
+        crc_computed, crc_read = self._crc.value, self._read_struct(Crc.FMT)
+        if not self.check_crc:
+            return
+        if crc_computed == crc_read or (allow_zero and crc_read == 0):
+            return
+        raise FitCRCError('CRC Mismatch [computed: %s, read: %s]' % (
+            Crc.format(crc_computed), Crc.format(crc_read)))
+
+    ##########
+    # Private Data Parsing Methods
 
     def _parse_file_header(self):
-        '''Parse a fit file's header. This needs to be the first operation
-        performed when opening a file'''
-        def throw_exception(error):
-            raise FitParseError("Bad .FIT file header: %s" % error)
 
-        if self._file_size < 12:
-            throw_exception("Invalid file size")
+        # Initialize data
+        self._accumulators = {}
+        self._bytes_left = -1
+        self._complete = False
+        self._compressed_ts_accumulator = 0
+        self._crc = Crc()
+        self._local_mesgs = {}
 
-        # Parse the FIT header
-        header_size, self.protocol_version, self.profile_version, data_size, data_type = \
-                   self._struct_read(FitFile.FILE_HEADER_FMT)
-        num_extra_bytes = 0
+        header_data = self._read(12)
+        if header_data[8:12] != b'.FIT':
+            raise FitHeaderError("Invalid .FIT File Header")
 
-        if header_size < 12:
-            throw_exception("Invalid header size")
-        elif header_size > 12:
-            # Read and discard some extra bytes in the header
-            # as per https://github.com/dtcooper/python-fitparse/issues/1
-            num_extra_bytes = header_size - 12
-            self._read(num_extra_bytes)
+        # Larger fields are explicitly little endian from SDK
+        header_size, protocol_ver_enc, profile_ver_enc, data_size = self._read_struct('2BHI4x', data=header_data)
 
-        if data_type != '.FIT':
-            throw_exception('Data type not ".FIT"')
+        # Decode the same way the SDK does
+        self.protocol_version = float("%d.%d" % (protocol_ver_enc >> 4, protocol_ver_enc & ((1 << 4) - 1)))
+        self.profile_version = float("%d.%d" % (profile_ver_enc / 100, profile_ver_enc % 100))
 
-        # 12 byte header + 2 byte CRC = 14 bytes not included in that
-        if self._file_size != 14 + data_size + num_extra_bytes:
-            throw_exception("File size not set correctly in header.")
+        # Consume extra header information
+        extra_header_size = header_size - 12
+        if extra_header_size > 0:
+            # Make sure extra field in header is at least 2 bytes to calculate CRC
+            if extra_header_size < 2:
+                raise FitHeaderError('Irregular File Header Size')
+
+            # Consume extra two bytes of header and check CRC
+            self._read_and_assert_crc(allow_zero=True)
+
+            # Consume any extra bytes, since header size "may be increased in
+            # "future to add additional optional information" (from SDK)
+            self._read(extra_header_size - 2)
+
+        # After we've consumed the header, set the bytes left to be read
+        self._bytes_left = data_size
+
+    def _parse_message(self):
+        # When done, calculate the CRC and return None
+        if self._bytes_left <= 0:
+            if not self._complete:
+                self._read_and_assert_crc()
+
+            if self._file.tell() >= self._filesize:
+                self._complete = True
+                self.close()
+                return None
+
+            # Still have data left in the file - assuming chained fit files
+            self._parse_file_header()
+            return self._parse_message()
+
+        header = self._parse_message_header()
+
+        if header.is_definition:
+            message = self._parse_definition_message(header)
+        else:
+            message = self._parse_data_message(header)
+            if message.mesg_type is not None:
+                if message.mesg_type.name == 'developer_data_id':
+                    add_dev_data_id(message)
+                elif message.mesg_type.name == 'field_description':
+                    add_dev_field_description(message)
+
+        self._messages.append(message)
+        return message
+
+    def _parse_message_header(self):
+        header = self._read_struct('B')
+
+        if header & 0x80:  # bit 7: Is this record a compressed timestamp?
+            return MessageHeader(
+                is_definition=False,
+                is_developer_data=False,
+                local_mesg_num=(header >> 5) & 0x3,  # bits 5-6
+                time_offset=header & 0x1F,  # bits 0-4
+            )
+        else:
+            return MessageHeader(
+                is_definition=bool(header & 0x40),  # bit 6
+                is_developer_data=bool(header & 0x20), # bit 5
+                local_mesg_num=header & 0xF,  # bits 0-3
+                time_offset=None,
+            )
+
+    def _parse_definition_message(self, header):
+        # Read reserved byte and architecture byte to resolve endian
+        endian = '>' if self._read_struct('xB') else '<'
+        # Read rest of header with endian awareness
+        global_mesg_num, num_fields = self._read_struct('HB', endian=endian)
+        mesg_type = MESSAGE_TYPES.get(global_mesg_num)
+        field_defs = []
+
+        for n in range(num_fields):
+            field_def_num, field_size, base_type_num = self._read_struct('3B', endian=endian)
+            # Try to get field from message type (None if unknown)
+            field = mesg_type.fields.get(field_def_num) if mesg_type else None
+            base_type = BASE_TYPES.get(base_type_num, BASE_TYPE_BYTE)
+
+            if (field_size % base_type.size) != 0:
+                # NOTE: we could fall back to byte encoding if there's any
+                # examples in the wild. For now, just throw an exception
+                raise FitParseError("Invalid field size %d for type '%s' (expected a multiple of %d)" % (
+                    field_size, base_type.name, base_type.size))
+
+            # If the field has components that are accumulators
+            # start recording their accumulation at 0
+            if field and field.components:
+                for component in field.components:
+                    if component.accumulate:
+                        accumulators = self._accumulators.setdefault(global_mesg_num, {})
+                        accumulators[component.def_num] = 0
+
+            field_defs.append(FieldDefinition(
+                field=field,
+                def_num=field_def_num,
+                base_type=base_type,
+                size=field_size,
+            ))
+
+        dev_field_defs = []
+        if header.is_developer_data:
+            num_dev_fields = self._read_struct('B', endian=endian)
+            for n in range(num_dev_fields):
+                field_def_num, field_size, dev_data_index = self._read_struct('3B', endian=endian)
+                field = get_dev_type(dev_data_index, field_def_num)
+                dev_field_defs.append(DevFieldDefinition(
+                    field=field,
+                    dev_data_index=dev_data_index,
+                    def_num=field_def_num,
+                    size=field_size
+                  ))
+
+        def_mesg = DefinitionMessage(
+            header=header,
+            endian=endian,
+            mesg_type=mesg_type,
+            mesg_num=global_mesg_num,
+            field_defs=field_defs,
+            dev_field_defs=dev_field_defs,
+        )
+        self._local_mesgs[header.local_mesg_num] = def_mesg
+        return def_mesg
+
+    def _parse_raw_values_from_data_message(self, def_mesg):
+        # Go through mesg's field defs and read them
+        raw_values = []
+        for field_def in def_mesg.field_defs + def_mesg.dev_field_defs:
+            base_type = field_def.base_type
+            is_byte = base_type.name == 'byte'
+            # Struct to read n base types (field def size / base type size)
+            struct_fmt = str(int(field_def.size / base_type.size)) + base_type.fmt
+
+            # Extract the raw value, ask for a tuple if it's a byte type
+            raw_value = self._read_struct(
+                struct_fmt, endian=def_mesg.endian, always_tuple=is_byte,
+            )
+
+            # If the field returns with a tuple of values it's definitely an
+            # oddball, but we'll parse it on a per-value basis it.
+            # If it's a byte type, treat the tuple as a single value
+            if isinstance(raw_value, tuple) and not is_byte:
+                raw_value = tuple(base_type.parse(rv) for rv in raw_value)
+            else:
+                # Otherwise, just scrub the singular value
+                raw_value = base_type.parse(raw_value)
+
+            raw_values.append(raw_value)
+        return raw_values
+
+    @staticmethod
+    def _resolve_subfield(field, def_mesg, raw_values):
+        # Resolve into (field, parent) ie (subfield, field) or (field, None)
+        if field.subfields:
+            for sub_field in field.subfields:
+                # Go through reference fields for this sub field
+                for ref_field in sub_field.ref_fields:
+                    # Go through field defs AND their raw values
+                    for field_def, raw_value in zip(def_mesg.field_defs, raw_values):
+                        # If there's a definition number AND raw value match on the
+                        # reference field, then we return this subfield
+                        if (field_def.def_num == ref_field.def_num) and (ref_field.raw_value == raw_value):
+                            return sub_field, field
+        return field, None
+
+    def _apply_scale_offset(self, field, raw_value):
+        # Apply numeric transformations (scale+offset)
+        if isinstance(raw_value, tuple):
+            # Contains multiple values, apply transformations to all of them
+            return tuple(self._apply_scale_offset(field, x) for x in raw_value)
+        elif isinstance(raw_value, num_types):
+            if field.scale:
+                raw_value = float(raw_value) / field.scale
+            if field.offset:
+                raw_value = raw_value - field.offset
+        return raw_value
+
+    @staticmethod
+    def _apply_compressed_accumulation(raw_value, accumulation, num_bits):
+        max_value = (1 << num_bits)
+        max_mask = max_value - 1
+        base_value = raw_value + (accumulation & ~max_mask)
+
+        if raw_value < (accumulation & max_mask):
+            base_value += max_value
+
+        return base_value
+
+    def _parse_data_message(self, header):
+        def_mesg = self._local_mesgs.get(header.local_mesg_num)
+        if not def_mesg:
+            raise FitParseError('Got data message with invalid local message type %d' % (
+                header.local_mesg_num))
+
+        raw_values = self._parse_raw_values_from_data_message(def_mesg)
+        field_datas = []  # TODO: I don't love this name, update on DataMessage too
+
+        # TODO: Maybe refactor this and make it simpler (or at least broken
+        #       up into sub-functions)
+        for field_def, raw_value in zip(def_mesg.field_defs + def_mesg.dev_field_defs, raw_values):
+            field, parent_field = field_def.field, None
+            if field:
+                field, parent_field = self._resolve_subfield(field, def_mesg, raw_values)
+
+                # Resolve component fields
+                if field.components:
+                    for component in field.components:
+                        # Render its raw value
+                        try:
+                            cmp_raw_value = component.render(raw_value)
+                        except ValueError:
+                            continue
+
+                        # Apply accumulated value
+                        if component.accumulate and cmp_raw_value is not None:
+                            accumulator = self._accumulators[def_mesg.mesg_num]
+                            cmp_raw_value = self._apply_compressed_accumulation(
+                                cmp_raw_value, accumulator[component.def_num], component.bits,
+                            )
+                            accumulator[component.def_num] = cmp_raw_value
+
+                        # Apply scale and offset from component, not from the dynamic field
+                        # as they may differ
+                        cmp_raw_value = self._apply_scale_offset(component, cmp_raw_value)
+
+                        # Extract the component's dynamic field from def_mesg
+                        cmp_field = def_mesg.mesg_type.fields[component.def_num]
+
+                        # Resolve a possible subfield
+                        cmp_field, cmp_parent_field = self._resolve_subfield(cmp_field, def_mesg, raw_values)
+                        cmp_value = cmp_field.render(cmp_raw_value)
+
+                        # Plop it on field_datas
+                        field_datas.append(
+                            FieldData(
+                                field_def=None,
+                                field=cmp_field,
+                                parent_field=cmp_parent_field,
+                                value=cmp_value,
+                                raw_value=cmp_raw_value,
+                            )
+                        )
+
+                # TODO: Do we care about a base_type and a resolved field mismatch?
+                # My hunch is we don't
+                value = self._apply_scale_offset(field, field.render(raw_value))
+            else:
+                value = raw_value
+
+            # Update compressed timestamp field
+            if (field_def.def_num == FIELD_TYPE_TIMESTAMP.def_num) and (raw_value is not None):
+                self._compressed_ts_accumulator = raw_value
+
+            field_datas.append(
+                FieldData(
+                    field_def=field_def,
+                    field=field,
+                    parent_field=parent_field,
+                    value=value,
+                    raw_value=raw_value,
+                )
+            )
+
+        # Apply timestamp field if we got a header
+        if header.time_offset is not None:
+            ts_value = self._compressed_ts_accumulator = self._apply_compressed_accumulation(
+                header.time_offset, self._compressed_ts_accumulator, 5,
+            )
+            field_datas.append(
+                FieldData(
+                    field_def=None,
+                    field=FIELD_TYPE_TIMESTAMP,
+                    parent_field=None,
+                    value=FIELD_TYPE_TIMESTAMP.render(ts_value),
+                    raw_value=ts_value,
+                )
+            )
+
+        # Apply data processors
+        for field_data in field_datas:
+            # Apply type name processor
+            self._processor.run_type_processor(field_data)
+            self._processor.run_field_processor(field_data)
+            self._processor.run_unit_processor(field_data)
+
+        data_message = DataMessage(header=header, def_mesg=def_mesg, fields=field_datas)
+        self._processor.run_message_processor(data_message)
+
+        return data_message
+
+    ##########
+    # Public API
+
+    def get_messages(self, name=None, with_definitions=False, as_dict=False, logger=None):
+        if with_definitions:  # with_definitions implies as_dict=False
+            as_dict = False
+
+        if name is not None:
+            if is_iterable(name):
+                names = set(name)
+            else:
+                names = set((name,))
+
+        def should_yield(message):
+            if with_definitions or message.type == 'data':
+                # name arg is None we return all
+                if name is None:
+                    return True
+                else:
+                    if (message.name in names) or (message.mesg_num in names):
+                        return True
+            return False
+
+        if logger:
+            self.logger = logger
+
+        # Yield all parsed messages first
+        for message in self._messages:
+            if should_yield(message):
+                yield message.as_dict() if as_dict else message
+
+        # If there are unparsed messages, yield those too
+        while not self._complete:
+            message = self._parse_message()
+            if message and should_yield(message):
+                yield message.as_dict() if as_dict else message
+
+    @property
+    def messages(self):
+        # TODO: could this be more efficient?
+        return list(self.get_messages())
+
+    def parse(self):
+        while self._parse_message():
+            pass
+
+    def __iter__(self):
+        return self.get_messages()
+
+
+# TODO: Create subclasses like Activity and do per-value monkey patching
+# for example local_timestamp to adjust timestamp on a per-file basis

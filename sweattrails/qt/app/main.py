@@ -36,7 +36,7 @@ logger = gripe.get_logger(__name__)
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--download", action="store_true",
                     help="Download new activities from your Garmin device over ANT+")
-parser.add_argument("-i", "--import", dest="imp", type=str, nargs="+",
+parser.add_argument("-i", "--imp", dest="imp", type=str, nargs="+",
                     help="Import the given file")
 parser.add_argument("-W", "--withings", action="store_true",
                     help="Download Withings data")
@@ -79,10 +79,7 @@ try:
 
     if cmdline.withings:
         app.withings()
-
-
+    sys.exit(app.exec_())
 except Exception as e:
     print(e)
     traceback.print_exc()
-
-app.exec_()

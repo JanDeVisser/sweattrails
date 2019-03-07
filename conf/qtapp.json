@@ -1,3 +1,8 @@
 {
-    "settings": {}
+    "settings": {
+        "user": {
+            "user_id": "jan@de-visser.net",
+            "password": "sha://83f2fc1759a60cdbbe28d82e4fa6d84e3f1ae780"
+        }
+    }
 }

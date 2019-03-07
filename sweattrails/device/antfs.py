@@ -21,7 +21,6 @@
 
 import base64
 import sys
-import time
 import threading
 
 import gripe
@@ -230,8 +229,8 @@ class GarminBridge(object):
 # ---------------------------------------------------------------------------
 #
 
+
 if __name__ == "__main__":
-    import time
     import traceback
 
     class TestBridge(GarminBridge):
@@ -269,7 +268,7 @@ if __name__ == "__main__":
 
     def main():
         try:
-            bridge = TestBridge(keep_alive = True)
+            bridge = TestBridge(keep_alive=True)
             try:
                 bridge.run()
             except (Exception, KeyboardInterrupt):

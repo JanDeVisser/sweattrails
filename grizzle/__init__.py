@@ -327,10 +327,19 @@ class UserManager(object):
         return User.all(keys_only=True).count() > 0
 
     def authenticate(self, **kwargs):
-        authenticator = kwargs.get("authenticator",
-                                   gripe.Config.grizzle.get("authenticator", "grizzle.qt.authenticate"))
-        authenticator = gripe.resolve(authenticator)
-        return authenticator(**kwargs)
+        uid = kwargs.get("uid")
+        password = kwargs.get("password")
+        if uid and password:
+            user = self.get(uid)
+            if user and user.authenticate(password=password):
+                return user, password, kwargs.get("savecredentials", False)
+            else:
+                return None, None, None
+        else:
+            authenticator = kwargs.get("authenticator",
+                                       gripe.Config.grizzle.get("authenticator", "grizzle.qt.authenticate"))
+            authenticator = gripe.resolve(authenticator)
+            return authenticator(**kwargs)
 
 
 if False:

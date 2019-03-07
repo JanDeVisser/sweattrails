@@ -18,16 +18,42 @@
 
 
 from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QObject
+from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import pyqtSignal
 
+from PyQt5.QtCore import QModelIndex
 from PyQt5.QtWidgets import QTableView
+from PyQt5.QtWidgets import QTreeView
 
+import gripe
 import grumble.qt.model
 
 
-class TableView(QTableView):
+class View:
     objectSelected = pyqtSignal(grumble.key.Key)
-    
+
+    def refresh(self, *args):
+        self.model().beginResetModel()
+        self.resetQuery()
+        self.model().flush()
+        self.model().endResetModel()
+        gripe.call_if_exists(self, "on_refresh", None, *args)
+
+    def row_selected(self, new, old=None):
+        key = self.model().data(new, Qt.UserRole)
+        if key:
+            self.objectSelected.emit(key)
+
+    def select_first(self):
+        if self.model().rowCount() > 0:
+            ix = self.model().index(0, 0, QModelIndex())
+            self.setCurrentIndex(ix)
+            key = self.model().data(ix, Qt.UserRole)
+            self.objectSelected.emit(key)
+
+
+class TableView(QTableView, View):
     def __init__(self, query = None, columns = None, parent = None):
         super(TableView, self).__init__(parent)
         self._query = None
@@ -42,14 +68,13 @@ class TableView(QTableView):
         hh.setStretchLastSection(True)
         self.resizeColumnsToContents()
         self.setSortingEnabled(True)
-        self.doubleClicked.connect(self.rowSelected)
+        self.activated.connect(self.row_selected)
+        self.pressed.connect(self.row_selected)
+        # QTimer.singleShot(0, self.select_first)
 
-    def refresh(self):
-        self.model().beginResetModel()
-        self.resetQuery()
-        self.model().flush()
-        self.model().endResetModel()
+    def on_refresh(self, *args, **kwargs):
         self.resizeColumnsToContents()
+        self.reset()
 
     def setQueryAndColumns(self, query, *columns):
         self._query = query
@@ -64,7 +89,7 @@ class TableView(QTableView):
                 if hasattr(c, "template"):
                     hh.resizeSection(ix, len(c.template) * fm.maxWidth() + 11)
 
-    def query(self):
+    def query(self) -> grumble.model.Query:
         return self._query
 
     def columns(self):
@@ -73,8 +98,15 @@ class TableView(QTableView):
     def resetQuery(self):
         pass
 
-    def rowSelected(self, ix):
-        key = self.model().data(ix, Qt.UserRole)
-        if key:
-            self.objectSelected.emit(key)
 
+class TreeView(QTreeView, View):
+    def __init__(self, parent, kind, root=None):
+        super(TreeView, self).__init__(parent)
+        self._model = grumble.qt.model.TreeModel(self, kind, root)
+        self.setModel(self._model)
+        self.activated.connect(self.row_selected)
+        self.pressed.connect(self.row_selected)
+        QTimer.singleShot(0, self.select_first)
+
+    def resetQuery(self):
+        pass

@@ -145,6 +145,14 @@ class Tx(object):
             cls._adapter_class.setup(c)
 
     @classmethod
+    def reset_schema(cls, drop=False):
+        if not Tx._init:
+            Tx._init = True
+            Tx._init_schema()
+        if hasattr(cls._adapter_class, "reset_schema") and callable(cls._adapter_class.reset_schema):
+            cls._adapter_class.reset_schema(drop)
+
+    @classmethod
     def begin(cls, role = "user", database = None, autocommit = False):
         return cls._tl.tx if hasattr(cls._tl, "tx") else Tx(role, database, autocommit)
 
@@ -218,6 +226,7 @@ class Tx(object):
         if tx:
             del tx.cache
             tx.cache = {}
+
 
 logger.info("Initialized module %s", __name__)
 

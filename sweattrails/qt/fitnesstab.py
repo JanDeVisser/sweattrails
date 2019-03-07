@@ -31,7 +31,7 @@ import grumble.qt.bridge
 import grumble.qt.model
 import grumble.qt.view
 import sweattrails.config
-import sweattrails.qt.bg.bg
+import grumpy.bg.bg
 import sweattrails.qt.graphs
 import sweattrails.qt.stackedpage
 import sweattrails.qt.view
@@ -203,7 +203,7 @@ class WeightPage(QWidget):
     def withingsDownload(self):
         job = sweattrails.withings.WithingsJob()
         job.jobFinished.connect(self.list.refresh)
-        sweattrails.qt.bg.bg.BackgroundThread.add_backgroundjob(job)
+        grumpy.bg.bg.BackgroundThread.add_backgroundjob(job)
         
     def addWeightEntry(self):
         pass

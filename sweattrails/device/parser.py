@@ -27,8 +27,12 @@ import sweattrails.session
 logger = gripe.get_logger(__name__)
 
 
-class Logger(object):
-    def status_message(self, msg, *args):
+class Logger:
+    def __init__(self):
+        self.progress_msg = None
+
+    @staticmethod
+    def status_message(msg, *args):
         logger.debug(msg.format(*args))
 
     def progress_init(self, msg, *args):
@@ -42,7 +46,7 @@ class Logger(object):
         logger.debug(self.progress_msg + " - Ended")
 
 
-class Record(object):
+class Record:
     def __init__(self, bridge):
         self._bridge = bridge
         self._grumble_obj = None
@@ -193,14 +197,17 @@ class Activity(Lap):
             raise sweattrails.device.exceptions.SessionExistsError(session)
             
         self.session = sweattrails.session.Session()
+        self.session.interval_id = str(gripe.conversions.local_date_to_utc(self.start_time)) + "Z"
         self.session.athlete = athlete
         self.session.start_time = self.start_time
         self.session.inprogress = False
+
         profile = sweattrails.config.ActivityProfile.get_profile(athlete)
         assert profile, "Activity.convert(): User %s has no profile" % athlete.uid()
         sessiontype = profile.get_default_SessionType(self.get_data("sport"))
         assert sessiontype, "Activity.convert(): User %s has no default session type for sport %s" % \
                             (athlete.uid(), self.get_data("sport"))
+        self.session.put()
         self.session.sessiontype = sessiontype
         self.status_message("Converting session {}/{} ({:s})",
                             self.index, len(self.container.activities), sessiontype.name)
@@ -242,7 +249,7 @@ class Activity(Lap):
         return self.session
 
 
-class Parser(object):
+class Parser:
     def __init__(self, filename):
         self.filename = filename
         self.name = self.filename
@@ -259,6 +266,9 @@ class Parser(object):
         
     def set_logger(self, log):
         self.logger = log
+
+    def get_logger(self):
+        return self.logger
 
     def status_message(self, msg, *args):
         if self.logger and hasattr(self.logger, "status_message"):
@@ -312,6 +322,8 @@ class Parser(object):
             raise
         except Exception as exception:
             logger.exception("Exception parsing FIT file")
+            import sys
+            print(exception.__traceback__, file=sys.stderr)
             raise sweattrails.device.exceptions.FileImportError(exception)
 
     def _process(self):

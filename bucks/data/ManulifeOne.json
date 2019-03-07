@@ -1,0 +1,79 @@
+{
+  "mapping": { "date": 1, "amount": 2, "description": 3 },
+  "templates": [
+    { "type": "D", "template": "^ATM", "category": "Cash" },
+
+    { "type": "D", "template": "WATERLOO SQUARE VALUMA Z", "contact": "Bob's ValuMart", "category": "Groceries" },
+    { "type": "D", "template": "SOBEYS", "contact": "Sobey's", "category": "Groceries" },
+    { "type": "D", "template": "ZEHRS", "contact": "Zehr's", "category": "Groceries" },
+    { "type": "D", "template": "FOODLAND", "contact": "Foodland", "category": "Groceries" },
+    { "type": "D", "template": "T&T SUPERMARKET", "contact": "T&T Supermarket", "category": "Groceries" },
+    { "type": "D", "template": "VINCENZO'S HOWVID", "contact": "Vincenzo's", "category": "Groceries" },
+    { "type": "D", "template": "CHARLES QUALITY MEATS", "contact": "Charles Quality Meat", "category": "Groceries" },
+    { "type": "D", "template": "T AND J SEAFOODS", "contact": "T&J Seafood", "category": "Groceries" },
+    { "type": "D", "template": "LCBO/RAO", "contact": "LCBO", "category": "Booze" },
+    { "type": "D", "template": "SHOPPERS DRUG MART", "contact": "LCBO", "category": "Pharmacy" },
+    { "type": "D", "template": "REXALL PHARMACY", "contact": "Rexall", "category": "Pharmacy" },
+
+    { "type": "D", "template": "OASIS JOE'S BARBER SHO", "contact": "Oasis Joe's", "category": "Hair" },
+
+    { "type": "D", "template": "PAWS EVOLUTION", "contact": "Paws Evolution", "category": "Pet Food", "project": "Darcy" },
+    { "type": "D", "template": "TOUCH OF LOVE", "contact": "Touch Of Love", "category": "Pet Grooming", "project": "Darcy" },
+
+    { "type": "D", "template": "FIDO MOBILE", "contact": "Fido", "category": "Cellphone" },
+
+    { "type": "D", "template": "ZIGGY S CYCLE", "contact": "Ziggy's Cycle and Sport", "category": "Cycling" },
+    { "type": "D", "template": "POS MEC ", "contact": "Mountain Equipment Coop", "category": "Cycling" },
+    { "type": "D", "template": "RUNNERS CHOICE", "contact": "Ziggy's Cycle and Sport", "category": "Running", "project": "Jan" },
+    { "type": "D", "template": "MICHAELS OF CANADA", "contact": "Michaels", "category": "Decor", "project": "Kitchener" },
+
+    { "type": "D", "template": "ULTRAMAR", "contact": "Ultramar", "category": "Gas" },
+    { "type": "D", "template": "POS UPI ", "contact": "UPI", "category": "Gas" },
+    { "type": "D", "template": "CANADIAN TIRE GAS BAR", "contact": "Canadian Tire", "category": "Gas" },
+    { "type": "D", "template": "BPY HWY407 ETR", "contact": "407 ETR", "category": "407 ETR" },
+    { "type": "D", "template": "DISCOUNT CAR AND TRUCK", "contact": "Discount Car Rental", "category": "Car Rental" },
+
+    { "type": "D", "template": "GRAFFITI MARKET", "contact": "Graffiti Market", "category": "Eating out" },
+    { "type": "D", "template": "JANET'S COUNTRY DONUT", "contact": "Janet's Country Donut", "category": "Eating out" },
+    { "type": "D", "template": "A&W", "contact": "A&W", "category": "Eating out" },
+    { "type": "D", "template": "HUETHER HOTEL", "contact": "Huether Hotel", "category": "Eating out" },
+    { "type": "D", "template": "EUREST-SUNLIFE", "contact": "SunLife Cafeteria", "category": "Eating out" },
+    { "type": "D", "template": "THE POKE BOX", "contact": "The Poke Box", "category": "Eating out" },
+
+    { "type": "D", "template": "SHOPBIKE", "contact": "Shopbike", "category": "Coffee" },
+    { "type": "D", "template": "A.D.S.HIGH IMPACT ADVE 15141501", "contact": "Shopbike", "category": "Coffee" },
+    { "type": "D", "template": "STARBUCKS COFFEE", "contact": "Starbucks", "category": "Coffee" },
+    { "type": "D", "template": "MATTER OF TASTE COFFEE", "contact": "Matter Of Taste", "category": "Coffee" },
+    { "type": "D", "template": "BALZAC'S COFFEE", "contact": "Balzac's", "category": "Coffee" },
+    { "type": "D", "template": "BERLIN BICYCLE CAFE", "contact": "Berlin Bicycle Cafe", "category": "Coffee" },
+    { "type": "D", "template": "TIM HORTONS", "contact": "Tim Hortons", "category": "Coffee" },
+    { "type": "D", "template": "SECOND CUP", "contact": "Second Cup", "category": "Coffee" },
+
+    { "type": "D", "template": "SWANSON'S", "contact": "Swanson's Home Hardware", "category": "Maintenance", "project": "Kitchener" },
+    { "type": "D", "template": "CANADIAN TIRE", "contact": "Canadian Tire", "category": "Maintenance", "project": "Kitchener" },
+
+    { "type": "D", "template": "UW SCHOOL OF OPTOMETRY", "contact": "UW School of Optometry", "category": "Vision" },
+
+    { "type": "D", "template": "BPY UTILITIES", "contact": "City of Kitchener", "category": "Gas", "project": "Kitchener" },
+    { "type": "D", "template": "BPY UNION GAS LTD", "contact": "Union Gas", "category": "Gas", "project": "Bayfield" },
+    { "type": "D", "template": "BPY Hydro One", "contact": "Hydro One", "category": "Hydro", "project": "Bayfield" },
+    { "type": "D", "template": "KITCHENER WILMOT HYDRO", "contact": "Kitchener Wilmot Hydro", "category": "Hydro", "project": "Kitchener" },
+
+    { "type": "D", "template": "INS AVIVA-HOME/AUTO", "contact": "RBC Insurance/Aviva", "category": "Home/Auto" },
+    { "type": "D", "template": "MSP MANULIFE", "contact": "Manulife Insurance", "category": "Life Jan" },
+
+    { "type": "C", "template": "CTC CANADA", "contact": "Government of Canada", "category": "CPP/CTC" },
+    { "type": "C", "template": "ANN BMO INSURANCE", "contact": "Bank of Montreal", "category": "Annuities" },
+    { "type": "C", "template": "ANN SUN LIFE", "contact": "SunLife Insurance", "category": "Annuities" },
+    { "type": "C", "template": "INS SUN LIFE", "contact": "SunLife Insurance", "category": "LTD Jan" },
+    { "type": "C", "template": "PAY SUN LIFE ASSURA", "contact": "SunLife Canada", "category": "Salary Mariska" },
+
+    { "type": "T", "template": "PAYPAL", "counter": "Paypal" },
+    { "type": "T", "template": "PAY VISA ROYAL BANK OF CANADA", "counter": "RBC VISA" },
+    { "type": "T", "template": "PAY HBC CREDIT CARD", "counter": "HBC CC" },
+    { "type": "T", "template": "PAY VISA MANULIFE BANK", "counter": "Manulife VISA" },
+    { "type": "T", "template": "MSP ACM-9721", "counter": "RRSP Mariska" },
+    { "type": "T", "template": "PAY ASSANTE CAPITAL MANAGEMENT 98327554NZ", "counter": "TFSA Mariska" },
+    { "type": "T", "template": "PAY ASSANTE CAPITAL MANAGEMENT 98327518NZ", "counter": "TFSA Jan" }
+  ]
+}

@@ -38,6 +38,7 @@ class QueryType(AutoName):
     Insert = enum.auto()
     Delete = enum.auto()
     Count = enum.auto()
+    Aggregate = enum.auto()
 
 
 class DbAdapter(object):
@@ -119,7 +120,8 @@ class ModelQueryRenderer(object):
     def conditions(self):
         return self._query.conditions()
 
-    def _update_audit_info(self, new_values, insert):
+    @staticmethod
+    def _update_audit_info(new_values, insert):
         # Set update audit info:
         new_values["_updated"] = datetime.datetime.now()
         new_values["_updatedby"] = gripe.sessionbridge.get_sessionbridge().userid()
@@ -136,7 +138,8 @@ class ModelQueryRenderer(object):
             if "_createdby" in new_values:
                 new_values.pop("_createdby")
 
-    def _scrub_audit_info(self, new_values):
+    @staticmethod
+    def _scrub_audit_info(new_values):
         for c in ("_updated", "_updatedby", "_created", "_createdby", "_ownerid", "_acl"):
             if c in new_values:
                 del new_values[c]
@@ -154,6 +157,12 @@ class ModelQueryRenderer(object):
             elif query_type == QueryType.Count:
                 sql = "SELECT COUNT(*) AS COUNT FROM %s k" % self.tablename()
                 cols = ('COUNT',)
+                for j in self.joins():
+                    sql += j.join_sql()
+            elif query_type == QueryType.Aggregate:
+                assert self._query.sum()
+                sql = "SELECT SUM(k.%s) AS SUM FROM %s k" % (self._query.sum(), self.tablename())
+                cols = ('SUM',)
                 for j in self.joins():
                     sql += j.join_sql()
             elif query_type in (QueryType.Update, QueryType.Insert):

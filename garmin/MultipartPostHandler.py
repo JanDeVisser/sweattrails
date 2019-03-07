@@ -26,7 +26,7 @@ Inspirations:
     Fabien Seisen: <fabien@seisen.org>
 
 Example:
-  import MultipartPostHandler, urllib2, cookielib
+  imp MultipartPostHandler, urllib2, cookielib
 
   cookies = cookielib.CookieJar()
   opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cookies),

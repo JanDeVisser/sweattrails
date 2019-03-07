@@ -1,4 +1,4 @@
-#from sweattrails.device.ant.base import Message
+#from sweattrails.device.ant.base imp Message
 from sweattrails.device.ant.easy.node import Node, Message
 from sweattrails.device.ant.easy.channel import Channel
 from sweattrails.device.ant.fs.manager import Application

@@ -22,9 +22,9 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-#from ant.base import Message
-#from ant.easy.node import Node, Message
-#from ant.easy.channel import Channel
+#from ant.base imp Message
+#from ant.easy.node imp Node, Message
+#from ant.easy.channel imp Channel
 from ant.fs.manager import Application, AntFSAuthenticationException
 
 import utilities

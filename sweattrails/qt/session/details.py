@@ -16,6 +16,8 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
+import traceback
+
 from PyQt5.QtCore import QCoreApplication
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QPushButton
@@ -28,11 +30,12 @@ import gripe.conversions
 import grumble.qt.bridge
 import grumble.qt.model
 import grumble.qt.view
-import sweattrails.qt.bg.job
+import grumpy.bg.job
 import sweattrails.qt.graphs
 import sweattrails.qt.session.bike
 import sweattrails.qt.session.maps
 import sweattrails.qt.session.run
+import sweattrails.qt.session.tab
 import sweattrails.qt.view
 import sweattrails.session
 
@@ -134,6 +137,7 @@ class MapPage(QWidget):
         self.interval = instance
         layout.addWidget(self.map)
 
+
     def selected(self):
         self.map.drawMap(self.interval)
 
@@ -150,13 +154,13 @@ class IntervalList(grumble.qt.view.TableView):
                                 sweattrails.qt.view.TimestampColumn("duration", header="Time"),
                                 sweattrails.qt.view.DistanceColumn("distance", header="Distance"),
                                 sweattrails.qt.view.PaceSpeedColumn("average_speed", interval=interval))
-        self.clicked.connect(self.onClick)
+        self.clicked.connect(self.on_click)
 
 
     def resetQuery(self):
         self.query().set_parent(self.interval)
 
-    def onClick(self, ix):
+    def on_click(self, ix):
         key = self.model().data(ix, Qt.UserRole)
         if key:
             interval = key()
@@ -164,7 +168,7 @@ class IntervalList(grumble.qt.view.TableView):
             while p is not None and not isinstance(p, sweattrails.qt.session.tab.SessionTab):
                 p = p.parent()
             if p is not None:
-                p.map.drawSegment(interval.timestamp, interval.duration)
+                p.map.draw_segment(interval.timestamp, interval.duration)
 
 
 class IntervalListPage(QWidget):
@@ -208,10 +212,13 @@ class RawDataPage(QWidget):
         layout.addWidget(self.list)
 
     def selected(self):
-        self.list.refresh()
+        try:
+            self.list.refresh()
+        except:
+            traceback.print_exc()
 
 
-class ReanalyzeJob(sweattrails.qt.bg.job.Job):
+class ReanalyzeJob(grumpy.bg.job.Job):
     def __init__(self, interval):
         super(ReanalyzeJob, self).__init__()
         self.interval = interval
@@ -229,6 +236,7 @@ class IntervalPage(grumble.qt.bridge.FormWidget):
                                            grumble.qt.bridge.FormButtons.AllButtons
                                            if interval.basekind() == "session"
                                            else grumble.qt.bridge.FormButtons.EditButtons)
+        self.plugin = None
         with gripe.db.Tx.begin():
             interval = interval()
             self.interval = interval
@@ -267,13 +275,13 @@ class IntervalPage(grumble.qt.bridge.FormWidget):
                              displayconverter=sweattrails.qt.view.PaceSpeed,
                              labelprefixes={"Pace": "Best", "Speed": "Maximum"})
             row += 1
-            self.setInstance(interval)
+            self.set_instance(interval)
             intervals = sweattrails.session.Interval.query(parent=interval).fetchall()
             if len(intervals) > 1:
                 page = IntervalListPage(self)
                 self.addTab(page, "Intervals")
                 page.list.objectSelected.connect(parent.addInterval)
-            self.partSpecificContent(interval)
+            self.part_specific_content(interval)
             self.addTab(GraphPage(self, interval), "Graphs")
             # self.addTab(MapPage(self, interval), "Map")
             self.addTab(MiscDataPage(self, interval), "Other Data")
@@ -284,21 +292,21 @@ class IntervalPage(grumble.qt.bridge.FormWidget):
             self.exception.connect(QCoreApplication.instance().status_message)
             self.instanceSaved.connect(QCoreApplication.instance().status_message)
             self.instanceDeleted.connect(QCoreApplication.instance().status_message)
-            self.setInstance(interval)
+            self.set_instance(interval)
 
     def analyze(self):
         job = ReanalyzeJob(self.interval)
         job.submit()
 
-    def partSpecificContent(self, instance):
+    def part_specific_content(self, instance):
         self.plugin = None
         part = instance.intervalpart
         if not part:
             logger.debug("No part? That's odd")
             return
-        pluginClass = self.getPartPluginClass(part)
-        if pluginClass:
-            self.plugin = pluginClass(self, instance)
+        plugin_class = self.getPartPluginClass(part)
+        if plugin_class:
+            self.plugin = plugin_class(self, instance)
             self.plugin.handle(instance)
 
     _plugins = {
@@ -311,15 +319,15 @@ class IntervalPage(grumble.qt.bridge.FormWidget):
         if part.__class__ in cls._plugins:
             logger.debug("Hardcoded plugin %s", cls._plugins[part.__class__])
             return cls._plugins[part.__class__]
-        pluginclass = None
-        pluginname = gripe.Config.sweattrails.get(part.__class__.__name__)
-        if pluginname:
-            logger.debug("Configured plugin %s", pluginname)
-            pluginclass = gripe.resolve(pluginname)
-            cls._plugins[part.__class__] = pluginclass
+        plugin_class = None
+        plugin_name = gripe.Config.sweattrails.get(part.__class__.__name__)
+        if plugin_name:
+            logger.debug("Configured plugin %s", plugin_name)
+            plugin_class = gripe.resolve(plugin_name)
+            cls._plugins[part.__class__] = plugin_class
         else:
             logger.debug("No plugin")
-        return pluginclass
+        return plugin_class
 
 
 class SessionDetails(QWidget):
@@ -330,13 +338,17 @@ class SessionDetails(QWidget):
         layout.addWidget(self.tabs)
         self.setMinimumSize(600, 600)
         self.tabs.currentChanged.connect(self.selectInterval)
+        self.session = None
 
     def setSession(self, session):
         self.session = session
         self.tabs.clear()
         self.tabs.addTab(IntervalPage(session, self), str(session.start_time))
+        self.selectInterval(0)
         if not session.waypoints():
-            self.parent().map.hide()
+            self.parent().map_holder.hide_map()
+        else:
+            self.parent().map_holder.show_map()
 
     def setTab(self, tab):
         t = self.tabs.currentWidget()
@@ -345,12 +357,13 @@ class SessionDetails(QWidget):
     def addInterval(self, interval):
         self.tabs.addTab(IntervalPage(interval, self), str(interval.timestamp))
         if interval.waypoints():
-            self.parent().map.drawSegment(interval.timestamp, interval.duration)
+            self.parent().map.draw_segment(interval.timestamp, interval.duration)
 
     def selectInterval(self, ix):
         if self.session.waypoints():
             if ix == 0:
-                self.parent().map.drawMap(self.session)
+                self.parent().map.draw_map(self.session)
+                # pass
             elif ix > 0:
                 page = self.tabs.currentWidget()
-                self.parent().map.drawSegment(page.interval.timestamp, page.interval.duration)
+                self.parent().map.draw_segment(page.interval.timestamp, page.interval.duration)

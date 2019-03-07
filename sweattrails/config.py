@@ -220,9 +220,20 @@ class NodeTypeDefinition:
         ref = getattr(node, self.name())
         assert ref, "%s.update_node: no reference" % self.name()
         profile = node.get_profile()
-        # FIXME Why??
-        # if ref.parent_key() == profile.parent_key():
-        #     ref.update(descriptor)
+        if ref.parent_key() == profile.parent_key():
+            d = dict(descriptor)
+            if self.name() in d:
+                del d[self.name()]
+            for p in self.link_properties():
+                if p in d:
+                    del d[p]
+            if d:
+                try:
+                    ref.update(d)
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    pass
         dirty = False
         d = dict(descriptor)
         for (prop, t) in self.link_properties().items():
@@ -461,7 +472,7 @@ class ActivityProfile(grizzle.UserPart):
     def after_insert(self):
         # Find the default profile:
         profile = self.__class__.by("isdefault", True, parent=None)
-        # If there is a default profile, import it into this profile:
+        # If there is a default profile, imp it into this profile:
         if profile:
             self.import_profile(profile)
 
@@ -496,7 +507,7 @@ class ActivityProfile(grizzle.UserPart):
                         node.put()
                     node_type.update_node(node, subdict)
             else:
-                # Path for import or JSON creates:
+                # Path for imp or JSON creates:
                 # Find or create node, and update it.
                 node_type.get_or_create_node(self, subdict, parent)
 

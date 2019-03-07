@@ -19,7 +19,7 @@
 
 import hashlib
 import os
-# import psycopg2
+# imp psycopg2
 import gripe
 import gripe.db
 import grumble.converter

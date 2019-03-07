@@ -16,6 +16,8 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
+import os
+import shutil
 
 from PyQt5.QtCore import QCoreApplication
 from PyQt5.QtCore import Qt
@@ -39,14 +41,13 @@ from PyQt5.QtWidgets import QVBoxLayout
 from PyQt5.QtWidgets import QWidget
 
 import gripe
-# import grizzle
-import sweattrails.qt.bg.bg
-import sweattrails.qt.bg.job
+# imp grizzle
 import sweattrails.qt.fitnesstab
 import sweattrails.qt.imports
 import sweattrails.qt.profiletab
 import sweattrails.qt.session.tab
-#import sweattrails.qt.strava
+# imp sweattrails.qt.strava
+import sweattrails.qt.gc
 import sweattrails.qt.usertab
 
 logger = gripe.get_logger(__name__)
@@ -197,6 +198,7 @@ class STMainWindow(QMainWindow):
         icon = QPixmap("image/sweatdrops.png")
         self.setWindowIcon(QIcon(icon))
         QCoreApplication.instance().refresh.connect(self.userSet)
+        self.setWindowState(Qt.WindowMaximized)
 
     def createActions(self):
         self.switchUserAct = QAction("&Switch User", self,
@@ -210,6 +212,9 @@ class STMainWindow(QMainWindow):
         self.downloadAct = QAction("&Download", self, shortcut = "Ctrl+D",
                                    statusTip = "Download activities from device",
                                    triggered = QCoreApplication.instance().download)
+        self.gcAct = QAction("&Garmin Connect", self,
+                             statusTip="Download from Garmin Connect",
+                             triggered=self.gc_download)
         self.withingsAct = QAction("&Withings", self,
                                    statusTip = "Download Withings data",
                                    triggered = QCoreApplication.instance().withings)
@@ -219,7 +224,8 @@ class STMainWindow(QMainWindow):
         self.stravaAct = QAction("&Strava", self,
                                    statusTip = "Connect to Strava",
                                    triggered = self.strava)
-        self.exitAct = QAction("E&xit", self, shortcut = "Ctrl+Q", statusTip = "Exit SweatTrails", triggered = self.close)
+        self.exitAct = QAction("E&xit", self, shortcut="Ctrl+Q", statusTip="Exit SweatTrails",
+                               triggered=self.close)
 
         self.aboutAct = QAction("&About", self, triggered = self.about)
         self.aboutQtAct = QAction("About &Qt", self, triggered = QApplication.aboutQt)
@@ -234,6 +240,7 @@ class STMainWindow(QMainWindow):
 
         self.toolsMenu = self.menuBar().addMenu(self.tr("&Tools"))
         self.toolsMenu.addAction(self.downloadAct)
+        self.toolsMenu.addAction(self.gcAct)
         self.toolsMenu.addAction(self.stravaAct)
         self.toolsMenu.addAction(self.withingsAct)
         self.toolsMenu.addAction(self.reanalyzeAllAct)
@@ -281,7 +288,11 @@ class STMainWindow(QMainWindow):
                                "",
                                "Activity Files (*.tcx *.fit *.csv)")
         if fileNames:
-            QCoreApplication.instance().import_files(*fileNames)
+            inbox = os.path.join(gripe.user_dir(QCoreApplication.instance().user.uid()), "inbox")
+            self.status_message("Delivering file(s) to inbox")
+            for f in fileNames:
+                shutil.copy(f, inbox)
+            self.status_message("")
 
     def file_import_started(self, filename):
         self.switchUserAct.setEnabled(False)
@@ -301,6 +312,10 @@ class STMainWindow(QMainWindow):
     def strava(self):
         strava = sweattrails.qt.strava.Strava()
         strava.auth()
+
+    def gc_download(self):
+        gc = sweattrails.qt.gc.SelectActivities(self)
+        gc.select_activities()
 
     # =====================================================================
     # S I G N A L  H A N D L E R S

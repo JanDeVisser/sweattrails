@@ -67,7 +67,7 @@ class Condition(object):
         return "(" + self.sql + ")"
 
 
-class Filter(object):
+class Filter:
     def __init__(self, *args):
         if len(args) == 2:
             split = args[0].rsplit(None, 1)
@@ -86,6 +86,12 @@ class Filter(object):
         if hasattr(self.value, "key") and callable(self.value.key):
             self.value = str(self.value.key())
 
+    def __str__(self):
+        ret = self.to_sql()
+        if "%s" in ret:
+            ret = ret.replace("%s", self.value)
+        return ret
+
     def alias(self, fallback):
         return self._alias if self._alias is not None else fallback
 
@@ -98,26 +104,31 @@ class Filter(object):
             return '(%s.%s%s)' % (self.alias(alias), self.colname, n)
         elif self.op and self.op.endswith("IN"):
             try:
-                vals.extend(self.value)
+                if vals is not None:
+                    vals.extend(self.value)
                 num = len(self.value)
             except TypeError:
-                vs = str(self.value).split(",")
                 if vals is not None:
-                    vals.extend(vs)
-                num = len(vs)
+                    vals.append(self.value)
+                num = 1
             if num > 1:
                 return ' (%s.%s %s (' % (self.alias(alias), self.colname, self.op) + \
                        ', '.join(["%%s"] * num) + ')'
             elif num == 1:
                 return '(%s.%s %s %%s)' % \
                        (self.alias(alias), self.colname, "=" if self.op == "IN" else "!=")
+        elif self.op == '->':
+            if vals is not None:
+                vals.append(self.value)
+                vals.append(self.value)
+            kind, _ = self.value.split(':', 2)
+            t = grumble.meta.Registry.get(kind).modelmanager.tablename
+            return ("%s.%s IN (SELECT _key FROM %s WHERE (POSITION(%%s IN _ancestors) > 0) OR (_key = %%s))" %
+                    (self.alias(alias), self.colname, t))
         else:
             if vals is not None:
                 vals.append(self.value)
             return '(%s.%s %s %%s)' % (self.alias(alias), self.colname, self.op)
-
-    def __str__(self):
-        return self.to_sql()
 
 
 class Join(object):
@@ -172,10 +183,10 @@ class ModelQuery(object):
     def __init__(self):
         self._owner = None
         self._limit = None
-        self._filters = []
         self._conditions = []
         self._sortorder = []
         self._joins = []
+        self._aggregate_column = None
 
     def _reset_state(self):
         pass
@@ -277,6 +288,7 @@ class ModelQuery(object):
 
     def clear_filters(self):
         self.clear_conditions()
+        return self
 
     def add_filter(self, *args):
         self._reset_state()
@@ -288,28 +300,34 @@ class ModelQuery(object):
 
     def clear_conditions(self):
         self._conditions = []
+        return self
 
     def add_condition(self, cond, values):
         self._reset_state()
         self._conditions.append(Condition(cond, values))
+        return self
 
     def conditions(self):
         return self._conditions
 
     def clear_joins(self):
         self._joins = []
+        return self
 
     def add_join(self, kind, prop, alias=None, join_with="k"):
         self._joins.append(Join(len(self._joins), kind, prop, alias, join_with))
+        return self
 
     def joins(self):
         return self._joins
 
     def add_parent_join(self, parent_kind, alias="p"):
         self.add_join(parent_kind, "_parent", alias)
+        return self
 
     def clear_sort(self):
         self._sortorder = []
+        return self
 
     def add_sort(self, colname, ascending=True):
         self._reset_state()
@@ -319,6 +337,11 @@ class ModelQuery(object):
 
     def sortorder(self):
         return self._sortorder
+
+    def sum(self, column = None):
+        if column is not None:
+            self._aggregate_column = column
+        return self._aggregate_column
 
     def set_limit(self, limit):
         self._limit = limit
@@ -338,6 +361,17 @@ class ModelQuery(object):
             mm = grumble.schema.ModelManager.for_name(kind)
             r = mm.getModelQueryRenderer(self)
             return r.execute(t)
+
+    def _aggregate(self, kind):
+        """
+            Executes this query and returns the aggregate. Note
+            that the actual results of the query are not available; these need to
+            be obtained by executing the query again
+        """
+        with gripe.db.Tx.begin():
+            mm = grumble.schema.ModelManager.for_name(kind)
+            r = mm.getModelQueryRenderer(self)
+            return r.execute(grumble.dbadapter.QueryType.Aggregate).singleton()
 
     def _count(self, kind):
         """

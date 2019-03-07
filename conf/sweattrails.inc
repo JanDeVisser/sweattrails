@@ -66,7 +66,9 @@
         },
         "background": {
             "plugins": [
-                "sweattrails.qt.imports.ScanInbox",
+                "sweattrails.qt.imports.ScanInbox"
+            ],
+            "_plugins": [
                 "sweattrails.qt.bg.webserver.WebServer"
             ],
             "webserver": {

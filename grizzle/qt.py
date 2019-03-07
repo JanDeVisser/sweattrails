@@ -60,6 +60,9 @@ class SelectUser(QDialog):
         self.buttonbox.rejected.connect(self.reject)
         layout.addRow(self.buttonbox)
         self.setLayout(layout)
+        self.user = None
+        self.password = None
+        self.save_credentials = False
 
     def select(self):
         if not QCoreApplication.instance().is_authenticated():
@@ -71,22 +74,20 @@ class SelectUser(QDialog):
         savecreds = self.savecreds.isChecked()
         logger.debug("Authenticating")
         um = grizzle.UserManager()
+        self.user = None
+        self.password = None
+        self.save_credentials = False
         with gripe.db.Tx.begin():
             user = um.get(uid)
-            if user and user.authenticate(password = password):
-                if savecreds:
-                    gripe.Config.qtapp.settings["user"] = {
-                        "user_id": uid,
-                        "password": grumble.property.PasswordProperty.hash(password)
-                    }
-                    self.config = gripe.Config.set("qtapp", self.config)
+            if user and user.authenticate(password=password):
                 logger.debug("Authenticated. Setting self.user")
-                self.user_id = uid
                 self.user = user
+                self.password = password
+                self.save_credentials = savecreds
                 self.accept()
             else:
                 QMessageBox.critical(self, "Wrong Password",
-                    "The user ID and password entered do not match.")
+                                     "The user ID and password entered do not match.")
 
 
 class RepeatPasswordValidator(QValidator):
@@ -148,8 +149,7 @@ class CreateUser(QDialog):
     def create(self):
         password = self.pwd.text()
         if password != self.pwd_again.text():
-            QMessageBox.critical(self, "Passwords don't match",
-                "The passwords entered are different")
+            QMessageBox.critical(self, "Passwords don't match", "The passwords entered are different")
             self.reject()
         try:
             QCoreApplication.instance().add_user(self.email.text(),
@@ -166,6 +166,6 @@ class CreateUser(QDialog):
 def authenticate(**kwargs):
     dialog = SelectUser(QCoreApplication.instance().activeWindow(), **kwargs)
     dialog.exec_()
-    ret = dialog.user
+    ret = (dialog.user, dialog.password, dialog.save_credentials)
     dialog.deleteLater()
     return ret

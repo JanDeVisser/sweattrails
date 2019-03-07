@@ -65,27 +65,28 @@ class SelectActivities(QDialog, sweattrails.qt.imports.DownloadManager):
         self.setMinimumSize(320, 200)
         self.before_download.connect(parent.before_download)
         self.after_download.connect(parent.after_download)
+        self.ant_files = None
 
     def selectActivities(self, antfiles):
         logger.debug("SelectActivities.selectActivities")
-        self.antfiles = antfiles
+        self.ant_files = antfiles
         self.select.emit()
         return self._selected
 
     def _select(self):
         logger.debug("SelectActivities._select")
         self.table.clear()
-        self.table.setRowCount(len(self.antfiles))
-        for row in range(len(self.antfiles)):
-            f = self.antfiles[row]
+        self.table.setRowCount(len(self.ant_files))
+        for row in range(len(self.ant_files)):
+            f = self.ant_files[row]
             self.table.setCellWidget(row, 0, QCheckBox(self))
             self.table.setItem(row, 1, QTableWidgetItem(f.get_date().strftime("%d %b %Y %H:%M")))
             self.table.setItem(row, 2, QTableWidgetItem("{:d}".format(f.get_size())))
         result = self.exec_()
         self._selected = []
         if result == QDialog.Accepted:
-            for i in range(len(self.antfiles)):
-                f = self.antfiles[i]
+            for i in range(len(self.ant_files)):
+                f = self.ant_files[i]
                 cb = self.table.cellWidget(i, 0)
                 if cb.isChecked():
                     self._selected.append(f)
@@ -97,32 +98,34 @@ class SweatTrails(QApplication, sweattrails.qt.app.core.SweatTrailsCore):
         icon = QPixmap("image/sweatdrops.png")
         self.setWindowIcon(QIcon(icon))
         self.splash = SplashScreen()
+        self.main_window = None
+        self._download_manager = None
 
     def start(self, args):
         super(SweatTrails, self).start(args)
         self.splash.show()
         self.processEvents()
         with gripe.db.Tx.begin():
-            self.mainwindow = sweattrails.qt.mainwindow.STMainWindow()
-        self.splash.finish(self.mainwindow)
+            self.main_window = sweattrails.qt.mainwindow.STMainWindow()
+        self.splash.finish(self.main_window)
         self.splash = None
-        self.mainwindow.show()
+        self.main_window.show()
         if args.session:
-            self.mainwindow.setSession(args.session)
+            self.main_window.setSession(args.session)
         if args.tab:
-            self.mainwindow.setTab(args.tab)
+            self.main_window.setTab(args.tab)
 
     def status_message(self, msg, *args):
-        self.mainwindow.status_message(msg, *args)
+        self.main_window.status_message(msg, *args)
 
     def progress_init(self, msg, *args):
-        self.mainwindow.progress_init(msg, *args)
+        self.main_window.progress_init(msg, *args)
 
     def progress(self, percentage):
-        self.mainwindow.progress(percentage)
+        self.main_window.progress(percentage)
 
     def progress_done(self):
-        self.mainwindow.progress_done()
+        self.main_window.progress_done()
 
     def before_download(self, thread):
         # Disable menu items:
@@ -135,7 +138,7 @@ class SweatTrails(QApplication, sweattrails.qt.app.core.SweatTrailsCore):
         # Reset menu items
         pass
 
-    def getDownloadManager(self):
-        if not hasattr(self, "_downloadManager"):
-            self._downloadManager = SelectActivities(self)
-        return self._downloadManager
+    def get_download_manager(self):
+        if not self._download_manager:
+            self._download_manager = SelectActivities(self)
+        return self._download_manager

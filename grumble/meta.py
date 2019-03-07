@@ -28,13 +28,19 @@ class ModelMetaClass(type):
     def __new__(mcs, name, bases, dct, **kwargs):
         cls: ModelMetaClass = type.__new__(mcs, name, bases, dct)
         if name != 'Model':
-            logger.debug("Creating new model class %s [%s]", name, bases)
+            logger.debug("Creating new model class %s [%s] {%s}", name, bases, kwargs)
+            cls.config = dict(kwargs)
             cls._sealed = False
             cls._kind = Registry.register(cls)
             cls._tablename = kwargs.get("table_name", dct.get("table_name", name))
+            cls._verbose_name = kwargs.get("verbose_name", dct.get("verbose_name", name))
+            def verbose_name(cls):
+                return cls._verbose_name
+            cls.verbose_name = classmethod(verbose_name)
             cls._abstract = kwargs.get("abstract", dct.get("_abstract", False))
             cls._flat = kwargs.get("flat", dct.get("_flat", False))
             cls._audit = kwargs.get("audit", dct.get("_audit", True))
+            cls._template_dir = kwargs.get("template_dir", dct.get("_template_dir", None))
             if kwargs.get("cached", dct.get("_cached", False)):
                 cls._cache = {}
             cls._sealed = False
@@ -65,11 +71,13 @@ class ModelMetaClass(type):
                 else kwargs.get("customizer", dct.get("_customizer"))
             cls.load_template_data()
         else:
+            cls.config = {7}
             cls._acl = gripe.acl.ACL(gripe.Config.model.get("global_acl", dct["acl"]))
         return cls
 
     def __init__(cls, name, bases, dct, **kwargs):
         super(ModelMetaClass, cls).__init__(name, bases, dct, **kwargs)
+        logger.debug("%s.__init__(%s) config %s", name, kwargs, cls.config)
 
 
 class Registry(dict):
@@ -101,7 +109,7 @@ class Registry(dict):
 
     @classmethod
     def fullname_for_class(cls, modelclass):
-        return Registry.fullname(modelclass.__qualname__)
+        return Registry.fullname(".".join((modelclass.__module__, modelclass.__qualname__)))
 
     @classmethod
     def get(cls, name):

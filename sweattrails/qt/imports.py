@@ -17,6 +17,7 @@
 #
 
 import os.path
+import traceback
 
 from PyQt5.QtCore import QCoreApplication
 from PyQt5.QtCore import QObject
@@ -24,20 +25,19 @@ from PyQt5.QtCore import pyqtSignal
 
 import gripe
 import gripe.db
-import grumble.model
 import grumble.property
 import sweattrails.device
 import sweattrails.device.antfs
 import sweattrails.device.exceptions
 import sweattrails.device.parser
 import sweattrails.qt.app.core
-import sweattrails.qt.bg.bg
-import sweattrails.qt.bg.job
+import grumpy.bg.bg
+import grumpy.bg.job
 
 logger = gripe.get_logger(__name__)
 
 
-class DownloadManager(object):
+class DownloadManager:
     before_download = pyqtSignal(QObject)
     after_download = pyqtSignal(QObject)
 
@@ -47,15 +47,15 @@ class ImportedFITFile(grumble.model.Model):
     status = grumble.property.BooleanProperty(default=False)
 
 
-class ImportFile(sweattrails.qt.bg.job.Job):
+class ImportFile(grumpy.bg.job.Job):
     def __init__(self, filename):
         super(ImportFile, self).__init__()
         self.filename = filename
-        userdir = gripe.user_dir(self.user.uid())
-        self.inbox = os.path.join(userdir, "inbox")
-        self.queue = os.path.join(userdir, "queue")
-        self.done = os.path.join(userdir, "done")
-        self.rejected = os.path.join(userdir, "rejected")
+        user_dir = gripe.user_dir(self.user.uid())
+        self.inbox = os.path.join(user_dir, "inbox")
+        self.queue = os.path.join(user_dir, "queue")
+        self.done = os.path.join(user_dir, "done")
+        self.rejected = os.path.join(user_dir, "rejected")
 
     def __str__(self):
         return "Importing file %s" % self.filename
@@ -69,14 +69,15 @@ class ImportFile(sweattrails.qt.bg.job.Job):
             return
         parser.set_athlete(self.user)
         parser.set_logger(self)
+        q = ImportedFITFile.query('"filename" =', f, parent=self.user)
+        fit_file = q.get()
+        dest = self.rejected
         try:
-            q = ImportedFITFile.query('"filename" =', f, parent=self.user)
-            fitfile = q.get()
-            if not fitfile:
-                fitfile = ImportedFITFile(parent=self.user)
-                fitfile.filename = f
-                fitfile.status = False
-                fitfile.put()
+            if not fit_file:
+                fit_file = ImportedFITFile(parent=self.user)
+                fit_file.filename = f
+                fit_file.status = False
+                fit_file.put()
             try:
                 parser.parse()
             except sweattrails.device.exceptions.SessionExistsError:
@@ -85,19 +86,20 @@ class ImportFile(sweattrails.qt.bg.job.Job):
                 if "-st-antfs" not in self.filename:
                     raise
             dest = self.done
-        except Exception as e:
+            QCoreApplication.instance().refresh.emit(None)
+        except Exception:
+            traceback.print_exc()
             logger.exception("Exception importing file '%s'", f)
-            dest = self.rejected
         finally:
             if os.path.basename(os.path.dirname(self.filename)) == "queue":
                 gripe.rename(os.path.join(self.queue, f), os.path.join(dest, f))
             # Set file to completed in the log:
             with gripe.db.Tx.begin():
-                fitfile.status = True
-                fitfile.put()
+                fit_file.status = True
+                fit_file.put()
 
 
-class ScanInbox(sweattrails.qt.bg.bg.ThreadPlugin):
+class ScanInbox(grumpy.bg.bg.ThreadPlugin):
     def __init__(self, thread):
         super(ScanInbox, self).__init__(thread)
         self.user = None
@@ -116,14 +118,14 @@ class ScanInbox(sweattrails.qt.bg.bg.ThreadPlugin):
         user = QCoreApplication.instance().user
         if user != self.user:
             self.user = user
-            userdir = gripe.user_dir(user.uid())
-            self.inbox = os.path.join(userdir, "inbox")
+            user_dir = gripe.user_dir(user.uid())
+            self.inbox = os.path.join(user_dir, "inbox")
             gripe.mkdir(self.inbox)
-            self.queue = os.path.join(userdir, "queue")
+            self.queue = os.path.join(user_dir, "queue")
             gripe.mkdir(self.queue)
-            self.done = os.path.join(userdir, "done")
+            self.done = os.path.join(user_dir, "done")
             gripe.mkdir(self.done)
-            self.rejected = os.path.join(userdir, "rejected")
+            self.rejected = os.path.join(user_dir, "rejected")
             gripe.mkdir(self.rejected)
 
     def run(self):
@@ -131,14 +133,15 @@ class ScanInbox(sweattrails.qt.bg.bg.ThreadPlugin):
         # since last time.
         self._setuser()
         if self.user:
-            inboxfiles = gripe.listdir(self.inbox)
-            for f in inboxfiles:
-                logger.debug("ScanInbox: Found file %s", f)
-                gripe.rename(os.path.join(self.inbox, f), os.path.join(self.queue, f))
-                self.addfile(os.path.join(gripe.root_dir(), self.queue, f))
+            inbox_files = gripe.listdir(self.inbox)
+            for f in inbox_files:
+                if f.endswith(".fit"):
+                    logger.debug("ScanInbox: Found file %s", f)
+                    gripe.rename(os.path.join(self.inbox, f), os.path.join(self.queue, f))
+                    self.addfile(os.path.join(gripe.root_dir(), self.queue, f))
 
 
-class DownloadJob(sweattrails.qt.bg.job.Job):
+class DownloadJob(grumpy.bg.job.Job):
     def __init__(self, manager):
         super(DownloadJob, self).__init__()
         self.manager = manager

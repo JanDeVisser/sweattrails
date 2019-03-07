@@ -1,9 +1,7 @@
 #!/usr/bin/python
 
-import datetime
 import sys
-import unitconvert
-
+import .unitconvert
 from fitparse import Activity, FitParseError
 
 class RecordWrapper(object):
@@ -15,7 +13,8 @@ class RecordWrapper(object):
         pass
 
 class Session(RecordWrapper):
-    def initialize(self):
+    def __init__(self, rec):
+        super(Session, self).__init__(rec)
         self.start = self.data["start_time"]
         self.end = self.data["timestamp"]
         self.laps = []
@@ -36,12 +35,14 @@ class Session(RecordWrapper):
         ret = Session(rec)
         return ret
 
+
 class Lap(RecordWrapper):
     @classmethod
     def create(cls, rec):
         assert rec.type.name == 'lap'
         ret = Lap(rec)
         return ret
+
 
 class Record(RecordWrapper):
     @classmethod
@@ -65,7 +66,7 @@ class ActivityWrapper(object):
         return None
 
     def process(self):
-        print >> sys.stderr, "Processing FIT file"
+        print("Processing FIT file", file=sys.stderr)
         for r in self.activity.records:
             if r.type.name == 'session':
                 self.sessions.append(Session.create(r))
@@ -73,11 +74,11 @@ class ActivityWrapper(object):
                 self.laps.append(Lap.create(r))
             elif r.type.name == 'record':
                 self.records.append(Record.create(r))
-        print >> sys.stderr, "#sessions ", len(self.sessions)
-        print >> sys.stderr, "#laps ", len(self.laps)
-        print >> sys.stderr, "#records ", len(self.records)
+        print("#sessions ", len(self.sessions), file=sys.stderr)
+        print("#laps ", len(self.laps), file=sys.stderr)
+        print("#records ", len(self.records), file=sys.stderr)
         for l in self.laps:
-            print >> sys.stderr, "lap", l.data["timestamp"], l.data["timestamp"].microsecond
+            print("lap", l.data["timestamp"], l.data["timestamp"].microsecond, file=sys.stderr)
             s = self.find_session_for_obj(l)
             if s:
                 s.add_lap(l)
@@ -87,9 +88,10 @@ class ActivityWrapper(object):
                 s.add_record(r)
 
         for s in self.sessions:
-            print >> sys.stderr, "Session", s.start, s.start.microsecond, " -- ", s.end, s.end.microsecond
-            print >> sys.stderr, "  #laps", len(s.laps)
-            print >> sys.stderr, "  #records", len(s.records)
+            print("Session", s.start, s.start.microsecond, " -- ", s.end, s.end.microsecond, file=sys.stderr)
+            print("  #laps", len(s.laps), file=sys.stderr)
+            print("  #records", len(s.records), file=sys.stderr)
+
 
 def convert(filename):
     activity = Activity(filename)
@@ -100,10 +102,10 @@ def convert(filename):
 
 
 def printhelp():
-    print "usage: python" + sys.argv[0] + " FILE"
+    print("usage: python" + sys.argv[0] + " FILE")
+
 
 def main():
-
     if len(sys.argv) == 1:
         printhelp()
         return 0
@@ -111,9 +113,10 @@ def main():
     try:
         convert(sys.argv[1])
         return 0
-    except FitParseError, exception:
+    except FitParseError as exception:
         sys.stderr.write(str(exception) + "\n")
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

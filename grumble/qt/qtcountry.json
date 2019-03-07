@@ -6,14 +6,14 @@
         {
             "model": "qtcountry",
             "data": [
-                { "countryname": "United States", "countrycode": "US" },
-                { "countryname": "Canada", "countrycode": "CA" },
-                { "countryname": "United Kingdom", "countrycode": "GB" },
-                { "countryname": "Netherlands", "countrycode": "NL" },
-                { "countryname": "Germany", "countrycode": "DE" },
-                { "countryname": "Switzerland", "countrycode": "CH" },
-                { "countryname": "Austria", "countrycode": "AT" },
-                { "countryname": "Belgium", "countrycode": "BE" }
+                { "country_name": "United States", "country_code": "US" },
+                { "country_name": "Canada", "country_code": "CA" },
+                { "country_name": "United Kingdom", "country_code": "GB" },
+                { "country_name": "Netherlands", "country_code": "NL" },
+                { "country_name": "Germany", "country_code": "DE" },
+                { "country_name": "Switzerland", "country_code": "CH" },
+                { "country_name": "Austria", "country_code": "AT" },
+                { "country_name": "Belgium", "country_code": "BE" }
             ]
         }
     ]

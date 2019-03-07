@@ -35,6 +35,7 @@ def distance(latitude_1, longitude_1, latitude_2, longitude_2):
 
     return math.sqrt(x * x + y * y) * ONE_DEGREE
 
+
 def get_color_between(color1, color2, i):
     """ i is a number between 0 and 1, if 0 then color1, if 1 color2, ... """
     if i <= 0:
@@ -44,6 +45,7 @@ def get_color_between(color1, color2, i):
     return (int(color1[0] + (color2[0] - color1[0]) * i),
             int(color1[1] + (color2[1] - color1[1]) * i),
             int(color1[2] + (color2[2] - color1[2]) * i))
+
 
 def zip(contents, file_name):
     logger.debug('Zipping %s bytes' % len(contents))
@@ -55,9 +57,10 @@ def zip(contents, file_name):
     logger.debug('Zipped')
     return result.read()
 
+
 def unzip(contents):
     logger.debug('Unzipping %s bytes' % len(contents))
-    zip_file = zipfile.ZipFile(io.StringIO(contents))
+    zip_file = zipfile.ZipFile(io.BytesIO(contents))
     zip_info_list = zip_file.infolist()
     zip_info = zip_info_list[0]
     result = zip_file.open(zip_info).read()

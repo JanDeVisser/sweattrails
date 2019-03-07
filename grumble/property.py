@@ -35,8 +35,7 @@ class Validator(object):
     def property(self, prop=None):
         if prop:
             self.prop = prop
-            if hasattr(self, "updateProperty") and \
-                    callable(self.updateProperty):
+            if hasattr(self, "updateProperty") and callable(self.updateProperty):
                 self.updateProperty(prop)
         return prop
 
@@ -103,14 +102,69 @@ class RegExpValidator(Validator):
             raise grumble.errors.PatternNotMatched(self.prop.name, value)
 
 
-class BaseProperty:
+class MetaProperty(type):
+    def __new__(mcs, name, bases, dct, **kwargs):
+        ret = type.__new__(mcs, name, bases, dct)
+        ret._default_config = {}
+        ret._default_config.update(kwargs)
+
+        def _set_attr(attr, default):
+            if attr in kwargs:
+                setattr(ret, attr, kwargs[attr])
+            if not hasattr(ret, attr):
+                setattr(ret, attr, default)
+
+        _set_attr("datatype", str)
+        _set_attr("sqltype", "TEXT")
+        _set_attr("readonly", False)
+        _set_attr("default", None)
+        _set_attr("transient", False)
+        _set_attr("suffix", None)
+        _set_attr("format", None)
+        _set_attr("required", False)
+        _set_attr("regexp", None)
+        _set_attr("choices", None)
+        _set_attr("minimum", None)
+        _set_attr("maximum", None)
+        _set_attr("validator", None)
+        _set_attr("getvalue", None)
+        _set_attr("setvalue", None)
+        _set_attr("display", None)
+        _set_attr("default_format", None)
+        if "on_assign" in kwargs:
+            ret.on_assign = kwargs["on_assign"]
+        if "assigned" in kwargs:
+            ret.assigned = kwargs["assigned"]
+
+        _set_attr("column_name", None)
+        _set_attr("private", False)
+        _set_attr("is_label", False)
+        _set_attr("is_key", False)
+        if ret.is_key:
+            _set_attr("scoped", False)
+        else:
+            ret.scoped = False
+        _set_attr("indexed", False)
+
+        return ret
+
+
+class BaseProperty(metaclass=MetaProperty):
     _default_validators = []
     property_counter = 0
+    
+    def __new__(cls, *args, **kwargs):
+        ret: BaseProperty = super(BaseProperty, cls).__new__(cls)
+        ret.config = {}
+        ret.config.update(cls._default_config)
+        ret.config.update(kwargs)
+        return ret
+
+    def __init__(self, *args, **kwargs):
+        self.validators = []
 
     def validator(self, v=None):
         if v is not None:
-            if not hasattr(self, "validators"):
-                self.validators = []
             if hasattr(v, "property") and callable(v.property):
                 v.property(self)
             self.validators.append(v)
@@ -119,10 +173,11 @@ class BaseProperty:
 
 class ModelProperty(BaseProperty):
     def __new__(cls, *args, **kwargs):
-        if args and isinstance(args[0], ModelProperty):
-            prop = args[0]
-            ret = super(ModelProperty, prop.__class__).__new__(prop.__class__)
+        if "template" in kwargs:
+            prop: ModelProperty = kwargs["template"]
+            ret: ModelProperty = super(ModelProperty, prop.__class__).__new__(prop.__class__)
             ret.name = prop.name
+            ret.kind = None
             ret.column_name = prop.column_name
             ret.verbose_name = prop.verbose_name
             ret.readonly = prop.readonly
@@ -139,76 +194,84 @@ class ModelProperty(BaseProperty):
             ret.converter = prop.converter
             ret.getvalue = prop.getvalue
             ret.setvalue = prop.setvalue
+            ret.display = prop.display
+            ret.format = prop.format
             ret.validators = []
             for v in prop.validators:
                 ret.validators.append(v)
-            ret.on_assign = prop.on_assign
-            ret.assigned = prop.assigned
+            if not hasattr(ret, "on_assign") and hasattr(prop, "on_assign"):
+                ret.on_assign = prop.on_assign
+            if not hasattr(ret, "assigned") and hasattr(prop, "assigned"):
+                ret.assigned = prop.assigned
 
             ret.seq_nr = prop.seq_nr
             ret.config = dict(prop.config)
             ret.inherited_from = prop
         else:
             ret: ModelProperty = super(ModelProperty, cls).__new__(cls)
-            ret.config = {}
             ret.seq_nr = BaseProperty.property_counter
             BaseProperty.property_counter += 1
-            ret.name = kwargs.get("name", None)
-            ret.column_name = kwargs.get("column_name", cls.column_name if hasattr(cls, "column_name") else None)
-            ret.verbose_name = kwargs.get("verbose_name",
-                                          cls.verbose_name
-                                          if hasattr(cls, "verbose_name")
-                                          else ret.name)
-            ret.readonly = kwargs.get("readonly", cls.readonly if hasattr(cls, "readonly") else False)
-            ret.default = kwargs.get("default", cls.default if hasattr(cls, "default") else None)
-            ret.private = kwargs.get("private", cls.private if hasattr(cls, "private") else False)
-            ret.transient = kwargs.get("transient", cls.transient if hasattr(cls, "transient") else False)
-            ret.is_label = kwargs.get("is_label", cls.is_label if hasattr(cls, "is_label") else False)
-            ret.is_key = kwargs.get("is_key", cls.is_key if hasattr(cls, "is_key") else False)
-            ret.scoped = kwargs.get("scoped", cls.scoped if hasattr(cls, "scoped") else False) if ret.is_key else False
-            ret.indexed = kwargs.get("indexed", cls.indexed if hasattr(cls, "indexed") else False)
-            ret.suffix = kwargs.get("suffix", cls.suffix if hasattr(cls, "suffix") else None)
-            ret.converter = kwargs.get("converter",
-                                       cls.converter
-                                       if hasattr(cls, "converter")
-                                       else grumble.converter.Converters.get(cls.datatype, ret))
-            if "getvalue" in kwargs:
-                ret.getvalue = kwargs.get("getvalue")
-            if not hasattr(ret, "getvalue"):
-                ret.getvalue = None
-            if "setvalue" in kwargs:
-                ret.setvalue = kwargs.get("setvalue")
-            if not hasattr(ret, "setvalue"):
-                ret.setvalue = None
-            ret.validators = []
-            ret.required = kwargs.get("required", cls.required if hasattr(cls, "required") else False)
-            if ret.required:
-                ret.validator(RequiredValidator())
-            regexp = kwargs.get("regexp", None)
-            if regexp:
-                ret.validator(RegExpValidator(regexp))
-            choices = kwargs.get("choices", None)
-            if choices:
-                ret.validator(ChoicesValidator(choices))
-            minval = kwargs.get("minimum", None)
-            maxval = kwargs.get("maximum", None)
-            if minval is not None or maxval is not None:
-                ret.validator(RangeValidator(minval, maxval))
-            v = kwargs.get("validator")
-            if v is not None:
-                ret.validator(v)
-            validators = kwargs.get("validators")
-            if validators is not None:
-                for v in validators:
-                    ret.validator(v)
-            ret.on_assign = kwargs.get("on_assign", cls.on_assign if hasattr(cls, "on_assign") else None)
-            ret.assigned = kwargs.get("assigned", cls.assigned if hasattr(cls, "assigned") else None)
+            ret.name = None
+            ret.kind = None
             ret.inherited_from = None
+            ret.validators = []
+            ret.config = {}
             ret.config.update(kwargs)
+            ret.converter = kwargs.get("converter",
+                   ret.converter if hasattr(ret, "converter") else grumble.converter.Converters.get(cls.datatype, ret))
         return ret
 
     def __init__(self, *args, **kwargs):
-        pass
+        super(ModelProperty, self).__init__(*args, **kwargs)
+        self.config.update(kwargs)
+        self.validators = []
+
+        def _update_attr(attr):
+            if attr in kwargs:
+                setattr(self, attr, kwargs[attr])
+
+        _update_attr("name")
+        _update_attr("verbose_name")
+        if not hasattr(self, "verbose_name") or not self.verbose_name:
+            self.verbose_name = self.name
+        _update_attr("readonly")
+        _update_attr("default")
+        _update_attr("private")
+        _update_attr("transient")
+        _update_attr("is_label")
+        _update_attr("is_key")
+        if self.is_key:
+            _update_attr("scoped")
+        _update_attr("indexed")
+        _update_attr("suffix")
+        _update_attr("getvalue")
+        _update_attr("setvalue")
+        _update_attr("format")
+        _update_attr("display")
+        _update_attr("required")
+        if self.required:
+            self.validator(RequiredValidator())
+        _update_attr("regexp")
+        if self.regexp:
+            self.validator(RegExpValidator(self.regexp))
+        _update_attr("choices")
+        if self.choices:
+            self.validator(ChoicesValidator(self.choices))
+        _update_attr("minimum")
+        _update_attr("maximum")
+        if self.minimum is not None or self.maximum is not None:
+            self.validator(RangeValidator(self.minimum, self.maximum))
+        v = kwargs.get("validator")
+        if v is not None:
+            self.validator(v)
+        validators = kwargs.get("validators")
+        if validators is not None:
+            for v in validators:
+                self.validator(v)
+        if "on_assign" in kwargs:
+            self.on_assign = kwargs["on_assign"]
+        if "assigned" in kwargs:
+            self.assigned = kwargs["assigned"]
 
     def set_name(self, name):
         self.name = name
@@ -274,7 +337,7 @@ class ModelProperty(BaseProperty):
         try:
             if not instance:
                 return self
-            if self.transient and hasattr(self, "getvalue"):
+            if self.transient and hasattr(self, "getvalue") and callable(self.getvalue):
                 ret = self.getvalue(instance)
                 if ret:
                     instance._load()
@@ -296,10 +359,12 @@ class ModelProperty(BaseProperty):
                 instance._load()
                 old = instance._values[self.name] if self.name in instance._values else None
                 converted = self.convert(value) if value is not None else None
-                if self.on_assign:
+                if gripe.hascallable(self, "on_assign"):
                     self.on_assign(instance, old, converted)
                 instance._values[self.name] = converted
-                if self.assigned:
+                if self.is_key:
+                    instance._key_name = converted
+                if gripe.hascallable(self, "assigned"):
                     self.assigned(instance, old, converted)
         except Exception:
             logger.exception("Exception setting property '%s' to value '%s'", self.name, value)
@@ -307,6 +372,23 @@ class ModelProperty(BaseProperty):
 
     def __delete__(self, instance):
         return NotImplemented
+
+    def _get_format(self, value):
+        ret = None
+        if self.format is not None:
+            ret = self.format(value) if callable(self.format) else str(self.format)
+            if ret == "$":
+                ret = ".2f"
+        return ret
+
+    def to_display(self, value, instance=None):
+        if self.display is not None:
+            return self.display(value, instance)
+        elif value is not None:
+            fmt = self._get_format(value)
+            return ("{:" + fmt + "}").format(value) if fmt is not None else str(value)
+        else:
+            return ''
 
     def convert(self, value):
         return self.converter.convert(value)
@@ -344,6 +426,7 @@ def transient(prop):
 
 class CompoundProperty(BaseProperty):
     def __init__(self, *args, **kwargs):
+        super(CompoundProperty, self).__init__(*args, **kwargs)
         self.seq_nr = BaseProperty.property_counter
         BaseProperty.property_counter += 1
         self.compound = []
@@ -458,9 +541,8 @@ class CompoundProperty(BaseProperty):
         raise gripe.NotSerializableError(self.name)
 
 
-class StringProperty(ModelProperty):
-    datatype = str
-    sqltype = "TEXT"
+class StringProperty(ModelProperty, datatype=str, sqltype="TEXT"):
+    pass
 
 
 TextProperty = StringProperty
@@ -473,11 +555,7 @@ class LinkProperty(StringProperty):
     ]
 
 
-class PasswordProperty(StringProperty):
-    def __init__(self, *args, **kwargs):
-        super(PasswordProperty, self).__init__(*args, **kwargs)
-        self.private = True
-
+class PasswordProperty(StringProperty, private=True):
     def _on_store(self, instance):
         value = self.__get__(instance, instance.__class__)
         self.__set__(instance, self.hash(value))
@@ -489,48 +567,40 @@ class PasswordProperty(StringProperty):
             else "sha://%s" % hashlib.sha1(bytes(password, "UTF-8") if password else "").hexdigest()
 
 
-class JSONProperty(ModelProperty):
-    datatype = dict
-    sqltype = "JSONB"
-
+class JSONProperty(ModelProperty, datatype=dict, sqltype="JSONB"):
     def _initial_value(self):
         return {}
 
 
-class ListProperty(ModelProperty):
-    datatype = list
-    sqltype = "JSONB"
-
+class ListProperty(ModelProperty, datatype=list, sqltype="JSONB"):
     def _initial_value(self):
         return []
 
 
-class IntegerProperty(ModelProperty):
-    datatype = int
-    sqltype = "INTEGER"
+class IntegerProperty(ModelProperty, datatype=int, sqltype="INTEGER"):
+    pass
 
 
 IntProperty = IntegerProperty
 
 
-class FloatProperty(ModelProperty):
-    datatype = float
-    sqltype = "REAL"
+class FloatProperty(ModelProperty, datatype=float, sqltype="REAL"):
+    pass
 
 
-class BooleanProperty(ModelProperty):
-    datatype = bool
-    sqltype = "BOOLEAN"
+class BooleanProperty(ModelProperty, datatype=bool, sqltype="BOOLEAN"):
+    pass
 
 
-class DateTimeProperty(ModelProperty):
-    datatype = datetime.datetime
-    sqltype = "TIMESTAMP WITHOUT TIME ZONE"
-
+class DateTimeProperty(ModelProperty, datatype=datetime.datetime, sqltype="TIMESTAMP WITHOUT TIME ZONE",
+                       default_format="%c"):
     def __init__(self, *args, **kwargs):
         super(DateTimeProperty, self).__init__(*args, **kwargs)
-        self.auto_now = kwargs.get("auto_now", False)
-        self.auto_now_add = kwargs.get("auto_now_add", False)
+        self.auto_now = kwargs.get("auto_now", self.config.get("auto_now", False))
+        self.auto_now_add = kwargs.get("auto_now_add", self.config.get("auto_now_add", False))
+
+    def display(self, value, instance):
+        return value.strftime(self.config.get("format", self.default_format))
 
     def _on_insert(self, instance):
         if self.auto_now_add and (self.__get__(instance, instance.__class__) is None):
@@ -544,26 +614,23 @@ class DateTimeProperty(ModelProperty):
         return datetime.datetime.now()
 
 
-class DateProperty(DateTimeProperty):
-    datatype = datetime.date
-    sqltype = "DATE"
-
+class DateProperty(DateTimeProperty, datatype=datetime.date, sqltype="DATE", default_format="%x"):
     def now(self):
         return datetime.date.today()
 
 
-class TimeProperty(DateTimeProperty):
-    datatype = datetime.time
-    sqltype = "TIME"
-
+class TimeProperty(DateTimeProperty, datatype=datetime.time, sqltype="TIME", default_format="%X"):
     def now(self):
         dt = datetime.datetime.now()
         return datetime.time(dt.hour, dt.minute, dt.second, dt.microsecond)
 
 
-class TimeDeltaProperty(ModelProperty):
-    datatype = datetime.timedelta
-    sqltype = "INTERVAL"
+class TimeDeltaProperty(ModelProperty, datatype=datetime.timedelta, sqltype="INTERVAL"):
+    pass
+
+
+class PythonProperty(ModelProperty, datatype=type, sqltype="TEXT"):
+    pass
 
 
 if gripe.db.Tx.database_type == "postgresql":
@@ -572,8 +639,12 @@ if gripe.db.Tx.database_type == "postgresql":
     def adapt_json(d):
         return psycopg2.extensions.AsIs("'%s'" % json.dumps(d))
 
+    def adapt_type(t):
+        return psycopg2.extensions.AsIs("'%s'" % t.__name__)
+
     psycopg2.extensions.register_adapter(dict, adapt_json)
     psycopg2.extensions.register_adapter(list, adapt_json)
+    psycopg2.extensions.register_adapter(type, adapt_type)
 
     def cast_jsonb(value, cursor):
         try:

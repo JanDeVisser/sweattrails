@@ -16,13 +16,11 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
-import sys
-
 from PyQt5.QtCore import QCoreApplication
 
 import gripe.db
 import sweattrails.qt.app.core
-import sweattrails.qt.bg.bg
+import grumpy.bg.bg
 import sweattrails.qt.imports
 import sweattrails.qt.mainwindow
 import sweattrails.withings
@@ -35,12 +33,13 @@ class SweatTrailsCmdLine(QCoreApplication,
                          sweattrails.qt.imports.DownloadManager):
     def __init__(self, argv):
         super(SweatTrailsCmdLine, self).__init__(argv)
+        self.curr_progress = 0
 
     def start(self, args):
         super(SweatTrailsCmdLine, self).start(args)
         if not self.is_authenticated():
             raise sweattrails.qt.app.core.NotAuthenticatedException()
-        t = sweattrails.qt.bg.bg.BackgroundThread.get_thread()
+        t = grumpy.bg.bg.BackgroundThread.get_thread()
         t.queueEmpty.connect(self.quit)
         self.after_download.connect(self._after_download)
 
@@ -50,25 +49,7 @@ class SweatTrailsCmdLine(QCoreApplication,
     def _after_download(self, job):
         self.quit()
 
-    def status_message(self, msg, *args):
-        print(str(msg).format(*args))
-
-    def progress_init(self, msg, *args):
-        self.curr_progress = 0
-        sys.stdout.write((msg + " [").format(*args))
-        sys.stdout.flush()
-
-    def progress(self, new_progress):
-        diff = new_progress / 10 - self.curr_progress
-        sys.stderr.write("." * diff)
-        sys.stdout.flush()
-        self.curr_progress = new_progress / 10
-
-    def progress_done(self):
-        sys.stdout.write("]\n")
-        sys.stdout.flush()
-
-    def getDownloadManager(self):
+    def get_download_manager(self):
         return self
 
     def selectActivities(self, antfiles):

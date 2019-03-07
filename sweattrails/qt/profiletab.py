@@ -114,7 +114,7 @@ class SettingsPage(grumble.qt.bridge.FormWidget):
 
     def activate(self):
         if QCoreApplication.instance().user:
-            self.setInstance(QCoreApplication.instance().user)
+            self.set_instance(QCoreApplication.instance().user)
 
 
 class ZonesPage(QWidget):

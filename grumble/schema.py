@@ -141,8 +141,8 @@ class ModelManager(object):
         for c in self.columns:
             if c.indexed and not c.is_key:
                 cur.execute('CREATE INDEX "%s_%s" ON %s ( "%s" )' % (self.table, c.name, self.tablename, c.name))
-            if c.is_key and c.scoped:
-                cur.execute('CREATE UNIQUE INDEX "%s_%s" ON %s ( "_parent", "%s" )' % (self.table, c.name, self.tablename, c.name))
+            # if c.is_key and c.scoped:
+            #     cur.execute('CREATE UNIQUE INDEX "%s_%s" ON %s ( "_parent", "%s" )' % (self.table, c.name, self.tablename, c.name))
 
     def _update_table(self, cur, table_existed=False):
         self._adapter.update_table(cur, table_existed)

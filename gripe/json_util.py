@@ -16,8 +16,8 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
-# import sys
-# import os.path
+# imp sys
+# imp os.path
 # if "C:\\Users\\jan\\Documents\Projects\\Grumble\\src" not in sys.path:
 #    sys.path.insert(0, "C:\\Users\\jan\\Documents\Projects\\Grumble\\src")
 # print sys.path

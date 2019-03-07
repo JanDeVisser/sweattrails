@@ -300,7 +300,7 @@ class GeoBox(object):
     def extend(self, *point):
         point = GeoPt(*point)
         if point:
-            if self:
+            if self and self._sw and self._ne:
                 if self._sw.lat > point.lat:
                     self._sw.lat = point.lat
                 if self._sw.lon > point.lon:

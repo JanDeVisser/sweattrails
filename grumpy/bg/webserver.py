@@ -20,7 +20,7 @@ import http.server
 import urllib.parse
 
 import gripe
-import sweattrails.qt.bg.bg
+import grumpy.bg.bg
 
 logger = gripe.get_logger(__name__)
 
@@ -57,7 +57,7 @@ class WebServerHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(404)
 
 
-class WebServer(sweattrails.qt.bg.bg.ThreadPlugin):
+class WebServer(grumpy.bg.bg.ThreadPlugin):
     def run(self):
         config = gripe.Config.app.sweattrails.background.webserver \
             if "webserver" in gripe.Config.app.sweattrails.background \
@@ -67,3 +67,6 @@ class WebServer(sweattrails.qt.bg.bg.ThreadPlugin):
         self.server = http.server.HTTPServer((interface, port), WebServerHandler)
         logger.debug('Starting server at http://%s:%s', interface, port)
         self.server.serve_forever()
+
+    def quit(self):
+        self.server.shutdown()

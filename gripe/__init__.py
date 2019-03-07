@@ -28,7 +28,7 @@ import sys
 import threading
 import traceback
 
-#import gripe.autoreload
+# imp gripe.autoreload
 import gripe.json_util
 
 
@@ -270,7 +270,7 @@ def logger():
     return _logger
 
 
-class abstract(object):
+class abstract:
     def __init__(self, *args):
         self._methods = args
 

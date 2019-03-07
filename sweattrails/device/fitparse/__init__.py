@@ -1,4 +1,10 @@
-from sweattrails.device.fitparse.activity import Activity
-from sweattrails.device.fitparse.exceptions import FitError, FitParseError, FitParseComplete
+from .base import FitFile, FitParseError
+from .records import DataMessage
+from .processors import FitFileDataProcessor, StandardUnitsDataProcessor
 
-__all__ = ['Activity', 'FitError', 'FitParseError', 'FitParseComplete']
+
+__version__ = '1.0.1'
+__all__ = [
+    'FitFileDataProcessor', 'FitFile', 'FitParseError',
+    'StandardUnitsDataProcessor', 'DataMessage'
+]

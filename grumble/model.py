@@ -41,11 +41,10 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
 
     def __init__(self, *args, **kwargs):
         self._brandnew = True
-        self._set_ancestors_from_parent(kwargs["parent"] if "parent" in kwargs else None)
-        self._key_name = kwargs["key_name"] \
-            if "key_name" in kwargs \
-            else gripe.call_if_exists(self, "get_new_key", None, *args, **kwargs)
-        self._acl = gripe.acl.ACL(kwargs["acl"] if "acl" in kwargs else None)
+        self._set_ancestors_from_parent(kwargs.get("parent"))
+        self._key_name = kwargs.get("key_name",
+                                    gripe.call_if_exists(self, "get_new_key", None, *args, **kwargs))
+        self._acl = gripe.acl.ACL(kwargs.get("acl"))
         self._id = None
         self._values = {}
         for (prop_name, prop) in self._allproperties.items():
@@ -115,14 +114,16 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
     def _set_ancestors_from_parent(self, parent):
         if not self._flat:
             if parent and hasattr(parent, "key") and callable(parent.key):
-                parent = parent.key()
+                p = parent.key()
             elif isinstance(parent, str):
-                parent = grumble.key.Key(parent)
-            assert parent is None or isinstance(parent, grumble.key.Key)
-            self._parent = parent
-            if parent:
-                p = parent.get()
-                self._ancestors = p.path()
+                p = grumble.key.Key(parent)
+            else:
+                p = None
+            assert parent is None or isinstance(p, grumble.key.Key)
+            self._parent = p
+            if p:
+                p_obj = parent if isinstance(parent, Model) else p.get()
+                self._ancestors = p_obj.path()
             else:
                 self._ancestors = "/"
         else:
@@ -147,7 +148,11 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
         if values is not None:
             self._values = {}
             self._joins = {}
-            v = {k: v for (k, v) in values}
+            if isinstance(values, (list, tuple)):
+                v = {k: v for (k, v) in values}
+            else:
+                assert isinstance(values, dict)
+                v = values
             parent = v.get("_parent")
             ancestors = v.get("_ancestors")
             self._key_name = v.get("_key_name")
@@ -166,10 +171,11 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             self._exists = False
 
     def _populate_joins(self, values):
-        logger.debug("_populate_joins for %s: %s", self.key(), values)
+        # logger.debug("_populate_joins for %s: %s", self.key(), values)
         if values is not None:
-            self._joins = {k[1:]: v for (k, v) in values if k[0] == '+'}
-        logger.debug("self._joins for %s: %s", self.key(), self._joins)
+            self._joins = {k[1:].replace('"', ''): values[k] for k in values if k[0] == '+'}
+            if self._joins:
+                logger.debug("self._joins for %s: %s", self.key(), self._joins)
 
     def joined_value(self, join):
         if join[0] == '+':
@@ -258,15 +264,14 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
         return self._key_name
 
     def label(self):
-        return getattr(self, self.label_prop) if hasattr(self, "label_prop") else str(self)
+        return self.label_prop if hasattr(self, "label_prop") else str(self)
 
     def parent_key(self):
         """
             Returns the parent Model of this Model, as a Key, or None if this
             Model does not have a parent.
         """
-        if not(hasattr(self, "_parent")):
-            self._load()
+        self._load()
         return self._parent
 
     def parent(self):
@@ -279,8 +284,10 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
 
     def set_parent(self, parent):
         assert not self._flat, "Cannot set parent of flat Model %s" % self.kind()
-        assert str(self.key()) not in parent.path(), \
-            "Cyclical model: attempting to set %s as parent of %s" % (parent, self)
+        if parent:
+            parent = grumble.key.Key(parent)()
+            assert str(self.key()) not in parent.path(), \
+                "Cyclical model: attempting to set %s as parent of %s" % (parent, self)
         self._load()
         self._set_ancestors_from_parent(parent)
 
@@ -535,7 +542,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
     @classmethod
     def _import_properties(cls, from_cls):
         for (propname, propdef) in from_cls.properties().items():
-            cls.add_property(propname, grumble.property.ModelProperty(propdef))
+            cls.add_property(propname, grumble.property.ModelProperty(template=propdef))
 
     @classmethod
     def samekind(cls, model, sub=False):
@@ -593,8 +600,8 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
                         "%s.get(%s.%s) -> wrong key kind" % (cls.kind(), k.kind(), k.name)
                     ret._id = k.id
                     ret._key_name = k.name
-                    if ret._key_scoped:
-                        ret._set_ancestors_from_parent(k.scope())
+                    # if ret._key_scoped:
+                    ret._set_ancestors_from_parent(k.scope())
                     gripe.db.Tx.put_in_cache(ret)
                     if hasattr(cls, "_cache"):
                         cls._cache[ret.key()] = ret
@@ -723,7 +730,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
     def load_template_data(cls):
         cname = cls.__name__.lower()
         dirname = cls._template_dir \
-            if hasattr(cls, "_template_dir") \
+            if hasattr(cls, "_template_dir") and cls._template_dir is not None \
             else "data/template"
         fname = "%s/%s.json" % (dirname, cname)
         data = gripe.json_util.JSON.file_read(fname)
@@ -793,6 +800,14 @@ class Query(grumble.query.ModelQuery):
         if parent:
             self.set_parent(parent)
 
+    def __str__(self):
+        return "Query({0}{1}{2}{3}{4})".format(
+            ";".join([k.kind() for k in self.kinds]),
+            (" (w/ subclasses)" if self._include_subclasses else ""),
+            (", filters=" + " AND ".join([str(f) for f in self._conditions])) if self._conditions else '',
+            (", parent=" + str(self._parent)) if hasattr(self, "_parent") else '',
+            (", ancestor=" + str(self._ancestor)) if hasattr(self, "_ancestor") else '')
+
     def _reset_state(self):
         self._cur_kind = None
         self._results = None
@@ -809,7 +824,7 @@ class Query(grumble.query.ModelQuery):
             if grumble.meta.Registry.get(k)._flat:
                 logger.debug("Cannot do ancestor queries on flat model %s. Ignoring request", self.kinds)
                 return
-        logger.debug("Q(%s): setting ancestor to %s", self.kinds, type(ancestor) if ancestor else "<None>")
+        logger.debug("%s: setting ancestor to %s", str(self), type(ancestor) if ancestor else "<None>")
         return super(Query, self).set_ancestor(ancestor)
 
     def set_parent(self, parent):
@@ -817,7 +832,7 @@ class Query(grumble.query.ModelQuery):
             if grumble.meta.Registry.get(k)._flat:
                 logger.debug("Cannot do ancestor queries on flat model %s. Ignoring request", self.kinds)
                 return
-        logger.debug("Q(%s): setting parent to %s", self.kinds, parent)
+        logger.debug("%s: setting parent to %s", str(self), parent)
         return super(Query, self).set_parent(parent)
 
     def get_kind(self, ix=0):
@@ -860,7 +875,7 @@ class Query(grumble.query.ModelQuery):
             if cur:
                 model = self._cur_kind.get(
                     grumble.key.Key(self._cur_kind, cur[self._results.key_index()]),
-                    None if self.keys_only else zip(self._results.columns(), cur)
+                    None if self.keys_only else {k: v for (k, v) in zip(self._results.columns(), cur)}
                 )
                 ret = self.filter(model)
         return ret
@@ -872,6 +887,14 @@ class Query(grumble.query.ModelQuery):
         ret = 0
         for k in self.kindlist():
             ret += self._count(k)
+        return ret
+
+    # TODO Handle other aggregates besides SUM()
+    def aggregate(self):
+        ret = 0
+        for k in self.kindlist():
+            agg = self._aggregate(k)
+            ret += agg if agg is not None else 0
         return ret
 
     def has(self):
@@ -902,6 +925,5 @@ class Query(grumble.query.ModelQuery):
     def fetchall(self):
         with gripe.db.Tx.begin():
             results = [r for r in self]
-            logger.debug("Query(%s, %s, %s).fetchall(): len = %s", self.kinds, self.filters, self._ancestor
-                         if hasattr(self, "_ancestor") else None, len(results))
+            logger.debug("%s.fetchall(): len = %s", str(self), len(results))
             return results

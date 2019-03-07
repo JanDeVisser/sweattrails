@@ -16,6 +16,8 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
+import sys
+
 from PyQt5.QtCore import QCoreApplication
 from PyQt5.QtCore import QObject
 from PyQt5.QtCore import pyqtSignal
@@ -24,8 +26,8 @@ import gripe
 import gripe.db
 import grizzle
 import grumble.property
-import sweattrails.qt.bg.bg
-import sweattrails.qt.bg.job
+import grumpy.bg.bg
+import grumpy.bg.job
 import sweattrails.qt.imports
 import sweattrails.qt.mainwindow
 import sweattrails.qt.session.details
@@ -40,12 +42,12 @@ class NotAuthenticatedException(gripe.AuthException):
         return "Not authenticated"
 
 
-class SweatTrailsCore(object):
+class SweatTrailsCore:
     refresh = pyqtSignal(QObject, name="refresh")
 
-    def init_config(self, args):
-        save = False
+    def __init__(self):
         self.user = self.user_id = None
+        save = False
         if "qtapp" not in gripe.Config:
             gripe.Config.qtapp = {}
         self.config = gripe.Config.qtapp
@@ -54,7 +56,30 @@ class SweatTrailsCore(object):
             save = True
         if save:
             self.config = gripe.Config.set("qtapp", self.config)
-        save = False
+        self.curr_progress = 0
+        self._user_manager = None
+
+    @staticmethod
+    def status_message(msg, *args):
+        print(str(msg).format(*args))
+
+    def progress_init(self, msg, *args):
+        self.curr_progress = 0
+        sys.stdout.write((msg + " [").format(*args))
+        sys.stdout.flush()
+
+    def progress(self, new_progress):
+        diff = new_progress // 10 - self.curr_progress
+        sys.stdout.write("." * diff)
+        sys.stdout.flush()
+        self.curr_progress = new_progress // 10
+
+    @staticmethod
+    def progress_done():
+        sys.stdout.write("]\n")
+        sys.stdout.flush()
+
+    def init_config(self, args):
         if args.user and args.password:
             if QCoreApplication.instance().has_users():
                 self.authenticate(uid=args.user,
@@ -69,15 +94,13 @@ class SweatTrailsCore(object):
                 logger.debug("Auto-login uid %s", uid)
                 if not uid or not self.authenticate(uid=uid, password=password, savecredentials=False):
                     del self.config.settings["user"]
-                    save = True
+                    self.config = gripe.Config.set("qtapp", self.config)
         else:
             self.authenticate(uid=args.user, password=args.password, savecredentials=args.savecredentials)
-        if save:
-            self.config = gripe.Config.set("qtapp", self.config)
 
     def start(self, args):
         self.init_config(args)
-        t = sweattrails.qt.bg.bg.BackgroundThread.get_thread()
+        t = grumpy.bg.bg.BackgroundThread.get_thread()
         t.statusMessage.connect(self.status_message)
         t.progressInit.connect(self.progress_init)
         t.progressUpdate.connect(self.progress)
@@ -86,9 +109,6 @@ class SweatTrailsCore(object):
         t.jobFinished.connect(self.job_finished)
         t.jobError.connect(self.job_error)
         t.start()
-
-    def status_message(self, msg, *args):
-        print(msg.format(*args))
 
     def job_started(self, job):
         self.status_message("{0} started", job)
@@ -101,7 +121,7 @@ class SweatTrailsCore(object):
         self.status_message("Error executing {0}: {1}", *args)
 
     def user_manager(self):
-        if not hasattr(self, "_user_manager"):
+        if not self._user_manager:
             self._user_manager = grizzle.UserManager()
         return self._user_manager
 
@@ -115,9 +135,15 @@ class SweatTrailsCore(object):
         self.user_id = None
         um = self.user_manager()
         with gripe.db.Tx.begin():
-            self.user = um.authenticate(**kwargs)
+            self.user, password, savecreds = um.authenticate(**kwargs)
             if self.user is not None:
-                self.user_id = self.user.id
+                if savecreds:
+                    gripe.Config.qtapp.settings["user"] = {
+                        "user_id": self.user.uid(),
+                        "password": grumble.property.PasswordProperty.hash(password)
+                    }
+                    self.config = gripe.Config.set("qtapp", self.config)
+                self.user_id = self.user.uid()
                 self.refresh.emit(None)
         return self.user is not None
 
@@ -128,13 +154,13 @@ class SweatTrailsCore(object):
         with gripe.db.Tx.begin():
             user = um.add(uid, password=password, display_name=display_name)
             user.confirm()
-        return self.authenticate(uid, password, savecreds)
+        return self.authenticate(uid=uid, password=password, savecredentials=savecreds)
 
     def is_authenticated(self):
         return self.user is not None
 
     def import_files(self, *filenames):
-        t = sweattrails.qt.bg.bg.BackgroundThread.get_thread()
+        t = grumpy.bg.bg.BackgroundThread.get_thread()
         for f in filenames:
             job = sweattrails.qt.imports.ImportFile(f)
             job.jobFinished.connect(self._refresh)
@@ -144,7 +170,7 @@ class SweatTrailsCore(object):
         self.refresh.emit(job)
 
     def download(self):
-        job = sweattrails.qt.imports.DownloadJob(self.getDownloadManager())
+        job = sweattrails.qt.imports.DownloadJob(self.get_download_manager())
         job.jobFinished.connect(self._refresh)
         job.jobError.connect(self.status_message)
         job.submit()
@@ -160,3 +186,6 @@ class SweatTrailsCore(object):
             for session in q:
                 job = sweattrails.qt.session.details.ReanalyzeJob(session)
                 job.submit()
+
+    def get_download_manager(self):
+        return None

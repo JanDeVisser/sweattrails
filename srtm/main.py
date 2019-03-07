@@ -111,9 +111,9 @@ class FileHandler:
         """ The default path to store files. """
         # Local cache path:
         result = ""
-        if os.environ.has_key('HOME'):
+        if 'HOME' in os.environ:
             result = os.path.join(os.environ['HOME'], '.srtm')
-        elif os.environ.has_key('HOMEPATH'):
+        elif 'HOMEPATH' in os.environ:
             result = os.path.join(os.environ['HOMEPATH'], ".srtm")
         else:
             raise Exception('No default HOME directory found, please specify a path where to store files')

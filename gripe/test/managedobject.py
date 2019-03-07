@@ -65,5 +65,5 @@ class TestUsers(unittest.TestCase):
         print(user, user.objid(), user.displayname(), user.roles(), user.groupnames())
 
 if __name__ == "__main__":
-    #import sys;sys.argv = ['', 'Test.testName']
+    #imp sys;sys.argv = ['', 'Test.testName']
     unittest.main()

@@ -20,7 +20,7 @@ Classess containing parsed elevation data.
 
 import math
 import re
-import urllib
+import urllib.request
 
 import srtm.utils
 import srtm.retriever
@@ -76,7 +76,7 @@ class GeoElevationData:
         if not file_name:
             return None
 
-        if self.files.has_key(file_name):
+        if file_name in self.files:
             return self.files[file_name]
         else:
             data = self.retrieve_or_load_file_data(file_name)
@@ -97,18 +97,12 @@ class GeoElevationData:
             data = self.file_handler.read(zip_data_file_name)
             return srtm.utils.unzip(data)
 
-        url = None
-
-        if self.srtm1_files.has_key(file_name):
-            url = self.srtm1_files[file_name]
-        elif self.srtm3_files.has_key(file_name):
-            url = self.srtm3_files[file_name]
-
+        url = self.srtm1_files.get(file_name, self.srtm3_files.get(file_name))
         if not url:
-            #logger.error('No file found: {0}'.format(file_name))
+            # logger.error('No file found: {0}'.format(file_name))
             return None
 
-        f = urllib.urlopen(url)
+        f = urllib.request.urlopen(url)
         logger.info('Retrieving {0}'.format(url))
         data = f.read()
         logger.info('Retrieved {0} ({1} bytes)'.format(url, len(data)))
@@ -143,7 +137,7 @@ class GeoElevationData:
         file_name = '%s%s%s%s.hgt' % (north_south, str(int(abs(math.floor(latitude)))).zfill(2), 
                                       east_west, str(int(abs(math.floor(longitude)))).zfill(3))
 
-        if not self.srtm1_files.has_key(file_name) and not self.srtm3_files.has_key(file_name):
+        if file_name not in self.srtm1_files and file_name not in self.srtm3_files:
             #logger.debug('No file found for ({0}, {1}) (file_name: {2})'.format(latitude, longitude, file_name))
             return None
 
@@ -371,10 +365,10 @@ class GeoElevationFile:
 
         #logger.debug('{0}, {1} -> {2}'.format(row, column, i))
 
-        byte_1 = ord(self.data[i * 2])
-        byte_2 = ord(self.data[i * 2 + 1])
+        byte_1 = self.data[i * 2]
+        byte_2 = self.data[i * 2 + 1]
 
-        result = byte_1 * 256 + byte_2
+        result = self.data[i * 2] << 8 + self.data[i * 2 + 1]
 
         if result > 9000:
             # TODO(TK) try to detect the elevation from neighbour point:

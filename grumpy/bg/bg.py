@@ -72,11 +72,9 @@ class BackgroundThread(LoggingThread):
     def __init__(self):
         super(BackgroundThread, self).__init__()
         self._queue = queue.Queue()
-        if ("sweattrails" in gripe.Config.app and
-                "background" in gripe.Config.app.sweattrails and
-                "plugins" in gripe.Config.app.sweattrails.background):
-            for plugin in gripe.Config.app.sweattrails.background.plugins:
-                logger.debug("Initializing backgroung plugin '%s'", plugin)
+        if "grumpy" in gripe.Config.app and "plugins" in gripe.Config.app.grumpy:
+            for plugin in gripe.Config.app.grumpy.plugins:
+                logger.debug("Initializing background plugin '%s'", plugin)
                 plugin = gripe.resolve(plugin)
                 self._plugins.append(plugin(self))
 
@@ -86,6 +84,7 @@ class BackgroundThread(LoggingThread):
 
     def run(self):
         self._stopped = False
+
         while not self._stopped:
             for plugin in self._plugins:
                 try:
@@ -97,7 +96,7 @@ class BackgroundThread(LoggingThread):
                 while True:
                     job = self._queue.get(True, 1)
                     try:
-                        job._handle(self)
+                        job(self)
                     except Exception as e:
                         traceback.print_exc()
                         job.error("Unexpected exception handling task", e)
@@ -105,6 +104,15 @@ class BackgroundThread(LoggingThread):
             except queue.Empty:
                 self.queueEmpty.emit()
         logger.debug("BackgroundThread finished")
+
+    def quit(self):
+        super(BackgroundThread, self).quit()
+        for plugin in self._plugins:
+            try:
+                plugin.quit()
+            except Exception as e:
+                traceback.print_exc()
+                self.status_message("Exception stopping background task '%s': %s", str(plugin), str(e))
 
     @classmethod
     def get_thread(cls):
@@ -118,7 +126,7 @@ class BackgroundThread(LoggingThread):
         t.addjob(job)
 
 
-class ThreadPlugin(object):
+class ThreadPlugin:
     def __init__(self, thread):
         self.thread = thread
 
@@ -129,4 +137,7 @@ class ThreadPlugin(object):
         self.thread.addjob(job)
 
     def run(self):
+        pass
+
+    def quit(self):
         pass

@@ -189,3 +189,20 @@ class TimeDeltaConverter(PropertyConverter, datatype=datetime.timedelta):
 
     def from_jsonvalue(self, value):
         return datetime.timedelta(seconds=value)
+
+
+class PythonConverter(PropertyConverter, datatype=type):
+    def convert(self, value):
+        ret = gripe.resolve(value)
+        if not callable(ret):
+            raise TypeError("Cannot convert '%s' to a PythonProperty" % value)
+        return ret
+
+    def to_jsonvalue(self, value):
+        assert value is not None, "PythonConverter.to_jsonvalue(): value should not be None"
+        assert callable(value), "PythonConverter.to_jsonvalue(): value must callable"
+        return value.__name__
+
+    def from_jsonvalue(self, value):
+        assert (value is None) or isinstance(value, str), "PythonConverter.from_jsonvalue(): value must be a string"
+        return gripe.resolve(value)

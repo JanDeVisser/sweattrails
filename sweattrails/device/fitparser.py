@@ -17,8 +17,6 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
-import StringIO
-
 import gripe
 import sweattrails.device.exceptions
 import sweattrails.device.fitparse
@@ -30,14 +28,14 @@ logger = gripe.get_logger(__name__)
 class FITRecord(object):
     def __init__(self, rec):
         self._fitrec = rec
-        self._data = rec.as_dict(False)
+        self._data = rec.get_values()
     
     def fitrecord(self):
         return self._fitrec
 
     def get_data(self, key):
         assert self.fitrecord(), "FITRecord.get_data(%s): no FIT record set in class %s" % (key, self.__class__)
-        return self.fitrecord().get_data(key)
+        return self._data.get(key)
 
     def set_data(self, key, data):
         assert False, "set_data not supported on FIT records"
@@ -46,13 +44,18 @@ class FITRecord(object):
     def create(cls, container, rec):
         ret = None
         bridge = cls(rec)
-        if rec.type.name == 'session':
+        t = rec.name
+        if t == 'file_id':
+            file_type = bridge.get_data('type')
+            if file_type != 'activity':
+                raise sweattrails.device.exceptions.FileImportError("File is not an activity, but a '%s'" % file_type)
+        elif t == 'session':
             ret = sweattrails.device.parser.Activity(bridge)
             container.add_activity(ret)
-        elif rec.type.name == 'lap':
+        elif t == 'lap':
             ret = sweattrails.device.parser.Lap(bridge)
             container.add_lap(ret)
-        elif rec.type.name == 'record':
+        elif t == 'record':
             ret = sweattrails.device.parser.Trackpoint(bridge)
             container.add_trackpoint(ret)
         if ret:
@@ -65,16 +68,14 @@ class FITParser(sweattrails.device.parser.Parser):
         super(FITParser, self).__init__(filename)
         self.fitactivity = None
         
-    def parse_file(self, buffer = None):
-        self.fitactivity = sweattrails.device.fitparse.Activity(self.filename)
+    def parse_file(self, buffer=None):
         self.status_message("Parsing FIT file {}", self.filename)
-        self.fitactivity.parse(buffer=buffer)
-        
-        # Walk all records and wrap them in our types:
-        for r in self.fitactivity.records:
-            rec = FITRecord.create(self, r)
-            if rec is not None:
-                rec.container = self
+        self.fitactivity = sweattrails.device.fitparse.FitFile(self.filename)
+        self.progress_init("Reading %s" % self.filename)
+        for r in self.fitactivity.get_messages():
+            FITRecord.create(self, r)
+        self.progress_end()
+
 
 if __name__ == "__main__":
     import sys
@@ -83,9 +84,12 @@ if __name__ == "__main__":
     import gripe.db
     import grizzle
 
-    class Logger(object):
+    class Logger:
+        def __init__(self):
+            self.curr_progress = 0
+
         def status_message(self, msg, *args):
-            print >> sys.stderr, msg.format(*args)
+            print(msg.format(*args), file=sys.stderr)
             
         def progress_init(self, msg, *args):
             self.curr_progress = 0
@@ -93,10 +97,10 @@ if __name__ == "__main__":
             sys.stdout.flush()
             
         def progress(self, new_progress):
-            diff = new_progress/10 - self.curr_progress 
-            sys.stderr.write("." * diff)
+            diff = new_progress // 10 - self.curr_progress
+            sys.stdout.write("." * diff)
             sys.stdout.flush()
-            self.curr_progress = new_progress/10
+            self.curr_progress = new_progress // 10
             
         def progress_end(self):
             sys.stdout.write("]\n")
@@ -104,7 +108,7 @@ if __name__ == "__main__":
             
 
     def printhelp():
-        print "usage: python" + sys.argv[0] + " <uid> <password> <fit file>"
+        print("usage: python" + sys.argv[0] + " <uid> <password> <fit file>")
 
     def main():
         if len(sys.argv) != 4:
@@ -116,10 +120,10 @@ if __name__ == "__main__":
         user = None
         with gripe.db.Tx.begin():
             u = grizzle.UserManager().get(uid)
-            if u.authenticate(password = password):
+            if u.authenticate(password=password):
                 user = u
         if not user:
-            print >> sys.stderr, "Authentication error"
+            print("Authentication error", file=sys.stderr)
             printhelp()
             return 0
 
@@ -129,9 +133,8 @@ if __name__ == "__main__":
             parser.set_logger(Logger())
             parser.parse()
             return 0
-        except:
+        except Exception:
             traceback.print_exc()
             return 1
 
     sys.exit(main())
-

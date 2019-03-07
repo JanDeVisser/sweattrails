@@ -21,9 +21,8 @@ import http.client
 import json
 
 import gripe.db
-import grumble.model
 import grumble.property
-import sweattrails.qt.bg.job
+import grumpy.bg.job
 import sweattrails.userprofile
 
 logger = gripe.get_logger(__name__)
@@ -40,7 +39,7 @@ class WithingsMeasurement(grumble.model.Model):
     value = grumble.property.FloatProperty()
 
 
-class WithingsJob(sweattrails.qt.bg.job.Job):
+class WithingsJob(grumpy.bg.job.Job):
     def __init__(self):
         super(WithingsJob, self).__init__()
 

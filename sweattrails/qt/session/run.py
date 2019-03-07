@@ -59,7 +59,7 @@ class CriticalPaceList(grumble.qt.view.TableView):
             while p is not None and not isinstance(p, sweattrails.qt.session.tab.SessionTab):
                 p = p.parent()
             if p is not None:
-                p.map.drawSegment(rp.timestamp, rp.duration)
+                p.map.draw_segment(rp.timestamp, rp.duration)
 
 
 class PacesPage(QWidget):
@@ -90,6 +90,16 @@ class RunPlugin(object):
                                                          max=interval.max_speed,
                                                          smooth=3,
                                                          color=Qt.magenta))
+        if part.max_power:
+            series = sweattrails.qt.graphs.Series(property="power",
+                                                  name="Power",
+                                                  graph=graph,
+                                                  smooth=3,
+                                                  max=part.max_power,
+                                                  color=Qt.blue)
+            series.addTrendLine(lambda x: float(part.average_power))
+            series.addTrendLine(lambda x: float(part.normalized_power),
+                                style=Qt.DashDotLine)
         if part.max_cadence:
             logger.debug("Cadence graph")
             graph.addSeries(sweattrails.qt.graphs.Series(property="cadence",
@@ -110,5 +120,3 @@ class RunPlugin(object):
                              page.row + 1, 0,
                              readonly=True)
             page.row += 2
-
-

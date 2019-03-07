@@ -51,7 +51,7 @@ class UserDetails(grumble.qt.bridge.FormWidget):
         self.statusMessage.connect(QCoreApplication.instance().status_message)
 
     def setUser(self, user):
-        self.setInstance(user)
+        self.set_instance(user)
 
 
 class UserTab(QSplitter):

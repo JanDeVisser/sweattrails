@@ -1,0 +1,196 @@
+{
+  "institutions": [
+    {
+      "inst_name": "Manulife",
+      "accounts": [
+        {
+          "acc_name": "ManulifeOne",
+          "acc_nr": "123456789",
+          "description": "ManulifeOne",
+          "importer": "bucks.tximport.Reader",
+          "opening_date": { "day": 1, "month": 1, "year": 2019 },
+          "opening_balance": 20000
+        },
+        {
+          "acc_name": "Manulife VISA",
+          "acc_nr": "123456789",
+          "description": "Manulife VISA",
+          "importer": "bucks.tximport.Reader",
+          "opening_date": { "day": 1, "month": 1, "year": 2019 },
+          "opening_balance": 0.0
+        }
+      ]
+    },
+    {
+      "inst_name": "RBC",
+      "accounts": [
+        {
+          "acc_name": "RBC VISA",
+          "acc_nr": "123456789",
+          "description": "RBC VISA",
+          "importer": "bucks.tximport.Reader",
+          "opening_date": { "day": 1, "month": 1, "year": 2019 },
+          "opening_balance": 0.0
+        }
+      ]
+    },
+    {
+      "inst_name": "HBC",
+      "accounts": [
+        {
+          "acc_name": "HBC CC",
+          "acc_nr": "123456789",
+          "description": "Hudson's Bay Card",
+          "importer": "bucks.tximport.Reader",
+          "opening_date": { "day": 1, "month": 1, "year": 2019 },
+          "opening_balance": 0.0
+        }
+      ]
+    },
+    {
+      "inst_name": "Paypal",
+      "accounts": [
+        {
+          "acc_name": "Paypal",
+          "acc_nr": "jan@de-visser.net",
+          "description": "Paypal",
+          "importer": "bucks.tximport.Reader",
+          "opening_date": { "day": 1, "month": 1, "year": 2019 },
+          "opening_balance": 0.0
+        }
+      ]
+    },
+    {
+      "inst_name": "Assante",
+      "accounts": [
+        {
+          "acc_name": "RESP",
+          "acc_nr": "123456789",
+          "description": "RESP Tim and Luc",
+          "importer": "bucks.tximport.Reader",
+          "opening_date": { "day": 1, "month": 1, "year": 2019 },
+          "opening_balance": 0.0
+        },
+        {
+          "acc_name": "RRSP Mariska",
+          "acc_nr": "123456789",
+          "description": "RRSP Mariska",
+          "importer": "bucks.tximport.Reader",
+          "opening_date": { "day": 1, "month": 1, "year": 2019 },
+          "opening_balance": 0.0
+        },
+        {
+          "acc_name": "RRSP Jan",
+          "acc_nr": "123456789",
+          "description": "RRSP Jan",
+          "importer": "bucks.tximport.Reader",
+          "opening_date": { "day": 1, "month": 1, "year": 2019 },
+          "opening_balance": 0.0
+        },
+        {
+          "acc_name": "TFSA Mariska",
+          "acc_nr": "98327554NZ",
+          "description": "TFSA Mariska",
+          "importer": "bucks.tximport.Reader",
+          "opening_date": { "day": 1, "month": 1, "year": 2019 },
+          "opening_balance": 0.0
+        },
+        {
+          "acc_name": "TFSA Jan",
+          "acc_nr": "98327518NZ",
+          "description": "TFSA Jan",
+          "importer": "bucks.tximport.Reader",
+          "opening_date": { "day": 1, "month": 1, "year": 2019 },
+          "opening_balance": 0.0
+        }
+      ]
+    }
+  ],
+  "categories": {
+    "Cash": {},
+    "Gifts": {},
+    "Hobby": {},
+    "Clothing": {
+      "Clothes": {},
+      "Hair": {},
+      "Shoes": {}
+    },
+    "Sports": {
+      "Ski/Snowboard": {},
+      "Multisport": {},
+      "Running": {},
+      "Racing": {}
+    },
+    "Food": {
+      "Groceries": {},
+      "Eating out": {},
+      "Coffee": {},
+      "Booze": {},
+      "Pharmacy": {},
+      "Cosmetics": {}
+    },
+    "Utilities": {
+      "Cellphone": {},
+      "Landline phone": {},
+      "Hydro": {},
+      "Gas": {},
+      "Water": {},
+      "Internet": {}
+    },
+    "Subscriptions": {},
+    "Car": {
+      "Gas": {},
+      "Car Maintenance": {},
+      "407 ETR": {},
+      "Car Rental": {}
+    },
+    "Pets": {
+      "Pet Food": {},
+      "Pet Grooming": {},
+      "Vet": {}
+    },
+    "Medical": {
+      "Vision": {},
+      "Dental": {}
+    },
+    "Cycling": {
+      "Equipment": {},
+      "Transportation": {},
+      "Anquetil et Bobet": {
+        "Parts": {},
+        "Inventory": {},
+        "Tools": {}
+      }
+    },
+    "Homes": {
+      "Renovations": {},
+      "Maintenance": {},
+      "Decor": {}
+    },
+    "Insurance": {
+      "Home/Auto": {},
+      "Life Jan": {},
+      "Life Mariska": {}
+    },
+    "Income": {
+      "Salary Mariska": {},
+      "LTD Jan": {},
+      "Annuities": {},
+      "CPP/CTC": {}
+    }
+  },
+  "projects": {
+    "Kitchener": {},
+    "Bayfield": {},
+    "Jan": {},
+    "Mariska": {},
+    "Children": {
+      "Tim": {},
+      "Luc": {}
+    },
+    "Pets": {
+      "Darcy": {},
+      "Finn": {}
+    }
+  }
+}
