@@ -39,14 +39,21 @@ from PyQt5.QtWidgets import QVBoxLayout
 from PyQt5.QtWidgets import QWidget
 
 import gripe
-import grumble.model
-import grumble.property
-import grumble.qt.bridge
-import grumble.qt.model
-import grumble.qt.view
+import gripe.db
+import grumpy.bridge
+import grumpy.model
+import grumpy.view
 import grumble.reference
 
 import bucks.datamodel
+from bucks.datamodel import Account
+from bucks.datamodel import Category
+from bucks.datamodel import Contact
+from bucks.datamodel import Institution
+from bucks.datamodel import OpeningBalanceTx
+from bucks.datamodel import Project
+from bucks.datamodel import Transaction
+from bucks.datamodel import Transfer
 
 
 class SplashScreen(QSplashScreen):
@@ -54,8 +61,8 @@ class SplashScreen(QSplashScreen):
         super(SplashScreen, self).__init__(QPixmap("image/splash.png"))
 
 
-class BucksForm(grumble.qt.bridge.FormWidget):
-    def __init__(self, tab, kind, buttons=grumble.qt.bridge.FormButtons.AllButtons, **kwargs):
+class BucksForm(grumpy.bridge.FormWidget):
+    def __init__(self, tab, kind, buttons=grumpy.bridge.FormButtons.AllButtons, **kwargs):
         super(BucksForm, self).__init__(tab, buttons, **kwargs)
         self.kind(kind)
         self.statusMessage.connect(QCoreApplication.instance().status_message)
@@ -69,14 +76,52 @@ class BucksForm(grumble.qt.bridge.FormWidget):
         QTimer.singleShot(0, lambda: self.set_instance(None) if self.instance() is None else None)
 
 
+class MoneyColumn(grumpy.model.TableColumn):
+    def __init__(self, attr, header=None, condition=None):
+        super(MoneyColumn, self).__init__(attr,
+                                          header=header if header is not None else attr.replace('_', ' ').title())
+        self._condition = condition \
+            if condition is not None \
+            else lambda v: True
+
+    def get_value(self, data):
+        v = data[self._attr] if self._attr in data else 0.0
+        if v:
+            v = float(v)
+            if abs(v) >= 0.01:
+                if self._condition(v):
+                    return "{0:.2f}".format(v)
+        return None
+
+
+class BucksTreeItem(grumpy.model.TreeItem):
+    def __init__(self, *args, **kwargs):
+        super(BucksTreeItem, self).__init__(*args, **kwargs)
+
+    def on_assign(self, obj: grumble.model.Model):
+        obj.add_adhoc_property("cum_debit", obj.total_debit if obj.total_debit is not None else 0.0)
+        obj.add_adhoc_property("cum_credit", obj.total_credit if obj.total_credit is not None else 0.0)
+        obj.add_adhoc_property("cum_total", obj.total if obj.total is not None else 0.0)
+
+    def on_append(self, child):
+        obj = child.get_object()
+        p = self
+        while p and p.get_object():
+            p_obj = p.get_object()
+            p_obj.cum_debit += obj.cum_debit
+            p_obj.cum_credit += obj.cum_credit
+            p_obj.cum_total += obj.cum_total
+            p = p.parentItem()
+
+
 class InstitutionForm(BucksForm):
     def __init__(self, tab):
-        super(InstitutionForm, self).__init__(None, bucks.datamodel.Institution)
-        self.addProperty(bucks.datamodel.Institution, "inst_name", 0, 1)
-        self.addProperty(bucks.datamodel.Institution, "description", 1, 1)
+        super(InstitutionForm, self).__init__(None, Institution)
+        self.addProperty(Institution, "inst_name", 0, 1)
+        self.addProperty(Institution, "description", 1, 1)
         self.acc_label = QLabel("Accounts:")
         self.addWidget(self.acc_label, 2, 1, 1, 1, Qt.AlignTop)
-        self.accounts = grumble.qt.view.TableView(bucks.datamodel.Account.query(keys_only=False), ["acc_name", "description"])
+        self.accounts = grumpy.view.TableView(Account.query(keys_only=False), ["acc_name", "description"])
         self.addWidget(self.accounts, 2, 2)
 
     def assigned(self, key):
@@ -94,7 +139,7 @@ class InstitutionTab(QWidget):
     def __init__(self, parent):
         super(InstitutionTab, self).__init__(parent=parent)
         layout = QVBoxLayout(self)
-        self.table = grumble.qt.view.TableView(bucks.datamodel.Institution.query(keys_only=False), ["inst_name"])
+        self.table = grumpy.view.TableView(Institution.query(keys_only=False), ["inst_name"])
         self.table.setMinimumSize(400, 300)
         layout.addWidget(self.table)
         self.form = InstitutionForm(self)
@@ -107,8 +152,7 @@ class InstitutionTab(QWidget):
 class AccountForm(BucksForm):
     def __init__(self, tab):
         super(AccountForm, self).__init__(tab, bucks.datamodel.Account)
-        self.addProperty(bucks.datamodel.Account, "^", 0, 1, refclass=bucks.datamodel.Institution,
-                         label="Institution", required=True)
+        self.addProperty(Account, "^", 0, 1, refclass=Institution, label="Institution", required=True)
         self.addProperty(bucks.datamodel.Account, "acc_nr", 1, 1)
         self.addProperty(bucks.datamodel.Account, "acc_name", 2, 1)
         self.addProperty(bucks.datamodel.Account, "description", 3, 1)
@@ -120,8 +164,20 @@ class AccountTab(QWidget):
     def __init__(self, parent):
         super(AccountTab, self).__init__(parent=parent)
         layout = QVBoxLayout(self)
-        self.table = grumble.qt.view.TableView(bucks.datamodel.Account.query(keys_only=False),
-                                               ["acc_name", "description", "current_balance"])
+
+        q = Transaction.query(keys_only=False, include_subclasses=True, alias="account")
+        q.add_synthetic_column("debit", "(CASE WHEN amt < 0 THEN -amt ELSE 0 END)")
+        q.add_synthetic_column("credit", "(CASE WHEN amt > 0 THEN amt ELSE 0 END)")
+        q.add_aggregate("k.debit", name="total_debit", groupby=Account, func="SUM")
+        q.add_aggregate("k.credit", name="total_credit", groupby=Account, func="SUM")
+        q.add_aggregate("amt", name="total", groupby=Account, func="SUM")
+        q.add_parent_join(Account, "account")
+
+        self.table = grumpy.view.TableView(q,
+                                           ["acc_name", "description", "current_balance",
+                                            grumpy.model.TableColumn("debit"),
+                                            grumpy.model.TableColumn("credit")],
+                                           kind=Account)
         self.table.setMinimumSize(400, 300)
         layout.addWidget(self.table)
         self.form = AccountForm(self)
@@ -134,16 +190,16 @@ class AccountTab(QWidget):
 
 class CategoryForm(BucksForm):
     def __init__(self, tab):
-        super(CategoryForm, self).__init__(tab, bucks.datamodel.Category)
-        self.addProperty(bucks.datamodel.Category, "^", 0, 1, refclass=bucks.datamodel.Category,
+        super(CategoryForm, self).__init__(tab, Category)
+        self.addProperty(Category, "^", 0, 1, refclass=Category,
                          label="Subcategory of", required=False)
         self.addProperty(bucks.datamodel.Category, "cat_name", 2, 1)
         self.addProperty(bucks.datamodel.Category, "description", 3, 1)
         self.addProperty(bucks.datamodel.Category, "current_balance", 4, 1)
-        q = bucks.datamodel.Transaction.query(keys_only=False).add_parent_join(bucks.datamodel.Account)
-        self.tx_list = grumble.qt.view.TableView(q, ["date", "+p:account.acc_name", "credit", "debit", "description"])
+        q = Transaction.query(keys_only=False).add_parent_join(Account)
+        self.tx_list = grumpy.view.TableView(q, ["date", "+p:account.acc_name", "credit", "debit", "description"])
         self.addTab(self.tx_list, "Transactions")
-        self.subcategories = grumble.qt.view.TableView(bucks.datamodel.Category.query(keys_only=False), ["cat_name"])
+        self.subcategories = grumpy.view.TableView(Category.query(keys_only=False), ["cat_name"])
         self.addTab(self.subcategories, "Subcategories")
         QCoreApplication.instance().importer.imported.connect(self.tx_list.refresh)
 
@@ -162,7 +218,21 @@ class CategoryTab(QWidget):
     def __init__(self, parent):
         super(CategoryTab, self).__init__(parent=parent)
         layout = QVBoxLayout(self)
-        self.tree = grumble.qt.view.TreeView(self, bucks.datamodel.Category)
+        q = Transaction.query(keys_only=False, include_subclasses=True, alias="category")
+        q.add_synthetic_column("debit", "(CASE WHEN amt < 0 THEN -amt ELSE 0 END)")
+        q.add_synthetic_column("credit", "(CASE WHEN amt > 0 THEN amt ELSE 0 END)")
+        q.add_aggregate("k.debit", name="total_debit", groupby=Category, func="SUM")
+        q.add_aggregate("k.credit", name="total_credit", groupby=Category, func="SUM")
+        q.add_aggregate("k.amt", name="total", groupby=Category, func="SUM")
+        q.add_join(Category, "category", jointype="RIGHT")
+        self.tree = grumpy.view.TreeView(self, kind=Category, query=q, root=None, columns=[
+                                            MoneyColumn("total_debit", "Debit"),
+                                            MoneyColumn("total_credit", "Credit"),
+                                            MoneyColumn("total", "Balance"),
+                                            MoneyColumn("cum_debit", "Total Debit"),
+                                            MoneyColumn("cum_credit", "Total Credit"),
+                                            MoneyColumn("cum_total", "Cum.Balance"),
+                                         ], itemclass=BucksTreeItem)
         self.tree.setMinimumSize(400, 300)
         layout.addWidget(self.tree)
         self.form = CategoryForm(self)
@@ -175,15 +245,15 @@ class CategoryTab(QWidget):
 
 class ProjectForm(BucksForm):
     def __init__(self, tab):
-        super(ProjectForm, self).__init__(tab, bucks.datamodel.Project)
-        self.addProperty(bucks.datamodel.Project, "^", 0, 1, refclass=bucks.datamodel.Project,
-                         label="Subproject of", required=False)
+        super(ProjectForm, self).__init__(tab, Project)
+        self.addProperty(Project, "^", 0, 1, refclass=Project, label="Subproject of", required=False)
         self.addProperty(bucks.datamodel.Project, "proj_name", 2, 1)
         self.addProperty(bucks.datamodel.Project, "description", 3, 1)
         self.addProperty(bucks.datamodel.Project, "category", 4, 1)
         self.sub_label = QLabel("Subprojects:")
         self.addWidget(self.sub_label, 5, 1, 1, 1, Qt.AlignTop)
-        self.subprojects = grumble.qt.view.TableView(bucks.datamodel.Project.query(keys_only=False), ["proj_name"])
+        self.subprojects = grumpy.view.TableView(Project.query(keys_only=False),
+                                                 ["proj_name"])
         self.addWidget(self.subprojects, 5, 2)
 
     def assigned(self, key):
@@ -201,7 +271,19 @@ class ProjectTab(QWidget):
     def __init__(self, parent):
         super(ProjectTab, self).__init__(parent=parent)
         layout = QVBoxLayout(self)
-        self.tree = grumble.qt.view.TreeView(self, bucks.datamodel.Project)
+
+        q = Transaction.query(keys_only=False, include_subclasses=True, alias="project")
+        q.add_synthetic_column("debit", "(CASE WHEN amt < 0 THEN -amt ELSE 0 END)")
+        q.add_synthetic_column("credit", "(CASE WHEN amt > 0 THEN amt ELSE 0 END)")
+        q.add_aggregate("k.debit", name="total_debit", groupby=Project, func="SUM")
+        q.add_aggregate("k.credit", name="total_credit", groupby=Project, func="SUM")
+        q.add_aggregate("k.amt", name="total", groupby=Project, func="SUM")
+        q.add_join(Project, "project", jointype="RIGHT")
+        self.tree = grumpy.view.TreeView(self, kind=Project, query=q, root=None, columns=[
+                                            grumpy.model.TableColumn("total_debit", header="Debit"),
+                                            grumpy.model.TableColumn("total_credit", header="Credit"),
+                                            grumpy.model.TableColumn("total", header="Total"),
+                                         ])
         self.tree.setMinimumSize(400, 300)
         layout.addWidget(self.tree)
         self.form = ProjectForm(self)
@@ -215,17 +297,25 @@ class ProjectTab(QWidget):
 class ContactForm(BucksForm):
     def __init__(self, tab):
         super(ContactForm, self).__init__(tab, bucks.datamodel.Contact)
-        self.addProperty(bucks.datamodel.Contact, "^", 0, 1, refclass=bucks.datamodel.Contact, query=self.query,
-                         label="Alias for", required=False)
-        self.addProperty(bucks.datamodel.Contact, "contact_name", 2, 1)
-        self.tx_list = grumble.qt.view.TableView(bucks.datamodel.Transaction.query(keys_only=False),
-                                                 ["date", "credit", "debit"])
+        self.addProperty(Contact, "^", 0, 1, refclass=Contact, query=self.query, label="Alias for", required=False)
+        self.addProperty(Contact, "contact_name", 2, 1)
+        q = Transaction.query(keys_only=False, include_subclasses=True, raw=True)
+        q.add_parent_join(Account)
+        q.add_filter("contact", "XX")
+        self.tx_list = grumpy.view.TableView(q,
+                                             [
+                                                grumpy.model.TableColumn(attr='date', header='Date'),
+                                                grumpy.model.TableColumn(attr='+p."acc_name"', header='Account'),
+                                                DebitCreditColumn(attr='amt', sign=DebitCreditColumn.Debit),
+                                                DebitCreditColumn(attr='amt', sign=DebitCreditColumn.Credit),
+                                                grumpy.model.TableColumn(attr='description',
+                                                                         header='Description')
+                                               ],
+                                             key_attr='_key')
         self.addTab(self.tx_list, "Transactions")
 
     def assigned(self, key):
         self.get_property_bridge("^").readonly(False)
-        self.alias_list.query().set_ancestor(self.instance())
-        self.alias_list.refresh()
         self.tx_list.query().clear_filters()
         self.tx_list.query().add_filter("contact", self.instance())
         self.tx_list.refresh()
@@ -235,14 +325,24 @@ class ContactForm(BucksForm):
 
     @staticmethod
     def query():
-        return bucks.datamodel.Contact.query(keys_only=False, parent=None)
+        return Contact.query(keys_only=False, parent=None)
 
 
 class ContactTab(QWidget):
     def __init__(self, parent):
         super(ContactTab, self).__init__(parent=parent)
         layout = QVBoxLayout(self)
-        self.table = grumble.qt.view.TableView(bucks.datamodel.Contact.query(keys_only=False), ["contact_name", "current_balance"])
+        q = Transaction.query(keys_only=False, include_subclasses=True, raw=True)
+        q.add_aggregate("amt", name="total", groupby=Contact, func="SUM")
+        q.add_join(Contact, "contact", jointype="RIGHT")
+        self.table = grumpy.view.TableView(q,
+                                           [
+                                                DebitCreditColumn(attr='total', sign=DebitCreditColumn.Debit),
+                                                DebitCreditColumn(attr='total', sign=DebitCreditColumn.Credit),
+                                                grumpy.model.TableColumn(attr='contact."contact_name"',
+                                                                         header='Name')
+                                               ],
+                                           key_attr='contact."_key"')
         self.table.setMinimumSize(400, 300)
         layout.addWidget(self.table)
         self.form = ContactForm(self)
@@ -262,8 +362,8 @@ class TransactionTable(QWidget):
         l = QHBoxLayout()
         l.addWidget(QLabel("Account: "))
         self.account_combo = QComboBox()
-        self.account_combo.setModel(grumble.qt.model.ListModel(bucks.datamodel.Account.query(keys_only=False),
-                                                               "acc_name"))
+        self.account_combo.setModel(grumpy.model.ListModel(Account.query(keys_only=False),
+                                                           "acc_name"))
         self.account_combo.activated[int].connect(self.select_account)
         l.addWidget(self.account_combo)
         self.import_button = QPushButton("Import")
@@ -274,10 +374,14 @@ class TransactionTable(QWidget):
         self.balance_label = QLabel("1000000.00")
         l.addWidget(self.balance_label)
         layout.addLayout(l)
-        self.table = grumble.qt.view.TableView(bucks.datamodel.Transaction.query(keys_only=False),
-                                               ["date", "type", "credit", "debit", "description", "category.cat_name",
-                                                "project.proj_name", "contact.contact_name"],
-                                               self)
+        q = Transaction.query(keys_only=False)
+        q.add_join(Category, "category", jointype="LEFT")
+        q.add_join(Project, "project", jointype="LEFT")
+        q.add_join(Contact, "contact", jointype="LEFT")
+        self.table = grumpy.view.TableView(q, ["date", "type", "credit", "debit", "description",
+                                                   "+category.cat_name", "+project.proj_name",
+                                                   "+contact.contact_name"],
+                                           self)
         self.table.setMinimumSize(800, 400)
         layout.addWidget(self.table)
         self.setLayout(layout)
@@ -286,21 +390,22 @@ class TransactionTable(QWidget):
         QTimer.singleShot(0, lambda: self.select_account(0))
 
     def select_account(self, ix):
-        account: bucks.datamodel.Account = self.account_combo.currentData(Qt.UserRole)
-        self.balance_label.setText("{0:10.2f}".format(account.current_balance))
-        self.table.query().set_ancestor(account)
-        self.table.refresh()
+        with gripe.db.Tx.begin():
+            account: Account = self.account_combo.currentData(Qt.UserRole)()
+            self.balance_label.setText("{0:10.2f}".format(account.current_balance))
+            self.table.query().set_ancestor(account)
+            self.table.refresh()
 
     def set_instance(self, key):
         self.objectSelected.emit(key)
 
     def refresh(self, *args):
-        account: bucks.datamodel.Account = self.account_combo.currentData(Qt.UserRole)
+        account: Account = self.account_combo.currentData(Qt.UserRole)
         self.table.refresh()
         self.balance_label.setText("{0:10.2f}".format(account.current_balance))
 
     def import_transactions(self):
-        account: bucks.datamodel.Account = self.account_combo.currentData(Qt.UserRole)
+        account: Account = self.account_combo.currentData(Qt.UserRole)
         (file_name, _) = QFileDialog.getOpenFileName(self, "Open Transactions File", "", "CSV Files (*.csv)")
         if file_name:
             QCoreApplication.instance().importer.execute(account, file_name)
@@ -358,7 +463,7 @@ class TransactionForm(BucksForm):
 
 class DebitCreditTab(TransactionForm):
     def __init__(self, parent):
-        super(DebitCreditTab, self).__init__(parent, bucks.datamodel.Transaction, init_instance=self.init_tx)
+        super(DebitCreditTab, self).__init__(parent, Transaction, init_instance=self.init_tx)
         self.addWidget(QLabel("Amount:"), 3, 1, 1, 1)
         l = QHBoxLayout()
         self.amount = QLineEdit(self)
@@ -369,10 +474,10 @@ class DebitCreditTab(TransactionForm):
         self.type.addItem("Income", "C")
         l.addWidget(self.type)
         self.addLayout(l, 3, 2)
-        self.addProperty(bucks.datamodel.Transaction, "description", 4, 1)
-        self.addProperty(bucks.datamodel.Transaction, "category", 5, 1)
-        self.addProperty(bucks.datamodel.Transaction, "project", 6, 1)
-        self.addProperty(bucks.datamodel.Transaction, "contact", 7, 1)
+        self.addProperty(Transaction, "description", 4, 1)
+        self.addProperty(Transaction, "category", 5, 1)
+        self.addProperty(Transaction, "project", 6, 1)
+        self.addProperty(Transaction, "contact", 7, 1)
 
     def init_tx(self):
         ret = bucks.datamodel.Transaction()
@@ -390,15 +495,15 @@ class DebitCreditTab(TransactionForm):
 
 class TransferTab(TransactionForm):
     def __init__(self, parent):
-        super(TransferTab, self).__init__(parent, bucks.datamodel.Transfer)
-        self.addProperty(bucks.datamodel.Transfer, "amt", 3, 1)
-        self.addProperty(bucks.datamodel.Transfer, "account", 5, 1)
+        super(TransferTab, self).__init__(parent, Transfer)
+        self.addProperty(Transfer, "amt", 3, 1)
+        self.addProperty(Transfer, "account", 5, 1)
 
 
 class OpeningBalanceTab(TransactionForm):
     def __init__(self, parent):
-        super(OpeningBalanceTab, self).__init__(parent, bucks.datamodel.OpeningBalanceTx)
-        self.addProperty(bucks.datamodel.Transfer, "amt", 3, 1)
+        super(OpeningBalanceTab, self).__init__(parent, OpeningBalanceTx)
+        self.addProperty(Transfer, "amt", 3, 1)
 
 
 class MainWindow(QMainWindow):
@@ -413,11 +518,11 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout()
         self.tabs = QTabWidget()
         self.tabs.addTab(TransactionTab(self), "Transactions")
-        self.tabs.addTab(InstitutionTab(self), "Institutions")
-        self.tabs.addTab(AccountTab(self), "Accounts")
+        # self.tabs.addTab(InstitutionTab(self), "Institutions")
+        # self.tabs.addTab(AccountTab(self), "Accounts")
         self.tabs.addTab(CategoryTab(self), "Categories")
-        self.tabs.addTab(ProjectTab(self), "Projects")
-        self.tabs.addTab(ContactTab(self), "Contacts")
+        # self.tabs.addTab(ProjectTab(self), "Projects")
+        # self.tabs.addTab(ContactTab(self), "Contacts")
         layout.addWidget(self.tabs)
         window.setLayout(layout)
         self.message_label = QLabel()

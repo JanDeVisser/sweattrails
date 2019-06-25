@@ -16,6 +16,7 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
+import sys
 import uuid
 
 import gripe.acl
@@ -41,16 +42,27 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
 
     def __init__(self, *args, **kwargs):
         self._brandnew = True
-        self._set_ancestors_from_parent(kwargs.get("parent"))
-        self._key_name = kwargs.get("key_name",
-                                    gripe.call_if_exists(self, "get_new_key", None, *args, **kwargs))
-        self._acl = gripe.acl.ACL(kwargs.get("acl"))
-        self._id = None
-        self._values = {}
-        for (prop_name, prop) in self._allproperties.items():
-            setattr(self, prop_name, prop._initial_value())
+        if "key" in kwargs:
+            self._key = kwargs.pop("key")
+            p = self._key.scope()
+            self._set_ancestors_from_parent(p)
+            self._key_name = self._key.name
+            self._id = self._key.id
+        else:
+            if "parent" in kwargs:
+                self._set_ancestors_from_parent(kwargs.pop("parent"))
+            self._key_name = kwargs.pop("key_name",
+                                        gripe.call_if_exists(self, "get_new_key", None, *args, **kwargs))
+            self._id = kwargs.pop("id", None)
+        self._acl = gripe.acl.ACL(kwargs.pop("acl", None))
+        self._values = None
+        self._instance_properties = dict(self._allproperties)
+        for (prop_name, prop) in self._instance_properties.items():
+            setattr(self, prop_name, prop.initial_value_())
         for (prop_name, prop_value) in kwargs.items():
-            if prop_name in self._allproperties:
+            if prop_name not in self._instance_properties:
+                self.add_adhoc_property(prop_name, prop_value)
+            else:
                 setattr(self, prop_name, prop_value)
 
     @classmethod
@@ -84,12 +96,34 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             logger.info("Class %s SEALED", cls.kind())
             cls._sealed = True
             delattr(cls, "_sealing")
+            
+    def __getattribute__(self, name):
+        try:
+            return super(Model, self).__getattribute__(name)
+        except AttributeError:
+            ip = super(Model, self).__getattribute__("_instance_properties")
+            ap = super(Model, self).__getattribute__("_allproperties")
+            if name in ip and name not in ap:
+                prop = ip[name]
+                return prop.__get__(self, self)
+            else:
+                raise
+
+    def __setattr__(self, name, value):
+        try:
+            if name in self._instance_properties and name not in self._allproperties:
+                prop = self._instance_properties[name]
+                prop.__set__(self, value)
+                return
+        except AttributeError:
+            pass
+        super(Model, self).__setattr__(name, value)
 
     def __repr__(self):
         return str(self.key())
 
     def __str__(self):
-        self._load()
+        self.load()
         label = self.label_prop if hasattr(self.__class__, "label_prop") else None
         if self.keyname():
             s = self.keyname()
@@ -111,6 +145,51 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
     def __call__(self):
         return self
 
+    def __getitem__(self, item):
+        if isinstance(item, grumble.property.ModelProperty):
+            if item.name not in self._instance_properties:
+                raise KeyError("'%s' is not a property of kind '%s'" % (item.name, self.kind()))
+            return getattr(self, item.name)
+        elif item == '_kind':
+            return self.kind()
+        elif item == '_key':
+            return self.key()
+        elif item == '_parent':
+            return self.parent()
+        elif item == '_key_name':
+            return self.keyname()
+        elif item.startswith('+'):
+            try:
+                return self.joined_value(item)
+            except ValueError as ve:
+                raise KeyError(str(ve))
+        elif not item:
+            raise KeyError('Empty key')
+        else:
+            path = item.replace('"', '').split(".", 2)
+            attr = path[0]
+            if attr not in self._instance_properties:
+                raise KeyError("'%s' is not a property of kind '%s'" % (attr, self.kind()))
+            ret = getattr(self, attr) if item in self._instance_properties else None
+            if len(path) > 1:
+                if isinstance(ret, Model):
+                    ret = ret[path[1]]
+                else:
+                    raise KeyError("'%s' is not a reference property of kind '%s'" % (attr, self.kind()))
+            return ret
+
+    def __contains__(self, item):
+        if isinstance(item, grumble.property.ModelProperty):
+            return item.name in self._instance_properties
+        elif item.startswith('+'):
+            item = item[1:]
+            return hasattr(self, "_joins") and item in self._joins
+        elif item in ('_kind', '_key', '_parent', '_key_name'):
+            return True
+        else:
+            path = item.replace('"', '').split(".", 2)
+            return path[0] in self._instance_properties
+
     def _set_ancestors_from_parent(self, parent):
         if not self._flat:
             if parent and hasattr(parent, "key") and callable(parent.key):
@@ -122,8 +201,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             assert parent is None or isinstance(p, grumble.key.Key)
             self._parent = p
             if p:
-                p_obj = parent if isinstance(parent, Model) else p.get()
-                self._ancestors = p_obj.path()
+                self._ancestors = p.path()
             else:
                 self._ancestors = "/"
         else:
@@ -139,12 +217,13 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
                 assert ancestors.endswith("/" + parent), \
                     "_set_ancestors: mismatch parent: %s, ancestors: %s" % (parent, ancestors)
                 self._ancestors = ancestors
+                # print("parent: '%s' (%s)" % (parent, type(parent)), file=sys.stderr)
                 self._parent = grumble.key.Key(parent)
         else:
             self._parent = None
             self._ancestors = "/"
 
-    def _populate(self, values):
+    def _populate(self, values, prefix=None):
         if values is not None:
             self._values = {}
             self._joins = {}
@@ -153,18 +232,29 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             else:
                 assert isinstance(values, dict)
                 v = values
+            if prefix:
+                vv = {k[len(prefix)+1:].replace('"', ''): v for (k, v) in v.items() if k.startswith(prefix + ".")}
+                for (k, val) in v.items():
+                    if '.' not in k and k[0] != '_' and k not in vv:
+                        vv[k] = val
+                v = vv
             parent = v.get("_parent")
             ancestors = v.get("_ancestors")
             self._key_name = v.get("_key_name")
             self._ownerid = v.get("_ownerid")
             self._acl = gripe.acl.ACL(v.get("_acl"))
             for prop in [p for p in self._properties.values() if not p.transient]:
-                prop._update_fromsql(self, v)
+                prop.update_fromsql(self, v)
+            for (k, val) in [(k, val) for (k, val) in v.items() if k not in self._instance_properties and k[0] != '_']:
+                self.add_adhoc_property(k, val)
             self._set_ancestors(ancestors, parent)
             if (self._key_name is None) and hasattr(self, "key_prop"):
                 self._key_name = getattr(self, self.key_prop)
-            self._id = self.key().id
+            self._key = grumble.key.Key(self.kind(), parent, self._key_name)
+            self._id = self.key(id)
             self._exists = True
+            if hasattr(self, "_brandnew"):
+                del self._brandnew
             if hasattr(self, "after_load") and callable(self.after_load):
                 self.after_load()
         else:
@@ -183,23 +273,28 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
         logger.debug("%s.joined_value(%s) %s %s", self.key(), join,
                      join in self._joins if hasattr(self, "_joins") else "??",
                      self._joins.get(join, "???") if hasattr(self, "_joins") else "??")
-        return self._joins.get(join) if hasattr(self, "_joins") else None
+        if hasattr(self, "_joins") and join in self._joins:
+            return self._joins[join]
+        else:
+            raise ValueError("'%s' does no have join '%s'" % (str(self), join))
 
-    def _load(self):
+    def load(self):
         # logger.debug("_load -> kind: %s, key: %s", self.kind(), str(self.key()))
-        if (not(hasattr(self, "_values")) or (self._values is None)) and (self._id or self._key_name):
+        if self._values is None and (self._id or self._key_name):
             self._populate(grumble.query.ModelQuery.get(self.key()))
         else:
-            assert hasattr(self, "_values"), "Object of kind %s doesn't have _values" % self.kind()
-            assert self._values is not None, "Object of kind %s has _values == None" % self.kind()
-            assert hasattr(self, "_ancestors"), "Object of kind %s doesn't have _ancestors" % self.kind()
+            # If self._values is None, and self._id and self._key_name are both None as well,
+            # this is a new Model and we need to initialize _values with an empty dict:
+            if self._values is None:
+                self._values = {}
             assert hasattr(self, "_parent"), "Object of kind %s doesn't have _parent" % self.kind()
+            assert hasattr(self, "_ancestors"), "Object of kind %s doesn't have _ancestors" % self.kind()
 
     def _store(self):
-        self._load()
+        self.load()
         if hasattr(self, "_brandnew"):
             for prop in self._properties.values():
-                prop._on_insert(self)
+                prop.on_insert_(self)
             if hasattr(self, "initialize") and callable(self.initialize):
                 self.initialize()
         include_key_name = not self._key_propdef
@@ -214,13 +309,13 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
         self._storing = 1
         while self._storing:
             for prop in self._properties.values():
-                prop._on_store(self)
+                prop.on_store_(self)
             if hasattr(self, "on_store") and callable(self.on_store):
                 self.on_store()
             self._validate()
             values = {}
             for prop in self._properties.values():
-                prop._values_tosql(self, values)
+                prop.values_tosql(self, values)
             if include_key_name:
                 values['_key_name'] = self._key_name
             if not self._flat:
@@ -236,7 +331,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
                     self.after_insert()
                 del self._brandnew
             for prop in self._properties.values():
-                prop._after_store(self)
+                prop.after_store_(self)
             if hasattr(self, "after_store") and callable(self.after_store):
                 self.after_store()
             self._exists = True
@@ -249,7 +344,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
 
     def _validate(self):
         for prop in self._properties.values():
-            prop._validate(self, prop.__get__(self, None))
+            prop.validate(self, prop.__get__(self, None))
         gripe.call_if_exists(self, "validate", None)
 
     def is_new(self):
@@ -271,7 +366,8 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             Returns the parent Model of this Model, as a Key, or None if this
             Model does not have a parent.
         """
-        self._load()
+        if not hasattr(self, "_parent") and self._id is not None:
+            self.load()
         return self._parent
 
     def parent(self):
@@ -288,7 +384,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             parent = grumble.key.Key(parent)()
             assert str(self.key()) not in parent.path(), \
                 "Cyclical model: attempting to set %s as parent of %s" % (parent, self)
-        self._load()
+        self.load()
         self._set_ancestors_from_parent(parent)
 
     def ancestors(self):
@@ -296,7 +392,8 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             Returns the ancestor path of this Model object. This is the path
             string of the parent object or empty if this object has no parent.
         """
-        self._load()
+        if not hasattr(self, "_parent") and (self._id is not None or self._key_name is not None):
+            self.load()
         return self._ancestors if self._ancestors != "/" else ""
 
     def key(self):
@@ -306,17 +403,17 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             are combined into the Model's id, which is also part of a Key
             object.
         """
-        if not self._key_name:
-            return None
-        else:
-            return (
-                grumble.key.Key(self.kind(), self.parent(), self._key_name)
-                if self._key_scoped
-                else grumble.key.Key(self.kind(), self._key_name))
+        if not hasattr(self, "_key"):
+            if self._id:
+                self._key = grumble.key.Key(self._id)
+            elif hasattr(self, "_parent") and self._key_name:
+                self._key = grumble.key.Key(self.kind(), self.parent_key(), self._key_name)
+            else:
+                assert 0, "Cannot construct key. Need either _id or _key_name and _parent"
+        return self._key
 
     def path(self):
-        a = self.ancestors()
-        return (a if a != "/" else "") + "/" + str(self.key())
+        return self.key().path()
 
     def pathlist(self):
         """
@@ -324,24 +421,14 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             Model first. If this object has no parent, the returned list is
             empty.
         """
-        pl = self.path().split("/")
-        del pl[0]  # First element is "/" because the path starts with a "/"
-        return [Model.get(k) for k in pl]
+        return [Model.get(k) for k in self.key().ancestors()[:-1]]
 
     def root(self):
-        a = self.ancestors()
-        if a:
-            # ancestor path is not empty
-            pl = self.path().split("/")
-            del pl[0]  # First element is "/" because the path starts with a "/"
-            rootkey = pl[0]
-            return Model.get(rootkey)
-        else:
-            # ancestor path is empty, I am root
-            return self
+        root_key = self.key().root()
+        return root_key.get() if root_key != self.key() else self
 
     def ownerid(self, oid=None):
-        self._load()
+        self.load()
         if oid is not None:
             self._ownerid = oid
         return self._ownerid
@@ -356,7 +443,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
         if hasattr(self, "_brandnew"):
             return True
         else:
-            self._load()
+            self.load()
             return self._exists
 
     def to_dict(self, **flags):
@@ -378,7 +465,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
                     return getattr(self, "to_dict_" + name)(serialized, **flags)
                 else:
                     try:
-                        serialized[name] = prop._to_json_value(self, getattr(self, name))
+                        serialized[name] = prop.to_json_value(self, getattr(self, name))
                     except gripe.NotSerializableError:
                         pass
                     return serialized
@@ -395,17 +482,18 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
 
     @classmethod
     def _deserialize(cls, descriptor):
-        for name, prop in filter(lambda n_p: ((not n_p[1].private) and (n_p[0] in descriptor)), cls._allproperties.items()):
+        for name, prop in filter(lambda n_p: ((not n_p[1].private) and (n_p[0] in descriptor)),
+                                 cls._allproperties.items()):
             value = descriptor[name]
             try:
-                descriptor[name] = prop._from_json_value(value)
+                descriptor[name] = prop.from_json_value(value)
             except Exception:
                 logger.exception("Could not deserialize value '%s' for property '%s'", value, name)
                 del descriptor[name]
         return descriptor
 
     def _update_deserialized(self, descriptor, **flags):
-        self._load()
+        self.load()
         try:
             for b in self.__class__.__bases__:
                 if hasattr(b, "_update") and callable(b._update):
@@ -451,7 +539,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
         return obj
 
     def invoke(self, method, args, kwargs):
-        self._load()
+        self.load()
         args = args or []
         kwargs = kwargs or {}
         assert hasattr(self, method) and callable(getattr(self, method)), \
@@ -517,27 +605,36 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
     def add_property(cls, propname, propdef):
         if not isinstance(propdef, (grumble.property.ModelProperty, grumble.property.CompoundProperty)):
             return
-        assert not cls._sealed, "Model %s is sealed. No more properties can be added" % cls.__name__
+        assert not cls._sealed or propdef.transient, "Model %s is sealed. No more properties can be added" % cls.__name__
         if not hasattr(cls, propname):
             setattr(cls, propname, propdef)
         propdef.set_name(propname)
         propdef.set_kind(cls.__name__)
-        mm = grumble.schema.ModelManager.for_name(cls._kind)
-        if not propdef.transient:
-            mm.add_column(propdef.get_coldef())
-        if hasattr(propdef, "is_label") and propdef.is_label:
-            assert not propdef.transient, "Label property cannot be transient"
-            cls.label_prop = propdef
-        if hasattr(propdef, "is_key") and propdef.is_key:
-            assert not propdef.transient, "Key property cannot be transient"
-            cls.key_prop = propname
-        cls._properties[propname] = propdef
-        if isinstance(propdef, grumble.property.CompoundProperty):
-            for p in propdef.compound:
-                setattr(cls, p.name, p)
-                cls._allproperties[p.name] = p
-        else:
-            cls._allproperties[propname] = propdef
+        if not cls._sealed:
+            mm = grumble.schema.ModelManager.for_name(cls._kind)
+            if not propdef.transient:
+                mm.add_column(propdef.get_coldef())
+            if hasattr(propdef, "is_label") and propdef.is_label:
+                assert not propdef.transient, "Label property cannot be transient"
+                cls.label_prop = propdef
+            if hasattr(propdef, "is_key") and propdef.is_key:
+                assert not propdef.transient, "Key property cannot be transient"
+                cls.key_prop = propname
+            cls._properties[propname] = propdef
+            if isinstance(propdef, grumble.property.CompoundProperty):
+                for p in propdef.compound:
+                    setattr(cls, p.name, p)
+                    cls._allproperties[p.name] = p
+            else:
+                cls._allproperties[propname] = propdef
+
+    def add_adhoc_property(self, propname, prop):
+        assert not (hasattr(self, propname) or propname in self._instance_properties)
+        if not isinstance(prop, grumble.property.ModelProperty):
+            prop = grumble.property.WrapperProperty(prop)
+        prop.set_name(propname)
+        prop.set_kind(self.kind())
+        self._instance_properties[propname] = prop
 
     @classmethod
     def _import_properties(cls, from_cls):
@@ -568,6 +665,9 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
     def properties(cls):
         return cls._properties
 
+    def instance_properties(self):
+        return self._instance_properties
+
     @classmethod
     def keyproperty(cls):
         return cls.key_prop if hasattr(cls, "key_prop") else None
@@ -581,7 +681,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
         return grumble.meta.Registry.subclasses(cls)
 
     @classmethod
-    def get(cls, ident, values=None):
+    def get(cls, ident, values=None, prefix=None):
         if cls != Model:
             if isinstance(ident, str) and ':' not in ident:
                 ident = "{:s}:{:s}".format(cls.kind(), ident)
@@ -595,22 +695,18 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
                 if not ret:
                     ret = gripe.db.Tx.get_from_cache(k)
                 if not ret:
-                    ret = super(Model, cls).__new__(cls)
                     assert (cls.kind().endswith(k.kind())) or not k.kind(), \
                         "%s.get(%s.%s) -> wrong key kind" % (cls.kind(), k.kind(), k.name)
-                    ret._id = k.id
-                    ret._key_name = k.name
-                    # if ret._key_scoped:
-                    ret._set_ancestors_from_parent(k.scope())
+                    ret = cls(key=k)
                     gripe.db.Tx.put_in_cache(ret)
                     if hasattr(cls, "_cache"):
                         cls._cache[ret.key()] = ret
                 if values:
-                    ret._populate(values)
+                    ret._populate(values, prefix)
                     ret._populate_joins(values)
         else:
             k = grumble.key.Key(ident)
-            return k.modelclass().get(k, values)
+            return k.modelclass().get(k, values, prefix)
         return ret
 
     @classmethod
@@ -648,7 +744,8 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
 
     @classmethod
     def _declarative_query(cls, *args, **kwargs):
-        q = Query(cls, kwargs.get("keys_only", True), kwargs.get("include_subclasses", True))
+        q = Query(cls, kwargs.get("keys_only", True), kwargs.get("include_subclasses", True),
+                  kwargs.get("raw", False), kwargs.get("alias", None))
         for (k, v) in kwargs.items():
             if k == "ancestor" and not cls._flat:
                 q.set_ancestor(v)
@@ -668,7 +765,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
                 _add_sortorder(q, v)
             elif isinstance(v, (list, tuple)):
                 q.add_filter(k, *v)
-            elif k in ("keys_only", "include_subclasses"):
+            elif k in ("keys_only", "include_subclasses", "raw", "alias"):
                 pass
             else:
                 q.add_filter(k, v)
@@ -781,10 +878,12 @@ def cached(cls):
 
 
 class Query(grumble.query.ModelQuery):
-    def __init__(self, kind, keys_only=True, include_subclasses=True, **kwargs):
+    def __init__(self, kind, keys_only=True, include_subclasses=True, raw=False, alias=None, **kwargs):
         super(Query, self).__init__()
         self.kinds = []
         self._kindlist = []
+        self._include_subclasses = include_subclasses
+        self.keys_only = keys_only
         if isinstance(kind, str):
             self.kinds = [grumble.meta.Registry.get(kind)]
         else:
@@ -792,13 +891,13 @@ class Query(grumble.query.ModelQuery):
                 self.kinds = [grumble.meta.Registry.get(k) for k in kind]
             except TypeError:
                 self.kinds = [grumble.meta.Registry.get(kind)]
-        self.set_includesubclasses(include_subclasses)
-        self.set_keysonly(keys_only)
         if "ancestor" in kwargs:
             self.set_ancestor(kwargs["ancestor"])
         parent = kwargs.get("parent")
         if parent:
             self.set_parent(parent)
+        self._raw = raw
+        self._alias = alias
 
     def __str__(self):
         return "Query({0}{1}{2}{3}{4})".format(
@@ -807,6 +906,9 @@ class Query(grumble.query.ModelQuery):
             (", filters=" + " AND ".join([str(f) for f in self._conditions])) if self._conditions else '',
             (", parent=" + str(self._parent)) if hasattr(self, "_parent") else '',
             (", ancestor=" + str(self._ancestor)) if hasattr(self, "_ancestor") else '')
+
+    def raw(self):
+        return self._raw
 
     def _reset_state(self):
         self._cur_kind = None
@@ -843,11 +945,7 @@ class Query(grumble.query.ModelQuery):
             assert self.kinds
             for k in self.kinds:
                 if not k.abstract():
-                    self._kindlist.append(k.kind())
-                if self._include_subclasses:
-                    for sub in k.subclasses():
-                        if not sub.abstract():
-                            self._kindlist.append(sub.kind())
+                    self._kindlist.append(grumble.meta.Registry.get(k.kind()))
             assert self._kindlist
         return self._kindlist
 
@@ -870,14 +968,20 @@ class Query(grumble.query.ModelQuery):
                 cur = next(self._results, None)
             while cur is None:
                 self._cur_kind = grumble.meta.Registry.get(next(self._iter))
-                self._results = iter(self.execute(self._cur_kind, self.keys_only))
+                self._results = iter(self.execute(self._cur_kind, self.keys_only, subclasses=self._include_subclasses))
                 cur = next(self._results, None)
             if cur:
-                model = self._cur_kind.get(
-                    grumble.key.Key(self._cur_kind, cur[self._results.key_index()]),
-                    None if self.keys_only else {k: v for (k, v) in zip(self._results.columns(), cur)}
-                )
-                ret = self.filter(model)
+                if self._raw:
+                    ret = {k: v for (k, v) in zip(self._results.columns(), cur)}
+                else:
+                    # print(self, cur, file=sys.stderr)
+                    k = grumble.meta.Registry.get(cur[0])
+                    model = k.get(
+                        grumble.key.Key(k, cur[self._results.key_index()]),
+                        None if self.keys_only else {k: v for (k, v) in zip(self._results.columns(), cur)},
+                        self._alias
+                    )
+                    ret = self.filter(model)
         return ret
 
     def __len__(self):
@@ -886,16 +990,14 @@ class Query(grumble.query.ModelQuery):
     def count(self):
         ret = 0
         for k in self.kindlist():
-            ret += self._count(k)
+            ret += self._count(k, subclasses=self._include_subclasses)
         return ret
 
-    # TODO Handle other aggregates besides SUM()
-    def aggregate(self):
-        ret = 0
-        for k in self.kindlist():
-            agg = self._aggregate(k)
-            ret += agg if agg is not None else 0
-        return ret
+    def singleton(self):
+        k = self.kindlist()[0]
+        r = self.execute(k, self.keys_only, subclasses=self._include_subclasses).single_row()
+        return r[1]
+        # return self.execute(k, self.keys_only, subclasses=self._include_subclasses).singleton()
 
     def has(self):
         return self.count() > 0

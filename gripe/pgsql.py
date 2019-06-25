@@ -118,7 +118,7 @@ class DbAdapter(object):
             dsn += " host=%s" % self.config.host
         if "port" in self.config:
             dsn += " port=%s" % self.config.port
-        logger.debug("Connecting with role '%s' autocommit = %s", self.role, self.autocommit)
+        # logger.debug("Connecting with role '%s' autocommit = %s", self.role, self.autocommit)
         conn = psycopg2.connect(dsn, connection_factory=Connection)
         conn.autocommit = self.autocommit
         return conn

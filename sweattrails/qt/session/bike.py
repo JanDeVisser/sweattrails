@@ -19,9 +19,9 @@
 from PyQt5.QtCore import Qt
 
 import gripe.conversions
-import grumble.qt.bridge
-import grumble.qt.model
-import grumble.qt.view
+import grumpy.bridge
+import grumpy.model
+import grumpy.view
 import sweattrails.qt.graphs
 import sweattrails.qt.session.maps
 import sweattrails.qt.session.tab
@@ -31,17 +31,17 @@ import sweattrails.session
 logger = gripe.get_logger(__name__)
 
 
-class CriticalPowerList(grumble.qt.view.TableView):
+class CriticalPowerList(grumpy.view.TableView):
     def __init__(self, parent=None, interval=None):
         super(CriticalPowerList, self).__init__(parent=parent)
         self.interval = interval
 
         query = sweattrails.session.CriticalPower.query(keys_only=False)
-        query.add_join(sweattrails.config.CriticalPowerInterval, "cpdef", "cpi")
+        query.add_join(sweattrails.config.CriticalPowerInterval, "cpdef", alias="cpi")
         query.add_sort('cpi."duration"')
         self.setQueryAndColumns(query,
-                                grumble.qt.model.TableColumn('+cpi."name"', header="Interval"),
-                                grumble.qt.model.TableColumn("power", format="d"),
+                                grumpy.model.TableColumn('+cpi."name"', header="Interval"),
+                                grumpy.model.TableColumn("power", format="d"),
                                 sweattrails.qt.view.TimestampColumn("timestamp"),
                                 sweattrails.qt.view.DistanceColumn("atdistance"))
         self.clicked.connect(self.onClick)
@@ -60,7 +60,7 @@ class CriticalPowerList(grumble.qt.view.TableView):
                 p.map.drawSegment(cp.timestamp, cp.cpdef.duration)
 
 
-class PowerPage(grumble.qt.bridge.FormPage):
+class PowerPage(grumpy.bridge.FormPage):
     def __init__(self, parent):
         super(PowerPage, self).__init__(parent)
         logger.debug("Initializing power tab")

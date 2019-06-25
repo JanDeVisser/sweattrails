@@ -39,10 +39,10 @@ class BinaryProperty(grumble.property.ModelProperty):
     datatype = bytes
     sqltype = "BYTEA"
 
-    def _to_json_value(self, instance, value):
+    def to_json_value(self, instance, value):
         raise gripe.NotSerializableError(self.name)
 
-    def _from_json_value(self, value):
+    def from_json_value(self, value):
         raise gripe.NotSerializableError(self.name)
 
 

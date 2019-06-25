@@ -27,9 +27,8 @@ from PyQt5.QtWidgets import QVBoxLayout
 from PyQt5.QtWidgets import QWidget
 
 import gripe
-import grumble.qt.bridge
-import grumble.qt.model
-import grumble.qt.view
+import grumpy.model
+import grumpy.view
 import sweattrails.config
 import grumpy.bg.bg
 import sweattrails.qt.graphs
@@ -40,12 +39,12 @@ import sweattrails.session
 logger = gripe.get_logger(__name__)
 
 
-class BestPaceList(grumble.qt.view.TableView):
+class BestPaceList(grumpy.view.TableView):
     def __init__(self, parent, cpdef, user=None):
         super(BestPaceList, self).__init__(parent=parent)
         self.cpdef = cpdef
         self.setQueryAndColumns(parent.query,
-                                grumble.qt.model.TableColumn('+session."start_time"', format="%A %B %d", header="Date"),
+                                grumpy.model.TableColumn('+session."start_time"', format="%A %B %d", header="Date"),
                                 sweattrails.qt.view.DistanceColumn("atdistance", header="At distance"),
                                 sweattrails.qt.view.PaceSpeedColumn(what="Pace"))
         self.setMinimumHeight(150)
@@ -91,7 +90,7 @@ class RunFitnessPage(QWidget):
         self.setMinimumSize(800, 600)
 
 
-class BestPowerList(grumble.qt.view.TableView):
+class BestPowerList(grumpy.view.TableView):
     def __init__(self, parent, cpdef, user=None):
         super(BestPowerList, self).__init__(parent=parent)
         self.cpdef = cpdef
@@ -99,9 +98,9 @@ class BestPowerList(grumble.qt.view.TableView):
             user = QCoreApplication.instance().user
         query = sweattrails.session.CriticalPower.get_progression(cpdef, user)
         self.setQueryAndColumns(query,
-                                grumble.qt.model.TableColumn('+session."start_time"', format="%A %B %d", header="Date"),
-                                grumble.qt.model.TableColumn('+cpdef."name"', header="Duration"),
-                                grumble.qt.model.TableColumn("power", header="Power"))
+                                grumpy.model.TableColumn('+session."start_time"', format="%A %B %d", header="Date"),
+                                grumpy.model.TableColumn('+cpdef."name"', header="Duration"),
+                                grumpy.model.TableColumn("power", header="Power"))
         self.setMinimumHeight(150)
         QCoreApplication.instance().refresh.connect(self.refresh)
 
@@ -135,17 +134,17 @@ class BikeFitnessPage(QWidget):
         pass
     
     
-class WeightList(grumble.qt.view.TableView):
+class WeightList(grumpy.view.TableView):
     def __init__(self, parent):
         super(WeightList, self).__init__(parent = parent)
         query = sweattrails.userprofile.WeightHistory.query(keys_only = False)
         query.add_sort("snapshotdate",  False)
         self.setQueryAndColumns(query,
-                grumble.qt.model.TableColumn("snapshotdate", format = "%A %B %d %Y", header = "Date"),
-                grumble.qt.model.TableColumn("weight"),
-                grumble.qt.model.TableColumn("bmi", header = "BMI"),
-                grumble.qt.model.TableColumn("bfPercentage", header = "Body fat %"),
-                grumble.qt.model.TableColumn("waist"))
+                                grumpy.model.TableColumn("snapshotdate", format ="%A %B %d %Y", header ="Date"),
+                                grumpy.model.TableColumn("weight"),
+                                grumpy.model.TableColumn("bmi", header ="BMI"),
+                                grumpy.model.TableColumn("bfPercentage", header ="Body fat %"),
+                                grumpy.model.TableColumn("waist"))
         self.setMinimumHeight(150)
         QCoreApplication.instance().refresh.connect(self.refresh)
 

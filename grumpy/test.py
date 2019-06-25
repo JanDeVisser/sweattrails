@@ -6,7 +6,6 @@ Created on Jul 29, 2014
 
 if __name__ == '__main__':
     import sys
-    import traceback
 
     from PyQt5.QtCore import QCoreApplication
 
@@ -25,9 +24,9 @@ if __name__ == '__main__':
 
     import grumble.model
     import grumble.property
-    import grumble.qt.bridge
-    import grumble.qt.model
-    import grumble.qt.view
+    import grumpy.bridge
+    import grumpy.model
+    import grumpy.view
 
     class QtCountry(grumble.model.Model, template_dir="grumble/qt"):
         country_name = grumble.property.TextProperty(verbose_name="Country name", is_label=True)
@@ -39,9 +38,9 @@ if __name__ == '__main__':
         display_name = grumble.property.TextProperty(required=True, is_label=True)
 
 
-    class UserForm(grumble.qt.bridge.FormWidget):
+    class UserForm(grumpy.bridge.FormWidget):
         def __init__(self, tab):
-            super(UserForm, self).__init__(tab, grumble.qt.bridge.FormButtons.AllButtons)
+            super(UserForm, self).__init__(tab, grumpy.bridge.FormButtons.AllButtons)
             self.addProperty(QtUser, "email", 0, 1, readonly=True)
             self.addProperty(QtUser, "display_name", 1, 1)
             self.statusMessage.connect(QCoreApplication.instance().status_message)
@@ -61,7 +60,7 @@ if __name__ == '__main__':
             layout = QVBoxLayout(self)
             hl = QHBoxLayout()
             self.combo = QComboBox()
-            view = grumble.qt.model.ListModel(grumble.Query(QtUser, False), "display_name")
+            view = grumpy.model.ListModel(grumble.Query(QtUser, False), "display_name")
             self.combo.setModel(view)
             hl.addWidget(self.combo)
             self.button = QPushButton("Pick Me")
@@ -78,7 +77,7 @@ if __name__ == '__main__':
             self.user_form.set_instance(data)
 
         def refresh(self):
-            view = grumble.qt.model.ListModel(grumble.Query(QtUser, False), "display_name")
+            view = grumpy.model.ListModel(grumble.Query(QtUser, False), "display_name")
             self.combo.setModel(view)
 
 
@@ -107,7 +106,7 @@ if __name__ == '__main__':
             self.setCentralWidget(window)
 
         def create_table(self):
-            self.table = grumble.qt.view.TableView(QtCountry.query(keys_only=False), ["country_name", "country_code"])
+            self.table = grumpy.view.TableView(QtCountry.query(keys_only=False), ["country_name", "country_code"])
             self.table.setMinimumSize(400, 300)
             return self.table
 

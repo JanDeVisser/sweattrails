@@ -9,8 +9,8 @@ import math
 from PyQt5.QtCore import QCoreApplication
 
 import gripe
-import grumble.qt.model
-import grumble.qt.bridge
+import grumpy.model
+import grumpy.bridge
 import sweattrails.config
 
 logger = gripe.get_logger(__name__)
@@ -30,7 +30,7 @@ class TimebasedColumn(object):
             return "%d'%02d\"" % (m, s)
 
 
-class TimestampColumn(TimebasedColumn, grumble.qt.model.TableColumn):
+class TimestampColumn(TimebasedColumn, grumpy.model.TableColumn):
     def __init__(self, property = "timestamp", **kwargs):
         super(TimestampColumn, self).__init__(property, **kwargs)
 
@@ -39,7 +39,7 @@ class TimestampColumn(TimebasedColumn, grumble.qt.model.TableColumn):
         return self._seconds_to_string(value.seconds if value else 0)
 
 
-class SecondsColumn(TimebasedColumn, grumble.qt.model.TableColumn):
+class SecondsColumn(TimebasedColumn, grumpy.model.TableColumn):
     def __init__(self, property, **kwargs):
         super(SecondsColumn, self).__init__(property, **kwargs)
 
@@ -47,7 +47,7 @@ class SecondsColumn(TimebasedColumn, grumble.qt.model.TableColumn):
         return self._seconds_to_string(getattr(instance, self.name))
 
 
-class PaceSpeedColumn(grumble.qt.model.TableColumn):
+class PaceSpeedColumn(grumpy.model.TableColumn):
     def __init__(self, prop="speed", **kwargs):
         super(PaceSpeedColumn, self).__init__(prop, **kwargs)
         self.what = kwargs.get("what")
@@ -82,7 +82,7 @@ class PaceSpeedColumn(grumble.qt.model.TableColumn):
             return "0"
 
 
-class DistanceColumn(grumble.qt.model.TableColumn):
+class DistanceColumn(grumpy.model.TableColumn):
     def __init__(self, property = "distance", **kwargs):
         super(DistanceColumn, self).__init__(property, **kwargs)
         self.units = kwargs.get("units",
@@ -112,7 +112,7 @@ class DistanceColumn(grumble.qt.model.TableColumn):
 #  D I S P L A Y  C O N V E R T E R S
 #----------------------------------------------------------------------------
 
-class SessionTypeIcon(grumble.qt.bridge.DisplayConverter):
+class SessionTypeIcon(grumpy.bridge.DisplayConverter):
     def __init__(self, bridge):
         super(SessionTypeIcon, self).__init__(bridge)
 
@@ -128,7 +128,7 @@ class SessionTypeIcon(grumble.qt.bridge.DisplayConverter):
         return icon
 
 
-class PaceSpeed(grumble.qt.bridge.DisplayConverter):
+class PaceSpeed(grumpy.bridge.DisplayConverter):
     def __init__(self, bridge):
         super(PaceSpeed, self).__init__(bridge)
         self.labelprefixes = bridge.config.get("labelprefixes")
@@ -174,7 +174,7 @@ class PaceSpeed(grumble.qt.bridge.DisplayConverter):
             return "0"
 
 
-class Distance(grumble.qt.bridge.DisplayConverter):
+class Distance(grumpy.bridge.DisplayConverter):
     def __init__(self, bridge):
         super(Distance, self).__init__(bridge)
         
@@ -208,7 +208,7 @@ class Distance(grumble.qt.bridge.DisplayConverter):
             return str(value) if value else 0
 
 
-class MeterFeet(grumble.qt.bridge.DisplayConverter):
+class MeterFeet(grumpy.bridge.DisplayConverter):
     def __init__(self, bridge):
         super(MeterFeet, self).__init__(bridge)
 

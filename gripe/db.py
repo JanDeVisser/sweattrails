@@ -38,7 +38,7 @@ class LoggedCursor(object):
             self._columns = kwargs["columns"]
         if "key_index" in kwargs:
             self._key_index = kwargs["key_index"]
-        # logger.debug("sql: %s args %s", sql, args)
+        logger.debug("sql: %s args %s", sql, args)
         # logger.debug(self._interpolate(sql, args))
         try:
             sql = sql.replace("%s", self.placeholder).replace("?", self.placeholder)
@@ -47,7 +47,7 @@ class LoggedCursor(object):
             if not isinstance(args, (list, tuple)):
                 args = [args]
             super(LoggedCursor, self).execute(sql, args)
-            logger.debug("Rowcount: %d", self.rowcount)
+            # logger.debug("Rowcount: %d", self.rowcount)
         except Exception as exc:
             logger.error("Cursor execute: %s %s", exc.__class__.__name__, exc)
             logger.info("Statement: %s",  sql)
@@ -91,7 +91,7 @@ class LoggedCursor(object):
 
 class LoggedConnection(object):
     def commit(self):
-        logger.debug("Commit")
+        # logger.debug("Commit")
         try:
             super(LoggedConnection, self).commit()
         except Exception as exc:
@@ -192,7 +192,7 @@ class Tx(object):
         cur._close()
 
     def _end_tx(self,  rollback=False):
-        logger.debug("_end_tx")
+        # logger.debug("_end_tx")
         try:
             try:
                 for c in self.cursors:

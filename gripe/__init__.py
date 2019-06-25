@@ -234,7 +234,7 @@ def resolve(funcname, default=None):
         mod = importlib.import_module(modname)
         return getattr(mod, fnc) if hasattr(mod, fnc) and callable(getattr(mod, fnc)) else default
     else:
-        return resolve(default, None) if not callable(default) else default
+        return resolve(default, None) if default is not None and not callable(default) else default
 
 
 def hascallable(obj, attr):
@@ -245,7 +245,11 @@ def call_if_exists(obj, mth, fallback, *args, **kwargs):
     if hascallable(obj, mth):
         return getattr(obj, mth)(*args, **kwargs)
     else:
-        return fallback(*args, **kwargs) if callable(fallback) else fallback
+        try:
+            # return fallback(*args, **kwargs) if callable(fallback) else fallback
+            return fallback
+        except Exception:
+            raise
 
 
 def get_logger(logger_name):

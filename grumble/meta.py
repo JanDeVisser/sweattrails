@@ -31,12 +31,26 @@ class ModelMetaClass(type):
             logger.debug("Creating new model class %s [%s] {%s}", name, bases, kwargs)
             cls.config = dict(kwargs)
             cls._sealed = False
+
             cls._kind = Registry.register(cls)
+
+            def kind(cls):
+                return cls._kind
+            cls.kind = classmethod(kind)
+
+            def basekind(cls):
+                (_, _, k) = cls.kind().rpartition(".")
+                return k
+            cls.basekind = classmethod(basekind)
+
             cls._tablename = kwargs.get("table_name", dct.get("table_name", name))
+
             cls._verbose_name = kwargs.get("verbose_name", dct.get("verbose_name", name))
+
             def verbose_name(cls):
                 return cls._verbose_name
             cls.verbose_name = classmethod(verbose_name)
+
             cls._abstract = kwargs.get("abstract", dct.get("_abstract", False))
             cls._flat = kwargs.get("flat", dct.get("_flat", False))
             cls._audit = kwargs.get("audit", dct.get("_audit", True))
@@ -80,6 +94,11 @@ class ModelMetaClass(type):
         logger.debug("%s.__init__(%s) config %s", name, kwargs, cls.config)
 
 
+class FakeModel(ModelMetaClass):
+    def __init__(cls, name, bases, dct, **kwargs):
+        super(FakeModel, cls).__init__(name, bases, dct, **kwargs)
+
+
 class Registry(dict):
     def __init__(self):
         assert not hasattr(self.__class__, "_registry"), "grumble.meta.Registry is a singleton"
@@ -109,7 +128,10 @@ class Registry(dict):
 
     @classmethod
     def fullname_for_class(cls, modelclass):
-        return Registry.fullname(".".join((modelclass.__module__, modelclass.__qualname__)))
+        try:
+            return modelclass.fullname()
+        except AttributeError:
+            return Registry.fullname(".".join((modelclass.__module__, modelclass.__qualname__)))
 
     @classmethod
     def get(cls, name):

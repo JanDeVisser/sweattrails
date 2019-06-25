@@ -19,15 +19,14 @@
 from PyQt5.QtCore import QCoreApplication
 
 import gripe
-import grumble.qt.bridge
-import grumble.qt.model
-import grumble.qt.view
+import grumpy.model
+import grumpy.view
 import sweattrails.session
 
 logger = gripe.get_logger(__name__)
 
 
-class DescriptionColumn(grumble.qt.model.TableColumn):
+class DescriptionColumn(grumpy.model.TableColumn):
     def __init__(self):
         super(DescriptionColumn, self).__init__("description")
 
@@ -40,7 +39,7 @@ class DescriptionColumn(grumble.qt.model.TableColumn):
         return ret
 
 
-class SessionList(grumble.qt.view.TableView):
+class SessionList(grumpy.view.TableView):
     def __init__(self, user = None, parent=None):
         super(SessionList, self).__init__(parent=parent)
 
@@ -50,9 +49,9 @@ class SessionList(grumble.qt.view.TableView):
         query.add_filter("athlete", "=", user)
         query.add_sort("start_time", False)
         self.setQueryAndColumns(query,
-                                grumble.qt.model.TableColumn("start_time", format="%A", header="Day"),
-                                grumble.qt.model.TableColumn("start_time", format="%d %B", header="Date"),
-                                grumble.qt.model.TableColumn("start_time", format="%H:%M", header="Time"),
+                                grumpy.model.TableColumn("start_time", format="%A", header="Day"),
+                                grumpy.model.TableColumn("start_time", format="%d %B", header="Date"),
+                                grumpy.model.TableColumn("start_time", format="%H:%M", header="Time"),
                                 DescriptionColumn())
         QCoreApplication.instance().refresh.connect(self.refresh)
 

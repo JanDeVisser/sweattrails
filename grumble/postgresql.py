@@ -78,9 +78,12 @@ class PostgresqlAdapter(grumble.dbadapter.DbAdapter):
                                     self.tablename, colname,
                                     column.required, is_nullable)
                         alter = " SET NOT NULL" if column.required else " DROP NOT NULL"
-                    if column.defval != defval:
-                        alter += " SET DEFAULT %s"
-                        v.append(column.defval)
+                    # if column.defval != defval:
+                    #     logger.info("default value change: %s.%s defval %s [%s] -> defval %s [%s]",
+                    #                 self.tablename, colname,
+                    #                 column.defval, type(column.defval), defval, type(defval))
+                    #     alter += " SET DEFAULT %s"
+                    #     v.append(defval)
                     if alter != "":
                         cur.execute('ALTER TABLE %s ALTER COLUMN "%s" %s' %
                                     (self.tablename, colname, alter), v)

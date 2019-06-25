@@ -17,12 +17,22 @@
 #
 
 import base64
+import binascii
 import urllib.parse
 
 import gripe
 import grumble.meta
 
 logger = gripe.get_logger(__name__)
+
+
+def to_key(k):
+    ret = None
+    if k is not None:
+        ret = gripe.call_if_exists(k, "key", None)
+        if ret is None:
+            ret = Key(urllib.parse.unquote_plus(str(k)))
+    return ret
 
 
 class Key(object):
@@ -45,14 +55,16 @@ class Key(object):
             value = args[0]
             assert value is not None, "Cannot initialize Key from None"
             if isinstance(value, str):
-                self._assign(value)
+                self._assign_id(value)
             elif isinstance(value, dict):
                 if "id" in value:
                     self.__init__(value["id"])
                 elif "key" in value:
                     self.__init__(value["key"])
                 elif "kind" in value and "name" in value and "scope" in value:
-                    self.__init__(value["kind"], value["name"], value.get("scope"))
+                    self.__init__(value["kind"], value.get("scope"), value["name"])
+                elif "kind" in value and "name" in value:
+                    self.__init__(value["kind"], value["name"])
                 else:
                     assert 0, "Cannot create Key object from dict %s" % value
             elif gripe.hascallable(value, "key"):
@@ -65,51 +77,54 @@ class Key(object):
                 assert 0, "Cannot initialize Key from %s, type %s" % (value, type(value))
         else:
             kind = args[0]
-            assert isinstance(kind, str) or gripe.hascallable(kind, "kind"), \
-                "First argument of Key(kind, name) must be string or model class, not %s" % type(kind)
-            assert isinstance(args[-1], str), \
-                "Last argument of Key(%s, ..., name) must be string, not %s" % (kind, type(args[-1]))
-            if len(args) == 2:
-                self._assign("{:s}:{:s}".format( 
-                     kind if isinstance(kind, str) else kind.kind(),
-                     urllib.parse.quote_plus(str(args[1]))))
-            elif len(args) == 3:
+            if not isinstance(kind, str):
+                assert isinstance(kind, str) or gripe.hascallable(kind, "kind"), \
+                    "First argument of Key(kind, name) must be string or model class, not %s" % type(kind)
+                kind = gripe.call_if_exists(kind, "kind", kind)
+            assert kind, "Kind must not be empty"
+            name = args[-1]
+            assert isinstance(name, str), \
+                "Last argument of Key(%s, ..., name) must be string, not %s" % (kind, type(name))
+            assert name, "Key name argument must not be empty"
+            name = urllib.parse.quote_plus(str(args[-1]))
+            if len(args) == 3 and args[1] is not None:
                 p = args[1]
-                p = gripe.call_if_exists(p, "key", "") or ""
-                self._assign("{:s}:{:s}:{:s}".format(
-                    kind if isinstance(kind, str) else kind.kind(),
-                    urllib.parse.quote_plus(str(p)),
-                    urllib.parse.quote_plus(str(args[2]))))
-        if not (hasattr(self, "id") and self.id):
-            self.id = base64.urlsafe_b64encode(str(self))
-
-    def _assign(self, value):
-        value = str(value)
-        arr = value.split(":")
-        if len(arr) == 1:
-            try:
-                print(value)
-                print(bytearray(value, 'UTF-8'))
-                self._assign(str(base64.urlsafe_b64decode(bytearray(value, 'UTF-8')), 'ASCII'))
-            except TypeError:
-                raise
-        else:
-            self.id = str(base64.urlsafe_b64encode(bytearray(value, 'UTF-8')))
-            self._kind = grumble.meta.Registry.get(arr[0]).kind()
-            # assert self._kind, "Cannot parse key %s: unknown kind %s" % (value, arr[0])
-            self.name = urllib.parse.unquote_plus(arr[-1])
-            if len(arr) == 3:
-                self._scope = urllib.parse.unquote_plus(arr[1])
+                assert isinstance(p, str) or gripe.hascallable(p, "key"), \
+                    "Scope must be Key, Model or string"
+                p = to_key(p)
             else:
-                self._scope = None
+                p = None
+            self._assign(p, kind, name)
+        if not (hasattr(self, "id") and self.id):
+            self.id = base64.urlsafe_b64encode(bytearray(str(self), 'UTF-8'))
+
+    def _assign_id(self, ident):
+        try:
+            value = str(base64.urlsafe_b64decode(bytearray(ident, 'UTF-8')), 'ASCII')
+        except binascii.Error:
+            value = ident
+        key_path = value.split('/')
+        scope = '/'.join(key_path[:-1]) if len(key_path) > 1 else None
+        (kind, name) = key_path[-1].split(":")
+        self._assign(scope, kind, name)
+
+    def _assign(self, scope, kind, name):
+        self._kind = grumble.meta.Registry.get(kind).kind()
+        # assert self._kind, "Cannot parse key %s: unknown kind %s" % (value, arr[0])
+        self.name = urllib.parse.unquote_plus(name)
+        if scope:
+            self._scope = to_key(scope)
+        else:
+            self._scope = None
+        self._id = "{:s}{:s}:{:s}".format(
+            "{:s}/".format(str(self._scope)) if self._scope else '',
+            self._kind,
+            urllib.parse.quote_plus(self.name))
+        self.id = str(base64.urlsafe_b64encode(bytearray(self._id, 'UTF-8')))
 
     def __str__(self):
-        if "_kind" in self.__dict__:
-            return"{:s}{:s}:{:s}".format(
-                    self._kind,
-                    ":{:s}".format(urllib.parse.quote_plus(self._scope))
-                    if self._scope is not None else '',
-                    urllib.parse.quote_plus(self.name))
+        if "_id" in self.__dict__:
+            return self._id
         else:
             return super(Key, self).__str__()
 
@@ -139,7 +154,26 @@ class Key(object):
         return grumble.meta.Registry.get(self.kind())
 
     def scope(self):
-        return Key(self._scope) if self._scope else None
+        return self._scope
+
+    def ancestors(self):
+        ret = []
+        p = self.scope()
+        while p:
+            ret.insert(0, p)
+            p = p.scope()
+        return ret
+
+    def root(self):
+        r = self
+        p = self.scope()
+        while p:
+            r = p
+            p = r.scope()
+        return r
+
+    def path(self):
+        return str(self)
 
     def __eq__(self, other):
         if not(isinstance(other, Key)) and hasattr(other, "key") and callable(other.key):
@@ -148,7 +182,7 @@ class Key(object):
             if not(other or isinstance(other, Key)):
                 return False
             else:
-                return (self.kind() == other.kind()) and (self.name == other.name)
+                return (self.kind() == other.kind()) and (self.scope() == other.scope()) and (self.name == other.name)
 
     def __hash__(self):
         return hash(str(self))
@@ -156,3 +190,29 @@ class Key(object):
     def get(self):
         cls = grumble.meta.Registry.get(self.kind())
         return cls.get(self)
+
+
+if __name__ == "__main__":
+    class ParentModel(grumble.Model):
+        pass
+
+    class ChildModel(grumble.Model):
+        pass
+
+    kind = 'ParentModel'
+    p_name = 'Parent'
+    p = grumble.Key(kind, p_name)
+    print(p.key())
+
+    c = grumble.Key(ChildModel, p, "Child")
+    print(c)
+
+    cc = grumble.Key(c)
+    print(cc)
+
+    p_none = grumble.Key(kind, None, p_name)
+    print(p_none.key())
+    print(p_none == p)
+
+    gc = grumble.Key(ChildModel, c, "GrandChild")
+    print(gc)

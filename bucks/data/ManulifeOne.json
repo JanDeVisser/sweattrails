@@ -1,5 +1,11 @@
 {
-  "mapping": { "date": 1, "amount": 2, "description": 3 },
+  "mapping": [
+    null,
+    { "name": "date", "type": "date", "format":  "%m/%d/%Y" },
+    { "name": "amount", "type": "float" },
+    "description"
+  ],
+  "config": { "match": "description" },
   "templates": [
     { "type": "D", "template": "^ATM", "category": "Cash" },
 

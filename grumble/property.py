@@ -49,16 +49,10 @@ class RequiredValidator(Validator):
 class ChoicesValidator(Validator, set):
     def __init__(self, choices=None):
         super(ChoicesValidator, self).__init__()
-        self._enum = None
         if choices:
             if isinstance(choices, (list, set, tuple, dict)):
                 for c in choices:
                     self.add(c)
-            elif isinstance(choices, enum.EnumMeta):
-                self._enum = choices
-                for v in choices:
-                    (_, _, val) = str(v).rpartition('.')
-                    self.add(val)
             else:
                 self.add(choices)
 
@@ -67,9 +61,7 @@ class ChoicesValidator(Validator, set):
             for v in value:
                 self(instance, v)
         else:
-            if value is not None and \
-                    (self._enum is None or not isinstance(value, self._enum)) and \
-                    (str(value) not in self):
+            if value is not None and str(value) not in self:
                 raise grumble.errors.InvalidChoice(self.prop.name, value)
 
 
@@ -103,8 +95,14 @@ class RegExpValidator(Validator):
 
 
 class MetaProperty(type):
+    _properties = {}
+
     def __new__(mcs, name, bases, dct, **kwargs):
         ret = type.__new__(mcs, name, bases, dct)
+        datatype = kwargs.get("datatype", (hasattr(ret, "datatype") and ret.datatype) or None)
+        if datatype:
+            MetaProperty._properties[datatype] = ret
+
         ret._default_config = {}
         ret._default_config.update(kwargs)
 
@@ -147,6 +145,10 @@ class MetaProperty(type):
         _set_attr("indexed", False)
 
         return ret
+
+    @staticmethod
+    def wrap_value(value, *args, **kwargs):
+        return WrapperProperty(value, *args, **kwargs)
 
 
 class BaseProperty(metaclass=MetaProperty):
@@ -286,24 +288,26 @@ class ModelProperty(BaseProperty):
         self.kind = kind
 
     def get_coldef(self):
-        ret = grumble.schema.ColumnDefinition(self.column_name, self.sqltype, self.required, self.default, self.indexed)
+        ret = grumble.schema.ColumnDefinition(self.column_name, self.sqltype, self.required,
+                                              self.to_sqlvalue(self.default), self.indexed)
         ret.is_key = self.is_key
         ret.scoped = self.scoped
         return [ret]
 
-    def _on_insert(self, instance):
+    def on_insert_(self, instance):
         value = self.__get__(instance)
         if not value and self.default:
-            return self.__set__(instance, self.default)
+            value = self.__set__(instance, self.default)
+        return gripe.call_if_exists(self, "on_insert", value, instance, value)
 
-    def _initial_value(self):
-        return self.default
+    def initial_value_(self):
+        return gripe.call_if_exists(self, "initial_value", self.default, self.default)
 
-    def _on_store(self, value):
-        pass
+    def on_store_(self, value):
+        return gripe.call_if_exists(self, "on_store", None, value)
 
-    def _after_store(self, value):
-        pass
+    def after_store_(self, value):
+        return gripe.call_if_exists(self, "after_store", None, value)
 
     def schema(self):
         ret = {
@@ -312,25 +316,22 @@ class ModelProperty(BaseProperty):
             "default": self.default, "readonly": self.readonly,
             "is_key": self.is_key, "datatype": self.datatype.__name__
         }
-        self._schema(ret)
+        gripe.call_if_exists(self, "schema_customizer", None, ret)
         return ret
 
-    def _schema(self, schema):
-        return schema
-
-    def _validate(self, instance, value):
+    def validate(self, instance, value):
         for v in self.__class__._default_validators + self.validators:
             v(instance, value) if callable(v) else v.validate(instance, value)
 
-    def _update_fromsql(self, instance, values):
-        instance._values[self.name] = self._from_sqlvalue(values[self.column_name])
+    def update_fromsql(self, instance, values):
+        instance._values[self.name] = self.from_sqlvalue(values[self.column_name])
 
-    def _values_tosql(self, instance, values):
+    def values_tosql(self, instance, values):
         if not self.transient:
-            values[self.column_name] = self._to_sqlvalue(self.__get__(instance))
+            values[self.column_name] = self.to_sqlvalue(self.__get__(instance))
 
     def _get_storedvalue(self, instance):
-        instance._load()
+        instance.load()
         return instance._values[self.name] if self.name in instance._values else None
 
     def __get__(self, instance, owner=None):
@@ -339,9 +340,8 @@ class ModelProperty(BaseProperty):
                 return self
             if self.transient and hasattr(self, "getvalue") and callable(self.getvalue):
                 ret = self.getvalue(instance)
-                if ret:
-                    instance._load()
-                    instance._values[self.name] = ret
+                instance.load()
+                instance._values[self.name] = ret
                 return ret
             else:
                 return self._get_storedvalue(instance)
@@ -352,11 +352,11 @@ class ModelProperty(BaseProperty):
     def __set__(self, instance, value):
         try:
             if self.is_key and not hasattr(instance, "_brandnew"):
-                return
+                pass
             if self.transient and hasattr(self, "setvalue") and callable(self.setvalue):
-                return self.setvalue(instance, value)
+                self.setvalue(instance, value)
             else:
-                instance._load()
+                instance.load()
                 old = instance._values[self.name] if self.name in instance._values else None
                 converted = self.convert(value) if value is not None else None
                 if gripe.hascallable(self, "on_assign"):
@@ -366,6 +366,7 @@ class ModelProperty(BaseProperty):
                     instance._key_name = converted
                 if gripe.hascallable(self, "assigned"):
                     self.assigned(instance, old, converted)
+            return self.__get__(instance, None)
         except Exception:
             logger.exception("Exception setting property '%s' to value '%s'", self.name, value)
             raise
@@ -393,13 +394,13 @@ class ModelProperty(BaseProperty):
     def convert(self, value):
         return self.converter.convert(value)
 
-    def _to_sqlvalue(self, value):
+    def to_sqlvalue(self, value):
         return self.converter.to_sqlvalue(value)
 
-    def _from_sqlvalue(self, sqlvalue):
+    def from_sqlvalue(self, sqlvalue):
         return self.converter.from_sqlvalue(sqlvalue)
 
-    def _from_json_value(self, value):
+    def from_json_value(self, value):
         try:
             return self.datatype.from_dict(value)
         except Exception:
@@ -409,7 +410,7 @@ class ModelProperty(BaseProperty):
                 logger.exception("ModelProperty<%s>.from_json_value(%s [%s])", self.__class__, value, type(value))
                 return value
 
-    def _to_json_value(self, instance, value):
+    def to_json_value(self, instance, value):
         try:
             return value.to_dict()
         except Exception:
@@ -488,43 +489,43 @@ class CompoundProperty(BaseProperty):
             ret += prop.get_coldef()
         return ret
 
-    def _on_insert(self, instance):
+    def on_insert_(self, instance):
         for p in self.compound:
-            p._on_insert(instance)
+            p.on_insert_(instance)
 
-    def _on_store(self, instance):
+    def on_store_(self, instance):
         for p in self.compound:
-            p._on_store(instance)
+            p.on_store_(instance)
 
-    def _after_store(self, value):
+    def after_store_(self, value):
         for p in self.compound:
-            p._after_store(value)
+            p.after_store_(value)
 
-    def _validate(self, instance, value):
+    def validate(self, instance, value):
         for (p, v) in zip(self.compound, value):
-            p._validate(instance, v)
+            p.validate(instance, v)
         for v in self.__class__._default_validators + self.validators:
             v(instance, value) if callable(v) else v.validate(instance, value)
 
-    def _initial_value(self):
-        return tuple(p._initial_value() for p in self.compound)
+    def initial_value_(self):
+        return tuple(p.initial_value_() for p in self.compound)
 
-    def _update_fromsql(self, instance, values):
+    def update_fromsql(self, instance, values):
         for p in self.compound:
-            p._update_fromsql(instance, values)
+            p.update_fromsql(instance, values)
 
-    def _values_tosql(self, instance, values):
+    def values_tosql(self, instance, values):
         for p in self.compound:
-            p._values_tosql(instance, values)
+            p.values_tosql(instance, values)
 
     def __get__(self, instance, owner):
         if not instance:
             return self
-        instance._load()
+        instance.load()
         return tuple(p.__get__(instance, owner) for p in self.compound)
 
     def __set__(self, instance, value):
-        instance._load()
+        instance.load()
         for (p, v) in zip(self.compound, value):
             p.__set__(instance, v)
 
@@ -539,6 +540,21 @@ class CompoundProperty(BaseProperty):
 
     def _to_json_value(self, instance, value):
         raise gripe.NotSerializableError(self.name)
+
+
+class WrapperProperty(ModelProperty, transient=True):
+    def __init__(self, value, *args, **kwargs):
+        super(WrapperProperty, self).__init__(*args, **kwargs)
+        self.transient = True
+        self._value = None
+        self.converter = grumble.converter.Converters.get(type(value), self)
+        self.setvalue(None, value)
+        
+    def getvalue(self, instance):
+        return self._value
+
+    def setvalue(self, instance, value):
+        self._value = self.convert(value) if value is not None else None
 
 
 class StringProperty(ModelProperty, datatype=str, sqltype="TEXT"):
@@ -556,7 +572,7 @@ class LinkProperty(StringProperty):
 
 
 class PasswordProperty(StringProperty, private=True):
-    def _on_store(self, instance):
+    def on_store_(self, instance):
         value = self.__get__(instance, instance.__class__)
         self.__set__(instance, self.hash(value))
 
@@ -568,12 +584,12 @@ class PasswordProperty(StringProperty, private=True):
 
 
 class JSONProperty(ModelProperty, datatype=dict, sqltype="JSONB"):
-    def _initial_value(self):
+    def initial_value_(self):
         return {}
 
 
 class ListProperty(ModelProperty, datatype=list, sqltype="JSONB"):
-    def _initial_value(self):
+    def initial_value_(self):
         return []
 
 
@@ -592,6 +608,21 @@ class BooleanProperty(ModelProperty, datatype=bool, sqltype="BOOLEAN"):
     pass
 
 
+class SQLTypes(enum.Enum):
+    INTEGER = int
+    TEXT = str
+    REAL = float
+    BOOLEAN = bool
+
+
+class EnumProperty(ModelProperty, datatype=enum.Enum, sqltype=None):
+    def __init__(self, *args, **kwargs):
+        super(EnumProperty, self).__init__(*args, **kwargs)
+        self._enum = gripe.resolve(self.config.get("enum"))
+        assert self._enum and isinstance(self._enum, enum.EnumMeta) and list(self._enum)
+        self.sqltype = SQLTypes(type(list(self._enum)[0].value)).name
+
+
 class DateTimeProperty(ModelProperty, datatype=datetime.datetime, sqltype="TIMESTAMP WITHOUT TIME ZONE",
                        default_format="%c"):
     def __init__(self, *args, **kwargs):
@@ -602,11 +633,11 @@ class DateTimeProperty(ModelProperty, datatype=datetime.datetime, sqltype="TIMES
     def display(self, value, instance):
         return value.strftime(self.config.get("format", self.default_format))
 
-    def _on_insert(self, instance):
+    def on_insert(self, instance, value):
         if self.auto_now_add and (self.__get__(instance, instance.__class__) is None):
             self.__set__(instance, self.now())
 
-    def _on_store(self, instance):
+    def on_store(self, instance):
         if self.auto_now:
             self.__set__(instance, self.now())
 
@@ -642,9 +673,13 @@ if gripe.db.Tx.database_type == "postgresql":
     def adapt_type(t):
         return psycopg2.extensions.AsIs("'%s'" % t.__name__)
 
+    def adapt_key(k):
+        return psycopg2.extensions.AsIs("'%s'" % str(k))
+
     psycopg2.extensions.register_adapter(dict, adapt_json)
     psycopg2.extensions.register_adapter(list, adapt_json)
     psycopg2.extensions.register_adapter(type, adapt_type)
+    psycopg2.extensions.register_adapter(grumble.key.Key, adapt_key)
 
     def cast_jsonb(value, cursor):
         try:
@@ -672,3 +707,8 @@ elif gripe.db.Tx.database_type == "sqlite3":
 
     sqlite3.register_adapter(dict, adapt_json)
     sqlite3.register_converter("JSONB", convert_json)
+
+    def adapt_key(k):
+        return str(k)
+
+    sqlite3.register_adapter(grumble.key.Key, adapt_key)

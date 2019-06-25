@@ -122,13 +122,10 @@ class WithingsAuth(grumble.model.Model):
 @grumble.property.transient
 class BMIProperty(grumble.property.FloatProperty):
     def getvalue(self, instance):
-        ret = self._get_storedvalue(instance)
-        if not ret:
-            user = instance.root()
-            profile = user.get_part(UserProfile)
-            h_m = float(profile.height) / 100
-            ret = instance.weight / (h_m * h_m)
-        return ret
+        user = instance.root()
+        profile = user.get_part(UserProfile)
+        h_m = float(profile.height) / 100
+        return instance.weight / (h_m * h_m)
 
 
 class WeightHistory(grumble.model.Model):

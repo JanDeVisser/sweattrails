@@ -26,12 +26,12 @@ from PyQt5.QtWidgets import QWidget
 
 import gripe
 import grizzle
-import grumble.qt.bridge
-import grumble.qt.view
+import grumpy.bridge
+import grumpy.view
 
 logger = gripe.get_logger(__name__)
 
-class UserList(grumble.qt.view.TableView):
+class UserList(grumpy.view.TableView):
     def __init__(self, parent = None):
         super(UserList, self).__init__(parent = parent)
         query = grizzle.User.query(keys_only = False)
@@ -41,7 +41,7 @@ class UserList(grumble.qt.view.TableView):
         QCoreApplication.instance().refresh.connect(self.refresh)
         
 
-class UserDetails(grumble.qt.bridge.FormWidget):
+class UserDetails(grumpy.bridge.FormWidget):
     def __init__(self, user, parent = None):
         super(UserDetails, self).__init__(parent)
         self.addProperty(grizzle.User, "email", 0, 0, readonly = True)

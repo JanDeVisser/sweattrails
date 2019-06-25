@@ -41,6 +41,25 @@ class Bucks(QApplication):
     def start(self, cmdline):
         self.splash.show()
         self.processEvents()
+        with gripe.db.Tx.begin():
+            ok = True
+            if cmdline.clear:
+                gripe.db.Tx.reset_schema(True)
+            if bucks.datamodel.Account.query().get() is None:
+                if cmdline.schema:
+                    bucks.schema.SchemaImporter.import_file(cmdline.schema)
+                    self.processEvents()
+                else:
+                    wizard = bucks.wizard.FirstUse()
+                    ok = wizard.exec_()
+            if cmdline.imp:
+                acc, file_name = cmdline.imp.split(':', 2)
+                account = bucks.datamodel.Account.by("acc_name", acc)
+                assert account
+                self.importer.execute(account, file_name)
+            if ok:
+                self.main_window = bucks.gui.MainWindow(self)
+        self.processEvents()
         t = grumpy.bg.bg.BackgroundThread.get_thread()
         t.statusMessage.connect(self.status_message)
         t.progressInit.connect(self.progress_init)
@@ -49,19 +68,9 @@ class Bucks(QApplication):
         t.jobStarted.connect(self.job_started)
         t.jobFinished.connect(self.job_finished)
         t.jobError.connect(self.job_error)
+        t.add_plugin(bucks.tximport.ScanInbox)
         t.start()
-        with gripe.db.Tx.begin():
-            ok = True
-            if cmdline.clear:
-                gripe.db.Tx.reset_schema(True)
-            if bucks.datamodel.Account.query().get() is None:
-                if cmdline.schema:
-                    bucks.schema.SchemaImporter.import_file(cmdline.schema)
-                else:
-                    wizard = bucks.wizard.FirstUse()
-                    ok = wizard.exec_()
-            if ok:
-                self.main_window = bucks.gui.MainWindow(self)
+        self.processEvents()
         self.splash.finish(self.main_window)
         self.splash = None
         if self.main_window is not None:
@@ -93,6 +102,7 @@ class Bucks(QApplication):
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--clear", action="store_true", help="Erase all data")
 parser.add_argument("-s", "--schema", type=str, help="Use the given file as the initial schema")
+parser.add_argument("-i", "--imp", type=str, help="Import the given transactions file")
 
 cmdline = parser.parse_args()
 

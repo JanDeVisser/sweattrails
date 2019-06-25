@@ -21,9 +21,8 @@ from PyQt5.QtWidgets import QVBoxLayout
 from PyQt5.QtWidgets import QWidget
 
 import gripe.conversions
-import grumble.qt.bridge
-import grumble.qt.model
-import grumble.qt.view
+import grumpy.model
+import grumpy.view
 import sweattrails.qt.graphs
 import sweattrails.qt.session.list
 import sweattrails.qt.session.maps
@@ -33,7 +32,7 @@ import sweattrails.session
 logger = gripe.get_logger(__name__)
 
 
-class CriticalPaceList(grumble.qt.view.TableView):
+class CriticalPaceList(grumpy.view.TableView):
     def __init__(self, parent=None, interval=None):
         super(CriticalPaceList, self).__init__(parent=parent)
         self.interval=interval
@@ -41,7 +40,7 @@ class CriticalPaceList(grumble.qt.view.TableView):
         query = sweattrails.session.RunPace.query(keys_only=False)
         query.add_sort("k.distance")
         self.setQueryAndColumns(query,
-                                grumble.qt.model.TableColumn("cpdef.name", header="Distance"),
+                                grumpy.model.TableColumn("cpdef.name", header="Distance"),
                                 sweattrails.qt.view.SecondsColumn("duration", header="Duration"),
                                 sweattrails.qt.view.PaceSpeedColumn(interval=interval),
                                 sweattrails.qt.view.DistanceColumn("atdistance", header="At distance"),

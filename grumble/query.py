@@ -16,6 +16,8 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
+import sys
+
 import gripe
 import gripe.db
 import grumble.key
@@ -53,7 +55,7 @@ class Sort(object):
         return self.to_sql()
 
 
-class Condition(object):
+class Condition:
     def __init__(self, sql, values):
         self.sql = sql
         self.values = values
@@ -89,7 +91,7 @@ class Filter:
     def __str__(self):
         ret = self.to_sql()
         if "%s" in ret:
-            ret = ret.replace("%s", self.value)
+            ret = ret.replace("%s", str(self.value))
         return ret
 
     def alias(self, fallback):
@@ -131,17 +133,25 @@ class Filter:
             return '(%s.%s %s %%s)' % (self.alias(alias), self.colname, self.op)
 
 
-class Join(object):
-    def __init__(self, ix, kind, prop, alias=None, join_with="k"):
+class Join:
+    def __init__(self, ix, kind, prop, **kwargs):
+        self._kind: grumble.ModelMetaClass
         if isinstance(kind.__class__, grumble.ModelMetaClass):
             self._kind = kind.__class__
         elif isinstance(kind, grumble.ModelMetaClass):
             self._kind = kind
         else:
             self._kind = grumble.Model.for_name(str(kind))
+        self._kind.seal()
         self._property = prop
-        self._alias = alias
-        self._join_with = join_with
+        self._alias = kwargs.get("alias")
+        self._join_with = kwargs.get("join_with", "k")
+        self._where = kwargs.get("where")
+        if "value" in kwargs:
+            self._values = (kwargs["value"],)
+        else:
+            self._values = kwargs.get("values")
+        self.jointype = kwargs.get("jointype", "INNER")
         self._ix = ix
 
     def tablename(self):
@@ -160,11 +170,14 @@ class Join(object):
         return self._property
 
     def alias(self):
-        return self._alias if self._alias else "j" + str(self._ix)
+        return self._alias if self._alias else self._kind.basekind()
 
-    def join_sql(self):
-        return ' INNER JOIN %s %s ON (%s."_key" = %s."%s")' % \
-               (self.tablename(), self.alias(), self.alias(), self._join_with, self.property())
+    def join_sql(self, vals=None):
+        if self._values and vals is not None:
+            vals.extend(self._values)
+        return ' %s JOIN %s %s ON (%s."_key" = %s."%s"%s)' % \
+               (self.jointype, self.tablename(), self.alias(), self.alias(), self._join_with, self.property(),
+                (" AND %s" % self._where if self._where else ''))
 
     def column_sql(self, query_columns):
         join_cols = [self.alias() + '."' + c.name + '"' for c in self.columns()]
@@ -179,6 +192,38 @@ class Join(object):
         return self.join_sql()
 
 
+class Aggregate:
+    def __init__(self, column, name, groupby=None, func='SUM'):
+        self._column = column
+        self._groupby = groupby
+        self._func = func
+        self._name = name
+
+    def column(self):
+        return self._column
+
+    def groupby(self):
+        return self._groupby
+
+    def func(self):
+        return self._func
+
+    def name(self):
+        return self._name
+
+
+class Synthetic:
+    def __init__(self, name, formula):
+        self._name = name
+        self._formula = formula
+
+    def name(self):
+        return self._name
+
+    def formula(self):
+        return self._formula
+
+
 class ModelQuery(object):
     def __init__(self):
         self._owner = None
@@ -186,7 +231,8 @@ class ModelQuery(object):
         self._conditions = []
         self._sortorder = []
         self._joins = []
-        self._aggregate_column = None
+        self._aggregates = []
+        self._synthetic = []
 
     def _reset_state(self):
         pass
@@ -310,19 +356,31 @@ class ModelQuery(object):
     def conditions(self):
         return self._conditions
 
+    def clear_synthetic_columns(self):
+        self._synthetic = []
+        return self
+
+    def add_synthetic_column(self, name, formula):
+        self._reset_state()
+        self._synthetic.append(Synthetic(name, formula))
+        return self
+
+    def synthetic_columns(self):
+        return self._synthetic
+
     def clear_joins(self):
         self._joins = []
         return self
 
-    def add_join(self, kind, prop, alias=None, join_with="k"):
-        self._joins.append(Join(len(self._joins), kind, prop, alias, join_with))
+    def add_join(self, kind, prop, **kwargs):
+        self._joins.append(Join(len(self._joins), kind, prop, **kwargs))
         return self
 
     def joins(self):
         return self._joins
 
     def add_parent_join(self, parent_kind, alias="p"):
-        self.add_join(parent_kind, "_parent", alias)
+        self.add_join(parent_kind, "_parent", alias=alias)
         return self
 
     def clear_sort(self):
@@ -338,10 +396,30 @@ class ModelQuery(object):
     def sortorder(self):
         return self._sortorder
 
-    def sum(self, column = None):
+    def sum(self, column=None, groupby=None):
         if column is not None:
-            self._aggregate_column = column
-        return self._aggregate_column
+            self.add_aggregate(column, groupby, 'SUM')
+            return self._aggregates[-1].column()
+        else:
+            return None
+
+    def clear_aggregates(self):
+        self._aggregates = []
+
+    def has_aggregates(self):
+        return len(self._aggregates) > 0
+
+    def add_aggregate(self, column, name=None, groupby=None, func='SUM'):
+        if name is None:
+            name = "_aggr" + str(len(self._aggregates))
+        if groupby:
+            for a in self._aggregates:
+                assert a.groupby() is None or a.groupby() == groupby
+        self._aggregates.append(Aggregate(column, name, groupby, func))
+        return self
+
+    def aggregates(self):
+        return self._aggregates
 
     def set_limit(self, limit):
         self._limit = limit
@@ -354,53 +432,41 @@ class ModelQuery(object):
     def limit(self):
         return self._limit
 
-    def execute(self, kind, t):
+    def execute(self, kind, t=grumble.dbadapter.QueryType.KeyName, subclasses=False):
         if isinstance(t, bool):
             t = grumble.dbadapter.QueryType.KeyName if t else grumble.dbadapter.QueryType.Columns
+        if self.has_aggregates() and t in (grumble.dbadapter.QueryType.KeyName, grumble.dbadapter.QueryType.Columns):
+            t = grumble.dbadapter.QueryType.Aggregate
         with gripe.db.Tx.begin():
             mm = grumble.schema.ModelManager.for_name(kind)
             r = mm.getModelQueryRenderer(self)
-            return r.execute(t)
+            return r.execute(t, kind, subclasses=subclasses)
 
-    def _aggregate(self, kind):
-        """
-            Executes this query and returns the aggregate. Note
-            that the actual results of the query are not available; these need to
-            be obtained by executing the query again
-        """
-        with gripe.db.Tx.begin():
-            mm = grumble.schema.ModelManager.for_name(kind)
-            r = mm.getModelQueryRenderer(self)
-            return r.execute(grumble.dbadapter.QueryType.Aggregate).singleton()
-
-    def _count(self, kind):
+    def _count(self, kind, subclasses=False):
         """
             Executes this query and returns the number of matching rows. Note
             that the actual results of the query are not available; these need to
             be obtained by executing the query again
         """
         with gripe.db.Tx.begin():
-            mm = grumble.schema.ModelManager.for_name(kind)
-            r = mm.getModelQueryRenderer(self)
-            return r.execute(grumble.dbadapter.QueryType.Count).singleton()
+            return self.execute(kind, grumble.dbadapter.QueryType.Count, subclasses=subclasses).singleton()
 
-    def _delete(self, kind):
+    def _delete(self, kind, subclasses=False):
         with gripe.db.Tx.begin():
             mm = grumble.schema.ModelManager.for_name(kind)
             r = mm.getModelQueryRenderer(self)
-            return r.execute(grumble.dbadapter.QueryType.Delete).rowcount
+            return r.execute(grumble.dbadapter.QueryType.Delete, kind, subclasses=subclasses).rowcount
 
     @classmethod
     def get(cls, key):
         with gripe.db.Tx.begin():
             if isinstance(key, str):
                 key = grumble.key.Key(key)
-            else:
-                assert isinstance(key, grumble.key.Key), "ModelQuery.get requires a valid key object"
+            assert isinstance(key, grumble.key.Key), "ModelQuery.get requires a valid key object"
             q = ModelQuery().set_key(key)
             mm = grumble.schema.ModelManager.for_name(key.kind())
             r = mm.getModelQueryRenderer(q)
-            return r.execute(grumble.dbadapter.QueryType.Columns).single_row_bycolumns()
+            return r.execute(grumble.dbadapter.QueryType.Columns, key.kind()).single_row_bycolumns()
 
     @classmethod
     def set(cls, insert, key, values):
@@ -417,7 +483,8 @@ class ModelQuery(object):
             q = ModelQuery().set_key(key)
             mm = grumble.schema.ModelManager.for_name(key.kind())
             r = mm.getModelQueryRenderer(q)
-            r.execute(grumble.dbadapter.QueryType.Insert if insert else grumble.dbadapter.QueryType.Update, values)
+            r.execute(grumble.dbadapter.QueryType.Insert if insert else grumble.dbadapter.QueryType.Update, key.kind(),
+                      values)
 
     @classmethod
     def delete_one(cls, key):

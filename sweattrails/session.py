@@ -397,7 +397,7 @@ class CriticalPower(grumble.Model, Timestamped):
         q = cls.query(cpdef=cpdef).add_sort("p.start_time")
         q.add_parent_join(BikePart, "part")
         q.add_join(Session, "_parent", "session", "part")
-        q.add_join(sweattrails.config.CriticalPowerInterval, "cpdef", "cpi")
+        q.add_join(sweattrails.config.CriticalPowerInterval, "cpdef", alias="cpi")
         q.add_filter("session.athlete =", user)
         q.add_condition("""k.power > COALESCE((SELECT MAX(cp.power) FROM %s cp
                            INNER JOIN %s bp ON (bp._key = cp._parent)
@@ -737,8 +737,8 @@ class RunPace(grumble.Model, Timestamped):
     def get_progression(cls, cpdef, user=None):
         q = cls.query(keys_only=False, cpdef=cpdef)
         q.add_parent_join(RunPart, "part")
-        q.add_join(Session, "_parent", "session", "part")
-        q.add_join(sweattrails.config.CriticalPace, "cpdef", "cpdef")
+        q.add_join(Session, "_parent", alias="session", join_with="part")
+        q.add_join(sweattrails.config.CriticalPace, "cpdef", alias="cpdef")
         if user:
             q.add_filter("session.athlete =", user)
         q.add_condition("""k.duration < COALESCE((SELECT MIN(rp.duration) FROM %s rp 

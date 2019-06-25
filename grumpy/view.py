@@ -18,16 +18,18 @@
 
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtCore import QObject
 from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import pyqtSignal
 
 from PyQt5.QtCore import QModelIndex
-from PyQt5.QtWidgets import QTableView
+from PyQt5.QtWidgets import QTableView, QApplication
 from PyQt5.QtWidgets import QTreeView
 
 import gripe
-import grumble.qt.model
+import grumble.key
+import grumble.model
+import grumble.property
+import grumpy.model
 
 
 class View:
@@ -54,12 +56,12 @@ class View:
 
 
 class TableView(QTableView, View):
-    def __init__(self, query = None, columns = None, parent = None):
+    def __init__(self, query=None, columns=None, parent=None, **kwargs):
         super(TableView, self).__init__(parent)
         self._query = None
         self._columns = None
         if query is not None or columns is not None:
-            self.setQueryAndColumns(query, *columns)
+            self.setQueryAndColumns(query, *columns, **kwargs)
         self.setSelectionBehavior(self.SelectRows)
         self.setShowGrid(False)
         vh = self.verticalHeader()
@@ -76,11 +78,11 @@ class TableView(QTableView, View):
         self.resizeColumnsToContents()
         self.reset()
 
-    def setQueryAndColumns(self, query, *columns):
+    def setQueryAndColumns(self, query, *columns, **kwargs):
         self._query = query
         self._columns = columns
         if self._query is not None:
-            tm = grumble.qt.model.TableModel(self._query, self._columns)
+            tm = grumpy.model.TableModel(self._query, self._columns, **kwargs)
             self.setModel(tm)
             hh = self.horizontalHeader()
             fm = hh.fontMetrics()
@@ -100,10 +102,13 @@ class TableView(QTableView, View):
 
 
 class TreeView(QTreeView, View):
-    def __init__(self, parent, kind, root=None):
+    def __init__(self, parent, **kwargs):
         super(TreeView, self).__init__(parent)
-        self._model = grumble.qt.model.TreeModel(self, kind, root)
+        self._model = grumpy.model.TreeModel(self, **kwargs)
         self.setModel(self._model)
+        # columns = kwargs.get("columns")
+        # if columns:
+        #     self.setColumnWidth(0, self.width() / (len(columns) + 1))
         self.activated.connect(self.row_selected)
         self.pressed.connect(self.row_selected)
         QTimer.singleShot(0, self.select_first)

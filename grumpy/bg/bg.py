@@ -74,13 +74,16 @@ class BackgroundThread(LoggingThread):
         self._queue = queue.Queue()
         if "grumpy" in gripe.Config.app and "plugins" in gripe.Config.app.grumpy:
             for plugin in gripe.Config.app.grumpy.plugins:
-                logger.debug("Initializing background plugin '%s'", plugin)
-                plugin = gripe.resolve(plugin)
-                self._plugins.append(plugin(self))
+                self.add_plugin(plugin)
 
     def addjob(self, job):
         job.thread = self
         self._queue.put(job)
+
+    def add_plugin(self, plugin_class):
+        logger.debug("Initializing background plugin '%s'", plugin_class)
+        plugin_class = gripe.resolve(plugin_class)
+        self._plugins.append(plugin_class(self))
 
     def run(self):
         self._stopped = False

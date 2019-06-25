@@ -27,9 +27,9 @@ from PyQt5.QtWidgets import QWidget
 
 import gripe
 import gripe.conversions
-import grumble.qt.bridge
-import grumble.qt.model
-import grumble.qt.view
+import grumpy.bridge
+import grumpy.model
+import grumpy.view
 import grumpy.bg.job
 import sweattrails.qt.graphs
 import sweattrails.qt.session.bike
@@ -42,7 +42,7 @@ import sweattrails.session
 logger = gripe.get_logger(__name__)
 
 
-class MiscDataPage(grumble.qt.bridge.FormPage):
+class MiscDataPage(grumpy.bridge.FormPage):
     def __init__(self, parent, instance):
         super(MiscDataPage, self).__init__(parent)
         self.row = 0
@@ -142,7 +142,7 @@ class MapPage(QWidget):
         self.map.drawMap(self.interval)
 
 
-class IntervalList(grumble.qt.view.TableView):
+class IntervalList(grumpy.view.TableView):
     def __init__(self, parent, interval):
         super(IntervalList, self).__init__(parent=parent)
         self.interval = interval
@@ -182,7 +182,7 @@ class IntervalListPage(QWidget):
         self.list.refresh()
 
 
-class RawDataList(grumble.qt.view.TableView):
+class RawDataList(grumpy.view.TableView):
     def __init__(self, parent=None, interval=None):
         super(RawDataList, self).__init__(parent=parent)
 
@@ -190,17 +190,17 @@ class RawDataList(grumble.qt.view.TableView):
                                                    keys_only=False)
         query.add_sort("timestamp")
         self.setQueryAndColumns(query,
-                                grumble.qt.model.TableColumn("timestamp", header="Timestamp"),
-                                grumble.qt.model.TableColumn("location"),
-                                grumble.qt.model.TableColumn("elevation"),
-                                grumble.qt.model.TableColumn("corrected_elevation", header="Corrected"),
-                                grumble.qt.model.TableColumn("speed"),
-                                grumble.qt.model.TableColumn("distance"),
-                                grumble.qt.model.TableColumn("cadence"),
-                                grumble.qt.model.TableColumn("heartrate"),
-                                grumble.qt.model.TableColumn("power"),
-                                grumble.qt.model.TableColumn("torque"),
-                                grumble.qt.model.TableColumn("temperature"))
+                                grumpy.model.TableColumn("timestamp", header="Timestamp"),
+                                grumpy.model.TableColumn("location"),
+                                grumpy.model.TableColumn("elevation"),
+                                grumpy.model.TableColumn("corrected_elevation", header="Corrected"),
+                                grumpy.model.TableColumn("speed"),
+                                grumpy.model.TableColumn("distance"),
+                                grumpy.model.TableColumn("cadence"),
+                                grumpy.model.TableColumn("heartrate"),
+                                grumpy.model.TableColumn("power"),
+                                grumpy.model.TableColumn("torque"),
+                                grumpy.model.TableColumn("temperature"))
         QCoreApplication.instance().refresh.connect(self.refresh)
 
 
@@ -230,12 +230,12 @@ class ReanalyzeJob(grumpy.bg.job.Job):
         return "Re-analyzing %s" % self.interval.interval_id
 
 
-class IntervalPage(grumble.qt.bridge.FormWidget):
+class IntervalPage(grumpy.bridge.FormWidget):
     def __init__(self, interval, parent=None):
         super(IntervalPage, self).__init__(parent,
-                                           grumble.qt.bridge.FormButtons.AllButtons
+                                           grumpy.bridge.FormButtons.AllButtons
                                            if interval.basekind() == "session"
-                                           else grumble.qt.bridge.FormButtons.EditButtons)
+                                           else grumpy.bridge.FormButtons.EditButtons)
         self.plugin = None
         with gripe.db.Tx.begin():
             interval = interval()
@@ -243,7 +243,7 @@ class IntervalPage(grumble.qt.bridge.FormWidget):
             if interval.basekind() == "session":
                 self.addProperty(sweattrails.session.Session, "sessiontype", 0, 0,
                                  readonly=True, has_label=False, rowspan=3,
-                                 bridge=grumble.qt.bridge.Image, height=64,
+                                 bridge=grumpy.bridge.Image, height=64,
                                  displayconverter=sweattrails.qt.view.SessionTypeIcon)
                 self.addProperty(sweattrails.session.Session, "start_time", 0, 1, readonly=True)
                 self.addProperty(sweattrails.session.Session, "description", 1, 1, colspan=3)

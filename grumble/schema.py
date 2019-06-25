@@ -80,8 +80,7 @@ class ModelManager(object):
             self.key_col = kc
             self.columns.append(kc)
         if not self.flat:
-            self.columns += (ColumnDefinition("_ancestors", "TEXT", True, None, True),
-                             ColumnDefinition("_parent", "TEXT", False, None, True),
+            self.columns += (ColumnDefinition("_parent", "TEXT", False, None, True),
                              ColumnDefinition("_key", "TEXT", True, None, True))
         self.columns += self._prep_columns
         if self.audit:

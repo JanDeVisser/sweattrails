@@ -27,13 +27,13 @@ from PyQt5.QtWidgets import QWidget
 import gripe
 import gripe.db
 import grizzle
-import grumble.qt.bridge
+import grumpy.bridge
 import sweattrails.qt.stackedpage
 import sweattrails.userprofile
 
 logger = gripe.get_logger(__name__)
 
-class SettingsPage(grumble.qt.bridge.FormWidget):
+class SettingsPage(grumpy.bridge.FormWidget):
     def __init__(self, parent = None):
         super(SettingsPage, self).__init__(parent)
         self.setMinimumSize(800, 600)

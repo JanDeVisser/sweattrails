@@ -20,23 +20,19 @@
 import collections
 import datetime
 import enum
-import sys
 import traceback
 
 from PyQt5.QtCore import QMargins
 from PyQt5.QtCore import QModelIndex
-from PyQt5.QtCore import QObject
 from PyQt5.QtCore import QRegExp
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtCore import pyqtSlot
 
-from PyQt5.QtGui import QDoubleValidator, QStandardItemModel, QValidator
+from PyQt5.QtGui import QDoubleValidator, QValidator
 from PyQt5.QtGui import QIntValidator
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtGui import QRegExpValidator
 
-from PyQt5.QtWidgets import QApplication
 from PyQt5.QtWidgets import QButtonGroup
 from PyQt5.QtWidgets import QCheckBox
 from PyQt5.QtWidgets import QComboBox
@@ -73,7 +69,7 @@ from grumble.property import DateProperty
 from grumble.property import DateTimeProperty
 from grumble.property import TimeProperty
 from grumble.property import BooleanProperty
-import grumble.qt.model
+import grumpy.model
 from grumble.reference import ReferenceProperty
 
 logger = gripe.get_logger(__name__)
@@ -715,7 +711,7 @@ class References(LineEdit, grumbletype=ReferenceProperty):
             return {}
 
     def customize(self, widget):
-        self.model = grumble.qt.model.ListModel(self._query(), self.column)
+        self.model = grumpy.model.ListModel(self._query(), self.column)
         self.completer = ReferenceCompleter(self.model, widget)
         self.completer.setCaseSensitivity(Qt.CaseInsensitive)
         widget.setCompleter(self.completer)

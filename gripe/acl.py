@@ -21,6 +21,7 @@ import json
 
 class ACL:
     def __init__(self, acl):
+        self._acl = {}
         self.set(acl)
         
     def set(self, acl):

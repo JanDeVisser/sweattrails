@@ -54,7 +54,7 @@
           "acc_name": "Paypal",
           "acc_nr": "jan@de-visser.net",
           "description": "Paypal",
-          "importer": "bucks.tximport.Reader",
+          "importer": "bucks.tximport.PaypalReader",
           "opening_date": { "day": 1, "month": 1, "year": 2019 },
           "opening_balance": 0.0
         }
@@ -138,6 +138,7 @@
       "Internet": {}
     },
     "Subscriptions": {},
+    "Entertainment": {},
     "Car": {
       "Gas": {},
       "Car Maintenance": {},

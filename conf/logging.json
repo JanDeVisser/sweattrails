@@ -23,5 +23,7 @@
     "grumble": { "flat": true },
     "grumble.reference": { "flat": true, "destination": "stderr" },
     "grumble.qt": { "flat": true },
-    "grumble.qt.bridge": { "flat": true, "destination": "stderr" }
+    "grumble.qt.bridge": { "flat": true, "destination": "stderr" },
+
+    "grumpy": { "flat": true }
 }

@@ -18,6 +18,7 @@
 
 import datetime
 import enum
+import sys
 
 import gripe
 import gripe.db
@@ -53,13 +54,11 @@ class DbAdapter(object):
 
 
 class ModelQueryRenderer(object):
-    def __init__(self, kind, query=None):
+    def __init__(self, manager, query=None):
         self._query = query
-        if isinstance(kind, grumble.schema.ModelManager):
-            self._manager = kind
-        else:
-            kind = grumble.meta.Registry.get(kind)
-            self._manager = kind.modelmanager
+        self._kind = None
+        self._kinds = None
+        self._manager = manager
 
     def query(self, q=None):
         if q:
@@ -144,27 +143,24 @@ class ModelQueryRenderer(object):
             if c in new_values:
                 del new_values[c]
 
-    def execute(self, query_type, new_values=None):
+    def execute(self, query_type, kind, new_values=None, subclasses=False):
+        self._kind = grumble.meta.Registry.get(kind)
+        self._manager = self._kind.modelmanager
+        self._kinds = [self._kind]
+        if subclasses:
+            for sub in self._kind.subclasses():
+                if not sub.abstract():
+                    self._kinds.append(sub)
         logger.debug("Executing query for model '%s'", self._manager.name)
         self._manager.seal()
         assert self._query is not None, "Must set a Query prior to executing a ModelQueryRenderer"
         with gripe.db.Tx.begin() as tx:
             key_ix = -1
-            cols = ()
+            cols = []
             vals = []
+
             if query_type == QueryType.Delete:
                 sql = "DELETE FROM %s k" % self.tablename()
-            elif query_type == QueryType.Count:
-                sql = "SELECT COUNT(*) AS COUNT FROM %s k" % self.tablename()
-                cols = ('COUNT',)
-                for j in self.joins():
-                    sql += j.join_sql()
-            elif query_type == QueryType.Aggregate:
-                assert self._query.sum()
-                sql = "SELECT SUM(k.%s) AS SUM FROM %s k" % (self._query.sum(), self.tablename())
-                cols = ('SUM',)
-                for j in self.joins():
-                    sql += j.join_sql()
             elif query_type in (QueryType.Update, QueryType.Insert):
                 assert new_values, "ModelQuery.execute: QueryType %s requires new values" % QueryType[query_type]
                 if self.audit():
@@ -177,9 +173,51 @@ class ModelQueryRenderer(object):
                     sql = 'INSERT INTO %s ( "%s" ) VALUES ( %s )' % \
                             (self.tablename(), '", "'.join(new_values), ', '.join(['%s'] * len(new_values)))
                 vals.extend(new_values.values())
-            elif query_type in (QueryType.Columns, QueryType.KeyName):
-                if query_type == QueryType.Columns:
-                    cols = [c.name for c in self.columns()]
+            elif query_type in (QueryType.Columns, QueryType.KeyName, QueryType.Aggregate, QueryType.Count):
+                for k in self._kinds:
+                    k.seal()
+                columns = {c.name for k in self._kinds for c in k.modelmanager.columns}
+
+                gb = None
+                sql = ''
+                glue = "\nWITH objects AS ("
+                for k in self._kinds:
+                    sql += glue
+                    sql += '\n\tSELECT \'%s\' "_kind"' % k.kind()
+                    my_columns = {c.name for c in k.modelmanager.columns}
+                    for c in columns:
+                        sql += ', '
+                        sql += ('"%s"' if c in my_columns else 'NULL "%s"') % c
+                    for c in self._query.synthetic_columns():
+                        sql += ', '
+                        sql += ('%s "%s"') % (c.formula(), c.name())
+                    sql += '\n\t\tFROM %s' % k.modelmanager.tablename
+                    glue = '\n\tUNION ALL'
+                sql += '\n)\n'
+
+                if self._query.has_aggregates():
+                    for a in self._query.aggregates():
+                        if a.groupby() and gb is None:
+                            gb = a.groupby()
+                            break
+                    cols = ["_kind"]
+                    collist = ("'%s'" + ' "_kind"') % \
+                              (self._kinds[0].kind()
+                               if gb is None or not isinstance(gb, grumble.meta.ModelMetaClass)
+                               else gb.kind())
+                    for a in self._query.aggregates():
+                        cols.append(a.name())
+                        collist += ', %s(%s) "%s"' % (a.func(), a.column(), a.name())
+                    if gb is not None and isinstance(gb, grumble.meta.ModelMetaClass):
+                        gb_cols = ['%s."%s"' % (gb.basekind(), col.name) for col in gb.modelmanager.columns]
+                        if gb_cols:
+                            collist += ', ' + ', '.join(gb_cols)
+                            cols.extend(gb_cols)
+                            key_name = '%s."%s"' % (gb.basekind(), gb.modelmanager.key_col.name)
+                            key_ix = cols.index(key_name)
+                elif query_type == QueryType.Columns:
+                    cols = ["_kind"]
+                    cols.extend(columns)
                     collist = 'k."' + '", k."'.join(cols) + '"'
                     key_name = self.key_column().name
                     key_ix = cols.index(key_name)
@@ -187,60 +225,64 @@ class ModelQueryRenderer(object):
                     for j in self.joins():
                         collist += j.column_sql(cols)
                 else:
-                    assert query_type == QueryType.KeyName
+                    cols = ["_kind"]
                     key_name = self.key_column().name
-                    cols = [key_name]
-                    collist = 'k."%s"' % key_name
-                    key_ix = 0
+                    cols.append(key_name)
+                    collist = 'k."_kind", k."%s"' % key_name
+                    key_ix = 1
 
                     for j in self.joins():
                         collist += j.key_column_sql(cols)
 
-                sql = "SELECT %s \n\t\tFROM %s k " % (collist, self.tablename())
+                sql += 'SELECT %s \n\t\tFROM objects k ' % collist
                 for j in self.joins():
-                    sql += "\n\t\t" + j.join_sql()
+                    sql += "\n\t\t" + j.join_sql(vals)
             else:
                 assert 0, "Huh? Unrecognized query query_type %s in query for table '%s'" % (query_type, self.name())
 
             if query_type != QueryType.Insert:
                 glue = '\n\t\tWHERE '
                 and_glue = '\n\t\t\tAND '
+                clauses = []
                 if self.has_key():
-                    sql += glue
-                    glue = and_glue
-                    sql += '(k."%s" = %%s)' % self.key_column().name
+                    clauses.append('(k."%s" = %%s)' % self.key_column().name)
                     vals.append(str(self.key().name))
                 if self.has_ancestor() and self.ancestor():
                     assert not self.flat(), "Cannot perform ancestor queries on flat table '%s'" % self.name()
-                    sql += glue
-                    glue = and_glue
-                    sql += '(k."_ancestors" LIKE %s)'
-                    vals.append(str(self.ancestor().get().path()) + "%")
+                    clauses.append('(k."_key" LIKE %s)')
+                    vals.append(str(grumble.key.to_key(self.ancestor())) + "%")
                 if self.has_parent():
                     assert not self.flat(), "Cannot perform parent queries on flat table '%s'" % self.name()
-                    sql += glue + '(k."_parent" '
-                    glue = and_glue
                     p = self.parent()
                     if p:
-                        sql += " = %s"
-                        vals.append(str(p))
+                        clause = " SIMILAR TO '%s/[A-Za-z0-9:%_.-~+]+'"
+                        vals.append(str(grumble.key.to_key(p)))
                     else:
-                        sql += " IS NULL"
-                    sql += ")"
+                        clause = " SIMILAR TO '[A-Za-z0-9:%_.-~+]+'"
+                    clauses.append('(k."_key" %s)' % clause)
                 if self.owner():
-                    sql += glue + '(k."_ownerid" = %s)'
-                    glue = and_glue
                     vals.append(self.owner())
+                    clauses.append('(k."_ownerid" = %s)' % clause)
                 for f in self.conditions():
                     s = f.to_sql(vals)
                     if s:
-                        sql += glue + s
-                        glue = and_glue
+                        clauses.append(s)
+                if clauses:
+                    sql += '\n\t\tWHERE ' + '\n\t\t\tAND '.join(clauses)
+                if self._query.has_aggregates() and gb is not None:
+                    sql += "\n\t\tGROUP BY "
+                    if isinstance(gb, grumble.meta.ModelMetaClass):
+                        sql += ', '.join(['%s."%s"' % (gb.basekind(), col.name) for col in gb.modelmanager.columns])
+                    else:
+                        sql += '\n\t\tGROUP BY k."%s"' % self._query.aggregate().groupby()
             if query_type == QueryType.Columns and self.sortorder():
                 sql += '\n\t\tORDER BY ' + \
                        ', '.join([so.to_sql() for so in self.sortorder()])
             if self.limit():
                 sql += '\n\t\tLIMIT ' + self.limit()
+            if query_type == QueryType.Count:
+                sql = 'SELECT COUNT(*) "_count" FROM (%s) results' % sql
+                cols = ['_count']
             logger.debug("Rendered query: %s [%s]", sql, vals)
             cur = tx.get_cursor()
             self._query.sql = sql

@@ -17,6 +17,7 @@
 #
 
 import datetime
+import enum
 import json
 import sys
 
@@ -139,6 +140,34 @@ class BooleanConverter(PropertyConverter, datatype=bool):
         if isinstance(value, str) and self.prop.choices and len(self.prop.choices) == 2:
             value = self.prop.choices.index(value) == 1
         return super(BooleanConverter, self).from_jsonvalue(value)
+
+
+class EnumConverter(PropertyConverter, datatype=enum.Enum):
+    def __init__(self, datatype=None, prop=None):
+        super(EnumConverter, self).__init__(datatype, prop)
+        self._enum = gripe.resolve(self.prop.config.get("enum"))
+        assert self._enum and isinstance(self._enum, enum.EnumMeta)
+
+    def convert(self, value):
+        if isinstance(value, self._enum):
+            return value
+        else:
+            try:
+                return self._enum(value)
+            except ValueError as ve:
+                return self._enum[value]
+
+    def to_sqlvalue(self, value):
+        return value.value
+
+    def from_sqlvalue(self, value):
+        return self._enum(value)
+
+    def to_jsonvalue(self, value):
+        return value.value
+
+    def from_jsonvalue(self, value):
+        return self._enum(value)
 
 
 class DateTimeConverter(PropertyConverter, datatype=datetime.datetime):

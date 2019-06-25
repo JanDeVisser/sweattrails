@@ -15,8 +15,11 @@
 # with this program; if not, write to the Free Software Foundation, Inc., 51
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
-
+import codecs
 import datetime
+import enum
+import sys
+import traceback
 
 import grumble
 import grumble.model
@@ -34,8 +37,8 @@ class EntityBalance(grumble.FloatProperty):
         if not instance.is_new():
             q = Transaction.query()
             q.add_filter(self.entity_prop, "->", instance)
-            q.sum("amt")
-            return q.aggregate()
+            q.add_aggregate("amt")
+            return q.singleton()
 
 
 class Category(grumble.model.Model):
@@ -70,9 +73,12 @@ class OpeningDate(grumble.DateProperty):
 
     @staticmethod
     def getvalue(instance):
-        q = OpeningBalanceTx.query(parent=instance)
-        opening: OpeningBalanceTx = q.get()
-        return opening.date if opening is not None else None
+        if not instance.is_new():
+            q = OpeningBalanceTx.query(parent=instance)
+            opening: OpeningBalanceTx = q.get()
+            return opening.date if opening is not None else None
+        else:
+            return None
 
     @staticmethod
     def setvalue(instance, value):
@@ -123,8 +129,8 @@ class Balance(grumble.FloatProperty):
     def getvalue(instance):
         if not instance.is_new():
             q = Transaction.query(parent=instance)
-            q.sum("amt")
-            return q.aggregate()
+            q.add_aggregate("amt")
+            return q.singleton()
         else:
             return 0
 
@@ -133,6 +139,7 @@ class Account(grumble.model.Model):
     acc_name = grumble.property.TextProperty(is_label=True, verbose_name="Account name")
     acc_nr = grumble.property.TextProperty(verbose_name="Account #")
     description = grumble.property.TextProperty()
+    currency = grumble.property.TextProperty(default="CAD")
     importer = grumble.property.TextProperty()
     opening_date = OpeningDate(verbose_name="Opening Date")
     opening_balance = OpeningBalance(verbose_name="Opening Balance")
@@ -184,13 +191,16 @@ class CreditAmount(grumble.TextProperty):
         return "{0:10.2f}".format(instance.amt) if instance.amt > 0 else " " * 10
 
 
-class Transaction(grumble.model.Model, txtype=lambda i: ("D" if i.amt < 0 else "C")):
+class Transaction(grumble.model.Model, txtype=lambda i: ("D" if i.amt is None or i.amt < 0 else "C")):
     date = grumble.property.DateProperty()
     type = TransactionType()
-    amt = grumble.property.IntProperty(verbose_name="Amount", format="$", default=0.0)
+    amt = grumble.property.FloatProperty(verbose_name="Amount", format="$", default=0.0)
+    currency = grumble.property.TextProperty(default="CAD")
+    foreign_amt = grumble.property.FloatProperty(verbose_name="Amount", format="$", default=0.0)
     debit = DebitAmount(verbose_name="Out")
     credit = CreditAmount(verbose_name="In")
     description = grumble.property.TextProperty()
+    consolidated = grumble.property.BooleanProperty()
     category = grumble.reference.ReferenceProperty(reference_class=Category)
     project = grumble.reference.ReferenceProperty(reference_class=Project)
     contact = grumble.reference.ReferenceProperty(reference_class=Contact)
@@ -200,6 +210,51 @@ class Transaction(grumble.model.Model, txtype=lambda i: ("D" if i.amt < 0 else "
         if typ in ("D", "C"):
             c = Transaction
         elif typ == "T":
+            """
+                We should check whether the transfer hasn't posted yet as a result of the import of 
+                the counter account:
+            """
+            if "counter" in kwargs:
+                amt = kwargs["amt"]
+
+                # Query transfers of this account:
+                q = Transfer.query(parent=account)
+
+                # That have a crosspost in the counter account:
+                q.add_join(Transfer, "crosspost", alias="cp", where="cp._parent = %s",
+                           value=kwargs["counter"].key())
+
+                # With the given amount:
+                q.add_filter("amt", amt)
+
+                # And that are not consolidated yet:
+                q.add_filter("consolidated", False)
+
+                """
+                    If the amount is negative, it's a transfer *from* this account and the cross post will show
+                    up *after* this one. If the amount is positive, the cross post will have posted *before* this
+                    one. We allow a week lag; this should be enough for domestic transfers.
+                """
+                if amt < 0:
+                    date_from = kwargs["date"]
+                    date_to = date_from + datetime.timedelta(days=7)
+                else:
+                    date_to = kwargs["date"]
+                    date_from = date_to + datetime.timedelta(days=-7)
+                q.add_condition("k.date BETWEEN %s AND %s", (date_to, date_from))
+
+                transfer = q.get()
+                if transfer:
+                    """
+                        We found a matching transfer. Mark as consolidated so we won't find it again. If there
+                        are more transfers in the given window with the exact same amount, we don't really care 
+                        what we match up with what; the outcome is the same anyway.
+                    """
+                    transfer.consolidated = True
+                    transfer.crosspost.consolidated = True
+                    transfer.crosspost.put()
+                    transfer.put()
+                    return None
             c = Transfer
         elif typ == "O":
             c = OpeningBalanceTx
@@ -252,3 +307,41 @@ class OpeningBalanceTx(Transaction, txtype="O"):
 
 class ValueChange(Transaction, txtype="V"):
     pass
+
+
+class ImportStatus(enum.Enum):
+    Initial = "Initial"
+    Read = "Read"
+    InProgress = "In Progress"
+    Completed = "Completed"
+    Error = "Error"
+    Partial = "Partial"
+
+
+class Import(grumble.model.Model):
+    timestamp = grumble.property.DateTimeProperty(auto_now_add=True)
+    account = grumble.reference.ReferenceProperty(reference_class=Account)
+    filename = grumble.property.StringProperty()
+    status = grumble.property.EnumProperty(enum=ImportStatus, default=ImportStatus.Initial)
+    code = grumble.property.TextProperty(verbose_name="Error code")
+    data = grumble.property.StringProperty()
+    errors = grumble.property.StringProperty()
+
+    def read(self):
+        try:
+            with codecs.open(self.filename, encoding="utf-8") as f:
+                self.data = f.read()
+                self.status = ImportStatus.Read
+        except Exception:
+            self.errors = traceback.format_exc()
+            self.status = ImportStatus.Error
+            self.data = None
+        finally:
+            self.put()
+        return self.data
+
+    def log_error(self, what_to_raise: callable = None):
+        self.errors = (self.errors + "\n" if self.errors else "") + traceback.format_exc()
+        if what_to_raise:
+            self.code = what_to_raise.__name__.split(".")[-1]
+            raise what_to_raise().with_traceback(sys.exc_info()[2])
