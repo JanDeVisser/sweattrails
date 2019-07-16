@@ -120,13 +120,21 @@ class Filter:
                 return '(%s.%s %s %%s)' % \
                        (self.alias(alias), self.colname, "=" if self.op == "IN" else "!=")
         elif self.op == '->':
-            if vals is not None:
-                vals.append(self.value)
-                vals.append(self.value)
-            kind, _ = self.value.split(':', 2)
-            t = grumble.meta.Registry.get(kind).modelmanager.tablename
-            return ("%s.%s IN (SELECT _key FROM %s WHERE (POSITION(%%s IN _ancestors) > 0) OR (_key = %%s))" %
-                    (self.alias(alias), self.colname, t))
+            key = grumble.key.to_key(self.value)
+            if key:
+                if vals is not None:
+                    vals.append(str(key))
+                    vals.append(str(key))
+                mm = key.modelmanager()
+                return ('''%s.%s IN 
+                            (SELECT CONCAT_WS(\'/\', "_parent", \'%s:\' || "%s") FROM %s 
+                             WHERE (POSITION(%%s IN "_parent") > 0) 
+                                OR (CONCAT_WS(\'/\', "_parent", \'%s:\' || "%s") = %%s))''' %
+                        (self.alias(alias), self.colname,
+                         key.kind(), mm.key_col.name, mm.tablename,
+                         key.kind(), mm.key_col.name))
+            else:
+                return ''
         else:
             if vals is not None:
                 vals.append(self.value)
@@ -166,6 +174,9 @@ class Join:
     def key_column_name(self):
         return self.key_column().name
 
+    def kind_name(self):
+        return self._kind.kind()
+
     def property(self):
         return self._property
 
@@ -175,8 +186,10 @@ class Join:
     def join_sql(self, vals=None):
         if self._values and vals is not None:
             vals.extend(self._values)
-        return ' %s JOIN %s %s ON (%s."_key" = %s."%s"%s)' % \
-               (self.jointype, self.tablename(), self.alias(), self.alias(), self._join_with, self.property(),
+        return ' %s JOIN %s %s ON (CONCAT_WS(\'/\', %s."_parent", \'%s:\' || %s."%s") = %s."%s"%s)' % \
+               (self.jointype, self.tablename(), self.alias(), self.alias(),
+                self.kind_name(), self.alias(), self.key_column_name(),
+                self._join_with, self.property(),
                 (" AND %s" % self._where if self._where else ''))
 
     def column_sql(self, query_columns):

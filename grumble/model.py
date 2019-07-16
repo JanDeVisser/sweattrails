@@ -660,6 +660,10 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
         return cls._abstract
 
     @classmethod
+    def flat(cls):
+        return cls._flat
+
+    @classmethod
     def properties(cls):
         return cls._properties
 
@@ -975,7 +979,9 @@ class Query(grumble.query.ModelQuery):
                     # print(self, cur, file=sys.stderr)
                     k = grumble.meta.Registry.get(cur[0])
                     model = k.get(
-                        grumble.key.Key(k, cur[self._results.parent_index()], cur[self._results.key_index()]),
+                        grumble.key.Key(k,
+                                        cur[self._results.parent_index()] if not k.flat() else None,
+                                        cur[self._results.key_index()]),
                         None if self.keys_only else {k: v for (k, v) in zip(self._results.columns(), cur)},
                         self._alias
                     )

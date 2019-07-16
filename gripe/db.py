@@ -60,7 +60,7 @@ class LoggedCursor(object):
 
     def parent_index(self):
         if self._parent_index is None and self._columns is not None:
-            self._parent_index = self._columns.index("_parent")
+            self._parent_index = [cc for cc in map(lambda c: c.split('.')[-1].replace('"', ''), self._columns)].index("_parent")
         return self._parent_index
 
     def single_row(self):

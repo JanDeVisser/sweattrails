@@ -153,6 +153,9 @@ class Key(object):
     def modelclass(self):
         return grumble.meta.Registry.get(self.kind())
 
+    def modelmanager(self):
+        return self.modelclass().modelmanager
+
     def scope(self):
         return self._scope
 
