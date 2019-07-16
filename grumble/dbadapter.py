@@ -225,11 +225,11 @@ class ModelQueryRenderer(object):
                     for j in self.joins():
                         collist += j.column_sql(cols)
                 else:
-                    cols = ["_kind"]
+                    cols = ["_kind", "_parent"]
                     key_name = self.key_column().name
                     cols.append(key_name)
-                    collist = 'k."_kind", k."%s"' % key_name
-                    key_ix = 1
+                    collist = 'k."_kind", k."_parent", k."%s"' % key_name
+                    key_ix = 2
 
                     for j in self.joins():
                         collist += j.key_column_sql(cols)
@@ -241,28 +241,30 @@ class ModelQueryRenderer(object):
                 assert 0, "Huh? Unrecognized query query_type %s in query for table '%s'" % (query_type, self.name())
 
             if query_type != QueryType.Insert:
-                glue = '\n\t\tWHERE '
-                and_glue = '\n\t\t\tAND '
                 clauses = []
                 if self.has_key():
+                    if self.key().scope():
+                        clauses.append('(k."_parent" = %s)')
+                        vals.append(str(self.key().scope()))
+                    else:
+                        clauses.append('(k."_parent" IS NULL)')
                     clauses.append('(k."%s" = %%s)' % self.key_column().name)
                     vals.append(str(self.key().name))
                 if self.has_ancestor() and self.ancestor():
                     assert not self.flat(), "Cannot perform ancestor queries on flat table '%s'" % self.name()
-                    clauses.append('(k."_key" LIKE %s)')
+                    clauses.append('(k."_parent" LIKE %s)')
                     vals.append(str(grumble.key.to_key(self.ancestor())) + "%")
                 if self.has_parent():
                     assert not self.flat(), "Cannot perform parent queries on flat table '%s'" % self.name()
                     p = self.parent()
                     if p:
-                        clause = " SIMILAR TO '%s/[A-Za-z0-9:%_.-~+]+'"
+                        clauses.append('(k."_parent" = %s)')
                         vals.append(str(grumble.key.to_key(p)))
                     else:
-                        clause = " SIMILAR TO '[A-Za-z0-9:%_.-~+]+'"
-                    clauses.append('(k."_key" %s)' % clause)
+                        clauses.append('(k."_parent" IS NULL)')
                 if self.owner():
                     vals.append(self.owner())
-                    clauses.append('(k."_ownerid" = %s)' % clause)
+                    clauses.append('(k."_ownerid" = %s)')
                 for f in self.conditions():
                     s = f.to_sql(vals)
                     if s:

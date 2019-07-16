@@ -34,10 +34,9 @@ class LoggedCursor(object):
         self._key_index = key_index
 
     def execute(self, sql, args=[], **kwargs):
-        if "columns" in kwargs:
-            self._columns = kwargs["columns"]
-        if "key_index" in kwargs:
-            self._key_index = kwargs["key_index"]
+        self._columns = kwargs.get("columns")
+        self._key_index = kwargs.get("key_index")
+        self._parent_index = None
         logger.debug("sql: %s args %s", sql, args)
         # logger.debug(self._interpolate(sql, args))
         try:
@@ -58,6 +57,11 @@ class LoggedCursor(object):
 
     def key_index(self):
         return self._key_index
+
+    def parent_index(self):
+        if self._parent_index is None and self._columns is not None:
+            self._parent_index = self._columns.index("_parent")
+        return self._parent_index
 
     def single_row(self):
         try:

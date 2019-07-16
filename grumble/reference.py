@@ -117,13 +117,10 @@ class ReferenceProperty(grumble.property.ModelProperty):
             setattr(self.reference_class, self.collection_name, qp)
             self.reference_class._query_properties[self.collection_name] = qp
 
-    def to_json_value(self, instance, values):
-        ref = values.get(self.name)
-        if ref:
-            values[self.name] = ref.to_dict() if self.serialize else ref.id()
-        return values
+    def to_json_value(self, instance, value):
+        return (value.to_dict() if self.serialize else value.id()) if value else None
 
-    def from_json_value(self, instance, value):
+    def from_json_value(self, value):
         clazz = self.reference_class
         if isinstance(value, str):
             value = clazz.get(value) if clazz else grumble.model.Model.get(value)

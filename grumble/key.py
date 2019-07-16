@@ -201,18 +201,22 @@ if __name__ == "__main__":
 
     kind = 'ParentModel'
     p_name = 'Parent'
-    p = grumble.Key(kind, p_name)
+    p = Key(kind, p_name)
     print(p.key())
 
-    c = grumble.Key(ChildModel, p, "Child")
+    c = Key(ChildModel, p, "Child")
     print(c)
 
-    cc = grumble.Key(c)
+    cc = Key(c)
     print(cc)
 
-    p_none = grumble.Key(kind, None, p_name)
+    p_none = Key(kind, None, p_name)
     print(p_none.key())
     print(p_none == p)
 
-    gc = grumble.Key(ChildModel, c, "GrandChild")
+    gc = Key(ChildModel, c, "GrandChild")
     print(gc)
+
+    gc_clone = to_key(str(gc))
+    assert gc_clone == gc
+    print(gc_clone.name)

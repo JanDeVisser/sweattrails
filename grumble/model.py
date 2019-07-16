@@ -42,6 +42,9 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
 
     def __init__(self, *args, **kwargs):
         self._brandnew = True
+        self._acl = gripe.acl.ACL(kwargs.pop("acl", None))
+        self._values = None
+        self._instance_properties = dict(self._allproperties)
         if "key" in kwargs:
             self._key = kwargs.pop("key")
             p = self._key.scope()
@@ -51,14 +54,14 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
         else:
             if "parent" in kwargs:
                 self._set_ancestors_from_parent(kwargs.pop("parent"))
+            else:
+                self._ancestors = None
+                self._parent = None
             self._key_name = kwargs.pop("key_name",
                                         gripe.call_if_exists(self, "get_new_key", None, *args, **kwargs))
             self._id = kwargs.pop("id", None)
-        self._acl = gripe.acl.ACL(kwargs.pop("acl", None))
-        self._values = None
-        self._instance_properties = dict(self._allproperties)
-        for (prop_name, prop) in self._instance_properties.items():
-            setattr(self, prop_name, prop.initial_value_())
+            for (prop_name, prop) in self._instance_properties.items():
+                setattr(self, prop_name, prop.initial_value_())
         for (prop_name, prop_value) in kwargs.items():
             if prop_name not in self._instance_properties:
                 self.add_adhoc_property(prop_name, prop_value)
@@ -208,17 +211,16 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             self._parent = None
             self._ancestors = "/"
 
-    def _set_ancestors(self, ancestors, parent):
+    def _set_ancestors(self, parent):
         if not self._flat:
-            if ancestors == "/":
+            parent = grumble.key.to_key(parent)
+            if parent is None:
                 self._parent = None
                 self._ancestors = "/"
-            elif isinstance(ancestors, str):
-                assert ancestors.endswith("/" + parent), \
-                    "_set_ancestors: mismatch parent: %s, ancestors: %s" % (parent, ancestors)
-                self._ancestors = ancestors
+            else:
+                self._ancestors = str(parent)
                 # print("parent: '%s' (%s)" % (parent, type(parent)), file=sys.stderr)
-                self._parent = grumble.key.Key(parent)
+                self._parent = parent
         else:
             self._parent = None
             self._ancestors = "/"
@@ -239,7 +241,6 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
                         vv[k] = val
                 v = vv
             parent = v.get("_parent")
-            ancestors = v.get("_ancestors")
             self._key_name = v.get("_key_name")
             self._ownerid = v.get("_ownerid")
             self._acl = gripe.acl.ACL(v.get("_acl"))
@@ -247,11 +248,10 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
                 prop.update_fromsql(self, v)
             for (k, val) in [(k, val) for (k, val) in v.items() if k not in self._instance_properties and k[0] != '_']:
                 self.add_adhoc_property(k, val)
-            self._set_ancestors(ancestors, parent)
+            self._set_ancestors(parent)
             if (self._key_name is None) and hasattr(self, "key_prop"):
                 self._key_name = getattr(self, self.key_prop)
             self._key = grumble.key.Key(self.kind(), parent, self._key_name)
-            self._id = self.key(id)
             self._exists = True
             if hasattr(self, "_brandnew"):
                 del self._brandnew
@@ -280,12 +280,12 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
 
     def load(self):
         # logger.debug("_load -> kind: %s, key: %s", self.kind(), str(self.key()))
-        if self._values is None and (self._id or self._key_name):
+        if (not hasattr(self, "_values") or self._values is None) and (self._id or self._key_name):
             self._populate(grumble.query.ModelQuery.get(self.key()))
         else:
             # If self._values is None, and self._id and self._key_name are both None as well,
             # this is a new Model and we need to initialize _values with an empty dict:
-            if self._values is None:
+            if not hasattr(self, "_values") or self._values is None:
                 self._values = {}
             assert hasattr(self, "_parent"), "Object of kind %s doesn't have _parent" % self.kind()
             assert hasattr(self, "_ancestors"), "Object of kind %s doesn't have _ancestors" % self.kind()
@@ -321,8 +321,6 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             if not self._flat:
                 p = self.parent_key()
                 values['_parent'] = str(p) if p else None
-                values['_ancestors'] = self._ancestors
-                values['_key'] = str(self.key())
             values["_acl"] = self._acl.to_json()
             values["_ownerid"] = self._ownerid if hasattr(self, "_ownerid") else None
             grumble.query.ModelQuery.set(hasattr(self, "_brandnew"), self.key(), values)
@@ -977,7 +975,7 @@ class Query(grumble.query.ModelQuery):
                     # print(self, cur, file=sys.stderr)
                     k = grumble.meta.Registry.get(cur[0])
                     model = k.get(
-                        grumble.key.Key(k, cur[self._results.key_index()]),
+                        grumble.key.Key(k, cur[self._results.parent_index()], cur[self._results.key_index()]),
                         None if self.keys_only else {k: v for (k, v) in zip(self._results.columns(), cur)},
                         self._alias
                     )

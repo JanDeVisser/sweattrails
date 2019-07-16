@@ -357,7 +357,7 @@ class ModelProperty(BaseProperty):
                 self.setvalue(instance, value)
             else:
                 instance.load()
-                old = instance._values[self.name] if self.name in instance._values else None
+                old = instance._values.get(self.name)
                 converted = self.convert(value) if value is not None else None
                 if gripe.hascallable(self, "on_assign"):
                     self.on_assign(instance, old, converted)
