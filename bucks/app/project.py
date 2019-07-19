@@ -29,8 +29,8 @@ import grumpy.view
 
 import bucks.app.base
 
+from bucks.datamodel.account import Transaction
 from bucks.datamodel.project import Project
-from bucks.datamodel.transaction import Transaction
 
 
 class ProjectForm(bucks.app.base.BucksForm):

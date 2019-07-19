@@ -29,7 +29,7 @@ import bucks.app.base
 
 from bucks.datamodel.account import Account
 from bucks.datamodel.category import Category
-from bucks.datamodel.transaction import Transaction
+from bucks.datamodel.account import Transaction
 
 
 class CategoryForm(bucks.app.base.BucksForm):

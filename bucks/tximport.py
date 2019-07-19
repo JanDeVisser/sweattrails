@@ -16,7 +16,6 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
-import codecs
 import csv
 import datetime
 import enum
@@ -24,7 +23,6 @@ import io
 import os.path
 import re
 import shutil
-import traceback
 
 import dateparser
 from PyQt5.QtCore import pyqtSignal
@@ -36,6 +34,11 @@ import grumpy.bg
 
 import bucks.datamodel
 from bucks.datamodel.account import Account
+from bucks.datamodel.account import Transaction
+from bucks.datamodel.category import Category
+from bucks.datamodel.contact import Contact
+from bucks.datamodel.project import Project
+
 from bucks.datamodel.dataimport import Import
 from bucks.datamodel.dataimport import ImportStatus
 
@@ -107,13 +110,13 @@ class Line:
             "currency": self.currency,
             "foreign_amt": self.foreign_amount,
             "description": self.description,
-            "contact": self.find_or_create(bucks.datamodel.Contact, "contact_name", self.contact),
-            "category": self.find_or_create(bucks.datamodel.Category, "cat_name", self.category),
-            "project": self.find_or_create(bucks.datamodel.Project, "proj_name", self.project)
+            "contact": self.find_or_create(Contact, "contact_name", self.contact),
+            "category": self.find_or_create(Category, "cat_name", self.category),
+            "project": self.find_or_create(Project, "proj_name", self.project)
         }
         if self.type == "T":
-            attrs["counter"] = self.find_or_create(bucks.datamodel.Account, "acc_name", self.counter)
-        tx = bucks.datamodel.Transaction.for_type(self.account, self.type, **attrs)
+            attrs["counter"] = self.find_or_create(Account, "acc_name", self.counter)
+        tx = Transaction.for_type(self.account, self.type, **attrs)
         if tx:
             tx.put()
 
@@ -145,7 +148,7 @@ class Reader(grumpy.bg.Job):
         self.acc_dir = os.path.join(gripe.root_dir(), "bucks", "data", self.account.acc_name)
         self.record: Import = Import.by("filename", file_name)
         if not self.record:
-            self.record = bucks.datamodel.Import(account=account, filename=file_name)
+            self.record = Import(account=account, filename=file_name)
             self.record.put()
         self.filename: str = file_name
         self.datefmt: str = None

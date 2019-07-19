@@ -42,12 +42,12 @@ import grumble.reference
 import bucks.datamodel
 
 from bucks.datamodel.account import Account
+from bucks.datamodel.account import Transaction
+from bucks.datamodel.account import Transfer
+from bucks.datamodel.account import OpeningBalanceTx
 from bucks.datamodel.category import Category
 from bucks.datamodel.contact import Contact
-from bucks.datamodel.transaction import OpeningBalanceTx
 from bucks.datamodel.project import Project
-from bucks.datamodel.transaction import Transaction
-from bucks.datamodel.transaction import Transfer
 
 
 class TransactionTable(QWidget):

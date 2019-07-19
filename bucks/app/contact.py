@@ -28,8 +28,8 @@ import grumpy.view
 import bucks.app.base
 
 from bucks.datamodel.account import Account
+from bucks.datamodel.account import Transaction
 from bucks.datamodel.contact import Contact
-from bucks.datamodel.transaction import Transaction
 
 
 class ContactForm(bucks.app.base.BucksForm):

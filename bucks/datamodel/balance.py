@@ -28,7 +28,7 @@ class EntityBalance(grumble.FloatProperty):
 
     def getvalue(self, instance):
         if not instance.is_new():
-            from bucks.datamodel.transaction import Transaction
+            from bucks.datamodel.account import Transaction
             q = Transaction.query()
             q.add_filter(self.entity_prop, "->", instance)
             q.add_aggregate("amt")
