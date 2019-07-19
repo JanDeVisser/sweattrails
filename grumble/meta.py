@@ -28,7 +28,7 @@ class ModelMetaClass(type):
     def __new__(mcs, name, bases, dct, **kwargs):
         cls: ModelMetaClass = type.__new__(mcs, name, bases, dct)
         if name != 'Model':
-            logger.debug("Creating new model class %s [%s] {%s}", name, bases, kwargs)
+            logger.debug("Creating new datamodel class %s [%s] {%s}", name, bases, kwargs)
             cls.config = dict(kwargs)
             cls._sealed = False
 
@@ -58,10 +58,10 @@ class ModelMetaClass(type):
             if kwargs.get("cached", dct.get("_cached", False)):
                 cls._cache = {}
             cls._sealed = False
-            acl = gripe.Config.model["model"][name]["acl"] \
-                if "model" in gripe.Config.model and \
-                   name in gripe.Config.model["model"] and \
-                   "acl" in gripe.Config.model["model"][name] \
+            acl = gripe.Config.model["datamodel"][name]["acl"] \
+                if "datamodel" in gripe.Config.model and \
+                   name in gripe.Config.model["datamodel"] and \
+                   "acl" in gripe.Config.model["datamodel"][name] \
                 else dct.get("acl", None)
             cls._acl = gripe.acl.ACL(acl)
             cls._properties = {}
@@ -78,10 +78,10 @@ class ModelMetaClass(type):
                     cls._import_properties(base)
             for (propname, value) in dct.items():
                 cls.add_property(propname, value)
-            cls.customizer = gripe.Config.model["model"][name]["customizer"] \
-                if "model" in gripe.Config.model and \
-                   name in gripe.Config.model["model"] and \
-                   "customizer" in gripe.Config.model["model"][name] \
+            cls.customizer = gripe.Config.model["datamodel"][name]["customizer"] \
+                if "datamodel" in gripe.Config.model and \
+                   name in gripe.Config.model["datamodel"] and \
+                   "customizer" in gripe.Config.model["datamodel"][name] \
                 else kwargs.get("customizer", dct.get("_customizer"))
             cls.load_template_data()
         else:
@@ -122,7 +122,7 @@ class Registry(dict):
     @classmethod
     def fullname(cls, qualname):
         hierarchy = qualname.lower().split(".")
-        while hierarchy and hierarchy[0] in ('model', '__main__'):
+        while hierarchy and hierarchy[0] in ('datamodel', '__main__'):
             hierarchy.pop(0)
         return ".".join(hierarchy)
 
@@ -140,7 +140,7 @@ class Registry(dict):
         assert reg, "Looking for kind %s but registry empty" % name
         if isinstance(name, ModelMetaClass):
             n = Registry.fullname_for_class(name)
-            assert n in reg, "Registry.get(model class '%s'): not in registry" % n
+            assert n in reg, "Registry.get(datamodel class '%s'): not in registry" % n
             return name
         elif isinstance(name.__class__, ModelMetaClass):
             n = Registry.fullname_for_class(name.__class__)

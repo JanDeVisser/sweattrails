@@ -25,11 +25,11 @@ import grumble.model
 
 import bucks.schema
 
-from bucks.datamodel import Account
-from bucks.datamodel import Institution
-from bucks.datamodel import Transaction
-from bucks.datamodel import Category
-from bucks.datamodel import Contact
+from bucks.datamodel.account import Account
+from bucks.datamodel.institution import Institution
+from bucks.datamodel.transaction import Transaction
+from bucks.datamodel.category import Category
+from bucks.datamodel.contact import Contact
 
 
 def get_contact():

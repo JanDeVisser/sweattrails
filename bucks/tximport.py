@@ -35,9 +35,9 @@ import gripe.json_util
 import grumpy.bg
 
 import bucks.datamodel
-from bucks.datamodel import Account
-from bucks.datamodel import Import
-from bucks.datamodel import ImportStatus
+from bucks.datamodel.account import Account
+from bucks.datamodel.dataimport import Import
+from bucks.datamodel.dataimport import ImportStatus
 
 logger = gripe.get_logger(__name__)
 
@@ -201,7 +201,7 @@ class Reader(grumpy.bg.Job):
                                             l = self.process(l)
                                         except Exception:
                                             self.record.log_error()
-                                            self.record.status = bucks.datamodel.ImportStatus.Partial
+                                            self.record.status = ImportStatus.Partial
                                         if l and hasattr(l, "type") and l.type:
                                             l.persist()
                                     if self.record.status != ImportStatus.Partial:
@@ -247,7 +247,7 @@ class PaypalReader(Reader):
         super(PaypalReader, self).__init__(account, file_name)
         self.headerline = True
         assert self.counter
-        self.counter: bucks.datamodel.Account = bucks.datamodel.Account.by("acc_name", self.counter)
+        self.counter: Account = Account.by("acc_name", self.counter)
         assert self.counter
         self.currency = self.counter.currency
         self.last_tx = None
@@ -305,7 +305,7 @@ class PaypalReader(Reader):
 
 
 class Importer(QObject):
-    imported = pyqtSignal(bucks.datamodel.Account, str)
+    imported = pyqtSignal(Account, str)
 
     def __init__(self):
         super(Importer, self).__init__()

@@ -36,7 +36,7 @@ class ColumnDefinition(object):
 
 class ModelManager(object):
     modelconfig = gripe.Config.model
-    models = modelconfig.get("model", {})
+    models = modelconfig.get("datamodel", {})
     def_recon_policy = modelconfig.get("reconcile", "none")
     _adapter_names = { 
         "sqlite3": "grumble.sqlite3.Sqlite3Adapter", 

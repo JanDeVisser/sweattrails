@@ -61,7 +61,7 @@ from grumble.model import flat
 from grumble.model import unaudited
 
 # Can't imp this because it clashes with the module of the same name
-# from grumble.model imp query
+# from grumble.datamodel imp query
 
 from grumble.reference import QueryProperty
 from grumble.reference import ReferenceProperty

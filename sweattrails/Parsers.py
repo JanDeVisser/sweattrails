@@ -15,7 +15,7 @@ import gripe
 import grumble.geopt
 import sweattrails.session
 
-logger = gripe.get_logger("sweattrails.model.session")
+logger = gripe.get_logger("sweattrails.datamodel.session")
 
 class Policy():
     DONT_UPDATE, UPDATE_WITH_OFFSET, UPDATE_ABSOLUTE = range(3)

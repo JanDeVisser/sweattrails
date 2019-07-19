@@ -381,7 +381,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
         if parent:
             parent = grumble.key.Key(parent)()
             assert str(self.key()) not in parent.path(), \
-                "Cyclical model: attempting to set %s as parent of %s" % (parent, self)
+                "Cyclical datamodel: attempting to set %s as parent of %s" % (parent, self)
         self.load()
         self._set_ancestors_from_parent(parent)
 
@@ -511,7 +511,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             if hasattr(self, "on_update") and callable(self.on_update):
                 self.on_update(descriptor, **flags)
         except Exception:
-            logger.exception("Could not update model %s.%s using descriptor %s",
+            logger.exception("Could not update datamodel %s.%s using descriptor %s",
                              self.kind(), self.keyname(), descriptor)
             raise
         return self.to_dict(**flags)
@@ -530,7 +530,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             obj = cls(**kwargs)
             obj._update_deserialized(descriptor, **flags)
         except Exception:
-            logger.exception("Could not create new %s model from descriptor %s", cls.__name__, descriptor)
+            logger.exception("Could not create new %s datamodel from descriptor %s", cls.__name__, descriptor)
             raise
         if hasattr(obj, "on_create") and callable(obj.on_create):
             obj.on_create(descriptor, **flags) and obj.put()
@@ -819,10 +819,10 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             if clazz:
                 with gripe.db.Tx.begin():
                     if clazz.all(keys_only=True).count() == 0:
-                        logger.info("_import_template_data(%s): Loading template model data for model %s",
+                        logger.info("_import_template_data(%s): Loading template datamodel data for datamodel %s",
                                     cname, cdata.model)
                         for d in cdata["data"]:
-                            logger.debug("_import_template_data(%s): model %s object %s", cname, cdata.model, d)
+                            logger.debug("_import_template_data(%s): datamodel %s object %s", cname, cdata.model, d)
                             clazz.create(d)
 
     @classmethod
@@ -846,10 +846,10 @@ def delete(model):
     ret = 0
     if model is not None and not hasattr(model, "_brandnew") and model.exists():
         if model._on_delete():
-            logger.info("Deleting model %s.%s", model.kind(), model.key())
+            logger.info("Deleting datamodel %s.%s", model.kind(), model.key())
             ret = grumble.query.ModelQuery.delete_one(model.key())
         else:
-            logger.info("on_delete trigger prevented deletion of model %s.%s", model.kind(), model.key())
+            logger.info("on_delete trigger prevented deletion of datamodel %s.%s", model.kind(), model.key())
     return ret
 
 
@@ -926,7 +926,7 @@ class Query(grumble.query.ModelQuery):
     def set_ancestor(self, ancestor):
         for k in self.kinds:
             if grumble.meta.Registry.get(k)._flat:
-                logger.debug("Cannot do ancestor queries on flat model %s. Ignoring request", self.kinds)
+                logger.debug("Cannot do ancestor queries on flat datamodel %s. Ignoring request", self.kinds)
                 return
         logger.debug("%s: setting ancestor to %s", str(self), type(ancestor) if ancestor else "<None>")
         return super(Query, self).set_ancestor(ancestor)
@@ -934,7 +934,7 @@ class Query(grumble.query.ModelQuery):
     def set_parent(self, parent):
         for k in self.kindlist():
             if grumble.meta.Registry.get(k)._flat:
-                logger.debug("Cannot do ancestor queries on flat model %s. Ignoring request", self.kinds)
+                logger.debug("Cannot do ancestor queries on flat datamodel %s. Ignoring request", self.kinds)
                 return
         logger.debug("%s: setting parent to %s", str(self), parent)
         return super(Query, self).set_parent(parent)

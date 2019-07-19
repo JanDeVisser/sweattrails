@@ -18,7 +18,10 @@
 
 import gripe
 
-import bucks.datamodel
+from bucks.datamodel.account import Account
+from bucks.datamodel.category import Category
+from bucks.datamodel.institution import Institution
+from bucks.datamodel.project import Project
 
 
 class SchemaImporter:
@@ -28,14 +31,14 @@ class SchemaImporter:
     @staticmethod
     def categories(parent, categories):
         for (name, subcategories) in categories.items():
-            cat = bucks.datamodel.Category(parent=parent, cat_name=name)
+            cat = Category(parent=parent, cat_name=name)
             cat.put()
             SchemaImporter.categories(cat, subcategories)
 
     @staticmethod
     def projects(parent, projects):
         for (name, subprojects) in projects.items():
-            proj = bucks.datamodel.Project(parent=parent, proj_name=name)
+            proj = Project(parent=parent, proj_name=name)
             proj.put()
             SchemaImporter.projects(proj, subprojects)
 
@@ -44,10 +47,8 @@ class SchemaImporter:
         for account in accounts:
             name = account.get("acc_name")
             if name:
-                acc = bucks.datamodel.Account(parent=inst,
-                                              acc_name=name, acc_nr=account.get("acc_nr"),
-                                              description=account.get("description", name),
-                                              importer=account.get("importer"))
+                acc = Account(parent=inst, acc_name=name, acc_nr=account.get("acc_nr"),
+                              description=account.get("description", name), importer=account.get("importer"))
                 acc.put()
                 if "opening_date" in account or "opening_balance" in account:
                     acc.set_opening_balance(account.get("opening_balance"), account.get("opening_date"))
@@ -57,8 +58,7 @@ class SchemaImporter:
         for institution in institutions:
             name = institution.get("inst_name")
             if name:
-                inst = bucks.datamodel.Institution(inst_name=name,
-                                                   description=institution.get("description", name))
+                inst = Institution(inst_name=name, description=institution.get("description", name))
                 inst.put()
                 SchemaImporter.accounts(inst, institution.get("accounts", []))
 

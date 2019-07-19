@@ -151,7 +151,7 @@ class ModelQueryRenderer(object):
             for sub in self._kind.subclasses():
                 if not sub.abstract():
                     self._kinds.append(sub)
-        logger.debug("Executing query for model '%s'", self._manager.name)
+        logger.debug("Executing query for datamodel '%s'", self._manager.name)
         self._manager.seal()
         assert self._query is not None, "Must set a Query prior to executing a ModelQueryRenderer"
         with gripe.db.Tx.begin() as tx:

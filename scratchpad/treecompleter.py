@@ -199,14 +199,14 @@ class MainWindow(QMainWindow):
     def about(self):
         QMessageBox.about(self,
                           tr("About"),
-                          tr("This example demonstrates how to use a QCompleter with a custom tree model."))
+                          tr("This example demonstrates how to use a QCompleter with a custom tree datamodel."))
 
     def change_case(self, cs):
         self._completer.setCaseSensitivity(Qt.CaseSensitive if cs else Qt.CaseInsensitive)
 
     def update_contents_label(self, sep):
         self._contents_label.setText(
-            "Type path from model above with items at each level separated by a '%s'" % sep)
+            "Type path from datamodel above with items at each level separated by a '%s'" % sep)
 
 
 app = QApplication(sys.argv)

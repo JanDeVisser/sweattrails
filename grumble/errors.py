@@ -69,7 +69,7 @@ class KeyPropertyRequired(gripe.Error):
         self.propname = propname
 
     def __str__(self):
-        return "Key property '%s' not set when storing model '%s'" % (self.propname, self.cls)
+        return "Key property '%s' not set when storing datamodel '%s'" % (self.propname, self.cls)
 
 
 class PatternNotMatched(gripe.Error):

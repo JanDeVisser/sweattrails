@@ -79,7 +79,7 @@ class Key(object):
             kind = args[0]
             if not isinstance(kind, str):
                 assert isinstance(kind, str) or gripe.hascallable(kind, "kind"), \
-                    "First argument of Key(kind, name) must be string or model class, not %s" % type(kind)
+                    "First argument of Key(kind, name) must be string or datamodel class, not %s" % type(kind)
                 kind = gripe.call_if_exists(kind, "kind", kind)
             assert kind, "Kind must not be empty"
             name = args[-1]
@@ -101,7 +101,7 @@ class Key(object):
     def _assign_id(self, ident):
         try:
             value = str(base64.urlsafe_b64decode(bytearray(ident, 'UTF-8')), 'ASCII')
-        except binascii.Error:
+        except (binascii.Error, UnicodeDecodeError):
             value = ident
         key_path = value.split('/')
         scope = '/'.join(key_path[:-1]) if len(key_path) > 1 else None
