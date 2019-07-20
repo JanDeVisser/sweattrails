@@ -152,28 +152,6 @@ def list_transactions(account):
     pass
 
 
-def get_accounts():
-    ret = []
-    q = Transaction.query(keys_only=False, include_subclasses=True, alias="account")
-    q.add_synthetic_column("debit", "(CASE WHEN amt < 0 THEN -amt ELSE 0 END)")
-    q.add_synthetic_column("credit", "(CASE WHEN amt > 0 THEN amt ELSE 0 END)")
-    q.add_aggregate("debit", name="total_debit", groupby=Account, func="SUM")
-    q.add_aggregate("credit", name="total_credit", groupby=Account, func="SUM")
-    q.add_aggregate("amt", name="total", groupby=Account, func="SUM")
-    q.add_parent_join(Account, "account")
-
-    with gripe.db.Tx.begin():
-        for o in q:
-            # if o.total_debit is None:
-            #     o.total_debit = 0.0
-            # if o.total_credit is None:
-            #     o.total_credit = 0.0
-            # if o.total is None:
-            #     o.total = 0.0
-            ret.append(o)
-    return ret
-
-
 def list_accounts():
     def list_account(acc):
         print("{0:30s}|{1:>10s}|{2:>10s}|{3:>10s}|".
@@ -185,7 +163,7 @@ def list_accounts():
               )
 
     with gripe.db.Tx.begin():
-        accounts = get_accounts()
+        accounts = Account.get_accounts()
         if accounts:
             print("{0:^30s}|{1:^10s}|{2:^10s}|{3:^10s}|".format(
                 "Account", "Debit", "Credit", "Total"))
@@ -306,8 +284,10 @@ def account_menu(subcmd):
 # -- F I L E  I M P O R T S -------------------------------------------------
 
 
-def file_import(account, file_name):
-    pass
+def import_files(*args):
+    for arg in args:
+        acc, file_name = arg.split(':', 2)
+        account = Account.by("acc_name", acc)
 
 
 readline_inject = None
@@ -336,6 +316,8 @@ def mainloop(cmd):
             list_categories()
         elif cmd[0] == 'q':
             ok = False
+        elif cmd[0] == 'i':
+            import_files(cmd[1:])
         cmd = None
 
 
@@ -343,7 +325,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--clear", action="store_true", help="Erase all data")
     parser.add_argument("-s", "--schema", type=str, help="Use the given file as the initial schema")
-    parser.add_argument("-i", "--imp", type=str, help="Import the given transactions file")
+    parser.add_argument("-i", "--imp", type=str, nargs="+", help="Import the given transactions file")
     parser.add_argument("commands", type=str, nargs="*", help="Commands string")
 
     cmdline = parser.parse_args()
@@ -359,10 +341,7 @@ def main():
             #     wizard = bucks.wizard.FirstUse()
             #     ok = wizard.exec_()
         if cmdline.imp:
-            acc, file_name = cmdline.imp.split(':', 2)
-            account = Account.by("acc_name", acc)
-            assert account
-            import_file(account, file_name)
+            import_files(cmdline.imp)
 
     if ok:
         mainloop(" ".join(cmdline.commands) if cmdline.commands else None)
