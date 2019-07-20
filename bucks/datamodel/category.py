@@ -25,3 +25,22 @@ class Category(grumble.model.Model):
     cat_name = grumble.property.TextProperty(verbose_name="Category", is_label=True)
     description = grumble.property.TextProperty()
     current_balance = bucks.datamodel.balance.EntityBalance(verbose_name="Current Balance", entity_prop="category")
+
+    def transactions(self):
+        from bucks.datamodel.account import Account
+        from bucks.datamodel.account import Transaction
+        q = Transaction.query(keys_only=False).add_parent_join(Account)
+        q.add_filter("category", "->", self)
+        return q
+
+    @classmethod
+    def get_categories(cls):
+        from bucks.datamodel.account import Transaction
+        q = Transaction.query(keys_only=False, include_subclasses=True, alias="category")
+        q.add_synthetic_column("debit", "(CASE WHEN amt < 0 THEN -amt ELSE 0 END)")
+        q.add_synthetic_column("credit", "(CASE WHEN amt > 0 THEN amt ELSE 0 END)")
+        q.add_aggregate("k.debit", name="total_debit", groupby=Category, func="SUM")
+        q.add_aggregate("k.credit", name="total_credit", groupby=Category, func="SUM")
+        q.add_aggregate("k.amt", name="total", groupby=Category, func="SUM")
+        q.add_join(Category, "category", jointype="RIGHT")
+        return q

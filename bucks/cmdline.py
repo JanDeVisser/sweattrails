@@ -26,8 +26,8 @@ import grumble.model
 import bucks.schema
 
 from bucks.datamodel.account import Account
+from bucks.datamodel.account import Transaction
 from bucks.datamodel.institution import Institution
-from bucks.datamodel.transaction import Transaction
 from bucks.datamodel.category import Category
 from bucks.datamodel.contact import Contact
 
@@ -227,7 +227,7 @@ def get_account(account: str) -> Account:
                 try:
                     ix = int(ix)
                 except ValueError:
-                    pass
+                    ix = -1
                 if (ix > 0) and ix not in choices:
                     ix = None
         if ix <= 0:
@@ -326,7 +326,7 @@ def mainloop(cmd):
 
     ok = True
     while ok:
-        cmd = cmd.strip()
+        cmd = cmd.strip() if cmd else None
         if not cmd:
             cmd = input("*> ").strip()
         cmd = cmd.split(' ', 1)

@@ -45,9 +45,6 @@ from bucks.datamodel.account import Account
 from bucks.datamodel.account import Transaction
 from bucks.datamodel.account import Transfer
 from bucks.datamodel.account import OpeningBalanceTx
-from bucks.datamodel.category import Category
-from bucks.datamodel.contact import Contact
-from bucks.datamodel.project import Project
 
 
 class TransactionTable(QWidget):
@@ -71,11 +68,7 @@ class TransactionTable(QWidget):
         self.balance_label = QLabel("1000000.00")
         l.addWidget(self.balance_label)
         layout.addLayout(l)
-        q = Transaction.query(keys_only=False)
-        q.add_join(Category, "category", jointype="LEFT")
-        q.add_join(Project, "project", jointype="LEFT")
-        q.add_join(Contact, "contact", jointype="LEFT")
-        self.table = grumpy.view.TableView(q, ["date", "type", "credit", "debit", "description",
+        self.table = grumpy.view.TableView(None, ["date", "type", "credit", "debit", "description",
                                                    "+category.cat_name", "+project.proj_name",
                                                    "+contact.contact_name"],
                                            self)
@@ -90,7 +83,7 @@ class TransactionTable(QWidget):
         with gripe.db.Tx.begin():
             account: Account = self.account_combo.currentData(Qt.UserRole)()
             self.balance_label.setText("{0:10.2f}".format(account.current_balance))
-            self.table.query().set_ancestor(account)
+            self.table.query(account.transactions())
             self.table.refresh()
 
     def set_instance(self, key):

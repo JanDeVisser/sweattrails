@@ -113,6 +113,25 @@ class Account(grumble.model.Model):
         opening.description = "Opening Balance"
         opening.put()
 
+    @classmethod
+    def get_accounts(cls):
+        q = Transaction.query(keys_only=False, include_subclasses=True, alias="account")
+        q.add_synthetic_column("debit", "(CASE WHEN amt < 0 THEN -amt ELSE 0 END)")
+        q.add_synthetic_column("credit", "(CASE WHEN amt > 0 THEN amt ELSE 0 END)")
+        q.add_aggregate("debit", name="total_debit", groupby=Account, func="SUM")
+        q.add_aggregate("credit", name="total_credit", groupby=Account, func="SUM")
+        q.add_aggregate("amt", name="total", groupby=Account, func="SUM")
+        q.add_parent_join(Account, "account")
+        return q
+
+    def transactions(self):
+        q = Transaction.query(keys_only=False)
+        q.add_join(Category, "category", jointype="LEFT")
+        q.add_join(Project, "project", jointype="LEFT")
+        q.add_join(Contact, "contact", jointype="LEFT")
+        q.set_ancestor(self)
+        return q
+
 
 @grumble.property.transient
 class TransactionType(grumble.TextProperty):

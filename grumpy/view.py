@@ -80,7 +80,8 @@ class TableView(QTableView, View):
 
     def setQueryAndColumns(self, query, *columns, **kwargs):
         self._query = query
-        self._columns = columns
+        if len(columns):
+            self._columns = columns
         if self._query is not None:
             tm = grumpy.model.TableModel(self._query, self._columns, **kwargs)
             self.setModel(tm)
@@ -91,7 +92,9 @@ class TableView(QTableView, View):
                 if hasattr(c, "template"):
                     hh.resizeSection(ix, len(c.template) * fm.maxWidth() + 11)
 
-    def query(self) -> grumble.model.Query:
+    def query(self, q=None) -> grumble.model.Query:
+        if q is not None:
+            self.setQueryAndColumns(q)
         return self._query
 
     def columns(self):

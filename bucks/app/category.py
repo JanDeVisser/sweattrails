@@ -40,17 +40,14 @@ class CategoryForm(bucks.app.base.BucksForm):
         self.addProperty(Category, "cat_name", 2, 1)
         self.addProperty(Category, "description", 3, 1)
         self.addProperty(Category, "current_balance", 4, 1)
-        q = Transaction.query(keys_only=False).add_parent_join(Account)
-        self.tx_list = grumpy.view.TableView(q, ["date", "+p:account.acc_name", "credit", "debit", "description"])
+        self.tx_list = grumpy.view.TableView(None, ["date", "+p:account.acc_name", "credit", "debit", "description"])
         self.addTab(self.tx_list, "Transactions")
         self.subcategories = grumpy.view.TableView(Category.query(keys_only=False), ["cat_name"])
         self.addTab(self.subcategories, "Subcategories")
         QCoreApplication.instance().importer.imported.connect(self.tx_list.refresh)
 
     def assigned(self, key):
-        self.tx_list.query().clear_filters()
-        self.tx_list.query().add_filter("category", "->", self.instance())
-        self.tx_list.refresh()
+        self.tx_list.query(self.instance().transactions())
         self.subcategories.query().set_parent(self.instance())
         self.subcategories.refresh()
 
@@ -62,21 +59,17 @@ class CategoryTab(QWidget):
     def __init__(self, parent):
         super(CategoryTab, self).__init__(parent=parent)
         layout = QVBoxLayout(self)
-        q = Transaction.query(keys_only=False, include_subclasses=True, alias="category")
-        q.add_synthetic_column("debit", "(CASE WHEN amt < 0 THEN -amt ELSE 0 END)")
-        q.add_synthetic_column("credit", "(CASE WHEN amt > 0 THEN amt ELSE 0 END)")
-        q.add_aggregate("k.debit", name="total_debit", groupby=Category, func="SUM")
-        q.add_aggregate("k.credit", name="total_credit", groupby=Category, func="SUM")
-        q.add_aggregate("k.amt", name="total", groupby=Category, func="SUM")
-        q.add_join(Category, "category", jointype="RIGHT")
-        self.tree = grumpy.view.TreeView(self, kind=Category, query=q, root=None, columns=[
-                                            bucks.app.base.MoneyColumn("total_debit", "Debit"),
-                                            bucks.app.base.MoneyColumn("total_credit", "Credit"),
-                                            bucks.app.base.MoneyColumn("total", "Balance"),
-                                            bucks.app.base.MoneyColumn("cum_debit", "Total Debit"),
-                                            bucks.app.base.MoneyColumn("cum_credit", "Total Credit"),
-                                            bucks.app.base.MoneyColumn("cum_total", "Cum.Balance"),
-                                         ], itemclass=bucks.app.base.BucksTreeItem)
+        self.tree = grumpy.view.TreeView(self,
+                                         kind=Category,
+                                         query=Category.get_categories(),
+                                         root=None,
+                                         columns=[bucks.app.base.MoneyColumn("total_debit", "Debit"),
+                                                  bucks.app.base.MoneyColumn("total_credit", "Credit"),
+                                                  bucks.app.base.MoneyColumn("total", "Balance"),
+                                                  bucks.app.base.MoneyColumn("cum_debit", "Total Debit"),
+                                                  bucks.app.base.MoneyColumn("cum_credit", "Total Credit"),
+                                                  bucks.app.base.MoneyColumn("cum_total", "Cum.Balance"),],
+                                         itemclass=bucks.app.base.BucksTreeItem)
         self.tree.setMinimumSize(400, 300)
         layout.addWidget(self.tree)
         self.form = CategoryForm(self)

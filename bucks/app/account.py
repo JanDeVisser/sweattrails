@@ -48,18 +48,12 @@ class AccountTab(QWidget):
         super(AccountTab, self).__init__(parent=parent)
         layout = QVBoxLayout(self)
 
-        q = Transaction.query(keys_only=False, include_subclasses=True, alias="account")
-        q.add_synthetic_column("debit", "(CASE WHEN amt < 0 THEN -amt ELSE 0 END)")
-        q.add_synthetic_column("credit", "(CASE WHEN amt > 0 THEN amt ELSE 0 END)")
-        q.add_aggregate("k.debit", name="total_debit", groupby=Account, func="SUM")
-        q.add_aggregate("k.credit", name="total_credit", groupby=Account, func="SUM")
-        q.add_aggregate("amt", name="total", groupby=Account, func="SUM")
-        q.add_parent_join(Account, "account")
+        q = Account.get_accounts()
 
         self.table = grumpy.view.TableView(q,
                                            ["acc_name", "description", "current_balance",
-                                            grumpy.model.TableColumn("debit"),
-                                            grumpy.model.TableColumn("credit")],
+                                            grumpy.model.TableColumn("total_debit"),
+                                            grumpy.model.TableColumn("total_credit")],
                                            kind=Account)
         self.table.setMinimumSize(400, 300)
         layout.addWidget(self.table)
