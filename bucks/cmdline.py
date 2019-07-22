@@ -18,7 +18,7 @@
 
 
 import argparse
-import readline
+# import readline
 
 import gripe.db
 import grumble.model
@@ -218,8 +218,8 @@ def edit_account(account: Account) -> None:
     done = False
     while not done:
         print("{0:20s} {1}".format("Name:", account.acc_name))
-        global readline_inject
-        readline_inject = account.description
+        # global readline_inject
+        # readline_inject = account.description
         descr = input("Description: ")
 
         cmd_ok = False
@@ -290,19 +290,19 @@ def import_files(*args):
         account = Account.by("acc_name", acc)
 
 
-readline_inject = None
-
-
-def pre_input_hook():
-    global readline_inject
-    if readline_inject:
-        readline.insert_text(readline_inject)
-        readline.redisplay()
-        readline_inject = None
+# readline_inject = None
+#
+#
+# def pre_input_hook():
+#     global readline_inject
+#     if readline_inject:
+#         readline.insert_text(readline_inject)
+#         readline.redisplay()
+#         readline_inject = None
 
 
 def mainloop(cmd):
-    readline.set_pre_input_hook(pre_input_hook)
+    # readline.set_pre_input_hook(pre_input_hook)
 
     ok = True
     while ok:

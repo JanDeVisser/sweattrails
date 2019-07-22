@@ -34,6 +34,7 @@ logger = gripe.get_logger(__name__)
 
 class TableColumn:
     def __init__(self, attr, **kwargs):
+        self.debug = False
         self._attr: str = attr
         self._join = attr[0] == '+'
         self.name = None
@@ -124,6 +125,7 @@ class TableColumn:
 class TableModel(QAbstractTableModel):
     def __init__(self, query, *args, **kwargs):
         super(TableModel, self).__init__()
+        self.debug = False
         self._query = query
         self._kind = kwargs.get("kind", query.get_kind())
         self._columns = self._get_column_defs(*args)
@@ -142,6 +144,7 @@ class TableModel(QAbstractTableModel):
                     col = arg
                 else:
                     col = TableColumn(str(arg))
+                    col.debug = self.debug
                     col.set_kind(self._kind)
                 ret.append(col)
         return ret

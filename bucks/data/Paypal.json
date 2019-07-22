@@ -1,0 +1,26 @@
+{
+  "mapping": [
+    {"name": "date", "type": "date", "format":  "%m/%d/%Y"},
+    null,
+    null,
+    "contact",
+    "description",
+    null,
+    "currency",
+    { "name": "amount", "type": "float" },
+    null,
+    null
+  ],
+  "config": {
+    "counter": "ManulifeOne",
+    "match": "contact"
+  },
+  "templates": [
+    { "type": "D", "template": "Netflix.com", "category": "Subscriptions" },
+    { "type": "D", "template": "The Washington Post", "category": "Subscriptions" },
+    { "type": "D", "template": "Spotify Finance Limited", "category": "Subscriptions" },
+    { "type": "D", "template": "Ultimate Guitar USA LLC", "category": "Entertainment", "project": "Jan" },
+    { "type": "D", "template": "Sony Interactive Entertainment Network America LLC", "category": "Entertainment", "project": "Luc" },
+    { "type": "D", "template": "Zwift", "category": "Multisport" }
+
+}

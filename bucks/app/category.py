@@ -27,9 +27,7 @@ import grumpy.view
 
 import bucks.app.base
 
-from bucks.datamodel.account import Account
 from bucks.datamodel.category import Category
-from bucks.datamodel.account import Transaction
 
 
 class CategoryForm(bucks.app.base.BucksForm):
@@ -41,6 +39,7 @@ class CategoryForm(bucks.app.base.BucksForm):
         self.addProperty(Category, "description", 3, 1)
         self.addProperty(Category, "current_balance", 4, 1)
         self.tx_list = grumpy.view.TableView(None, ["date", "+p:account.acc_name", "credit", "debit", "description"])
+        self.tx_list.debug = True
         self.addTab(self.tx_list, "Transactions")
         self.subcategories = grumpy.view.TableView(Category.query(keys_only=False), ["cat_name"])
         self.addTab(self.subcategories, "Subcategories")

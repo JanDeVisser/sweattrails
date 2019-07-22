@@ -29,7 +29,8 @@ class Category(grumble.model.Model):
     def transactions(self):
         from bucks.datamodel.account import Account
         from bucks.datamodel.account import Transaction
-        q = Transaction.query(keys_only=False).add_parent_join(Account)
+        q = Transaction.query(keys_only=False)
+        q.add_parent_join(Account)
         q.add_filter("category", "->", self)
         return q
 

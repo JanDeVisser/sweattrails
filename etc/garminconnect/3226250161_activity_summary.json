@@ -1,0 +1,176 @@
+{
+    "activityId": 3226250161,
+    "activityName": "Kitchener Running",
+    "userProfileId": 1722502,
+    "isMultiSportParent": false,
+    "activityTypeDTO": {
+        "typeId": 1,
+        "typeKey": "running",
+        "parentTypeId": 17,
+        "sortOrder": 3
+    },
+    "eventTypeDTO": {
+        "typeId": 9,
+        "typeKey": "uncategorized",
+        "sortOrder": 10
+    },
+    "accessControlRuleDTO": {
+        "typeId": 1,
+        "typeKey": "public"
+    },
+    "timeZoneUnitDTO": {
+        "unitId": 149,
+        "unitKey": "America/New_York",
+        "factor": 0.0,
+        "timeZone": "America/New_York"
+    },
+    "metadataDTO": {
+        "isOriginal": true,
+        "deviceApplicationInstallationId": 860357,
+        "agentApplicationInstallationId": null,
+        "agentString": null,
+        "fileFormat": {
+            "formatId": 7,
+            "formatKey": "fit"
+        },
+        "associatedCourseId": null,
+        "lastUpdateDate": "2018-12-15T14:39:35.0",
+        "uploadedDate": "2018-12-15T14:39:34.0",
+        "videoUrl": null,
+        "hasPolyline": true,
+        "hasChartData": true,
+        "hasHrTimeInZones": true,
+        "hasPowerTimeInZones": false,
+        "userInfoDto": {
+            "userProfilePk": 1722502,
+            "displayname": "jandev",
+            "fullname": "Jan de Visser",
+            "profileImageUrlLarge": null,
+            "profileImageUrlMedium": "https://s3.amazonaws.com/garmin-connect-prod/profile_images/bc15f27f-1b86-4001-8b9e-06d5b8a7f9dd-1722502.jpg",
+            "profileImageUrlSmall": "https://s3.amazonaws.com/garmin-connect-prod/profile_images/9240faf8-ee15-4fcf-9ca5-fb5515f33ccc-1722502.jpg",
+            "userPro": false
+        },
+        "chartAvailability": {
+            "showAirTemperature": true,
+            "showDistance": true,
+            "showDuration": true,
+            "showElevation": true,
+            "showHeartRate": true,
+            "showMovingDuration": true,
+            "showMovingSpeed": true,
+            "showRunCadence": true,
+            "showSpeed": true,
+            "showTimestamp": true
+        },
+        "childIds": [],
+        "sensors": [{
+                "sku": "006-B2691-00",
+                "sourceType": "LOCAL",
+                "softwareVersion": 11.0
+            },
+            {
+                "sku": "006-B2691-00",
+                "sourceType": "LOCAL",
+                "localDeviceType": "BAROMETER",
+                "softwareVersion": 11.0
+            },
+            {
+                "sku": "006-B1621-00",
+                "sourceType": "LOCAL",
+                "localDeviceType": "GPS",
+                "softwareVersion": 4.4
+            },
+            {
+                "serialNumber": 18377,
+                "sourceType": "ANTPLUS",
+                "antplusDeviceType": "BIKE_POWER",
+                "softwareVersion": 1.0
+            },
+            {
+                "manufacturer": "STRYD",
+                "sourceType": "ANTPLUS",
+                "antplusDeviceType": "STRIDE_SPEED_DISTANCE"
+            },
+            {
+                "sourceType": "LOCAL",
+                "localDeviceType": "ACCELEROMETER",
+                "softwareVersion": 0.0
+            },
+            {
+                "sourceType": "LOCAL",
+                "localDeviceType": "WHR",
+                "softwareVersion": 3.31
+            },
+            {
+                "manufacturer": "STRYD",
+                "serialNumber": 18377,
+                "sourceType": "ANTPLUS",
+                "antplusDeviceType": "STRIDE_SPEED_DISTANCE",
+                "softwareVersion": 1.0
+            },
+            {
+                "manufacturer": "STRYD",
+                "serialNumber": 18377,
+                "sourceType": "ANTPLUS",
+                "antplusDeviceType": "BIKE_POWER",
+                "softwareVersion": 1.0
+            },
+            {
+                "sourceType": "LOCAL",
+                "localDeviceType": "ACCELEROMETER",
+                "softwareVersion": 293.2
+            }
+        ],
+        "activityImages": [],
+        "manufacturer": "GARMIN",
+        "diveNumber": null,
+        "lapCount": 1,
+        "associatedWorkoutId": null,
+        "isAtpActivity": null,
+        "deviceMetaDataDTO": {
+            "deviceId": "3949428596",
+            "deviceTypePk": 34216,
+            "deviceVersionPk": 860357
+        },
+        "gcj02": false,
+        "autoCalcCalories": false,
+        "favorite": false,
+        "elevationCorrected": false,
+        "personalRecord": false,
+        "manualActivity": false
+    },
+    "summaryDTO": {
+        "startTimeLocal": "2018-12-15T07:16:04.0",
+        "startTimeGMT": "2018-12-15T12:16:04.0",
+        "startLatitude": 43.45230429433286,
+        "startLongitude": -80.52213935181499,
+        "distance": 22717.9,
+        "duration": 7140.64,
+        "movingDuration": 7139.0,
+        "elapsedDuration": 7805.499,
+        "elevationGain": 115.0,
+        "elevationLoss": 119.0,
+        "maxElevation": 398.6,
+        "minElevation": 335.0,
+        "averageSpeed": 3.180999994277954,
+        "averageMovingSpeed": 3.182224455893683,
+        "maxSpeed": 3.507999897003174,
+        "calories": 1192.1184147092379,
+        "averageHR": 138.0,
+        "maxHR": 158.0,
+        "averageRunCadence": 185.328125,
+        "maxRunCadence": 198.0,
+        "averageTemperature": 11.6,
+        "maxTemperature": 27.0,
+        "minTemperature": 9.0,
+        "strideLength": 103.00088654271701,
+        "trainingEffect": 2.700000047683716,
+        "anaerobicTrainingEffect": 0.0,
+        "aerobicTrainingEffectMessage": "MAINTAINING_AEROBIC_FITNESS_1",
+        "anaerobicTrainingEffectMessage": "NO_ANAEROBIC_BENEFIT_0",
+        "endLatitude": 43.463847264647484,
+        "endLongitude": -80.53173914551735,
+        "maxVerticalSpeed": 0.600006103515625
+    },
+    "locationName": "Kitchener"
+}

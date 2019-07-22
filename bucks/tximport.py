@@ -323,9 +323,8 @@ class Importer(QObject):
         self.imported.emit(reader.account(), reader.filename)
 
 
-class ScanInbox(grumpy.bg.bg.ThreadPlugin):
-    def __init__(self, thread):
-        super(ScanInbox, self).__init__(thread)
+class ScanInbox:
+    def __init__(self):
         self.data_dir = os.path.join(gripe.root_dir(), "bucks", "data")
         self.acc_name: str = None
         self.initial: str = None
@@ -417,3 +416,12 @@ class ScanInbox(grumpy.bg.bg.ThreadPlugin):
                                 logger.debug("ScanInbox: Found file %s for account '%s'", file_name, acc_name)
                                 os.rename(os.path.join(self.inbox, file_name), os.path.join(self.queue, file_name))
                                 self.addfile(os.path.join(self.queue, file_name))
+
+
+class ScanInboxPlugin(grumpy.bg.bg.ThreadPlugin):
+    def __init__(self, thread):
+        super(ScanInboxPlugin, self).__init__(thread)
+        self.scaninbox = ScanInbox()
+
+    def run(self):
+        self.scaninbox.run()

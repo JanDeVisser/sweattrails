@@ -58,6 +58,7 @@ class View:
 class TableView(QTableView, View):
     def __init__(self, query=None, columns=None, parent=None, **kwargs):
         super(TableView, self).__init__(parent)
+        self.debug = False
         self._query = None
         self._columns = None
         if query is not None or columns is not None:
@@ -84,6 +85,7 @@ class TableView(QTableView, View):
             self._columns = columns
         if self._query is not None:
             tm = grumpy.model.TableModel(self._query, self._columns, **kwargs)
+            tm.debug = self.debug
             self.setModel(tm)
             hh = self.horizontalHeader()
             fm = hh.fontMetrics()
