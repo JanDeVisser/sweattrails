@@ -207,7 +207,10 @@ class ModelQueryRenderer(object):
                                else gb.kind())
                     for a in self._query.aggregates():
                         cols.append(a.name())
-                        collist += ', %s(%s) "%s"' % (a.func(), a.column(), a.name())
+                        if a.default() is None:
+                            collist += ', %s(%s) "%s"' % (a.func(), a.column(), a.name())
+                        else:
+                            collist += ', COALESCE(%s(%s), %s) "%s"' % (a.func(), a.column(), a.default(), a.name())
                     if gb is not None and isinstance(gb, grumble.meta.ModelMetaClass):
                         gb_cols = ['%s."%s"' % (gb.basekind(), col.name) for col in gb.modelmanager.columns]
                         if gb_cols:
@@ -277,7 +280,7 @@ class ModelQueryRenderer(object):
                         sql += ', '.join(['%s."%s"' % (gb.basekind(), col.name) for col in gb.modelmanager.columns])
                     else:
                         sql += '\n\t\tGROUP BY k."%s"' % self._query.aggregate().groupby()
-            if query_type == QueryType.Columns and self.sortorder():
+            if query_type in (QueryType.Aggregate, QueryType.Columns) and self.sortorder():
                 sql += '\n\t\tORDER BY ' + \
                        ', '.join([so.to_sql() for so in self.sortorder()])
             if self.limit():

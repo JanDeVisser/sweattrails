@@ -13,3 +13,4 @@ src/conf/qtapp.json
 /dist/
 /*.egg-info
 **/#*#
+venv

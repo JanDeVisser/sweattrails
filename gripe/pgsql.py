@@ -16,6 +16,8 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
+import string
+
 import psycopg2
 import psycopg2.extensions
 import gripe.db
@@ -62,6 +64,13 @@ class DbAdapter(object):
                     if create_db:
                         cur.execute('CREATE DATABASE "%s"' % (database,))
                         drop_schema = False
+                        if conf.db_init:
+                            template_text = gripe.read_file(conf.db_init)
+                            if template_text:
+                                template = string.Template(template_text)
+                                sql = template.safe_substitute(user=conf.user.user_id,
+                                                               database=conf.database)
+                                cur.execute(sql)
         cls.reset_schema(drop_schema, conf)
 
     @classmethod
@@ -82,6 +91,14 @@ class DbAdapter(object):
                     cur.execute(
                         'CREATE SCHEMA "%s" AUTHORIZATION %s' %
                         (schema, conf["user"]["user_id"]))
+                    if conf.schema_init:
+                        template_text = gripe.read_file(conf.schema_init)
+                        if template_text:
+                            template = string.Template(template_text)
+                            sql = template.safe_substitute(schema=conf.schema,
+                                                           user=conf.user.user_id,
+                                                           database=conf.database)
+                            cur.execute(sql)
 
     @classmethod
     def setup(cls, pgsql_conf):

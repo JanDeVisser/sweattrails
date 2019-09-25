@@ -157,7 +157,7 @@ class Tx(object):
             cls._adapter_class.reset_schema(drop)
 
     @classmethod
-    def begin(cls, role = "user", database = None, autocommit = False):
+    def begin(cls, role="user", database=None, autocommit=False):
         return cls._tl.tx if hasattr(cls._tl, "tx") else Tx(role, database, autocommit)
 
     @classmethod

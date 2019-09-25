@@ -21,6 +21,7 @@ import enum
 import sys
 import traceback
 
+import gripe
 import grumble.property
 
 import bucks.datamodel.account
@@ -46,14 +47,14 @@ class Import(grumble.model.Model):
 
     def read(self):
         try:
-            with codecs.open(self.filename, encoding="utf-8") as f:
-                self.data = f.read()
-                self.status = ImportStatus.Read
-        except Exception:
+            data = gripe.read_file(self.filename, raises=True)
+            self.data = data
+            self.status = ImportStatus.Read
+        except IOError:
             self.errors = traceback.format_exc()
             self.status = ImportStatus.Error
             self.data = None
-        finally:
+        else:
             self.put()
         return self.data
 

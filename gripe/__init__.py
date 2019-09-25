@@ -16,7 +16,7 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
-
+import codecs
 import collections
 import errno
 import importlib
@@ -166,16 +166,27 @@ def get_app_dirs():
     return _app_dirs.values()
 
 
-def read_file(fname):
+def read_file(fname, raises=False):
     try:
-        filename = os.path.join(root_dir(), fname)
-        fp = open(filename, "r")
+        filename = fname
+        fp = codecs.open(filename, encoding="utf-8")
     except IOError:
-        # print "IOError reading config file %s: %s" % (filename, e.strerror)
-        return None
-    else:
+        try:
+            filename = os.path.join(root_dir(), fname)
+            fp = codecs.open(filename, encoding="utf-8")
+        except IOError:
+            # print "IOError opening file %s: %s" % (filename, e.strerror)
+            if raises:
+                raise
+            return None
+    try:
         with fp:
             return fp.read()
+    except IOError:
+        # print "IOError reading file %s: %s" % (filename, e.strerror)
+        if raises:
+            raise
+        return None
 
 
 def write_file(fname, data, mode="w+"):

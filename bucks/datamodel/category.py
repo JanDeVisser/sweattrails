@@ -29,9 +29,16 @@ class Category(grumble.model.Model):
     def transactions(self):
         from bucks.datamodel.account import Account
         from bucks.datamodel.account import Transaction
+        from bucks.datamodel.project import Project
+        from bucks.datamodel.contact import Contact
         q = Transaction.query(keys_only=False)
         q.add_parent_join(Account)
         q.add_filter("category", "->", self)
+        q.add_synthetic_column("debit", "(CASE WHEN amt < 0 THEN -amt ELSE 0 END)")
+        q.add_synthetic_column("credit", "(CASE WHEN amt > 0 THEN amt ELSE 0 END)")
+        q.add_join(Project, "project", jointype="LEFT", alias="prj")
+        q.add_join(Contact, "contact", jointype="LEFT", alias="ctc")
+        q.add_sort("date")
         return q
 
     @classmethod
@@ -40,8 +47,9 @@ class Category(grumble.model.Model):
         q = Transaction.query(keys_only=False, include_subclasses=True, alias="category")
         q.add_synthetic_column("debit", "(CASE WHEN amt < 0 THEN -amt ELSE 0 END)")
         q.add_synthetic_column("credit", "(CASE WHEN amt > 0 THEN amt ELSE 0 END)")
-        q.add_aggregate("k.debit", name="total_debit", groupby=Category, func="SUM")
-        q.add_aggregate("k.credit", name="total_credit", groupby=Category, func="SUM")
-        q.add_aggregate("k.amt", name="total", groupby=Category, func="SUM")
+        q.add_aggregate("k.debit", name="total_debit", groupby=Category, func="SUM", default=0.0)
+        q.add_aggregate("k.credit", name="total_credit", groupby=Category, func="SUM", default=0.0)
+        q.add_aggregate("k.amt", name="total", groupby=Category, func="SUM", default=0.0)
         q.add_join(Category, "category", jointype="RIGHT")
+        q.add_sort("category.cat_name")
         return q

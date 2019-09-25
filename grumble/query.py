@@ -37,7 +37,7 @@ def quotify(colname):
     return alias, ('"%s"' if name[0] != '"' else '%s') % name
 
 
-class Sort(object):
+class Sort:
     def __init__(self, colname, ascending=True):
         self._alias, self.colname = quotify(colname)
         self.ascending = ascending
@@ -184,13 +184,13 @@ class Join:
         return self._alias if self._alias else self._kind.basekind()
 
     def join_sql(self, vals=None):
-        if self._values and vals is not None:
+        if vals is not None and self._values:
             vals.extend(self._values)
-        return ' %s JOIN %s %s ON (CONCAT_WS(\'/\', %s."_parent", \'%s:\' || %s."%s") = %s."%s"%s)' % \
-               (self.jointype, self.tablename(), self.alias(), self.alias(),
-                self.kind_name(), self.alias(), self.key_column_name(),
-                self._join_with, self.property(),
-                (" AND %s" % self._where if self._where else ''))
+        return '{} JOIN {} {} ON ({}key({}) = {}."{}"){}'.format(
+            self.jointype, self.tablename(), self.alias(),
+            self._kind.modelmanager.tableprefix, self.alias(),
+            self._join_with, self.property(),
+            (" AND %s" % self._where if self._where else ''))
 
     def column_sql(self, query_columns):
         join_cols = [self.alias() + '."' + c.name + '"' for c in self.columns()]
@@ -206,11 +206,12 @@ class Join:
 
 
 class Aggregate:
-    def __init__(self, column, name, groupby=None, func='SUM'):
+    def __init__(self, column, name, groupby=None, func='SUM', default=None):
         self._column = column
         self._groupby = groupby
         self._func = func
         self._name = name
+        self._default = default
 
     def column(self):
         return self._column
@@ -223,6 +224,9 @@ class Aggregate:
 
     def name(self):
         return self._name
+
+    def default(self):
+        return self._default
 
 
 class Synthetic:
@@ -422,13 +426,13 @@ class ModelQuery(object):
     def has_aggregates(self):
         return len(self._aggregates) > 0
 
-    def add_aggregate(self, column, name=None, groupby=None, func='SUM'):
+    def add_aggregate(self, column, name=None, groupby=None, func='SUM', default=None):
         if name is None:
             name = "_aggr" + str(len(self._aggregates))
         if groupby:
             for a in self._aggregates:
                 assert a.groupby() is None or a.groupby() == groupby
-        self._aggregates.append(Aggregate(column, name, groupby, func))
+        self._aggregates.append(Aggregate(column, name, groupby, func, default))
         return self
 
     def aggregates(self):

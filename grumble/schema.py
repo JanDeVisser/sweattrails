@@ -16,6 +16,7 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #
 
+import string
 
 import gripe
 import gripe.db
@@ -115,6 +116,16 @@ class ModelManager(object):
                         self._create_table(cur)
                     else:
                         self._update_table(cur)
+                cur = tx.get_cursor()
+                cur.execute('''INSERT INTO {} (kind, key, tablename, audit, flat) 
+VALUES (%s, %s, %s, %s, %s)
+ON CONFLICT (kind) DO UPDATE SET "key" = %s, tablename = %s, audit = %s, flat = %s'''
+                            .format(self.tableprefix + '"ModelRegistry"'),
+                            (self.kind.kind(),
+                             self.kind.key_prop if hasattr(self.kind, "key_prop") else None,
+                             self.tablename, self.kind.audit(), self.kind.flat(),
+                             self.kind.key_prop if hasattr(self.kind, "key_prop") else None,
+                             self.tablename, self.kind.audit(), self.kind.flat()))
 
     def _table_exists(self, cur):
         return self._adapter.table_exists(cur)
@@ -124,6 +135,7 @@ class ModelManager(object):
         sql = 'CREATE TABLE %s (' % self.tablename
         v = []
         cols = []
+        key_col = '_key_name'
         for c in self.columns:
             csql = '\n"%s" %s' % (c.name, c.data_type)
             if c.required:
@@ -131,8 +143,10 @@ class ModelManager(object):
             if c.defval:
                 csql += " DEFAULT ( %s )"
                 v.append(c.defval)
-            if c.is_key and not c.scoped:
-                csql += " PRIMARY KEY"
+            if c.is_key:
+                if not c.scoped:
+                    csql += " PRIMARY KEY"
+                key_col = c.name
             cols.append(csql)
         sql += ",".join(cols) + "\n)"
         cur.execute(sql, v)
@@ -141,6 +155,14 @@ class ModelManager(object):
                 cur.execute('CREATE INDEX "%s_%s" ON %s ( "%s" )' % (self.table, c.name, self.tablename, c.name))
             # if c.is_key and c.scoped:
             #     cur.execute('CREATE UNIQUE INDEX "%s_%s" ON %s ( "_parent", "%s" )' % (self.table, c.name, self.tablename, c.name))
+        template_text = gripe.read_file('conf/register.sql')
+        if template_text:
+            template = string.Template(template_text)
+            sql = template.safe_substitute(schema=self.schema,
+                                           table=self.tablename,
+                                           kind=self.kind.kind(),
+                                           key_column=key_col)
+            cur.execute(sql)
 
     def _update_table(self, cur, table_existed=False):
         self._adapter.update_table(cur, table_existed)

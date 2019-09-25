@@ -14,6 +14,7 @@
         "host": "localhost",
         "database": "jan",
         "schema": "grumble",
+        "schema_init": "conf/grumble.sql",
         "__wipe_schema": true,
         "wipe_database": false
     },

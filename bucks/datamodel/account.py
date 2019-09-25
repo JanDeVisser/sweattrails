@@ -118,18 +118,22 @@ class Account(grumble.model.Model):
         q = Transaction.query(keys_only=False, include_subclasses=True, alias="account")
         q.add_synthetic_column("debit", "(CASE WHEN amt < 0 THEN -amt ELSE 0 END)")
         q.add_synthetic_column("credit", "(CASE WHEN amt > 0 THEN amt ELSE 0 END)")
-        q.add_aggregate("debit", name="total_debit", groupby=Account, func="SUM")
-        q.add_aggregate("credit", name="total_credit", groupby=Account, func="SUM")
-        q.add_aggregate("amt", name="total", groupby=Account, func="SUM")
+        q.add_aggregate("debit", name="total_debit", groupby=Account, func="SUM", default=0.0)
+        q.add_aggregate("credit", name="total_credit", groupby=Account, func="SUM", default=0.0)
+        q.add_aggregate("amt", name="total", groupby=Account, func="SUM", default=0.0)
         q.add_parent_join(Account, "account")
+        q.add_sort("account.acc_name")
         return q
 
     def transactions(self):
         q = Transaction.query(keys_only=False)
-        q.add_join(Category, "category", jointype="LEFT")
-        q.add_join(Project, "project", jointype="LEFT")
-        q.add_join(Contact, "contact", jointype="LEFT")
+        q.add_synthetic_column("debit", "(CASE WHEN amt < 0 THEN -amt ELSE 0 END)")
+        q.add_synthetic_column("credit", "(CASE WHEN amt > 0 THEN amt ELSE 0 END)")
+        q.add_join(Category, "category", jointype="LEFT", alias="cat")
+        q.add_join(Project, "project", jointype="LEFT", alias="prj")
+        q.add_join(Contact, "contact", jointype="LEFT", alias="ctc")
         q.set_ancestor(self)
+        q.add_sort("date")
         return q
 
 
@@ -150,23 +154,23 @@ class TransactionType(grumble.TextProperty):
 
 
 @grumble.property.transient
-class DebitAmount(grumble.TextProperty):
+class DebitAmount(grumble.FloatProperty):
     def __init__(self, **kwargs):
         super(DebitAmount, self).__init__(**kwargs)
 
     @staticmethod
     def getvalue(instance):
-        return "{0:10.2f}".format(-instance.amt) if instance.amt < 0 else " " * 10
+        return -instance.amt if instance.amt < 0 else 0.0
 
 
 @grumble.property.transient
-class CreditAmount(grumble.TextProperty):
+class CreditAmount(grumble.FloatProperty):
     def __init__(self, **kwargs):
         super(CreditAmount, self).__init__(**kwargs)
 
     @staticmethod
     def getvalue(instance):
-        return "{0:10.2f}".format(instance.amt) if instance.amt > 0 else " " * 10
+        return instance.amt if instance.amt > 0 else 0.0
 
 
 class Transaction(grumble.model.Model, txtype=lambda i: ("D" if i.amt is None or i.amt < 0 else "C")):

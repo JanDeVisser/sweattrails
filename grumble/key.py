@@ -83,6 +83,8 @@ class Key(object):
                 kind = gripe.call_if_exists(kind, "kind", kind)
             assert kind, "Kind must not be empty"
             name = args[-1]
+            if not isinstance(name, str):
+                pass
             assert isinstance(name, str), \
                 "Last argument of Key(%s, ..., name) must be string, not %s" % (kind, type(name))
             assert name, "Key name argument must not be empty"

@@ -114,7 +114,7 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
 
     def __setattr__(self, name, value):
         try:
-            if name in self._instance_properties and name not in self._allproperties:
+            if name in self._instance_properties:
                 prop = self._instance_properties[name]
                 prop.__set__(self, value)
                 return
@@ -626,13 +626,18 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
             else:
                 cls._allproperties[propname] = propdef
 
-    def add_adhoc_property(self, propname, prop):
+    def add_adhoc_property(self, propname, prop, value=None):
         assert not (hasattr(self, propname) or propname in self._instance_properties)
+        is_model_prop = isinstance(prop, grumble.property.ModelProperty) and \
+                        not isinstance(prop, grumble.property.WrapperProperty)
         if not isinstance(prop, grumble.property.ModelProperty):
             prop = grumble.property.WrapperProperty(prop)
         prop.set_name(propname)
         prop.set_kind(self.kind())
         self._instance_properties[propname] = prop
+        if is_model_prop:
+            setattr(self, propname, value if value is not None else prop.initial_value_())
+
 
     @classmethod
     def _import_properties(cls, from_cls):
@@ -662,6 +667,10 @@ class Model(metaclass=grumble.meta.ModelMetaClass):
     @classmethod
     def flat(cls):
         return cls._flat
+
+    @classmethod
+    def audit(cls):
+        return cls._audit
 
     @classmethod
     def properties(cls):

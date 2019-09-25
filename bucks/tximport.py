@@ -21,8 +21,10 @@ import datetime
 import enum
 import io
 import os.path
+import queue
 import re
 import shutil
+import threading
 
 import dateparser
 from PyQt5.QtCore import pyqtSignal
@@ -141,9 +143,8 @@ class FileCannotBeProcessed(ImportException):
     pass
 
 
-class Reader(grumpy.bg.Job):
+class Reader:
     def __init__(self, account, file_name):
-        super(Reader, self).__init__()
         self.account: Account = account
         self.acc_dir = os.path.join(gripe.root_dir(), "bucks", "data", self.account.acc_name)
         self.record: Import = Import.by("filename", file_name)
@@ -190,6 +191,7 @@ class Reader(grumpy.bg.Job):
                 if self.record.status == ImportStatus.Read:
                     if self.record.data:
                         try:
+                            logger.debug("TXImport: Importing '%s'", self.record.filename)
                             with io.StringIO(self.record.data) as s:
                                 dialect = csv.Sniffer().sniff(s.read(1024))
                                 s.seek(0)
@@ -209,6 +211,8 @@ class Reader(grumpy.bg.Job):
                                             l.persist()
                                     if self.record.status != ImportStatus.Partial:
                                         self.record.status = ImportStatus.Completed
+                                    logger.debug("TXImport: Imported file '%s' [%s]",
+                                                 self.record.filename, self.record.status)
                         except ImportException:
                             raise
                         except Exception:
@@ -307,6 +311,15 @@ class PaypalReader(Reader):
             return line
 
 
+class ReaderJob(grumpy.bg.Job):
+    def __init__(self, reader):
+        super(ReaderJob, self).__init__()
+        self.reader = reader
+
+    def handle(self):
+        self.reader.handle()
+
+
 class Importer(QObject):
     imported = pyqtSignal(Account, str)
 
@@ -314,7 +327,7 @@ class Importer(QObject):
         super(Importer, self).__init__()
 
     def execute(self, account, file_name):
-        reader = gripe.resolve(account.importer)(account, file_name)
+        reader = ReaderJob(gripe.resolve(account.importer)(account, file_name))
         reader.jobFinished.connect(self.import_finished)
         reader.jobError.connect(self.import_finished)
         reader.submit()
@@ -324,7 +337,9 @@ class Importer(QObject):
 
 
 class ScanInbox:
-    def __init__(self):
+    def __init__(self, jobmgr):
+        super(ScanInbox, self).__init__()
+        self.jobmgr = jobmgr
         self.data_dir = os.path.join(gripe.root_dir(), "bucks", "data")
         self.acc_name: str = None
         self.initial: str = None
@@ -372,12 +387,7 @@ class ScanInbox:
             os.remove(reader.filename)
 
     def addfile(self, file_name):
-        account = Account.by("acc_name", self.acc_name)
-        reader = gripe.resolve(account.importer, Reader)(account, file_name)
-        reader.jobStarted.connect(self.import_started)
-        reader.jobFinished.connect(self.import_finished)
-        reader.jobError.connect(self.import_error)
-        self.addjob(reader)
+        self.jobmgr.addfile(self.acc_name, file_name)
 
     def addfiles(self, filenames):
         for f in filenames:
@@ -418,10 +428,61 @@ class ScanInbox:
                                 self.addfile(os.path.join(self.queue, file_name))
 
 
-class ScanInboxPlugin(grumpy.bg.bg.ThreadPlugin):
+class ScanInboxJobMgr:
+    def __init__(self):
+        super(ScanInboxJobMgr, self).__init__()
+        self.scaninbox = ScanInbox(self)
+
+    def import_started(self, reader):
+        self.scaninbox.import_started(reader)
+
+    def import_finished(self, reader):
+        self.scaninbox.import_finished(reader)
+
+    def import_error(self, reader):
+        self.scaninbox.import_error(reader)
+        
+    def get_reader(self, account, file_name):
+        if not isinstance(account, Account):
+            account = Account.by("acc_name", account)
+        reader = gripe.resolve(account.importer, Reader)(account, file_name)
+        return reader
+
+
+class ScanInboxPlugin(grumpy.bg.bg.ThreadPlugin, ScanInboxJobMgr):
     def __init__(self, thread):
         super(ScanInboxPlugin, self).__init__(thread)
-        self.scaninbox = ScanInbox()
 
     def run(self):
         self.scaninbox.run()
+
+    def addfile(self, acc_name, file_name):
+        reader = self.get_reader(acc_name, file_name)
+        job = ReaderJob(reader)
+        job.jobStarted.connect(self.import_started)
+        job.jobFinished.connect(self.import_finished)
+        job.jobError.connect(self.import_error)
+        self.addjob(job)
+
+
+class ScanInboxThread(ScanInboxJobMgr, threading.Thread):
+    def __init__(self):
+        super(ScanInboxThread, self).__init__()
+        self.setDaemon(True)
+        self.queue = queue.Queue()
+        self.start()
+
+    def run(self):
+        while True:
+            self.scaninbox.run()
+            try:
+                acc_name, file_name = self.queue.get(True, 1)
+                with gripe.db.Tx.begin():
+                    reader = self.get_reader(acc_name, file_name)
+                    reader.handle()
+                self.queue.task_done()
+            except queue.Empty:
+                pass
+
+    def addfile(self, acc_name, file_name):
+        self.queue.put((acc_name, file_name))
