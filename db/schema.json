@@ -1,0 +1,64 @@
+{
+    "name": "sweattrails",
+    "key": "SWEATTRAILS",
+    "includes" : [
+	"map.h"
+    ],
+    "types": [
+	{
+	    "sql_type": "coordinates",
+	    "c_type": "coordinates_t",
+	    "composite": [
+		{ "type": "float", "name": "lat" },
+		{ "type": "float", "name": "lon" }
+	    ]
+	},
+	{
+	    "sql_type": "point",
+	    "c_type": "Vector2",
+	},
+    ],
+    "tables": [
+	{
+	    "key": "SESSION",
+	    "table_name": "session",
+	    "name": "session",
+	    "columns": [
+		{ "type": "serial",   "name": "id" },
+		{ "ref": "record",    "name": "records", "cardinality": "1-n", "fk_column": "session_id"},
+		{ "type": "uint32_t", "name": "timestamp" },
+		{ "type": "slice_t",  "name": "description" },
+		{ "type": "uint32_t", "name": "start_time" },
+		{ "type": "uint32_t", "name": "end_time" },
+		{ "type": "float",    "name": "elapsed_time" },
+		{ "type": "float",    "name": "moving_time" },
+		{ "type": "float",    "name": "distance" },
+		{ "type": "float",    "name": "min_elevation" },
+		{ "type": "float",    "name": "max_elevation" },
+		{ "type": "float",    "name": "max_power" },
+		{ "type": "float",    "name": "max_speed" },
+		{ "type": "uint32_t", "name": "min_hr" },
+		{ "type": "uint32_t", "name": "max_hr" },
+		{ "type": "Vector2",  "name": "time_range" },
+		{ "type": "box_t",    "name": "route_area" },
+		{ "type": "atlas_t",  "name": "atlas", "transient": true},
+	    ]
+	},
+	{
+	    "key": "RECORD",
+	    "table_name": "record",
+	    "name": "record",
+	    "columns": [
+		{ "type": "serial", "name": "id" },
+		{ "ref": "session", "name": "session_id", "cardinality": "n-1" },
+		{ "type": "uint32_t", "name": "timestamp" },
+		{ "type": "coordinates_t", "name": "position" },
+		{ "type": "float", "name": "elevation" },
+		{ "type": "float", "name": "distance" },
+		{ "type": "float", "name": "power" },
+		{ "type": "float", "name": "speed" },
+		{ "type": "float", "name": "hr" }
+	    ]
+	}
+    ]
+}
