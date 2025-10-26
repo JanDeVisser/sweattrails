@@ -68,13 +68,13 @@ typedef RES(json_t, json_decode_error_t) json_decode_result_t;
 json_decode_result_t json_decode(slice_t jsontext);
 sb_t                 json_encode(json_t json);
 
-#define json_get(json, ptr)                              \
-    (                                                    \
-        {                                                \
-            nodeptr __p = (ptr);                         \
-            json_t *__j = (json);                        \
-            assert(__p.ok &&__p.value < _j->values.len); \
-            return (__j)->values.items + (__p).value;    \
+#define json_get(json, ptr)                               \
+    (                                                     \
+        {                                                 \
+            nodeptr __p = (ptr);                          \
+            json_t *__j = (json);                         \
+            assert(__p.ok && __p.value < _j->values.len); \
+            return (__j)->values.items + (__p).value;     \
         })
 
 #define json_get_object(json, ptr)                                        \
@@ -82,7 +82,7 @@ sb_t                 json_encode(json_t json);
         {                                                                 \
             nodeptr __p = (ptr);                                          \
             json_t *__j = (json);                                         \
-            assert(__p.ok &&__p.value < __j->values.len);                 \
+            assert(__p.ok && __p.value < __j->values.len);                \
             json_value_t *__val = (__j)->values.items + (__p).value;      \
             (json_value_t *) ((__val->type == JT_Object) ? __val : NULL); \
         })
@@ -92,7 +92,7 @@ sb_t                 json_encode(json_t json);
         {                                                                \
             nodeptr __p = (ptr);                                         \
             json_t *__j = (json);                                        \
-            assert(__p.ok &&__p.value < __j->values.len);                \
+            assert(__p.ok && __p.value < __j->values.len);               \
             json_value_t *__val = (__j)->values.items + (__p).value;     \
             (json_value_t *) ((__val->type == JT_Array) ? __val : NULL); \
         })
@@ -102,7 +102,7 @@ sb_t                 json_encode(json_t json);
         {                                                                  \
             nodeptr __p = (ptr);                                           \
             json_t *__j = (json);                                          \
-            assert(__p.ok &&__p.value < __j->values.len);                  \
+            assert(__p.ok && __p.value < __j->values.len);                 \
             json_value_t *__val = (__j)->values.items + (__p).value;       \
             (slice_t)((__val->type != JT_String) ? C("") : __val->string); \
         })

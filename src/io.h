@@ -71,7 +71,7 @@ done:
 
 bool write_file(slice_t path, slice_t data)
 {
-    bool ret = false;
+    bool        ret = false;
     size_t      cp = temp_save();
     char const *p = temp_slice_to_cstr(path);
 

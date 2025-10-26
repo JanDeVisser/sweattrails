@@ -169,7 +169,7 @@ int main(int argc, char **argv)
     };
     if (nob_needs_rebuild("src/schema.h", schema_sources, 1)) {
         cmd_append(&cmd, cc, "-Wall", "-Wextra", "-g",
-		   "-o", BUILD_DIR "schemagen", "src/schemagen.c");
+            "-o", BUILD_DIR "schemagen", "src/schemagen.c");
         if (!cmd_run(&cmd)) {
             return 1;
         }
