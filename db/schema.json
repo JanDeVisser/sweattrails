@@ -20,11 +20,24 @@
     ],
     "tables": [
 	{
+	    "key": "ACTIVITY",
+	    "table_name": "activity",
+	    "name": "activity",
+	    "columns": [
+		{ "type": "serial",   "name": "id", "pk": true },
+		{ "ref": "session",   "name": "sessions", "cardinality": "1-n", "fk_column": "activity_id"},
+		{ "type": "uint32_t", "name": "start_time" },
+		{ "type": "uint32_t", "name": "end_time" },
+		{ "type": "uint32_t", "name": "serial_number" }
+	    ]
+	},
+	{
 	    "key": "SESSION",
 	    "table_name": "session",
 	    "name": "session",
 	    "columns": [
-		{ "type": "serial",   "name": "id" },
+		{ "type": "serial",   "name": "id", "pk": true },
+		{ "ref": "activity",  "name": "activity_id", "cardinality": "n-1" },
 		{ "ref": "record",    "name": "records", "cardinality": "1-n", "fk_column": "session_id"},
 		{ "type": "uint32_t", "name": "timestamp" },
 		{ "type": "slice_t",  "name": "description" },
@@ -49,7 +62,7 @@
 	    "table_name": "record",
 	    "name": "record",
 	    "columns": [
-		{ "type": "serial", "name": "id" },
+		{ "type": "serial", "name": "id", "pk": true },
 		{ "ref": "session", "name": "session_id", "cardinality": "n-1" },
 		{ "type": "uint32_t", "name": "timestamp" },
 		{ "type": "coordinates_t", "name": "position" },

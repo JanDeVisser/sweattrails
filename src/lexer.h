@@ -547,7 +547,7 @@ opt_scanresult_t linecomment(void *ctx, slice_t buffer)
 
 opt_scanresult_t block_comment_line(blockcomment_t *config, slice_t buffer)
 {
-    opt_size_t end_maybe = slice_find(buffer, config->end);
+    opt_size_t end_maybe = slice_find_sub(buffer, config->end);
     opt_size_t nl_maybe = slice_indexof(buffer, '\n');
     if (nl_maybe.ok && (!end_maybe.ok || end_maybe.value > nl_maybe.value)) {
 #ifdef COMMENT_IGNORE
@@ -590,7 +590,7 @@ opt_scanresult_t rawscanner(void *ctx, slice_t buffer)
     if (!slice_startswith(buffer, config->begin)) {
         return OPTNULL(scanresult_t);
     }
-    opt_size_t end_maybe = slice_find(buffer, config->end);
+    opt_size_t end_maybe = slice_find_sub(buffer, config->end);
     size_t     scanned = (end_maybe.ok) ? end_maybe.value + config->end.len : buffer.len;
     return OPTVAL(scanresult_t, make_token_result(token_make_raw(config->begin, end_maybe.ok), scanned));
 }

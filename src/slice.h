@@ -5,7 +5,7 @@
  */
 
 // #define SLICE_TEST
-#if defined(SLICE_TEST) || defined(ELROND_IMPLEMENTATION)
+#if defined(SLICE_TEST) || defined(JDV_IMPLEMENTATION)
 #define SLICE_IMPLEMENTATION
 #endif
 
@@ -234,6 +234,7 @@ OPTDEF(size_t);
 OPTDEF(long);
 typedef unsigned long ulong;
 OPTDEF(ulong);
+OPTDEF(float);
 OPTDEF(double);
 
 typedef opt_size_t nodeptr;
@@ -250,6 +251,11 @@ typedef struct slice {
     size_t len;
 } slice_t;
 
+typedef struct _slice_pair {
+    slice_t key;
+    slice_t value;
+} slice_pair_t;
+
 OPTDEF(slice_t);
 
 typedef struct array {
@@ -265,6 +271,21 @@ typedef struct array {
 #define SLARG(s) (int) (s).len, (s).items
 #define slice_foreach(T, it, slice) for (T *it = (slice)->items; it < (slice)->items + (slice)->len; ++it)
 #define slice_reverse(T, it, slice) for (T *it = (slice)->items + ((slice)->len - 1); it >= (slice)->items; --it)
+
+#define slice_search(T, haystack, needle, eq_fnc) \
+    (                                             \
+        {                                         \
+            T  __needle = (needle);               \
+            *T __found = NULL;                    \
+            slice_foreach(T, __it, (slice))       \
+            {                                     \
+                if ((eq_fnc) (*__it, needle)) {   \
+                    __found = __it;               \
+                    break;                        \
+                }                                 \
+            }                                     \
+            (__found);                            \
+        })
 
 #define slice_fwrite(s, f)                    \
     do {                                      \
@@ -286,7 +307,7 @@ slice_t    slice_sub_by_length(slice_t slice, size_t start, size_t num);
 bool       slice_startswith(slice_t slice, slice_t head);
 bool       slice_endswith(slice_t slice, slice_t tail);
 bool       slice_contains(slice_t haystack, slice_t needle);
-opt_size_t slice_find(slice_t haystack, slice_t needle);
+opt_size_t slice_find_sub(slice_t haystack, slice_t needle);
 opt_size_t slice_rfind(slice_t haystack, slice_t needle);
 opt_size_t slice_indexof(slice_t haystack, char needle);
 opt_size_t slice_last_indexof(slice_t haystack, char needle);
@@ -559,7 +580,7 @@ bool slice_contains(slice_t haystack, slice_t needle)
     return false;
 }
 
-opt_size_t slice_find(slice_t haystack, slice_t needle)
+opt_size_t slice_find_sub(slice_t haystack, slice_t needle)
 {
     if (haystack.len < needle.len) {
         return OPTNULL(size_t);
@@ -957,7 +978,7 @@ int main()
     assert(slice_eq(slice_ltrim(tabs), C("Hello \t ")));
     assert(slice_eq(slice_rtrim(tabs), C(" \t Hello")));
     assert(slice_eq(slice_trim(tabs), s));
-    assert(slice_find(s, C("lo")).ok);
+    assert(slice_find_sub(s, C("lo")).ok);
 
     slice_t csv = C("foo,  bar   ,baz");
     assert(slice_eq(slice_token(&csv, ','), C("foo")));

@@ -249,7 +249,7 @@ void db_result_close(db_t *db, nodeptr res)
         PQclear(result.res);
         result.res = NULL;
     }
-    dynarr_remove_unordered(&db->results, res.value);
+    (void) dynarr_remove_unordered(db_result_t, &db->results, res.value);
 }
 
 #endif /* ZORRO_TYPES_ONLY */

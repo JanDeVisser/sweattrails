@@ -24,6 +24,7 @@ typedef struct _schema_column_def {
     slice_t         name;
     bool            transient;
     sql_type_kind_t kind;
+    bool            pk;
     union {
         slice_t type;
         struct {
@@ -234,6 +235,10 @@ void parse_tables(json_t *json, nodeptr tablesptr)
                             c.transient = true;
                             continue;
                         }
+                        if (slice_eq(colattr->key, C("pk"))) {
+                            c.pk = true;
+                            continue;
+                        }
                     }
                     if (c.name.len == 0) {
                         fatal("Schema columns must have a name");
@@ -379,7 +384,7 @@ int main(int argc, char **argv)
         sb_printf(&out, "        " SL "_t " SL ";\n", SLARG(tbl->name), SLARG(tbl->name));
     }
     sb_printf(&out, "    };\n} " SL "_entity_t;\n\n"
-        "typedef DA(" SL "_entity_t) " SL "_entities_t;\n\n",
+                    "typedef DA(" SL "_entity_t) " SL "_entities_t;\n\n",
         SLARG(schema_name), SLARG(schema_name), SLARG(schema_name));
 
     sb_printf(&out,
@@ -412,7 +417,7 @@ int main(int argc, char **argv)
         {
             if (col->transient) {
                 continue;
-	    }                
+            }
             sb_printf(&out,
                 "        dynarr_append_s(\n"
                 "            column_def_t,\n"
@@ -460,8 +465,9 @@ int main(int argc, char **argv)
     sb_t sql = { 0 };
     sb_printf(&sql,
         "drop schema if exists " SL " cascade;\n"
-        "create schema " SL ";\n\n",
-        SLARG(schema_name), SLARG(schema_name));
+        "create schema " SL ";\n"
+        "set search_path to " SL ";\n\n",
+        SLARG(schema_name), SLARG(schema_name), SLARG(schema_name));
     dynarr_foreach(schema_type_def_t, typ, &schema_types)
     {
         switch (typ->kind) {
@@ -489,6 +495,7 @@ int main(int argc, char **argv)
     {
         sb_printf(&sql, "create table " SL "." SL "(\n", SLARG(schema_name), SLARG(tbl->name));
         bool first = true;
+        bool has_pk = false;
         dynarr_foreach(schema_column_def_t, col, &tbl->columns)
         {
             if (col->transient) {
@@ -497,6 +504,7 @@ int main(int argc, char **argv)
             if (col->kind == SQLTypeKind_Reference && col->reference.cardinality != Card_ManyToOne) {
                 continue;
             }
+            has_pk |= col->pk;
             if (!first) {
                 sb_append_cstr(&sql, ",\n");
             }
@@ -509,18 +517,32 @@ int main(int argc, char **argv)
                     "    " SL " " SL,
                     SLARG(col->name), SLARG(get_sql_type_for_c_type(col->type)));
                 break;
-            case SQLTypeKind_Reference:
+            case SQLTypeKind_Reference: {
+                slice_t fk_col = (col->reference.fk_col.len > 0) ? col->reference.fk_col : C("id");
                 sb_printf(
                     &sql,
-                    "    " SL " int references " SL,
-                    SLARG(col->name), SLARG(col->reference.references));
-                if (col->reference.fk_col.len > 0) {
-                    sb_printf(&sql, " ( " SL " )", SLARG(col->reference.fk_col));
-                }
-                break;
+                    "    " SL " int references " SL " ( " SL " )",
+                    SLARG(col->name), SLARG(col->reference.references), SLARG(fk_col));
+            } break;
             default:
                 UNREACHABLE();
             }
+        }
+        if (has_pk) {
+            sb_append_cstr(&sql, ",\n    primary key ( ");
+            bool first = true;
+            dynarr_foreach(schema_column_def_t, col, &tbl->columns)
+            {
+                if (!col->pk) {
+                    continue;
+                }
+                if (!first) {
+                    sb_append_cstr(&sql, ", ");
+                }
+                first = false;
+                sb_append(&sql, col->name);
+            }
+            sb_append_cstr(&sql, " )");
         }
         sb_append_cstr(&sql, "\n);\n\n");
     }

@@ -9466,9 +9466,7 @@ extern const FIT_DEVICE_FILE fit_device_file;
 
 extern const FIT_FILE_DEF fit_file_defs[FIT_FILE_DEFS];
 
-
-
-
+char const *FitConvert_mesg_name(FIT_MESG_NUM mesg_num);
 
 #if defined(__cplusplus)
    }

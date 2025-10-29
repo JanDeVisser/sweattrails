@@ -36,6 +36,7 @@ OPTDEF(sb_t);
 typedef DA(sb_t) strings_t;
 typedef DA(slice_t) slices_t;
 typedef DA(opt_slice_t) opt_slices_t;
+typedef DA(slice_pair_t) slice_pairs_t;
 typedef DA(uint64_t) uint64s;
 typedef DA(nodeptr) nodeptrs;
 OPTDEF(nodeptrs);
@@ -63,35 +64,37 @@ OPTDEF(nodeptrs);
             __copy;                                                         \
         })
 
-#define dynarr_remove_unordered(arr, ix)                   \
-    do {                                                   \
-        size_t __ix = (ix);                                \
-        if (__ix < 0 || __ix >= (arr)->len) {              \
-            break;                                         \
-        }                                                  \
-        if (__ix == (arr)->len - 1) {                      \
-            --((arr)->len);                                \
-            break;                                         \
-        }                                                  \
-        (arr)->items[__ix] = (arr)->items[(arr)->len - 1]; \
-        --((arr)->len);                                    \
-    } while (0)
+#define dynarr_remove_unordered(T, arr, ix)                            \
+    (                                                                  \
+        {                                                              \
+            size_t __ix = (ix);                                        \
+            T      __deleted = { 0 };                                  \
+            if (__ix >= 0 && __ix < (arr)->len) {                      \
+                __deleted = (arr)->items[ix];                          \
+                if (__ix < (arr)->len - 1) {                           \
+                    (arr)->items[__ix] = (arr)->items[(arr)->len - 1]; \
+                }                                                      \
+                --((arr)->len);                                        \
+            }                                                          \
+            (__deleted);                                               \
+        })
 
-#define dynarr_remove_ordered(arr, ix)                      \
-    do {                                                    \
-        size_t __ix = (ix);                                 \
-        if (__ix < 0 || __ix >= (arr)->len) {               \
-            break;                                          \
-        }                                                   \
-        if (__ix == (arr)->len - 1) {                       \
-            --((arr)->len);                                 \
-            break;                                          \
-        }                                                   \
-        --((arr)->len);                                     \
-        memcpy((arr)->items + __ix,                         \
-            (arr)->items + (__ix + 1),                      \
-            ((arr)->len - __ix) * sizeof((arr)->items[0])); \
-    } while (0)
+#define dynarr_remove_ordered(T, arr, ix)                               \
+    (                                                                   \
+        {                                                               \
+            size_t __ix = (ix);                                         \
+            T      __deleted = { 0 };                                   \
+            if (__ix >= 0 || __ix < (arr)->len) {                       \
+                __deleted = (arr)->items[ix];                           \
+                if (__ix < (arr)->len - 1) {                            \
+                    memcpy((arr)->items + __ix,                         \
+                        (arr)->items + (__ix + 1),                      \
+                        ((arr)->len - __ix) * sizeof((arr)->items[0])); \
+                }                                                       \
+                --((arr)->len);                                         \
+            }                                                           \
+            (__deleted);                                                \
+        })
 
 #define dynarr_clear(arr) generic_da_clear(GENDA(arr))
 #define dynarr_free(arr) generic_da_free(GENDA(arr))
@@ -154,6 +157,7 @@ OPTDEF(nodeptrs);
 #define dynarr_as_slice(arr) (slice_make((arr).items, (arr).len))
 #define dynarr_foreach(T, it, arr) slice_foreach(T, it, arr)
 #define dynarr_reverse(T, it, arr) slice_reverse(T, (it), (arr))
+#define dynarr_find(T, haystack, needle, eq_fnc) slice_find(T, (haystack), (needle), (eq_fnc))
 
 #define sb_as_slice(sb) dynarr_as_slice(sb)
 #define sb_clear(sb) dynarr_clear((sb))
@@ -175,8 +179,15 @@ OPTDEF(nodeptrs);
             (__s);                \
         })
 
-sb_t       *
-sb_append(sb_t *sb, slice_t slice);
+#define sb_make_cstr(s)              \
+    (                                \
+        {                            \
+            sb_t __s = { 0 };        \
+            sb_append(&__s, C((s))); \
+            (__s);                   \
+        })
+
+sb_t *sb_append(sb_t *sb, slice_t slice);
 sb_t *sb_unescape(sb_t *sb, slice_t escaped);
 sb_t *sb_escape(sb_t *sb, slice_t slice);
 sb_t  sb_format(char const *fmt, ...) __attribute__((__format__(printf, 1, 2)));
@@ -192,7 +203,7 @@ int    generic_da_cmp(generic_da_t *da1, generic_da_t *da2, size_t elem_size);
 
 #endif /* __DA_H__ */
 
-#ifdef DA_IMPLEMENTATION
+#if defined(DA_IMPLEMENTATION) || defined(JDV_IMPLEMENTATION)
 #undef DA_IMPLEMENTATION
 #ifndef DA_IMPLEMENTED
 #define DA_IMPLEMENTED

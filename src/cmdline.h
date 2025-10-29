@@ -86,7 +86,7 @@ slices_t cmdline_arguments();
 
 #endif /* __CMDLINE_H__ */
 
-#ifdef CMDLINE_IMPLEMENTATION
+#if defined(CMDLINE_IMPLEMENTATION) || defined(JDV_IMPLEMENTATION)
 #ifndef CMDLINE_IMPLEMENTED
 
 static void help(cmdline_t *cmdline)
@@ -315,6 +315,7 @@ bool cmdline_is_set(char *opt)
         cmdline_option_t *optval = _cmdline_args.option_values.items + ix;
         if (strcmp(optval->opt_def->longopt, opt) == 0) {
             if (optval->opt_def->cardinality == COC_Set) {
+                printf("cmdline_is_set(%s) = %d\n", opt, optval->bool_value);
                 return optval->bool_value;
             } else {
                 fprintf(stderr, "Command line option `--%s` is not a setter\n", opt);
@@ -322,6 +323,7 @@ bool cmdline_is_set(char *opt)
             }
         }
     }
+    printf("cmdline_is_set(%s) = not found\n", opt);
     return false;
 }
 

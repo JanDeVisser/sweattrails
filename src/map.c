@@ -37,8 +37,6 @@ bool coordinates_in_box(coordinates_t this, box_t box)
     return box_has(box, this);
 }
 
-static bool const coordinates_transient = false;
-
 box_t box_for_tile(tile_t tile)
 {
     return tile_box(tile);
@@ -90,8 +88,6 @@ bool box_has(box_t this, coordinates_t point)
         && point.lat <= this.ne.lat
         && point.lon <= this.ne.lon;
 }
-
-static bool const box_transient = false;
 
 tile_t tile_for_coordinates(coordinates_t pos, uint8_t zoom)
 {
@@ -216,9 +212,11 @@ atlas_t atlas_for_box(box_t box, uint8_t width, uint8_t height)
     uint8_t       min_dim = MIN(width, height);
     uint8_t       zoom = 16 - min_dim - 1;
     coordinates_t mid = box_center(box);
+    printf("init zoom: %d box: (%f,%f)x(%f,%f)\n", zoom, box.ne.lat, box.ne.lon, box.sw.lat, box.sw.lon);
     while (zoom > 0) {
         tile_t mid_tile = tile_for_coordinates(mid, zoom);
         box_t  tbox = tile_box(mid_tile);
+	printf("zoom: %d tbox: (%f,%f)x(%f,%f)\n", zoom, tbox.ne.lat, tbox.ne.lon, tbox.sw.lat, tbox.sw.lon);
         if (box_width(tbox) > box_width(box) * 1.1 && box_height(tbox) > box_height(box) * 1.1) {
             zoom += min_dim - 1;
             tile_t t = tile_for_coordinates(mid, zoom);
@@ -243,7 +241,7 @@ void atlas_free(atlas_t *this)
     dynarr_foreach(slice_t, map, &this->maps)
     {
         free(map->items);
-    }        
+    }
 }
 
 tile_t atlas_tile(atlas_t this, size_t ix)
@@ -269,14 +267,14 @@ tile_t atlas_tile_xy(atlas_t this, uint32_t x, uint32_t y)
 slices_t atlas_get_maps(atlas_t *this)
 {
     if (this->maps.len) {
-	return this->maps;
+        return this->maps;
     }
     for (size_t ix = 0; ix < this->num_tiles; ++ix) {
         map_res res = tile_get_map(atlas_tile(*this, ix));
         if (!res.ok) {
             fatal("could not load map");
-	}            
-	dynarr_append(&this->maps, res.success);
+        }
+        dynarr_append(&this->maps, res.success);
     }
     return this->maps;
 }
@@ -292,4 +290,3 @@ box_t atlas_sub_box(atlas_t this, size_t ix)
 {
     return tile_box(atlas_tile(this, ix));
 }
-
