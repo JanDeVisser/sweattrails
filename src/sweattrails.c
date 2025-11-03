@@ -315,34 +315,19 @@ Image session_graph_image(ptr this, uint32_t width, uint32_t height)
         ImageDrawLineV(
             &image,
             (Vector2) { .x = x - 1, .y = ceil(prev_alt) },
-            (Vector2) {
-                .x = x,
-                .y = ceil(alt_y),
-            },
+            (Vector2) {                .x = x,                .y = ceil(alt_y)            },
             RAYWHITE);
         ImageDrawLineV(
             &image,
-            (Vector2) {
-                .x = x - 1,
-                .y = ceil(prev_speed),
-            },
-            (Vector2) {
-                .x = x,
-                .y = ceil(speed_y),
-            },
+            (Vector2) {                .x = x - 1,                .y = ceil(prev_speed)            },
+            (Vector2) {                .x = x,                .y = ceil(speed_y)            },
             GREEN);
         if (dpower > 0) {
             float power_y = (dpower > 0) ? height_f - record->power * dpower : 0.0;
             ImageDrawLineV(
                 &image,
-                (Vector2) {
-                    .x = x - 1,
-                    .y = prev_power,
-                },
-                (Vector2) {
-                    .x = x - 1,
-                    .y = power_y,
-                },
+                (Vector2) {                    .x = x - 1,                    .y = prev_power                },
+                (Vector2) {                    .x = x - 1,                    .y = power_y                },
                 ORANGE);
             prev_power = power_y;
         }
