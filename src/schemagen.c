@@ -332,6 +332,16 @@ int main(int argc, char **argv)
     }
     sb_append_char(&out, '\n');
 
+    dynarr_foreach(schema_table_def_t, tbl, &schema_tables)
+    {
+        sb_append_cstr(&out, "#define ");
+        for (size_t ix = 0; ix < tbl->name.len; ++ix) {
+            sb_append_char(&out, toupper(tbl->name.items[ix]));
+        }
+        sb_printf(&out, "_DEF %zu\n", tbl - schema_tables.items);
+    }
+    sb_append_char(&out, '\n');
+
     sb_printf(
         &out,
         "typedef enum _" SL "_type {\n", SLARG(schema_name));
@@ -339,7 +349,12 @@ int main(int argc, char **argv)
     {
         sb_printf(&out, "    EntityType_" SL ",\n", SLARG(tbl->name));
     }
-    sb_printf(&out, "} " SL "_type_t;\n\n", SLARG(schema_name));
+    sb_printf(&out,
+        "} " SL "_type_t;\n\n"
+        "typedef struct _entity {\n"
+        "    serial id;\n"
+        "} entity_t;\n\n",
+        SLARG(schema_name));
 
     dynarr_foreach(schema_table_def_t, tbl, &schema_tables)
     {
@@ -377,7 +392,8 @@ int main(int argc, char **argv)
         &out,
         "typedef struct _" SL "_entity {\n"
         "    " SL "_type_t type;\n"
-        "    union {\n",
+        "    union {\n"
+        "        entity_t entity;\n",
         SLARG(schema_name), SLARG(schema_name));
     dynarr_foreach(schema_table_def_t, tbl, &schema_tables)
     {
@@ -388,13 +404,12 @@ int main(int argc, char **argv)
         SLARG(schema_name), SLARG(schema_name), SLARG(schema_name));
 
     sb_printf(&out,
-        "table_defs_t " SL "_init_schema(db_t *db);\n\n"
+        "void " SL "_init_schema(db_t *db);\n\n"
         "#endif /* __" SL "_H__ */\n\n"
         "#ifdef " SL "_IMPLEMENTATION\n"
         "#ifndef " SL "_IMPLEMENTED\n\n"
-        "table_defs_t " SL "_init_schema(db_t *db)\n"
-        "{\n"
-        "    table_defs_t ret = {0};\n",
+        "void " SL "_init_schema(db_t *db)\n"
+        "{\n",
 
         SLARG(func_prefix),
         SLARG(basename_upper), SLARG(basename_upper), SLARG(basename_upper), SLARG(func_prefix));
@@ -404,9 +419,73 @@ int main(int argc, char **argv)
             "    if (!db_exec(db, \"set search_path to " SL "\")) {\n"
             "        PQfinish(db->conn);\n"
             "        fatal(\"Could not set database search path: %%s\", PQerrorMessage(db->conn));\n"
-            "    };\n",
-            SLARG(schema_name));
+            "    };\n\n"
+            "    db->schema.schema = C(\"" SL "\");\n",
+            SLARG(schema_name), SLARG(schema_name));
     }
+
+    dynarr_foreach(schema_type_def_t, typ, &schema_types)
+    {
+        sb_printf(&out,
+            "    {\n"
+            "        type_def_t type = {\n"
+            "            .name = C(\"" SL "\"),\n"
+            "            .c_type = C(\"" SL "\"),\n"
+            "            .kind = SQLTypeKind_" SL ",\n"
+            "        };\n",
+            SLARG(typ->sql_type), SLARG(typ->c_type), SLARG(sql_type_kind_name(typ->kind)));
+        switch (typ->kind) {
+        case SQLTypeKind_Composite: {
+            dynarr_foreach(schema_column_def_t, col, &typ->composite)
+            {
+                if (col->transient) {
+                    continue;
+                }
+                sb_printf(&out,
+                    "        dynarr_append_s(\n"
+                    "            column_def_t,\n"
+                    "            &type.composite,\n"
+                    "            .name = C(\"" SL "\"),\n"
+                    "            .kind = SQLTypeKind_" SL ",\n"
+                    "            .offset = offsetof(" SL ", " SL "),\n",
+                    SLARG(col->name), SLARG(sql_type_kind_name(col->kind)), SLARG(typ->c_type), SLARG(col->name));
+                switch (col->kind) {
+                case SQLTypeKind_Builtin: {
+                    if (col->transient) {
+                        continue;
+                    }
+                    sql_type_t sql_type_code = MUSTOPT(sql_type_t, sql_type_from_c_type(col->type));
+                    sb_printf(&out, "            .type = SQLType_" SL ");\n",
+                        SLARG(sql_type_name(sql_type_code)));
+                } break;
+                case SQLTypeKind_Composite: {
+                    sb_printf(&out,
+                        "            .composite = schema_find_type_by_c_type(&db->schema, C(\"" SL "\")));\n",
+                        SLARG(col->type));
+                } break;
+                case SQLTypeKind_Reference:
+                    sb_printf(&out,
+                        "           .reference.cardinality = " SL ",\n"
+                        "           .reference.references = C(\"" SL "\"),\n"
+                        "           .reference.fk_col = C(\"" SL "\")\n"
+                        "            );\n",
+                        SLARG(cardinality_name(col->reference.cardinality)),
+                        SLARG(col->reference.references),
+                        SLARG(col->reference.fk_col));
+                    break;
+                default:
+                    UNREACHABLE();
+                }
+            }
+        } break;
+        default:
+            break;
+        }
+        sb_printf(&out,
+            "        dynarr_append(&db->schema.types, type);\n"
+            "    }\n");
+    }
+
     dynarr_foreach(schema_table_def_t, tbl, &schema_tables)
     {
         sb_printf(&out,
@@ -423,8 +502,9 @@ int main(int argc, char **argv)
                 "            column_def_t,\n"
                 "            &table.columns,\n"
                 "            .name = C(\"" SL "\"),\n"
-                "            .kind = SQLTypeKind_" SL ",\n",
-                SLARG(col->name), SLARG(sql_type_kind_name(col->kind)));
+                "            .kind = SQLTypeKind_" SL ",\n"
+                "            .offset = offsetof(" SL "_t, " SL "),\n",
+                SLARG(col->name), SLARG(sql_type_kind_name(col->kind)), SLARG(tbl->name), SLARG(col->name));
             switch (col->kind) {
             case SQLTypeKind_Builtin: {
                 if (col->transient) {
@@ -435,23 +515,30 @@ int main(int argc, char **argv)
                     SLARG(sql_type_name(sql_type_code)));
             } break;
             case SQLTypeKind_Composite:
-                sb_printf(&out, "            .composite = C(\"" SL "\"));\n",
+                sb_printf(&out,
+                        "            .composite = schema_find_type_by_c_type(&db->schema, C(\"" SL "\")));\n",
                     SLARG(col->type));
                 break;
             case SQLTypeKind_Reference:
-                sb_printf(&out, "            );\n");
+                sb_printf(&out,
+                    "           .reference.cardinality = " SL ",\n"
+                    "           .reference.references = C(\"" SL "\"),\n"
+                    "           .reference.fk_col = C(\"" SL "\")\n"
+                    "            );\n",
+                    SLARG(cardinality_name(col->reference.cardinality)),
+                    SLARG(col->reference.references),
+                    SLARG(col->reference.fk_col));
                 break;
             default:
                 UNREACHABLE();
             }
         }
         sb_printf(&out,
-            "        dynarr_append(&ret, table);\n"
+            "        dynarr_append(&db->schema.tables, table);\n"
             "    }\n");
     }
 
     sb_printf(&out,
-        "    return ret;\n"
         "}\n\n"
         "#define " SL "_IMPLEMENTED\n"
         "#endif /* " SL "_IMPLEMENTED */\n"

@@ -66,9 +66,11 @@ bool import_file(import_t *this, path_t inbox_path)
 {
     slice_t filename = path_basename(&inbox_path);
     this->import_status = (struct import_status) { .status = ImportStatus_Importing, .importing = filename };
-    ptr     activity = activity_import(this->entities, inbox_path);
+    ptr activity = activity_import(this->entities, inbox_path);
+    db_begin(this->db);
     char const *err = activity_store(activity, this->db);
     if (err != NULL) {
+	db_rollback(this->db);
         dynarr_append_s(
             slice_pair_t,
             &this->errors,
@@ -82,6 +84,7 @@ bool import_file(import_t *this, path_t inbox_path)
         this->import_status = (struct import_status) { .status = ImportStatus_Processing, .importing = (slice_t) { 0 } };
         return false;
     };
+    db_commit(this->db);
     dynarr_append(&this->done, sb_as_slice(sb_make(filename)));
     path_t done_path = path_extend(this->done_d, filename);
     path_replace_extension(&done_path, C(".fit"));

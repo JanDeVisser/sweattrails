@@ -170,7 +170,7 @@ int main(int argc, char **argv)
         (char const *) "src/schemagen.c",
         (char const *) "db/schema.json",
     };
-    if (rebuild || nob_needs_rebuild("src/schema.h", schema_sources, 1)) {
+    if (rebuild || nob_needs_rebuild("src/schema.h", schema_sources, 2)) {
         cmd_append(&cmd, cc, "-Wall", "-Wextra", "-g",
             "-o", BUILD_DIR "schemagen", "src/schemagen.c");
         if (!cmd_run(&cmd)) {
@@ -191,7 +191,7 @@ int main(int argc, char **argv)
         || fit_sources_updated || schema_updated                                                                            \
         || /* || profile_updated || */ nob_needs_rebuild(BUILD_DIR #SRC ".o", sources, sizeof(sources) / sizeof(char *))) { \
         cmd_append(&cmd, cc, "-Wall", "-Wextra",                                                                            \
-            "-I/opt/homebrew/include", "-I../fitsdk", "-I/opt/homebrew/include/postgresql@14",                              \
+            "-I/opt/homebrew/include", "-I../fitsdk", "-I/opt/homebrew/include/postgresql",                              \
             "-c", "-g", "-o", BUILD_DIR #SRC ".o", SRC_DIR #SRC ".c");                                                      \
         if (!cmd_run(&cmd)) {                                                                                               \
             return 1;                                                                                                       \
@@ -203,7 +203,7 @@ int main(int argc, char **argv)
         cmd_append(&cmd, cc, "-o", BUILD_DIR "sweattrails",
 #undef S
 #define S(SRC) BUILD_DIR #SRC ".o",
-            APP_SOURCES(S) "-Lbuild", "-lfit", "-lraylib", "-lcurl", "-L/opt/homebrew/lib/postgresql@14", "-lpq", "-lm");
+            APP_SOURCES(S) "-Lbuild", "-lfit", "-lraylib", "-lcurl", "-L/opt/homebrew/lib/postgresql", "-lpq", "-lm");
         if (!cmd_run(&cmd)) {
             return 1;
         }

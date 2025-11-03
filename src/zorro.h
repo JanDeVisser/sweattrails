@@ -17,9 +17,10 @@
 typedef opt_int serial;
 
 #define SQLTYPES(S)                     \
+    S(Bool, boolean, bool)              \
     S(Int32, integer, int32_t)          \
     S(Serial, serial, serial)           \
-    S(UInt32, integer, uint32_t)        \
+    S(UInt32, bigint, uint32_t)         \
     S(Float, real, float)               \
     S(Double, double precision, double) \
     S(String, text, slice_t)            \
@@ -47,19 +48,26 @@ typedef enum _sql_type_kind {
 #undef S
 } sql_type_kind_t;
 
+#define CARDINALITIES(S) \
+    S(OneToMany)         \
+    S(ManyToOne)         \
+    S(ManyToMany)
+
 typedef enum _cardinality {
-    Card_OneToMany,
-    Card_ManyToOne,
-    Card_ManyToMany,
+#undef S
+#define S(C) Card_##C,
+    CARDINALITIES(S)
+#undef S
 } cardinality_t;
 
 typedef struct _column_def {
     bool            optional;
     slice_t         name;
     sql_type_kind_t kind;
+    off_t           offset;
     union {
         sql_type_t type;
-        slice_t    composite;
+        nodeptr    composite;
         struct {
             cardinality_t cardinality;
             slice_t       references;
@@ -70,12 +78,29 @@ typedef struct _column_def {
 
 typedef DA(column_def_t) column_defs_t;
 
+typedef struct _type_def {
+    slice_t         name;
+    slice_t         c_type;
+    sql_type_kind_t kind;
+    union {
+        column_defs_t composite;
+    };
+} type_def_t;
+
+typedef DA(type_def_t) type_defs_t;
+
 typedef struct _table_def {
     slice_t       name;
     column_defs_t columns;
 } table_def_t;
 
 typedef DA(table_def_t) table_defs_t;
+
+typedef struct _schema_def {
+    slice_t      schema;
+    type_defs_t  types;
+    table_defs_t tables;
+} schema_def_t;
 
 #ifndef ZORRO_TYPES_ONLY
 
@@ -86,22 +111,35 @@ typedef struct _db_result {
 typedef DA(db_result_t) db_results_t;
 
 typedef struct _db {
-    table_defs_t schema;
+    schema_def_t schema;
     PGconn      *conn;
     db_results_t results;
 } db_t;
 
 OPTDEF(db_result_t);
 
+#endif /* ZORRO_TYPES_ONLY */
+
+slice_t        cardinality_name(cardinality_t cardinality);
 slice_t        sql_type_kind_name(sql_type_kind_t kind);
 slice_t        sql_type_name(sql_type_t t);
 slice_t        sql_type_sql(sql_type_t t);
 opt_sql_type_t sql_type_from_c_type(slice_t c_type);
-db_t           db_make(slice_t dbname, slice_t user, slice_t passwd, slice_t hostname, int port);
-bool           db_exec(db_t *db, char const *sql);
-nodeptr        db_query(db_t *db, char const *sql);
-void           db_close(db_t *db);
-void           db_result_close(db_t *db, nodeptr result);
+
+#ifndef ZORRO_TYPES_ONLY
+
+nodeptr      schema_find_type(schema_def_t *schema, slice_t type);
+nodeptr      schema_find_type_by_c_type(schema_def_t *schema, slice_t c_type);
+nodeptr      schema_find_table(schema_def_t *schema, slice_t table);
+db_t         db_make(slice_t dbname, slice_t user, slice_t passwd, slice_t hostname, int port);
+bool         db_exec(db_t *db, char const *sql);
+nodeptr      db_query(db_t *db, char const *sql);
+void         db_close(db_t *db);
+void         db_result_close(db_t *db, nodeptr result);
+table_def_t *db_table_def(db_t *sb);
+void         db_begin(db_t *db);
+void         db_commit(db_t *db);
+void         db_rollback(db_t *db);
 #define pg_result(db, result) ((db)->results.items[(result).value].res)
 #define pg_status(db, result) PQresultStatus(pg_result((db), (result)))
 
@@ -112,6 +150,20 @@ void           db_result_close(db_t *db, nodeptr result);
 #if defined(ZORRO_IMPLEMENTATION) || defined(JDV_IMPLEMENTATION)
 #ifndef ZORRO_IMPLEMENTED
 #define ZORRO_IMPLEMENTED
+
+slice_t cardinality_name(cardinality_t cardinality)
+{
+    switch (cardinality) {
+#undef S
+#define S(Ca)       \
+    case Card_##Ca: \
+        return C("Card_" #Ca);
+        CARDINALITIES(S)
+#undef S
+    default:
+        UNREACHABLE();
+    }
+}
 
 slice_t sql_type_kind_name(sql_type_kind_t kind)
 {
@@ -168,6 +220,36 @@ opt_sql_type_t sql_type_from_c_type(slice_t c_type)
 }
 
 #ifndef ZORRO_TYPES_ONLY
+
+nodeptr schema_find_type(schema_def_t *schema, slice_t type)
+{
+    for (size_t ix = 0; ix < schema->types.len; ++ix) {
+        if (slice_eq(schema->types.items[ix].name, type)) {
+            return nodeptr_ptr(ix);
+        }
+    }
+    return nullptr;
+}
+
+nodeptr schema_find_type_by_c_type(schema_def_t *schema, slice_t c_type)
+{
+    for (size_t ix = 0; ix < schema->types.len; ++ix) {
+        if (slice_eq(schema->types.items[ix].c_type, c_type)) {
+            return nodeptr_ptr(ix);
+        }
+    }
+    return nullptr;
+}
+
+nodeptr schema_find_table(schema_def_t *schema, slice_t table)
+{
+    for (size_t ix = 0; ix < schema->tables.len; ++ix) {
+        if (slice_eq(schema->tables.items[ix].name, table)) {
+            return nodeptr_ptr(ix);
+        }
+    }
+    return nullptr;
+}
 
 bool db_exec(db_t *db, char const *sql)
 {
@@ -250,6 +332,30 @@ void db_result_close(db_t *db, nodeptr res)
         result.res = NULL;
     }
     (void) dynarr_remove_unordered(db_result_t, &db->results, res.value);
+}
+
+void db_begin(db_t *db)
+{
+    if (!db_exec(db, "BEGIN")) {
+        db_close(db);
+        fatal("Problem beginning transaction");
+    }
+}
+
+void db_commit(db_t *db)
+{
+    if (!db_exec(db, "COMMIT")) {
+        db_close(db);
+        fatal("Problem committing transaction");
+    }
+}
+
+void db_rollback(db_t *db)
+{
+    if (!db_exec(db, "ROLLBACK")) {
+        db_close(db);
+        fatal("Problem rolling back transaction");
+    }
 }
 
 #endif /* ZORRO_TYPES_ONLY */

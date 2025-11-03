@@ -12,11 +12,7 @@
 		{ "type": "float", "name": "lat" },
 		{ "type": "float", "name": "lon" }
 	    ]
-	},
-	{
-	    "sql_type": "point",
-	    "c_type": "Vector2",
-	},
+	}
     ],
     "tables": [
 	{
@@ -39,6 +35,9 @@
 		{ "type": "serial",   "name": "id", "pk": true },
 		{ "ref": "activity",  "name": "activity_id", "cardinality": "n-1" },
 		{ "ref": "record",    "name": "records", "cardinality": "1-n", "fk_column": "session_id"},
+		{ "type": "bool",     "name": "has_position_data" },
+		{ "type": "uint32_t", "name": "sport" },
+		{ "type": "uint32_t", "name": "sub_sport" },
 		{ "type": "uint32_t", "name": "timestamp" },
 		{ "type": "slice_t",  "name": "description" },
 		{ "type": "uint32_t", "name": "start_time" },
@@ -48,10 +47,14 @@
 		{ "type": "float",    "name": "distance" },
 		{ "type": "float",    "name": "min_elevation" },
 		{ "type": "float",    "name": "max_elevation" },
+		{ "type": "float",    "name": "avg_elevation" },
 		{ "type": "float",    "name": "max_power" },
+		{ "type": "float",    "name": "avg_power" },
 		{ "type": "float",    "name": "max_speed" },
+		{ "type": "float",    "name": "avg_speed" },
 		{ "type": "uint32_t", "name": "min_hr" },
 		{ "type": "uint32_t", "name": "max_hr" },
+		{ "type": "uint32_t", "name": "avg_hr" },
 		{ "type": "Vector2",  "name": "time_range" },
 		{ "type": "box_t",    "name": "route_area" },
 		{ "type": "atlas_t",  "name": "atlas", "transient": true},

@@ -24,7 +24,7 @@ typedef struct _tile {
 } tile_t;
 
 typedef RES(slice_t, int) map_res;
-typedef RES(opt_slice_t, int) opt_map_res;
+OPTDEF(map_res);
 
 typedef struct _atlas {
     uint8_t  zoom;

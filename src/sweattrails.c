@@ -5,7 +5,8 @@
 #include <time.h>
 
 #include "../fitsdk/fit_convert.h"
-#include "raylib.h"
+#include <libpq-fe.h>
+#include <raylib.h>
 
 #define CMDLINE_IMPLEMENTATION
 #define SLICE_IMPLEMENTATION
@@ -25,7 +26,7 @@
 
 #define RECORD_TABLE 0
 
-uint32_t const FIT_EPOCH_OFFSET = 631065600;
+#define FIT_EPOCH_OFFSET 631065600u
 
 typedef struct _time_of_day {
     uint8_t  hour;
@@ -48,19 +49,37 @@ time_of_day_t time_of_day_from_float(float t)
     };
 }
 
+slice_t sport_name(FIT_SPORT sport)
+{
+    switch (sport) {
+#undef S
+#define S(Sport, Name) \
+    case Sport:        \
+        return C(Name);
+        SPORTS(S)
+#undef S
+    default:
+        UNREACHABLE();
+    }
+}
+
+static float const semicircle = 180.0 / ((float) (1u << 31));
+
 nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
 {
     FIT_CONVERT_RETURN convert_return = FIT_CONVERT_CONTINUE;
     // FIT_UINT32         mesg_index = 0;
 
     FitConvert_Init(FIT_TRUE);
+    path_t     path = path_parse(file_name);
     slice_t    contents = sb_as_slice(MUSTOPT(sb_t, slurp_file(file_name)));
     activity_t activity = { 0 };
     session_t  session = { 0 };
+    nodeptrs   records = { 0 };
     nodeptr    session_id;
     nodeptr    ret = nullptr;
 
-    printf("Reading fit file `" SL "`\n", SLARG(file_name));
+    trace("Reading fit file `" SL "`", SLARG(file_name));
     while (convert_return == FIT_CONVERT_CONTINUE) {
         uint16_t last_mesg_num = FIT_MESG_NUM_MFG_RANGE_MAX;
         size_t   mesg_num_count = 0;
@@ -72,18 +91,18 @@ nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
                 const FIT_UINT8 *mesg = FitConvert_GetMessageData();
                 FIT_UINT16       mesg_num = FitConvert_GetMessageNumber();
 
-                if (mesg_num != last_mesg_num) {
+                if (do_trace && mesg_num != last_mesg_num) {
                     if (last_mesg_num < FIT_MESG_NUM_MFG_RANGE_MAX) {
                         switch (mesg_num_count) {
                         case 1:
-                            printf("\n");
+                            fprintf(stderr, "\n");
                             break;
                         default:
-                            printf(" x%zu\n", mesg_num_count);
+                            fprintf(stderr, " x%zu\n", mesg_num_count);
                             break;
                         }
                     }
-                    printf("Got message %s", FitConvert_mesg_name(mesg_num));
+                    fprintf(stderr, "Got message %s", FitConvert_mesg_name(mesg_num));
                     last_mesg_num = mesg_num;
                     mesg_num_count = 0;
                 }
@@ -97,21 +116,31 @@ nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
                 }
                 case FIT_MESG_NUM_SESSION: {
                     const FIT_SESSION_MESG *s = (FIT_SESSION_MESG *) mesg;
-                    activity.start_time = s->start_time - FIT_EPOCH_OFFSET;
-                    activity.end_time = s->start_time + s->total_elapsed_time;
+                    activity.start_time = s->start_time + FIT_EPOCH_OFFSET;
+                    activity.end_time = s->start_time + s->total_elapsed_time / 1000;
+                    trace("session start_position_lat: %f start_position_lon: %f",
+                        ((float) s->start_position_lat) * semicircle,
+                        ((float) s->start_position_long) * semicircle);
                     session = (session_t) {
-                        .start_time = s->start_time,
-                        .end_time = s->start_time + s->total_elapsed_time,
-                        .description = file_name,
-                        .elapsed_time = s->total_elapsed_time,
-                        .moving_time = s->total_moving_time,
-                        .distance = s->total_distance,
-                        .min_elevation = s->enhanced_min_altitude,
-                        .max_elevation = s->enhanced_max_altitude,
+                        .has_position_data = ((s->start_position_lat == (1 << 31)) && (s->start_position_long == (1 << 31))),
+                        .start_time = activity.start_time,
+                        .sport = s->sport,
+                        .sub_sport = s->sub_sport,
+                        .end_time = activity.end_time,
+                        .description = path_basename(&path),
+                        .elapsed_time = s->total_elapsed_time / 1000.0,
+                        .moving_time = s->total_moving_time / 1000.0,
+                        .distance = s->total_distance / 100.0,
+                        .min_elevation = (s->enhanced_min_altitude / 5.0) - 500.0,
+                        .max_elevation = (s->enhanced_max_altitude / 5.0) - 500.0,
+                        .avg_elevation = (s->enhanced_avg_altitude / 5.0) - 500.0,
                         .max_power = s->max_power,
-                        .max_speed = s->enhanced_max_speed,
+                        .avg_power = s->avg_power,
+                        .max_speed = s->enhanced_max_speed / 1000.0,
+                        .avg_speed = s->enhanced_avg_speed / 1000.0,
                         .min_hr = s->min_heart_rate,
                         .max_hr = s->max_heart_rate,
+                        .avg_hr = s->avg_heart_rate,
                         .time_range = (Vector2) {
                             .x = s->start_time,
                             .y = s->start_time + s->total_elapsed_time,
@@ -144,11 +173,9 @@ nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
                         distance = accumulated_distance16 / 16.0f,
                         speed = speed100 / 100.f;
                     } else {
-                        speed = record->enhanced_speed;
+                        speed = record->enhanced_speed / 1000.0;
                         distance = record->distance / 100.0f;
                     }
-
-                    static float const semicircle = 180.0 / ((float) (1u << 31));
 
                     dynarr_append_s(sweattrails_entity_t, entities,
                         .type = EntityType_record,
@@ -164,7 +191,7 @@ nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
                             .speed = speed,
                             .hr = record->heart_rate,
                         });
-                    dynarr_append(&session.records, nodeptr_ptr(entities->len - 1));
+                    dynarr_append(&records, nodeptr_ptr(entities->len - 1));
                     break;
                 }
 
@@ -194,130 +221,136 @@ nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
     }
 
     if (convert_return == FIT_CONVERT_ERROR) {
-        printf("Error decoding file.\n");
+        trace("Error decoding file");
         return nullptr;
     }
 
     if (convert_return == FIT_CONVERT_CONTINUE) {
-        printf("Unexpected end of file.\n");
+        trace("Unexpected end of file");
         return nullptr;
     }
 
     if (convert_return == FIT_CONVERT_DATA_TYPE_NOT_SUPPORTED) {
-        printf("File is not FIT.\n");
+        trace("File is not FIT");
         return nullptr;
     }
 
     if (convert_return == FIT_CONVERT_PROTOCOL_VERSION_NOT_SUPPORTED) {
-        printf("Protocol version not supported.\n");
+        trace("Protocol version not supported");
         return nullptr;
     }
 
     assert(convert_return == FIT_CONVERT_END_OF_FILE);
-    printf("\n" SL ": File converted successfully.\n", SLARG(file_name));
+    if (do_trace) {
+        fprintf(stderr, "\n" SL ": File converted successfully.\n", SLARG(file_name));
+    }
 
     dynarr_append_s(sweattrails_entity_t, entities,
         .type = EntityType_activity,
         .activity = activity);
     ret = nodeptr_ptr(entities->len - 1);
     session.activity_id = ret;
+    session.records = records;
     dynarr_append_s(sweattrails_entity_t, entities,
         .type = EntityType_session,
         .session = session);
     session_id = nodeptr_ptr(entities->len - 1);
     dynarr_append(&entities->items[ret.value].activity.sessions, session_id);
 
-    box_t route_area = {
-        .sw = (coordinates_t) { .lon = 200, .lat = 100 },
-        .ne = (coordinates_t) { .lon = -200, .lat = -100 },
+    session_t *s = &entities->items[session_id.value].session;
+    box_t      route_area = {
+             .sw = (coordinates_t) { .lon = 200, .lat = 100 },
+             .ne = (coordinates_t) { .lon = -200, .lat = -100 },
     };
-    dynarr_foreach(nodeptr, p, &entities->items[session_id.value].session.records)
+    dynarr_foreach(nodeptr, p, &s->records)
     {
         record_t *record = &entities->items[p->value].record;
-        if (fabs(record->position.lat) > 0.1 && fabs(record->position.lon) > 0.1) {
-            route_area.sw.lat = MIN(route_area.sw.lat, record->position.lat);
-            route_area.sw.lon = MIN(route_area.sw.lon, record->position.lon);
-            route_area.ne.lat = MAX(route_area.ne.lat, record->position.lat);
-            route_area.ne.lon = MAX(route_area.ne.lon, record->position.lon);
+        if (s->has_position_data) {
+            if (fabs(record->position.lat) > 0.1 && fabs(record->position.lon) > 0.1) {
+                route_area.sw.lat = MIN(route_area.sw.lat, record->position.lat);
+                route_area.sw.lon = MIN(route_area.sw.lon, record->position.lon);
+                route_area.ne.lat = MAX(route_area.ne.lat, record->position.lat);
+                route_area.ne.lon = MAX(route_area.ne.lon, record->position.lon);
+            }
         }
         record->session_id = session_id;
     }
-    session_t *s = &entities->items[session_id.value].session;
-    s->route_area = route_area;
-    s->atlas = atlas_for_box(route_area, 2, 2);
+    if (s->has_position_data) {
+        s->route_area = route_area;
+        s->atlas = atlas_for_box(route_area, 2, 2);
+    }
     return ret;
 }
+
+#define WINDOW_SIZE 64
 
 Image session_graph_image(ptr this, uint32_t width, uint32_t height)
 {
     session_t *session = get_p(session, this);
     Image      image = GenImageColor(width, height, BLANK);
-    float      prev_x = 0;
-    float      prev_speed = 0;
-    float      prev_power = 0;
-    float      width_f = width;
     float      height_f = height;
-    float      dt = width_f / session->records.len;
     float      dalt = height_f / (session->max_elevation - session->min_elevation);
     float      dspeed = height_f / session->max_speed;
     float      dpower = (session->max_power > 0) ? height_f / session->max_power : 0.0;
 
-    size_t window = 0;
-    float  power_window[64];
-    for (size_t ix = 0; ix < session->records.len; ++ix) {
-        record_t *record = get_p(record, make_ptr(this, session->records.items[ix]));
-        float     x = ix * dt;
-        float     alt = record->elevation;
-        float     alt_y = height_f - (alt - session->min_elevation) * dalt;
-        float     speed_y = height_f - record->speed * dspeed;
-        power_window[window] = record->power;
-        window += 1;
-        if (x - prev_x > 1.0) {
-            ImageDrawRectangleRec(
-                &image,
-                (Rectangle) {
-                    .x = prev_x,
-                    .y = alt_y,
-                    .width = ceil(x - prev_x),
-                    .height = height_f - alt_y,
-                },
-                LIGHTGRAY);
+    record_t *record = get_p(record, make_ptr(this, session->records.items[0]));
+    float     prev_alt = height_f - (record->elevation - session->min_elevation) * dalt;
+    float     prev_speed = height_f - record->speed * dspeed;
+    float     prev_power = (dpower > 0) ? height_f - record->power * dpower : 0.0;
+    for (size_t x = 1; x < width; ++x) {
+        size_t    rec_ix = x * session->records.len / width;
+        record = get_p(record, make_ptr(this, session->records.items[rec_ix]));
+
+        float alt_y = height_f - (record->elevation - session->min_elevation) * dalt;
+        float speed_y = height_f - record->speed * dspeed;
+        //            ImageDrawRectangleRec(
+        //                &image,
+        //                (Rectangle) {
+        //                    .x = prev_x,
+        //                    .y = alt_y,
+        //                    .width = ceil(x - prev_x),
+        //                    .height = height_f - alt_y,
+        //                },
+        //                RAYWHITE);
+        ImageDrawLineV(
+            &image,
+            (Vector2) {
+                .x = x-1,
+                .y = ceil(prev_alt),
+            },
+            (Vector2) {
+                .x = x,
+                .y = ceil(alt_y),
+            },
+            RAYWHITE);
+        ImageDrawLineV(
+            &image,
+            (Vector2) {
+                .x = x-1,
+                .y = ceil(prev_speed),
+            },
+            (Vector2) {
+                .x = x,
+                .y = ceil(speed_y),
+            },
+            GREEN);
+        if (dpower > 0) {
+	    float power_y = (dpower > 0) ? height_f - record->power * dpower : 0.0;
             ImageDrawLineV(
                 &image,
                 (Vector2) {
-                    .x = prev_x,
-                    .y = ceil(prev_speed),
+                    .x = x-1,
+                    .y = prev_power,
                 },
                 (Vector2) {
-                    .x = x,
-                    .y = ceil(speed_y),
+                    .x = x-1,
+                    .y = power_y,
                 },
-                DARKGREEN);
-            prev_speed = speed_y;
-            if (dpower > 0) {
-                float sum = 0.0;
-                for (size_t ix = 0; ix < window; ++ix) {
-                    float p = power_window[ix];
-                    sum += p;
-                }
-                float avg_power = sum / (float) window;
-                float power_y = height_f - avg_power * dpower;
-                ImageDrawLineV(
-                    &image,
-                    (Vector2) {
-                        .x = prev_x,
-                        .y = prev_power,
-                    },
-                    (Vector2) {
-                        .x = x,
-                        .y = power_y,
-                    },
-                    DARKBLUE);
-                prev_power = avg_power;
-            }
-            prev_x = x;
-            window = 0.0;
+                ORANGE);
+            prev_power = power_y;
         }
+        prev_speed = speed_y;
+        prev_alt = alt_y;
     }
     return image;
 }
@@ -348,7 +381,7 @@ Image session_map_image(ptr this)
             },
             (Rectangle) {
                 .x = (ix % session->atlas.columns) * 256,
-                .y = (ix / session->atlas.columns) * 256,
+                .y = ((float) ix / session->atlas.columns) * 256,
                 .width = 256,
                 .height = 256,
             },
@@ -479,11 +512,223 @@ ptr activity_import(sweattrails_entities_t *entities, path_t inbox_path)
     return (ptr) { .entities = entities, .ptr = ix };
 }
 
+bool must_include(column_def_t *col)
+{
+    switch (col->kind) {
+    case SQLTypeKind_Builtin:
+    case SQLTypeKind_Composite:
+        return true;
+    case SQLTypeKind_Reference:
+        return col->reference.cardinality == Card_ManyToOne;
+    default:
+        NYI("sql type kind " SL, SLARG(sql_type_kind_name(col->kind)));
+    }
+}
+
+char *render_parameter(void *value_ptr, column_def_t *col)
+{
+    switch (col->kind) {
+    case SQLTypeKind_Builtin:
+        switch (col->type) {
+        case SQLType_Bool:
+            return temp_sprintf("%s", *((bool *) value_ptr) ? "TRUE" : "FALSE");
+            break;
+        case SQLType_Int32:
+            return temp_sprintf("%d", *((int *) value_ptr));
+            break;
+        case SQLType_UInt32:
+            return temp_sprintf("%u", *((uint32_t *) value_ptr));
+            break;
+        case SQLType_Float:
+            return temp_sprintf("%f", *((float *) value_ptr));
+            break;
+        case SQLType_String:
+            return temp_sprintf("'" SL "'", SLARG(*((slice_t *) value_ptr)));
+            break;
+        case SQLType_Point: {
+            Vector2 v = *((Vector2 *) value_ptr);
+            return temp_sprintf("(%f,%f)", v.x, v.y);
+        } break;
+        case SQLType_Box: {
+            box_t box = *((box_t *) value_ptr);
+            return temp_sprintf("((%f,%f),(%f,%f))", box.sw.lon, box.sw.lat, box.ne.lon, box.ne.lat);
+        } break;
+        default:
+            NYI("builtin sql type " SL, SLARG(sql_type_name(col->type)));
+        }
+        break;
+    case SQLTypeKind_Composite: {
+        NYI("Nested composite types");
+    } break;
+    case SQLTypeKind_Reference:
+        NYI("Nested reference types");
+    default:
+        NYI("sql type kind " SL, SLARG(sql_type_kind_name(col->kind)));
+    }
+}
+
+void assign_parameter(ptr entity, schema_def_t *schema, column_def_t *col, cstrs *values)
+{
+    void *data = get_p(entity, entity);
+    void *value_ptr = data + col->offset;
+    switch (col->kind) {
+    case SQLTypeKind_Builtin:
+        dynarr_append(values, render_parameter(value_ptr, col));
+        break;
+    case SQLTypeKind_Composite: {
+        type_def_t *type = schema->types.items + col->composite.value;
+        sb_t        v = sb_make_cstr("(");
+        bool        first = true;
+        dynarr_foreach(column_def_t, type_col, &type->composite)
+        {
+            if (!first) {
+                sb_append_char(&v, ',');
+            }
+            first = false;
+            sb_append_cstr(&v, render_parameter(value_ptr + type_col->offset, type_col))
+        }
+        sb_append_char(&v, ')');
+        sb_append_char(&v, 0);
+        dynarr_append(values, temp_strdup(v.items));
+    } break;
+    case SQLTypeKind_Reference:
+        if (col->reference.cardinality == Card_ManyToOne) {
+            nodeptr               p = *((nodeptr *) value_ptr);
+            sweattrails_entity_t *e = entity.entities->items + p.value;
+            assert(e->entity.id.ok);
+            dynarr_append(values, temp_sprintf("%d", e->entity.id.value));
+        }
+        break;
+    default:
+        NYI("sql type kind " SL, SLARG(sql_type_kind_name(col->kind)));
+    }
+}
+
+char const *entity_store(ptr entity, db_t *db, int def_ix)
+{
+    void        *data = get_p(entity, entity);
+    serial      *id = &((entity_t *) data)->id;
+    size_t       cp = temp_save();
+    PGresult    *res;
+    table_def_t *def = db->schema.tables.items + def_ix;
+    sb_t         sql = { 0 };
+    cstrs        values = { 0 };
+
+    // trace("Storing ID %zu type " SL, entity.ptr.value, SLARG(def->name));
+
+    if (id->ok) {
+        sb_printf(&sql, "UPDATE sweattrails." SL " SET ", SLARG(def->name));
+        dynarr_foreach(column_def_t, col, &def->columns)
+        {
+            if (slice_eq(col->name, C("id"))) {
+                continue;
+            }
+            if (!must_include(col)) {
+                continue;
+            }
+            if (values.len > 0) {
+                sb_append_cstr(&sql, ", ");
+            }
+            sb_printf(&sql, SL " = $%zu::" SL, SLARG(col->name), values.len + 1, SLARG(sql_type_sql(col->type)));
+            assign_parameter(entity, &db->schema, col, &values);
+        }
+        sb_printf(&sql, " WHERE id = $%zu RETURNING id", values.len);
+        dynarr_append(&values, temp_sprintf("%u", id->value));
+    } else {
+        sb_printf(&sql, "INSERT INTO sweattrails." SL " ( ", SLARG(def->name));
+        dynarr_foreach(column_def_t, col, &def->columns)
+        {
+            if (slice_eq(col->name, C("id"))) {
+                continue;
+            }
+            if (!must_include(col)) {
+                continue;
+            }
+            if (values.len > 0) {
+                sb_append_cstr(&sql, ", ");
+            }
+            sb_append(&sql, col->name);
+            assign_parameter(entity, &db->schema, col, &values);
+        }
+        sb_append_cstr(&sql, " ) VALUES ( ");
+        for (size_t ix = 0; ix < values.len; ++ix) {
+            if (ix > 0) {
+                sb_append_cstr(&sql, ", ");
+            }
+            sb_printf(&sql, "$%zu", ix + 1);
+        }
+        sb_append_cstr(&sql, " ) RETURNING id");
+    }
+    // trace("SQL: " SL, SLARG(sql));
+    //    for (size_t ix = 0; ix < values.len; ++ix) {
+    //        trace("value[%zu]: %s", ix + 1, values.items[ix]);
+    //    }
+    res = PQexecParams(db->conn, sql.items, values.len, NULL, (char const *const *) values.items, NULL, NULL, 0);
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        sb_t msg = sb_format(SL "_store() failed: %s", SLARG(def->name), PQerrorMessage(db->conn));
+        trace("PQ error: " SL, SLARG(msg));
+        PQclear(res);
+        PQfinish(db->conn);
+        return msg.items;
+    }
+    assert(atoi(PQcmdTuples(res)) == 1);
+    int returned_id = atoi(PQgetvalue(res, 0, 0));
+    if (id->ok) {
+        assert(id->value == returned_id);
+    } else {
+        *(id) = OPTVAL(int, returned_id);
+        // trace("ID: %zu %d %d", entity.ptr.value, get_p(entity, entity)->id.ok, get_p(entity, entity)->id.value);
+    }
+    PQclear(res);
+    sb_free(&sql);
+    dynarr_free(&values);
+    temp_rewind(cp);
+    return NULL;
+}
+
+char const *record_store(ptr record, db_t *db)
+{
+    return entity_store(record, db, RECORD_DEF);
+}
+
+char const *session_store(ptr session, db_t *db)
+{
+    char const *ret = entity_store(session, db, SESSION_DEF);
+    if (ret == NULL) {
+        session_t *s = get_p(session, session);
+        dynarr_foreach(nodeptr, r, &s->records)
+        {
+            ptr         record = make_ptr(session, *r);
+            char const *ret = record_store(record, db);
+            if (ret != NULL) {
+                break;
+            }
+        }
+        trace("Stored session nodeptr %zu with psql id %d and %zu records", session.ptr.value, s->id.value, s->records.len);
+    }
+    return ret;
+}
+
 char const *activity_store(ptr activity, db_t *db)
 {
-    (void) activity;
-    (void) db;
-    return NULL;
+    size_t cp = temp_save();
+    allocator_push(&temp_allocator);
+    char const *ret = entity_store(activity, db, ACTIVITY_DEF);
+    if (ret == NULL) {
+        activity_t *a = get_p(activity, activity);
+        dynarr_foreach(nodeptr, s, &a->sessions)
+        {
+            ptr         session = make_ptr(activity, *s);
+            char const *ret = session_store(session, db);
+            if (ret != NULL) {
+                break;
+            }
+        }
+        trace("Stored activity nodeptr %zu with psql id %d and %zu sessions", activity.ptr.value, a->id.value, a->sessions.len);
+    }
+    allocator_pop();
+    temp_rewind(cp);
+    return ret;
 }
 
 typedef enum _gui_state {
@@ -496,6 +741,7 @@ typedef struct _gui {
     int                    screen_width;
     int                    screen_height;
     sweattrails_entities_t entities;
+    nodeptrs               activities;
     Font                   font;
     gui_state_t            state;
     db_t                   db;
@@ -508,7 +754,9 @@ typedef struct _gui {
             Texture2D graph_texture;
         } display_state;
         struct {
-            uint32_t cur_y;
+            uint32_t top;
+            uint32_t cur;
+            uint32_t bottom;
             nodeptr  current_activity;
         } list_state;
     } s;
@@ -520,10 +768,33 @@ void gui_leave_state(gui_t *gui)
     case GUIState_Display:
         UnloadTexture(gui->s.display_state.map_texture);
         UnloadTexture(gui->s.display_state.graph_texture);
+        break;
     default:
         break;
     }
     memset(&gui->s, 0, sizeof(gui->s));
+}
+
+void gui_display_activity(gui_t *gui, nodeptr activity)
+{
+    gui->state = GUIState_Display;
+    gui->s.display_state.activity = activity;
+    ptr        a = { .entities = &gui->entities, .ptr = activity };
+    ptr        s = make_ptr(a, gui->entities.items[activity.value].activity.sessions.items[0]);
+    session_t *session = &gui->entities.items[s.ptr.value].session;
+    int        map_height = 0;
+    if (session->has_position_data) {
+        Image const map_img = session_map_image(s);
+        gui->s.display_state.map_texture = LoadTextureFromImage(map_img);
+        map_height = map_img.height;
+        trace("map_img.height: %d", map_img.height);
+        trace("screenHeight: %d", gui->screen_height);
+        trace("screenHeight - map_img.height %d", gui->screen_height - map_img.height);
+        UnloadImage(map_img);
+    }
+    Image const graph_img = session_graph_image(s, gui->screen_width - 40, gui->screen_height - map_height - 60);
+    gui->s.display_state.graph_texture = LoadTextureFromImage(graph_img);
+    UnloadImage(graph_img);
 }
 
 void gui_render_import_state(gui_t *gui)
@@ -595,36 +866,52 @@ void gui_render_display_state(gui_t *gui)
 
 void gui_render_list_state(gui_t *gui)
 {
-    if (gui->s.list_state.cur_y == 0) {
-        gui->s.list_state.cur_y = 20;
-    }
-    float x = 20, y = 20;
+    float    x = 20, y = 20;
+    uint32_t row = 0;
     for (size_t ix = 0; ix < gui->entities.len; ++ix) {
         sweattrails_entity_t *e = gui->entities.items + ix;
         if (e->type != EntityType_activity) {
             continue;
         }
-        struct tm             st;
+
         sweattrails_entity_t *s = gui->entities.items + e->activity.sessions.items[0].value;
         time_t                st64 = (time_t) e->activity.start_time;
-        localtime_r(&st64, &st);
-        size_t      cp = temp_save();
-        char const *txt = temp_sprintf("%02d-%02d-%04d  %02d:%02d  " SL, st.tm_mday, st.tm_mon, st.tm_year, st.tm_hour, st.tm_min, SLARG(s->session.description));
+        struct tm            *st = localtime(&st64);
+        size_t                cp = temp_save();
+        char const           *txt = temp_sprintf(
+            "%02d-%02d-%04d  %02d:%02d  " SL " " SL,
+            st->tm_mday, st->tm_mon + 10, st->tm_year + 1900, st->tm_hour, st->tm_min, SLARG(s->session.description), SLARG(sport_name(s->session.sport)));
         DrawTextEx(
             gui->font,
             txt,
             (Vector2) { .x = x, .y = y },
             20, 1.0, RAYWHITE);
         temp_rewind(cp);
-        if (y == gui->s.list_state.cur_y) {
+        if (row == gui->s.list_state.cur) {
             gui->s.list_state.current_activity = nodeptr_ptr(ix);
             Vector2 text_size = MeasureTextEx(gui->font, txt, 20, 1.0);
             DrawLineEx((Vector2) { .x = x, .y = y + text_size.y + 2 }, (Vector2) { .x = x + text_size.x, .y = y + text_size.y + 2 }, 3.0, RAYWHITE);
         }
         y += 20;
-        if (y > 800) {
+        gui->s.list_state.bottom = row;
+        if (++row > 30) {
             break;
         }
+    }
+}
+
+void gui_list_state_input(gui_t *gui)
+{
+    if (IsKeyPressed(KEY_ENTER)) {
+        nodeptr activity = gui->s.list_state.current_activity;
+        gui_leave_state(gui);
+        gui_display_activity(gui, activity);
+    }
+    if (IsKeyPressed(KEY_DOWN) && gui->s.list_state.cur < gui->s.list_state.bottom) {
+        ++gui->s.list_state.cur;
+    }
+    if (IsKeyPressed(KEY_UP) && gui->s.list_state.cur > gui->s.list_state.top) {
+        --gui->s.list_state.cur;
     }
 }
 
@@ -655,6 +942,13 @@ void gui_run(gui_t *gui)
             break;
         }
         EndDrawing();
+        switch (gui->state) {
+        case GUIState_List:
+            gui_list_state_input(gui);
+            break;
+        default:
+            break;
+        }
         frame += 1;
     }
     (void) frame;
@@ -675,19 +969,19 @@ static app_description_t app_descr = {
             .cardinality = COC_Set,
             .type = COT_Boolean,
         },
+        {
+            .longopt = "trace",
+            .option = 't',
+            .description = "Emit tracing/debug output",
+            .value_required = false,
+            .cardinality = COC_Set,
+            .type = COT_Boolean,
+        },
         /*
                 {
                     .longopt = "list",
                     .option = 'l',
                     .description = "Display intermediate listings",
-                    .value_required = false,
-                    .cardinality = COC_Set,
-                    .type = COT_Boolean,
-                },
-                {
-                    .longopt = "trace",
-                    .option = 't',
-                    .description = "Emit tracing/debug output",
                     .value_required = false,
                     .cardinality = COC_Set,
                     .type = COT_Boolean,
@@ -707,14 +1001,14 @@ static app_description_t app_descr = {
 int main(int argc, char const **argv)
 {
     parse_cmdline_args(&app_descr, argc, argv);
+    do_trace = cmdline_is_set("trace");
     db_t db = db_make(
         C("sweattrails"),
         C("sweattrails"),
         C(""),
         C("localhost"),
         5432);
-    table_defs_t schema = sweattrails_init_schema(&db);
-    (void) schema;
+    sweattrails_init_schema(&db);
     // read_fit_file(C(argv[1]));
 
     gui_t gui = { 0 };

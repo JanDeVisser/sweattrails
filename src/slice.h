@@ -80,6 +80,16 @@ static allocator_t stdc_allocator = {
     .prev_allocator = NULL,
 };
 
+void *temp_allocator_alloc(allocator_t *alloc, size_t size);
+
+static allocator_t temp_allocator = {
+    .alloc = temp_allocator_alloc,
+    .realloc = NULL,
+    .free = NULL,
+    .destroy = NULL,
+    .prev_allocator = NULL,
+};
+
 static allocator_t *current_allocator = &stdc_allocator;
 
 void  allocator_push(allocator_t *alloc);
@@ -341,9 +351,9 @@ char const *temp_slice_to_cstr(slice_t slice);
 #ifndef SLICE_IMPLEMENTED
 #define SLICE_IMPLEMENTED
 
-bool          do_trace = false;
-static size_t temp_size = 0;
-static char   temp_buffer[TEMP_CAPACITY] = { 0 };
+bool                        do_trace = false;
+_Thread_local static size_t temp_size = 0;
+_Thread_local static char   temp_buffer[TEMP_CAPACITY] = { 0 };
 nodeptr nullptr = { 0 };
 
 intptr_t align_at(intptr_t alignment, intptr_t bytes)
@@ -377,6 +387,14 @@ void stdc_free(allocator_t *alloc, void *ptr)
 {
     (void) alloc;
     free(ptr);
+}
+
+void *temp_allocator_alloc(allocator_t *alloc, size_t size)
+{
+    (void) alloc;
+    (void) temp_allocator;
+    void *ret = temp_alloc(size);
+    return ret;
 }
 
 void allocator_push(allocator_t *alloc)
