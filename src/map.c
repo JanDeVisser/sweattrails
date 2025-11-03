@@ -1,6 +1,6 @@
+#include <curl/curl.h>
 #include <errno.h>
 #include <math.h>
-#include <curl/curl.h>
 #include <stdlib.h>
 
 #include "da.h"
@@ -138,10 +138,10 @@ map_res tile_get_map(tile_t this)
     size_t      cp = temp_save();
     char const *url = temp_sprintf("https://tile.openstreetmap.org/%u/%u/%u.png", this.zoom, this.x, this.y);
     trace("Retrieving map %s", url);
-    sb_t        map = { 0 };
-    CURL       *curl_handle = curl_easy_init();
+    sb_t  map = { 0 };
+    CURL *curl_handle = curl_easy_init();
     if (curl_handle == NULL) {
-	trace("Error initializing cURL");
+        trace("Error initializing cURL");
         ret = RESERR(map_res, -1);
         goto exit;
     }
@@ -151,7 +151,7 @@ map_res tile_get_map(tile_t this)
     curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, &map);
     CURLcode res = curl_easy_perform(curl_handle);
     if (res != CURLE_OK) {
-	trace("Error downloading map: CURLcode: %s", curl_easy_strerror(res));
+        trace("Error downloading map: CURLcode: %s", curl_easy_strerror(res));
         ret = RESERR(map_res, (int) res);
         goto exit;
     }
@@ -182,12 +182,12 @@ opt_map_res tile_get_cached_map(tile_t this)
     opt_map_res ret = { 0 };
     path_t      fname = tile_get_file_name(this);
     if (!path_exists(fname)) {
-	trace("Cache file " SL " does not exist", SLARG(fname.path));
+        trace("Cache file " SL " does not exist", SLARG(fname.path));
         goto exit;
-    }        
-    opt_sb_t    map_maybe = slurp_file(sb_as_slice(fname.path));
+    }
+    opt_sb_t map_maybe = slurp_file(sb_as_slice(fname.path));
     if (!map_maybe.ok) {
-	trace("Error reading cache file " SL, SLARG(fname.path));
+        trace("Error reading cache file " SL, SLARG(fname.path));
         ret = OPTVAL(map_res, RESERR(map_res, -1));
         goto exit;
     }
@@ -224,7 +224,7 @@ atlas_t atlas_for_box(box_t box, uint8_t width, uint8_t height)
     while (zoom > 0) {
         tile_t mid_tile = tile_for_coordinates(mid, zoom);
         box_t  tbox = tile_box(mid_tile);
-	printf("zoom: %d tbox: (%f,%f)x(%f,%f)\n", zoom, tbox.ne.lat, tbox.ne.lon, tbox.sw.lat, tbox.sw.lon);
+        printf("zoom: %d tbox: (%f,%f)x(%f,%f)\n", zoom, tbox.ne.lat, tbox.ne.lon, tbox.sw.lat, tbox.sw.lon);
         if (box_width(tbox) > box_width(box) * 1.1 && box_height(tbox) > box_height(box) * 1.1) {
             zoom += min_dim - 1;
             tile_t t = tile_for_coordinates(mid, zoom);

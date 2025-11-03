@@ -191,7 +191,7 @@ int main(int argc, char **argv)
         || fit_sources_updated || schema_updated                                                                            \
         || /* || profile_updated || */ nob_needs_rebuild(BUILD_DIR #SRC ".o", sources, sizeof(sources) / sizeof(char *))) { \
         cmd_append(&cmd, cc, "-Wall", "-Wextra",                                                                            \
-            "-I/opt/homebrew/include", "-I../fitsdk", "-I/opt/homebrew/include/postgresql",                              \
+            "-I/opt/homebrew/include", "-I../fitsdk", "-I/opt/homebrew/include/postgresql",                                 \
             "-c", "-g", "-o", BUILD_DIR #SRC ".o", SRC_DIR #SRC ".c");                                                      \
         if (!cmd_run(&cmd)) {                                                                                               \
             return 1;                                                                                                       \

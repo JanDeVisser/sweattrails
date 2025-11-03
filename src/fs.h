@@ -319,7 +319,7 @@ int path_del(path_t path)
     char const *c_str = temp_slice_to_cstr(sb_as_slice(path.path));
     int         ret = 0;
     if (unlink(c_str) != 0) {
-	printf("deleting " SL " failed: %s\n", SLARG(path.path), strerror(errno));
+        printf("deleting " SL " failed: %s\n", SLARG(path.path), strerror(errno));
         ret = errno;
     }
     temp_rewind(cp);
@@ -332,7 +332,7 @@ int path_rmdir(path_t path)
     char const *c_str = temp_slice_to_cstr(sb_as_slice(path.path));
     int         ret = 0;
     if (rmdir(c_str) != 0) {
-	printf("rmdir(`" SL "`) failed: %s\n", SLARG(path.path), strerror(errno));
+        printf("rmdir(`" SL "`) failed: %s\n", SLARG(path.path), strerror(errno));
         ret = errno;
     }
     temp_rewind(cp);

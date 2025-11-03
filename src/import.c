@@ -25,7 +25,7 @@ import_t import_init(db_t *db, sweattrails_entities_t *entities, bool rebuild)
 
     path_mkdirs(done);
     if (rebuild) {
-	printf("Reloading all .fit files\n");
+        printf("Reloading all .fit files\n");
         assert(path_deltree(inbox) == 0);
         assert(path_rename(done, inbox) == 0);
     }
@@ -70,14 +70,14 @@ bool import_file(import_t *this, path_t inbox_path)
     db_begin(this->db);
     char const *err = activity_store(activity, this->db);
     if (err != NULL) {
-	db_rollback(this->db);
+        db_rollback(this->db);
         dynarr_append_s(
             slice_pair_t,
             &this->errors,
             .key = sb_as_slice(sb_make(sb_as_slice(inbox_path.path))),
             .value = sb_as_slice(sb_make_cstr(err)));
         path_t err_file = path_extend(this->errors_d, filename);
-	path_replace_extension(&err_file, C(".fit"));
+        path_replace_extension(&err_file, C(".fit"));
         path_t error_path = path_extend(this->errors_d, filename);
         assert(path_rename(inbox_path, error_path));
         path_free(&error_path);
@@ -110,8 +110,8 @@ void *import_run(void *import)
                 if (import_file(this, *p)) {
                     ++this->total_imported;
                 } else {
-		    ++this->total_errors;
-		}                    
+                    ++this->total_errors;
+                }
             }
         }
         this->import_status.status = ImportStatus_Idle;

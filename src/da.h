@@ -39,7 +39,7 @@ typedef DA(opt_slice_t) opt_slices_t;
 typedef DA(slice_pair_t) slice_pairs_t;
 typedef DA(uint64_t) uint64s;
 typedef DA(nodeptr) nodeptrs;
-typedef char * cstr;
+typedef char *cstr;
 typedef DA(cstr) cstrs;
 OPTDEF(nodeptrs);
 

@@ -143,7 +143,7 @@ typedef struct _import {
     } import_status;
 } import_t;
 
-slice_t  sport_name(FIT_SPORT sport);
+slice_t sport_name(FIT_SPORT sport);
 
 import_t import_init(db_t *db, sweattrails_entities_t *entities, bool rebuild);
 void     import_free(import_t *this);

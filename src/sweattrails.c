@@ -298,7 +298,7 @@ Image session_graph_image(ptr this, uint32_t width, uint32_t height)
     float     prev_speed = height_f - record->speed * dspeed;
     float     prev_power = (dpower > 0) ? height_f - record->power * dpower : 0.0;
     for (size_t x = 1; x < width; ++x) {
-        size_t    rec_ix = x * session->records.len / width;
+        size_t rec_ix = x * session->records.len / width;
         record = get_p(record, make_ptr(this, session->records.items[rec_ix]));
 
         float alt_y = height_f - (record->elevation - session->min_elevation) * dalt;
@@ -315,7 +315,7 @@ Image session_graph_image(ptr this, uint32_t width, uint32_t height)
         ImageDrawLineV(
             &image,
             (Vector2) {
-                .x = x-1,
+                .x = x - 1,
                 .y = ceil(prev_alt),
             },
             (Vector2) {
@@ -326,7 +326,7 @@ Image session_graph_image(ptr this, uint32_t width, uint32_t height)
         ImageDrawLineV(
             &image,
             (Vector2) {
-                .x = x-1,
+                .x = x - 1,
                 .y = ceil(prev_speed),
             },
             (Vector2) {
@@ -335,15 +335,15 @@ Image session_graph_image(ptr this, uint32_t width, uint32_t height)
             },
             GREEN);
         if (dpower > 0) {
-	    float power_y = (dpower > 0) ? height_f - record->power * dpower : 0.0;
+            float power_y = (dpower > 0) ? height_f - record->power * dpower : 0.0;
             ImageDrawLineV(
                 &image,
                 (Vector2) {
-                    .x = x-1,
+                    .x = x - 1,
                     .y = prev_power,
                 },
                 (Vector2) {
-                    .x = x-1,
+                    .x = x - 1,
                     .y = power_y,
                 },
                 ORANGE);
