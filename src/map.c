@@ -1,6 +1,7 @@
 #include <curl/curl.h>
 #include <errno.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #include "da.h"
@@ -8,13 +9,34 @@
 #include "io.h"
 #include "map.h"
 
+int long2tilex(double lon, int z)
+{
+    return (int) (floor((lon + 180.0) / 360.0 * (1 << z)));
+}
+
+int lat2tiley(double lat, int z)
+{
+    double latrad = lat * M_PI / 180.0;
+    return (int) (floor((1.0 - asinh(tan(latrad)) / M_PI) / 2.0 * (1 << z)));
+}
+
+double tilex2long(int x, int z)
+{
+    return x / (double) (1 << z) * 360.0 - 180;
+}
+
+double tiley2lat(int y, int z)
+{
+    double n = M_PI - 2.0 * M_PI * y / (double) (1 << z);
+    return 180.0 / M_PI * atan(0.5 * (exp(n) - exp(-n)));
+}
+
 coordinates_t coordinates_for_tile(tile_t tile)
 {
-    float n = 1 << tile.zoom;
-    float lon_deg = (tile.x / n) * 360.0 - 180.0;
-    float lat_rad = atan(sinh(M_PI * (1.0 - 2.0 * tile.y) / n));
-    float lat_deg = (lat_rad / M_PI) * 180.0;
-    return (coordinates_t) { .lat = lat_deg, .lon = lon_deg };
+    return (coordinates_t) {
+        .lat = tiley2lat(tile.y, tile.zoom),
+        .lon = tilex2long(tile.x, tile.zoom),
+    };
 }
 
 bool coordinates_on_tile(coordinates_t this, tile_t tile)
@@ -91,11 +113,11 @@ bool box_has(box_t this, coordinates_t point)
 
 tile_t tile_for_coordinates(coordinates_t pos, uint8_t zoom)
 {
-    float    lat_rad = (pos.lat / 180.0) * M_PI;
-    float    n = 1 << zoom;
-    uint32_t xtile = (pos.lon + 180.0) / 360.0 * n;
-    uint32_t ytile = (1.0 - asinh(tan(lat_rad)) / M_PI) / 2.0 * n;
-    return (tile_t) { .zoom = zoom, .x = xtile, .y = ytile };
+    return (tile_t) {
+        .zoom = zoom,
+        .x = long2tilex(pos.lon, zoom),
+        .y = lat2tiley(pos.lat, zoom),
+    };
 }
 
 box_t tile_box(tile_t this)
@@ -220,10 +242,11 @@ atlas_t atlas_for_box(box_t box, uint8_t width, uint8_t height)
     uint8_t       min_dim = MIN(width, height);
     uint8_t       zoom = 16 - min_dim - 1;
     coordinates_t mid = box_center(box);
-    printf("init zoom: %d box: (%f,%f)x(%f,%f)\n", zoom, box.ne.lat, box.ne.lon, box.sw.lat, box.sw.lon);
+    printf("init zoom: %d box: (%f,%f)x(%f,%f) mid: (%f,%f)\n", zoom, box.ne.lat, box.ne.lon, box.sw.lat, box.sw.lon, mid.lat, mid.lon);
     while (zoom > 0) {
         tile_t mid_tile = tile_for_coordinates(mid, zoom);
-        box_t  tbox = tile_box(mid_tile);
+        printf("zoom: %d mid_tile: %d %d\n", zoom, mid_tile.x, mid_tile.y);
+        box_t tbox = tile_box(mid_tile);
         printf("zoom: %d tbox: (%f,%f)x(%f,%f)\n", zoom, tbox.ne.lat, tbox.ne.lon, tbox.sw.lat, tbox.sw.lon);
         if (box_width(tbox) > box_width(box) * 1.1 && box_height(tbox) > box_height(box) * 1.1) {
             zoom += min_dim - 1;

@@ -77,6 +77,7 @@ int main(int argc, char **argv)
     char const *script = NULL;
     bool        run_all = true;
     bool        format = false;
+    bool        build_displaymap = false;
 
     for (int ix = 1; ix < argc; ++ix) {
         if (strcmp(argv[ix], "-B") == 0) {
@@ -84,6 +85,9 @@ int main(int argc, char **argv)
         }
         if (strcmp(argv[ix], "format") == 0) {
             format = true;
+        }
+        if (strcmp(argv[ix], "map") == 0) {
+            build_displaymap = true;
         }
     }
 
@@ -183,7 +187,8 @@ int main(int argc, char **argv)
         schema_updated = true;
     }
 
-    bool sources_updated = false;
+    if (!build_displaymap) {
+        bool sources_updated = false;
 #undef S
 #define S(SRC)                                                                                                              \
     sources[0] = SRC_DIR #SRC ".c";                                                                                         \
@@ -198,12 +203,29 @@ int main(int argc, char **argv)
         }                                                                                                                   \
         sources_updated = true;                                                                                             \
     }
-    APP_SOURCES(S)
-    if (sources_updated) {
-        cmd_append(&cmd, cc, "-o", BUILD_DIR "sweattrails",
+        APP_SOURCES(S)
+        if (sources_updated) {
+            cmd_append(&cmd, cc, "-o", BUILD_DIR "sweattrails",
 #undef S
 #define S(SRC) BUILD_DIR #SRC ".o",
-            APP_SOURCES(S) "-Lbuild", "-lfit", "-lraylib", "-lcurl", "-L/opt/homebrew/lib/postgresql", "-lpq", "-lm");
+                APP_SOURCES(S) "-Lbuild", "-lfit", "-lraylib", "-lcurl", "-L/opt/homebrew/lib/postgresql", "-lpq", "-lm");
+            if (!cmd_run(&cmd)) {
+                return 1;
+            }
+        }
+
+    } else {
+        cmd_append(&cmd, cc, "-Wall", "-Wextra",
+            "-I/opt/homebrew/include", "-c", "-g", "-o", BUILD_DIR "map.o", SRC_DIR "map.c");
+        if (!cmd_run(&cmd)) {
+            return 1;
+        }
+        cmd_append(&cmd, cc, "-Wall", "-Wextra",
+            "-I/opt/homebrew/include", "-c", "-g", "-o", BUILD_DIR "displaymap.o", SRC_DIR "displaymap.c");
+        if (!cmd_run(&cmd)) {
+            return 1;
+        }
+        cmd_append(&cmd, cc, "-o", BUILD_DIR "displaymap", BUILD_DIR "displaymap.o", BUILD_DIR "map.o", "-lraylib", "-lcurl", "-lm");
         if (!cmd_run(&cmd)) {
             return 1;
         }
