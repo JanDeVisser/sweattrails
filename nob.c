@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2025, Jan de Visser <jan@finiandarcy.com>
+ *
+ * SPDX-License-Identifier: MIT
+ */
 
 #define NOB_IMPLEMENTATION
 #define NOB_STRIP_PREFIX
@@ -34,7 +39,9 @@ Nob_Cmd cmd = { 0 };
     S(sweattrails)
 
 #define APP_SOURCES(S) \
+    S(db)              \
     S(import)          \
+    S(fitimport)       \
     S(map)             \
     S(sweattrails)
 

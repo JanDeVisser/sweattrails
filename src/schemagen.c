@@ -23,6 +23,7 @@
 typedef struct _schema_column_def {
     slice_t         name;
     bool            transient;
+    bool            optional;
     sql_type_kind_t kind;
     bool            pk;
     union {
@@ -235,6 +236,10 @@ void parse_tables(json_t *json, nodeptr tablesptr)
                             c.transient = true;
                             continue;
                         }
+                        if (slice_eq(colattr->key, C("optional"))) {
+                            c.optional = true;
+                            continue;
+                        }
                         if (slice_eq(colattr->key, C("pk"))) {
                             c.pk = true;
                             continue;
@@ -364,12 +369,16 @@ int main(int argc, char **argv)
             switch (col->kind) {
             case SQLTypeKind_Builtin:
             case SQLTypeKind_Composite:
-                sb_printf(&out, "    " SL " " SL ";\n", SLARG(col->type), SLARG(col->name));
+                sb_append_cstr(&out, "    ");
+                if (col->optional) {
+                    sb_append_cstr(&out, "opt_");
+                }
+                sb_printf(&out, SL " " SL ";\n", SLARG(col->type), SLARG(col->name));
                 break;
             case SQLTypeKind_Reference:
                 switch (col->reference.cardinality) {
                 case Card_ManyToOne:
-                    sb_printf(&out, "    nodeptr");
+                    sb_printf(&out, "    ref_t");
                     break;
                 case Card_OneToMany:
                     sb_printf(&out, "    nodeptrs");
@@ -448,7 +457,8 @@ int main(int argc, char **argv)
                     "            .name = C(\"" SL "\"),\n"
                     "            .kind = SQLTypeKind_" SL ",\n"
                     "            .offset = offsetof(" SL ", " SL "),\n",
-                    SLARG(col->name), SLARG(sql_type_kind_name(col->kind)), SLARG(typ->c_type), SLARG(col->name));
+                    SLARG(col->name), SLARG(sql_type_kind_name(col->kind)),
+                    SLARG(typ->c_type), SLARG(col->name));
                 switch (col->kind) {
                 case SQLTypeKind_Builtin: {
                     if (col->transient) {
@@ -502,30 +512,48 @@ int main(int argc, char **argv)
                 "            column_def_t,\n"
                 "            &table.columns,\n"
                 "            .name = C(\"" SL "\"),\n"
-                "            .kind = SQLTypeKind_" SL ",\n"
                 "            .offset = offsetof(" SL "_t, " SL "),\n",
-                SLARG(col->name), SLARG(sql_type_kind_name(col->kind)), SLARG(tbl->name), SLARG(col->name));
+                SLARG(col->name), SLARG(tbl->name), SLARG(col->name));
+            if (!col->optional) {
+                sb_printf(&out,
+                    "            .kind = SQLTypeKind_" SL ",\n",
+                    SLARG(sql_type_kind_name(col->kind)));
+            } else {
+                sb_append_cstr(&out,
+                    "            .kind = SQLTypeKind_Optional,\n");
+            }
             switch (col->kind) {
             case SQLTypeKind_Builtin: {
                 if (col->transient) {
                     continue;
                 }
                 sql_type_t sql_type_code = MUSTOPT(sql_type_t, sql_type_from_c_type(col->type));
-                sb_printf(&out, "            .type = SQLType_" SL ");\n",
-                    SLARG(sql_type_name(sql_type_code)));
+                if (col->optional) {
+                    sb_printf(&out,
+                        "            .optional = {\n"
+                        "                .type = SQLType_" SL ",\n"
+                        "                .value_offset = offsetof(opt_" SL ", value),\n"
+                        "            });\n",
+                        SLARG(sql_type_name(sql_type_code)), SLARG(col->type));
+                } else {
+                    sb_printf(&out, "            .type = SQLType_" SL ");\n",
+                        SLARG(sql_type_name(sql_type_code)));
+                }
             } break;
             case SQLTypeKind_Composite:
                 sb_printf(&out,
-                        "            .composite = schema_find_type_by_c_type(&db->schema, C(\"" SL "\")));\n",
+                    "            .composite = schema_find_type_by_c_type(&db->schema, C(\"" SL "\")));\n",
                     SLARG(col->type));
                 break;
             case SQLTypeKind_Reference:
                 sb_printf(&out,
                     "           .reference.cardinality = " SL ",\n"
                     "           .reference.references = C(\"" SL "\"),\n"
+                    "           .reference.reference_tag = EntityType_" SL ",\n"
                     "           .reference.fk_col = C(\"" SL "\")\n"
                     "            );\n",
                     SLARG(cardinality_name(col->reference.cardinality)),
+                    SLARG(col->reference.references),
                     SLARG(col->reference.references),
                     SLARG(col->reference.fk_col));
                 break;

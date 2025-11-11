@@ -1,4 +1,9 @@
-#include <math.h>
+/*
+ * Copyright (c) 2025, Jan de Visser <jan@finiandarcy.com>
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

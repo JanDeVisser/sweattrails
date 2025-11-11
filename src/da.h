@@ -98,6 +98,14 @@ OPTDEF(nodeptrs);
             (__deleted);                                                \
         })
 
+#define dynarr_sort(arr, cmp, thunk)                     \
+    do {                                                 \
+        void  *__base = (arr)->items;                    \
+        size_t __nel = (arr)->len;                       \
+        size_t __width = sizeof((arr)->items[0]);        \
+        qsort_r(__base, __nel, __width, (thunk), (cmp)); \
+    } while (0)
+
 #define dynarr_clear(arr) generic_da_clear(GENDA(arr))
 #define dynarr_free(arr) generic_da_free(GENDA(arr))
 

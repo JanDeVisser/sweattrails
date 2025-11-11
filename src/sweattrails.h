@@ -89,6 +89,18 @@
     S(FIT_SPORT_DANCE, "DANCE")                                     \
     S(FIT_SPORT_JUMP_ROPE, "JUMP ROPE")
 
+#define FIT_EPOCH_OFFSET 631065600u
+
+#define get_entity(T, entities, ix)                                 \
+    (                                                               \
+        {                                                           \
+            sweattrails_entities_t *__entities = (entities);        \
+            size_t                  __ix = (ix).value;              \
+            sweattrails_entity_t   *__e = __entities->items + __ix; \
+            assert(__e->type == EntityType_##T);                    \
+            ((T##_t *) &(__e->T));                                  \
+        })
+
 typedef struct _fat_pointer {
     sweattrails_entities_t *entities;
     nodeptr                 ptr;
@@ -143,14 +155,29 @@ typedef struct _import {
     } import_status;
 } import_t;
 
-slice_t sport_name(FIT_SPORT sport);
+typedef struct _id_map {
+    int     id;
+    nodeptr ptr;
+} id_map_t;
 
-import_t import_init(db_t *db, sweattrails_entities_t *entities, bool rebuild);
-void     import_free(import_t *this);
-void     import_start(import_t *this);
-void     import_restart(import_t *this);
+typedef DA(id_map_t) id_maps_t;
 
-ptr         activity_import(sweattrails_entities_t *entities, path_t inbox_path);
-char const *activity_store(ptr activity, db_t *db);
+typedef struct _time_of_day {
+    uint8_t  hour;
+    uint8_t  minute;
+    uint8_t  second;
+    uint16_t millis;
+} time_of_day_t;
+
+slice_t       sport_name(FIT_SPORT sport);
+import_t      import_init(db_t *db, sweattrails_entities_t *entities, bool rebuild);
+void          import_free(import_t *this);
+void          import_start(import_t *this);
+void          import_restart(import_t *this);
+ptr           activity_import(sweattrails_entities_t *entities, path_t inbox_path);
+char const   *activity_store(ptr activity, db_t *db);
+time_of_day_t time_of_day_from_float(float t);
+nodeptr       read_fit_file(sweattrails_entities_t *entities, slice_t file_name);
+bool          reload_everything(sweattrails_entities_t *repo, db_t *db);
 
 #endif /* __SWEATTRAILS_H__ */

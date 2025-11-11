@@ -16,15 +16,16 @@
 
 typedef opt_int serial;
 
-#define SQLTYPES(S)                     \
-    S(Bool, boolean, bool)              \
-    S(Int32, integer, int32_t)          \
-    S(Serial, serial, serial)           \
-    S(UInt32, bigint, uint32_t)         \
-    S(Float, real, float)               \
-    S(Double, double precision, double) \
-    S(String, text, slice_t)            \
-    S(Point, point, Vector2)            \
+#define SQLTYPES(S)                      \
+    S(Bool, boolean, bool)               \
+    S(Int32, integer, int32_t)           \
+    S(Serial, serial, serial)            \
+    S(UInt32, bigint, uint32_t)          \
+    S(Float, real, float)                \
+    S(Double, double precision, double)  \
+    S(String, text, slice_t)             \
+    S(Point, point, Vector2)             \
+    S(Coordinates, point, coordinates_t) \
     S(Box, box, box_t)
 
 typedef enum _sql_type {
@@ -38,6 +39,7 @@ OPTDEF(sql_type_t);
 
 #define SQLTYPEKINDS(S) \
     S(Builtin)          \
+    S(Optional)         \
     S(Composite)        \
     S(Reference)
 
@@ -60,17 +62,29 @@ typedef enum _cardinality {
 #undef S
 } cardinality_t;
 
+typedef struct _ref {
+    int     type;
+    nodeptr db_id;
+    nodeptr entity_id;
+} ref_t;
+
+typedef DA(ref_t) refs_t;
+
 typedef struct _column_def {
-    bool            optional;
     slice_t         name;
     sql_type_kind_t kind;
     off_t           offset;
     union {
         sql_type_t type;
-        nodeptr    composite;
+        struct {
+            sql_type_t type;
+            off_t      value_offset;
+        } optional;
+        nodeptr composite;
         struct {
             cardinality_t cardinality;
             slice_t       references;
+            int           reference_tag;
             slice_t       fk_col;
         } reference;
     };
@@ -117,6 +131,10 @@ typedef struct _db {
 } db_t;
 
 OPTDEF(db_result_t);
+
+#define ref(T, db_id, ent_id) ((ref_t) { .type = EntityType_##T, .db_id = nodeptr_ptr((db_id)), .entity_id = nodeptr((ent_id)) })
+#define ref_db(T, db_id) ((ref_t) { .type = EntityType_##T, .db_id = nodeptr_ptr((db_id)), .entity_id = nullptr })
+#define ref_entity(T, ent_id) ((ref_t) { .type = EntityType_##T, .db_id = nullptr, .entity_id = nodeptr_ptr((ent_id)) })
 
 #endif /* ZORRO_TYPES_ONLY */
 

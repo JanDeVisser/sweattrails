@@ -4,16 +4,6 @@
     "includes" : [
 	"map.h"
     ],
-    "types": [
-	{
-	    "sql_type": "coordinates",
-	    "c_type": "coordinates_t",
-	    "composite": [
-		{ "type": "float", "name": "lat" },
-		{ "type": "float", "name": "lon" }
-	    ]
-	}
-    ],
     "tables": [
 	{
 	    "key": "ACTIVITY",
@@ -34,8 +24,8 @@
 	    "columns": [
 		{ "type": "serial",   "name": "id", "pk": true },
 		{ "ref": "activity",  "name": "activity_id", "cardinality": "n-1" },
+		{ "ref": "record",    "name": "records", "cardinality": "1-n", "fk_column": "session_id"},
 		{ "ref": "lap",       "name": "laps", "cardinality": "1-n", "fk_column": "session_id"},
-		{ "type": "bool",     "name": "has_position_data" },
 		{ "type": "uint32_t", "name": "sport" },
 		{ "type": "uint32_t", "name": "sub_sport" },
 		{ "type": "uint32_t", "name": "timestamp" },
@@ -56,9 +46,8 @@
 		{ "type": "uint32_t", "name": "max_hr" },
 		{ "type": "uint32_t", "name": "avg_hr" },
 		{ "type": "Vector2",  "name": "time_range" },
-		{ "type": "box_t",    "name": "route_area" },
-		{ "type": "atlas_t",  "name": "atlas", "transient": true},
-		{ "type": "uint32_t", "name": "num_records", "transient": true},
+		{ "type": "box_t",    "name": "route_area", "optional": true },
+		{ "type": "atlas_t",  "name": "atlas", "transient": true },
 	    ]
 	},
 	{
@@ -87,7 +76,7 @@
 		{ "type": "uint32_t", "name": "max_hr" },
 		{ "type": "uint32_t", "name": "avg_hr" },
 		{ "type": "Vector2",  "name": "time_range" },
-		{ "type": "box_t",    "name": "route_area" },
+		{ "type": "box_t",    "name": "route_area", "optional": true},
 		{ "type": "atlas_t",  "name": "atlas", "transient": true},
 	    ]
 	},
@@ -97,9 +86,9 @@
 	    "name": "record",
 	    "columns": [
 		{ "type": "serial",        "name": "id", "pk": true },
-		{ "ref": "lap",            "name": "lap_id", "cardinality": "n-1" },
+		{ "ref": "session",        "name": "session_id", "cardinality": "n-1" },
 		{ "type": "uint32_t",      "name": "timestamp" },
-		{ "type": "coordinates_t", "name": "position" },
+		{ "type": "coordinates_t", "name": "position", "optional": true},
 		{ "type": "float",         "name": "elevation" },
 		{ "type": "float",         "name": "distance" },
 		{ "type": "float",         "name": "power" },

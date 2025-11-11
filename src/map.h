@@ -12,10 +12,14 @@ typedef struct _coordinates {
     float lon;
 } coordinates_t;
 
+OPTDEF(coordinates_t);
+
 typedef struct _box {
     coordinates_t sw;
     coordinates_t ne;
 } box_t;
+
+OPTDEF(box_t);
 
 typedef struct _tile {
     uint32_t x;
@@ -41,12 +45,14 @@ typedef struct _atlas {
 coordinates_t coordinates_for_tile(tile_t tile);
 bool          coordinates_on_tile(coordinates_t this, tile_t tile);
 bool          coordinates_in_box(coordinates_t this, box_t box);
+box_t         box_from_coordinates(coordinates_t p1, coordinates_t p2);
 box_t         box_for_tile(tile_t tile);
 coordinates_t box_center(box_t this);
 float         box_width(box_t this);
 float         box_height(box_t this);
 bool          box_contains(box_t this, box_t other);
 bool          box_has(box_t this, coordinates_t point);
+box_t         box_extend(box_t this, coordinates_t point);
 tile_t        tile_for_coordinates(coordinates_t pos, uint8_t zoom);
 box_t         tile_box(tile_t this);
 map_res       tile_get_map(tile_t this);

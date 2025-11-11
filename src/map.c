@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2025, Jan de Visser <jan@finiandarcy.com>
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+// https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
+
 #include <curl/curl.h>
 #include <errno.h>
 #include <math.h>
@@ -59,6 +67,11 @@ bool coordinates_in_box(coordinates_t this, box_t box)
     return box_has(box, this);
 }
 
+box_t box_from_coordinates(coordinates_t p1, coordinates_t p2)
+{
+    return box_extend(box_extend((box_t) { 0 }, p1), p2);
+}
+
 box_t box_for_tile(tile_t tile)
 {
     return tile_box(tile);
@@ -109,6 +122,34 @@ bool box_has(box_t this, coordinates_t point)
         && point.lon >= this.sw.lon
         && point.lat <= this.ne.lat
         && point.lon <= this.ne.lon;
+}
+
+box_t box_extend(box_t this, coordinates_t point)
+{
+    box_t empty = { 0 };
+    if (memcmp(&this, &empty, sizeof(box_t)) == 0) {
+        this = (box_t) {
+            .sw = (coordinates_t) { .lon = 200.0, .lat = 100.0 },
+            .ne = (coordinates_t) { .lon = -200.0, .lat = -100.0 },
+        };
+    }
+    assert(point.lon >= -180.0 && point.lon < 180.0);
+    assert(point.lat >= -90.0 && point.lat < 90.0);
+    if (point.lon < this.sw.lon) {
+        this.sw.lon = point.lon;
+    }
+    if (point.lat < this.sw.lat) {
+        this.sw.lat = point.lat;
+    }
+    if (point.lon > this.ne.lon) {
+        this.ne.lon = point.lon;
+    }
+    if (point.lat > this.ne.lat) {
+        this.ne.lat = point.lat;
+    }
+    assert(this.sw.lon <= this.ne.lon);
+    assert(this.sw.lat <= this.ne.lat);
+    return this;
 }
 
 tile_t tile_for_coordinates(coordinates_t pos, uint8_t zoom)
@@ -242,12 +283,12 @@ atlas_t atlas_for_box(box_t box, uint8_t width, uint8_t height)
     uint8_t       min_dim = MIN(width, height);
     uint8_t       zoom = 16 - min_dim - 1;
     coordinates_t mid = box_center(box);
-    printf("init zoom: %d box: (%f,%f)x(%f,%f) mid: (%f,%f)\n", zoom, box.ne.lat, box.ne.lon, box.sw.lat, box.sw.lon, mid.lat, mid.lon);
+    printf("init zoom: %d box: (%f,%f)x(%f,%f) mid: (%f,%f)\n", zoom, box.sw.lon, box.sw.lat, box.ne.lon, box.ne.lat, mid.lon, mid.lat);
     while (zoom > 0) {
         tile_t mid_tile = tile_for_coordinates(mid, zoom);
         printf("zoom: %d mid_tile: %d %d\n", zoom, mid_tile.x, mid_tile.y);
         box_t tbox = tile_box(mid_tile);
-        printf("zoom: %d tbox: (%f,%f)x(%f,%f)\n", zoom, tbox.ne.lat, tbox.ne.lon, tbox.sw.lat, tbox.sw.lon);
+        printf("zoom: %d tbox: (%f,%f)x(%f,%f)\n", zoom, tbox.sw.lon, tbox.sw.lat, tbox.ne.lon, tbox.ne.lat);
         if (box_width(tbox) > box_width(box) * 1.1 && box_height(tbox) > box_height(box) * 1.1) {
             zoom += min_dim - 1;
             tile_t t = tile_for_coordinates(mid, zoom);
@@ -302,10 +343,11 @@ slices_t atlas_get_maps(atlas_t *this)
     }
     for (size_t ix = 0; ix < this->num_tiles; ++ix) {
         map_res res = tile_get_map(atlas_tile(*this, ix));
-        if (!res.ok) {
-            fatal("could not load map");
+        if (res.ok) {
+            dynarr_append(&this->maps, res.success);
+            continue;
         }
-        dynarr_append(&this->maps, res.success);
+        dynarr_append(&this->maps, C(""));
     }
     return this->maps;
 }
