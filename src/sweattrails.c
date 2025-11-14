@@ -16,12 +16,14 @@
 #define CMDLINE_IMPLEMENTATION
 #define SLICE_IMPLEMENTATION
 #define DA_IMPLEMENTATION
+#define HASH_IMPLEMENTATION
 #define FS_IMPLEMENTATION
 #define IO_IMPLEMENTATION
 #define ZORRO_IMPLEMENTATION
 #include "cmdline.h"
 #include "da.h"
 #include "fs.h"
+#include "hash.h"
 #include "io.h"
 #include "zorro.h"
 
@@ -34,7 +36,7 @@
 record_t *session_get_record(ptr session, size_t ix)
 {
     session_t *s = get_p(session, session);
-    return get_entity(record, session.entities, s->records.items[ix]);
+    return get_entity(record, session.repo, s->records.items[ix]);
 }
 
 Image session_graph_image(ptr this, uint32_t width, uint32_t height)
@@ -223,13 +225,13 @@ Image session_map_image(ptr this)
     return m;
 }
 
-ptr activity_import(sweattrails_entities_t *entities, path_t inbox_path)
+ptr activity_import(repo_t *repo, path_t inbox_path)
 {
-    nodeptr ix = read_fit_file(entities, sb_as_slice(inbox_path.path));
+    nodeptr ix = read_fit_file(repo, sb_as_slice(inbox_path.path));
     if (!ix.ok) {
         fatal("Error importing file `" SL "`", SLARG(inbox_path.path));
     }
-    return (ptr) { .entities = entities, .ptr = ix };
+    return (ptr) { .repo = repo, .ptr = ix };
 }
 
 typedef enum _gui_state {
@@ -239,14 +241,14 @@ typedef enum _gui_state {
 } gui_state_t;
 
 typedef struct _gui {
-    int                    screen_width;
-    int                    screen_height;
-    sweattrails_entities_t entities;
-    nodeptrs               activities;
-    Font                   font;
-    gui_state_t            state;
-    db_t                   db;
-    import_t               import;
+    int         screen_width;
+    int         screen_height;
+    repo_t      repo;
+    nodeptrs    activities;
+    Font        font;
+    gui_state_t state;
+    db_t        db;
+    import_t    import;
 
     union {
         struct {
@@ -280,10 +282,13 @@ void gui_display_activity(gui_t *gui, nodeptr activity)
 {
     gui->state = GUIState_Display;
     gui->s.display_state.activity = activity;
-    ptr        a = { .entities = &gui->entities, .ptr = activity };
-    ptr        s = make_ptr(a, gui->entities.items[activity.value].activity.sessions.items[0]);
-    session_t *session = get_entity(session, &gui->entities, s.ptr);
-    int        map_height = 0;
+    ptr         a = { .repo = &gui->repo, .ptr = activity };
+    activity_t *act = get_p(activity, a);
+    ptr         f = make_ptr(a, act->files.items[0]);
+    file_t     *file = get_p(file, f);
+    ptr         s = make_ptr(a, file->sessions.items[0]);
+    session_t  *session = get_p(session, s);
+    int         map_height = 0;
     if (session->route_area.ok) {
         Image const map_img = session_map_image(s);
         gui->s.display_state.map_texture = LoadTextureFromImage(map_img);
@@ -337,15 +342,16 @@ void gui_render_import_state(gui_t *gui)
 void gui_render_display_state(gui_t *gui)
 {
     assert(gui->state == GUIState_Display && gui->s.display_state.activity.ok);
-    sweattrails_entity_t *activity = gui->entities.items + gui->s.display_state.activity.value;
-    sweattrails_entity_t *session = gui->entities.items + activity->activity.sessions.items[0].value;
+    activity_t *activity = get_entity(activity, &gui->repo, gui->s.display_state.activity);
+    file_t     *file = get_entity(file, &gui->repo, activity->files.items[0]);
+    session_t  *session = get_entity(session, &gui->repo, file->sessions.items[0]);
     DrawTexture(gui->s.display_state.map_texture, 20, 20, WHITE);
     DrawTexture(gui->s.display_state.graph_texture, 20, gui->s.display_state.map_texture.height + 40, WHITE);
 
     struct tm st;
-    time_t    st64 = (time_t) activity->activity.start_time;
-    localtime_r(&st64, &st);
-    time_of_day_t t = time_of_day_from_float(session->session.elapsed_time);
+    time_t    start = (time_t) activity->start_time;
+    localtime_r(&start, &st);
+    time_of_day_t t = time_of_day_from_float(session->elapsed_time);
     size_t        cp = temp_save();
     DrawTextEx(
         gui->font,
@@ -354,7 +360,7 @@ void gui_render_display_state(gui_t *gui)
         20, 1.0, RAYWHITE);
     DrawTextEx(
         gui->font,
-        temp_sprintf("Total distance: %.3fkm", session->session.distance / 1000.0),
+        temp_sprintf("Total distance: %.3fkm", session->distance / 1000.0),
         (Vector2) { .x = gui->s.display_state.map_texture.width + 40, .y = 40 + 20 * 1.2 },
         20, 1.0, RAYWHITE);
     DrawTextEx(
@@ -369,29 +375,71 @@ void gui_render_list_state(gui_t *gui)
 {
     float    x = 20, y = 20;
     uint32_t row = 0;
-    for (size_t ix = 0; ix < gui->entities.len; ++ix) {
-        sweattrails_entity_t *e = gui->entities.items + ix;
+    size_t   cp = temp_save();
+    for (size_t ix = 0; ix < gui->repo.entities.len; ++ix) {
+        temp_rewind(cp);
+        entity_t *e = gui->repo.entities.items + ix;
         if (e->type != EntityType_activity) {
             continue;
         }
-
-        sweattrails_entity_t *s = gui->entities.items + e->activity.sessions.items[0].value;
-        time_t                st64 = (time_t) e->activity.start_time;
-        struct tm            *st = localtime(&st64);
-        size_t                cp = temp_save();
-        char const           *txt = temp_sprintf(
-            "%02d-%02d-%04d  %02d:%02d  " SL " " SL,
-            st->tm_mday, st->tm_mon + 10, st->tm_year + 1900, st->tm_hour, st->tm_min, SLARG(s->session.description), SLARG(sport_name(s->session.sport)));
+        activity_t *activity = get_entity(activity, &gui->repo, nodeptr_ptr(ix));
+        time_t      start = (time_t) activity->start_time;
+        time_t      end = (time_t) activity->end_time;
+        struct tm   tm_start;
+        localtime_r(&start, &tm_start);
+        struct tm tm_end;
+        localtime_r(&end, &tm_end);
+        char const *txt = temp_sprintf(
+            "%02d-%02d-%04d  %02d:%02d  %02d:%02d " SL,
+            tm_start.tm_mday, tm_start.tm_mon + 10, tm_start.tm_year + 1900, tm_start.tm_hour, tm_start.tm_min,
+            tm_end.tm_hour, tm_end.tm_min,
+            SLARG(activity->description));
         DrawTextEx(
             gui->font,
             txt,
             (Vector2) { .x = x, .y = y },
             20, 1.0, RAYWHITE);
-        temp_rewind(cp);
         if (row == gui->s.list_state.cur) {
             gui->s.list_state.current_activity = nodeptr_ptr(ix);
             Vector2 text_size = MeasureTextEx(gui->font, txt, 20, 1.0);
             DrawLineEx((Vector2) { .x = x, .y = y + text_size.y + 2 }, (Vector2) { .x = x + text_size.x, .y = y + text_size.y + 2 }, 3.0, RAYWHITE);
+
+            float y_right = 20, x_right = 600;
+            dynarr_foreach(nodeptr, f, &activity->files)
+            {
+                file_t *file = get_entity(file, &gui->repo, *f);
+                start = (time_t) file->start_time;
+                localtime_r(&start, &tm_start);
+                end = (time_t) file->end_time;
+                localtime_r(&end, &tm_end);
+                char const *txt = temp_sprintf(
+                    "%02d-%02d-%04d  %02d:%02d  %02d-%02d-%04d  %02d:%02d  " SL,
+                    tm_start.tm_mday, tm_start.tm_mon + 10, tm_start.tm_year + 1900, tm_start.tm_hour, tm_start.tm_min,
+                    tm_start.tm_mday, tm_start.tm_mon + 10, tm_start.tm_year + 1900, tm_end.tm_hour, tm_end.tm_min,
+                    SLARG(file->file_name));
+                DrawTextEx(
+                    gui->font,
+                    txt,
+                    (Vector2) { .x = x_right, .y = y_right },
+                    20, 1.0, RAYWHITE);
+                y_right += 20;
+                dynarr_foreach(nodeptr, s, &file->sessions)
+                {
+                    char const *txt = temp_sprintf("session#: %zu id: %zu type: %d", s - file->sessions.items, s->value, gui->repo.entities.items[s->value].type);
+                    //                    session_t *session = get_entity(session, &gui->repo, *s);
+                    //                    start = (time_t) session->start_time;
+                    //                    st = localtime(&start);
+                    //                    char const *txt = temp_sprintf(
+                    //                        "%02d-%02d-%04d  %02d:%02d  " SL,
+                    //                        tm_start.tm_mday, tm_start.tm_mon + 10, tm_start.tm_year + 1900, tm_start.tm_hour, tm_start.tm_min, SLARG(session->description));
+                    DrawTextEx(
+                        gui->font,
+                        txt,
+                        (Vector2) { .x = x_right + 40, .y = y_right },
+                        20, 1.0, RAYWHITE);
+                    y_right += 20;
+                }
+            }
         }
         y += 20;
         gui->s.list_state.bottom = row;
@@ -420,7 +468,7 @@ void gui_run(gui_t *gui)
 {
     InitWindow(gui->screen_width, gui->screen_height, "Sweattrails");
     gui->font = LoadFontEx("VictorMono-Medium.ttf", 20, NULL, 0);
-    gui->import = import_init(&gui->db, &gui->entities, cmdline_is_set("reload-all"));
+    gui->import = import_init(&gui->db, &gui->repo, cmdline_is_set("reload-all"));
     import_start(&gui->import);
 
     SetTargetFPS(60);
@@ -513,7 +561,7 @@ int main(int argc, char const **argv)
     // read_fit_file(C(argv[1]));
 
     gui_t gui = { 0 };
-    reload_everything(&gui.entities, &db);
+    reload_everything(&gui.repo, &db);
     gui.screen_width = 1550;
     gui.screen_height = 1024;
     gui.db = db;

@@ -19,6 +19,7 @@ Nob_Cmd cmd = { 0 };
 #define STB_HEADERS(S)  \
     S(slice, SLICE)     \
     S(da, DA)           \
+    S(hash, HASH)       \
     S(io, IO)           \
     S(lexer, LEXER)     \
     S(json, JSON)       \

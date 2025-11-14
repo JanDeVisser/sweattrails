@@ -91,38 +91,6 @@
 
 #define FIT_EPOCH_OFFSET 631065600u
 
-#define get_entity(T, entities, ix)                                 \
-    (                                                               \
-        {                                                           \
-            sweattrails_entities_t *__entities = (entities);        \
-            size_t                  __ix = (ix).value;              \
-            sweattrails_entity_t   *__e = __entities->items + __ix; \
-            assert(__e->type == EntityType_##T);                    \
-            ((T##_t *) &(__e->T));                                  \
-        })
-
-typedef struct _fat_pointer {
-    sweattrails_entities_t *entities;
-    nodeptr                 ptr;
-} ptr;
-
-#define get_ptr(p)                                                     \
-    (                                                                  \
-        {                                                              \
-            ptr __p = (p);                                             \
-            assert(__p.ptr.ok && (__p.ptr.value < __p.entities->len)); \
-            (__p.entities->items + __p.ptr.value);                     \
-        })
-
-#define get_p(T, ptr)                                 \
-    (                                                 \
-        {                                             \
-            sweattrails_entity_t *__e = get_ptr(ptr); \
-            (&__e->T);                                \
-        })
-
-#define make_ptr(other, ix) ((ptr) { .entities = other.entities, .ptr = ix })
-
 typedef enum _import_status {
     ImportStatus_Start,
     ImportStatus_Idle,
@@ -132,16 +100,16 @@ typedef enum _import_status {
 } import_status_t;
 
 typedef struct _import {
-    db_t                   *db;
-    sweattrails_entities_t *entities;
-    slices_t                done;
-    slice_pairs_t           errors;
-    pthread_t               thread;
-    int                     total_imported;
-    int                     total_errors;
-    path_t                  inbox_d;
-    path_t                  done_d;
-    path_t                  errors_d;
+    db_t         *db;
+    repo_t       *repo;
+    slices_t      done;
+    slice_pairs_t errors;
+    pthread_t     thread;
+    int           total_imported;
+    int           total_errors;
+    path_t        inbox_d;
+    path_t        done_d;
+    path_t        errors_d;
 
     struct import_status {
         import_status_t status;
@@ -155,13 +123,6 @@ typedef struct _import {
     } import_status;
 } import_t;
 
-typedef struct _id_map {
-    int     id;
-    nodeptr ptr;
-} id_map_t;
-
-typedef DA(id_map_t) id_maps_t;
-
 typedef struct _time_of_day {
     uint8_t  hour;
     uint8_t  minute;
@@ -170,14 +131,14 @@ typedef struct _time_of_day {
 } time_of_day_t;
 
 slice_t       sport_name(FIT_SPORT sport);
-import_t      import_init(db_t *db, sweattrails_entities_t *entities, bool rebuild);
+import_t      import_init(db_t *db, repo_t *repo, bool rebuild);
 void          import_free(import_t *this);
 void          import_start(import_t *this);
 void          import_restart(import_t *this);
-ptr           activity_import(sweattrails_entities_t *entities, path_t inbox_path);
+ptr           activity_import(repo_t *repo, path_t inbox_path);
 char const   *activity_store(ptr activity, db_t *db);
 time_of_day_t time_of_day_from_float(float t);
-nodeptr       read_fit_file(sweattrails_entities_t *entities, slice_t file_name);
-bool          reload_everything(sweattrails_entities_t *repo, db_t *db);
+nodeptr       read_fit_file(repo_t *repo, slice_t file_name);
+bool          reload_everything(repo_t *repo, db_t *db);
 
 #endif /* __SWEATTRAILS_H__ */

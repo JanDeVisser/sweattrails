@@ -14,7 +14,17 @@
 #ifndef __ZORRO_H__
 #define __ZORRO_H__
 
-typedef opt_int serial;
+typedef struct _ref {
+    int     type;
+    nodeptr db_id;
+    nodeptr entity_id;
+} ref_t;
+
+OPTDEF(ref_t);
+typedef DA(ref_t) refs_t;
+
+typedef ref_t  serial;
+typedef refs_t serials;
 
 #define SQLTYPES(S)                      \
     S(Bool, boolean, bool)               \
@@ -61,14 +71,6 @@ typedef enum _cardinality {
     CARDINALITIES(S)
 #undef S
 } cardinality_t;
-
-typedef struct _ref {
-    int     type;
-    nodeptr db_id;
-    nodeptr entity_id;
-} ref_t;
-
-typedef DA(ref_t) refs_t;
 
 typedef struct _column_def {
     slice_t         name;
@@ -132,7 +134,7 @@ typedef struct _db {
 
 OPTDEF(db_result_t);
 
-#define ref(T, db_id, ent_id) ((ref_t) { .type = EntityType_##T, .db_id = nodeptr_ptr((db_id)), .entity_id = nodeptr((ent_id)) })
+#define ref(T, db, ent_id) ((ref_t) { .type = EntityType_##T, .db_id = nodeptr_ptr((db)), .entity_id = nodeptr_ptr((ent_id)) })
 #define ref_db(T, db_id) ((ref_t) { .type = EntityType_##T, .db_id = nodeptr_ptr((db_id)), .entity_id = nullptr })
 #define ref_entity(T, ent_id) ((ref_t) { .type = EntityType_##T, .db_id = nullptr, .entity_id = nodeptr_ptr((ent_id)) })
 

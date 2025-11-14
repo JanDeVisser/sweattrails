@@ -347,19 +347,16 @@ int main(int argc, char **argv)
     }
     sb_append_char(&out, '\n');
 
-    sb_printf(
-        &out,
-        "typedef enum _" SL "_type {\n", SLARG(schema_name));
+    sb_printf(&out, "typedef enum _entity_type {\n");
     dynarr_foreach(schema_table_def_t, tbl, &schema_tables)
     {
         sb_printf(&out, "    EntityType_" SL ",\n", SLARG(tbl->name));
     }
-    sb_printf(&out,
-        "} " SL "_type_t;\n\n"
-        "typedef struct _entity {\n"
+    sb_append_cstr(&out,
+        "} entity_type_t;\n\n"
+        "typedef struct _dummy_entity {\n"
         "    serial id;\n"
-        "} entity_t;\n\n",
-        SLARG(schema_name));
+        "} dummy_entity_t;\n\n");
 
     dynarr_foreach(schema_table_def_t, tbl, &schema_tables)
     {
@@ -397,26 +394,37 @@ int main(int argc, char **argv)
             "typedef DA(" SL "_t) " SL "s_t;\n\n",
             SLARG(tbl->name), SLARG(tbl->name), SLARG(tbl->name));
     }
-    sb_printf(
+    sb_append_cstr(
         &out,
-        "typedef struct _" SL "_entity {\n"
-        "    " SL "_type_t type;\n"
+        "typedef struct _entity {\n"
+        "    entity_type_t type;\n"
+        "    unsigned int hash;\n"
         "    union {\n"
-        "        entity_t entity;\n",
-        SLARG(schema_name), SLARG(schema_name));
+        "        dummy_entity_t dummy_entity;\n");
     dynarr_foreach(schema_table_def_t, tbl, &schema_tables)
     {
         sb_printf(&out, "        " SL "_t " SL ";\n", SLARG(tbl->name), SLARG(tbl->name));
     }
-    sb_printf(&out, "    };\n} " SL "_entity_t;\n\n"
-                    "typedef DA(" SL "_entity_t) " SL "_entities_t;\n\n",
-        SLARG(schema_name), SLARG(schema_name), SLARG(schema_name));
+    sb_append_cstr(&out, "    };\n} entity_t;\n\n"
+                         "typedef DA(entity_t) entities_t;\n\n");
+    sb_append_cstr(&out,
+        "typedef struct _repo {\n"
+        "    entities_t entities;\n");
+    dynarr_foreach(schema_table_def_t, tbl, &schema_tables)
+    {
+        sb_printf(&out, "    nodeptrs " SL "s;\n", SLARG(tbl->name));
+    }
+    sb_append_cstr(
+        &out,
+        "} repo_t;\n\n"
+        "#include \"schema_common.h\"\n\n");
 
     sb_printf(&out,
         "void " SL "_init_schema(db_t *db);\n\n"
         "#endif /* __" SL "_H__ */\n\n"
         "#ifdef " SL "_IMPLEMENTATION\n"
         "#ifndef " SL "_IMPLEMENTED\n\n"
+        "#include \"schema_impl.h\"\n\n"
         "void " SL "_init_schema(db_t *db)\n"
         "{\n",
 

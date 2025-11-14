@@ -5,6 +5,7 @@
  */
 
 // #define SLICE_TEST
+#include <stddef.h>
 #if defined(SLICE_TEST) || defined(JDV_IMPLEMENTATION)
 #define SLICE_IMPLEMENTATION
 #endif
@@ -60,8 +61,7 @@ extern bool do_trace;
     void *(*alloc)(allocator_t * alloc, size_t size);                                   \
     void *(*realloc)(allocator_t * alloc, void *ptr, size_t old_size, size_t new_size); \
     void (*free)(allocator_t * alloc, void *ptr);                                       \
-    void (*destroy)(allocator_t * alloc);                                               \
-    allocator_t *prev_allocator;
+    void (*destroy)(allocator_t * alloc);
 
 typedef struct _allocator allocator_t;
 struct _allocator {
@@ -77,7 +77,6 @@ static allocator_t stdc_allocator = {
     .realloc = stdc_realloc,
     .free = stdc_free,
     .destroy = NULL,
-    .prev_allocator = NULL,
 };
 
 void *temp_allocator_alloc(allocator_t *alloc, size_t size);
@@ -87,10 +86,16 @@ static allocator_t temp_allocator = {
     .realloc = NULL,
     .free = NULL,
     .destroy = NULL,
-    .prev_allocator = NULL,
 };
 
-static allocator_t *current_allocator = &stdc_allocator;
+typedef struct _allocator_entry {
+} _allocator_entry_t;
+
+static struct {
+    allocator_t *allocator;
+    size_t       count;
+} allocator_stack[256] = { { .allocator = &stdc_allocator, .count = 1 } };
+static size_t current_allocator = 0;
 
 void  allocator_push(allocator_t *alloc);
 void  allocator_pop();
@@ -399,25 +404,36 @@ void *temp_allocator_alloc(allocator_t *alloc, size_t size)
 
 void allocator_push(allocator_t *alloc)
 {
-    alloc->prev_allocator = current_allocator;
-    current_allocator = alloc;
+    if (alloc == allocator_stack[current_allocator].allocator) {
+        ++allocator_stack[current_allocator].count;
+        return;
+    }
+    if (current_allocator >= 255) {
+        fatal("Allocator stack overflow");
+    }
+    ++current_allocator;
+    allocator_stack[current_allocator].allocator = alloc;
+    allocator_stack[current_allocator].count = 1;
 }
 
 void allocator_pop()
 {
-    assert(current_allocator->prev_allocator != NULL);
-    allocator_t *alloc = current_allocator;
-    current_allocator = alloc->prev_allocator;
-    alloc->prev_allocator = NULL;
-    if (alloc->destroy) {
-        alloc->destroy(alloc);
+    if (--allocator_stack[current_allocator].count == 0) {
+        if (current_allocator == 0) {
+            fatal("Allocator stack underflow");
+        }
+        allocator_t *alloc = allocator_stack[current_allocator].allocator;
+        if (alloc->destroy) {
+            alloc->destroy(alloc);
+        }
+        --current_allocator;
     }
 }
 
 char *allocator_alloc(size_t size)
 {
-    assert(current_allocator != NULL);
-    char *ret = (char *) current_allocator->alloc(current_allocator, size);
+    allocator_t *allocator = allocator_stack[current_allocator].allocator;
+    char        *ret = (char *) allocator->alloc(allocator, size);
     if (ret == NULL) {
         fatal("Allocator exhausted");
     }
@@ -426,16 +442,16 @@ char *allocator_alloc(size_t size)
 
 char *allocator_realloc(char *ptr, size_t old_size, size_t new_size)
 {
-    assert(current_allocator != NULL);
+    allocator_t *allocator = allocator_stack[current_allocator].allocator;
     assert((ptr == NULL && old_size == 0) || (ptr != NULL && old_size != 0));
     if (new_size <= old_size) {
         return ptr;
     }
     char *ret = NULL;
-    if (current_allocator->realloc != NULL) {
-        ret = (char *) current_allocator->realloc(current_allocator, ptr, old_size, new_size);
+    if (allocator->realloc != NULL) {
+        ret = (char *) allocator->realloc(allocator, ptr, old_size, new_size);
     } else {
-        ret = (char *) current_allocator->alloc(current_allocator, new_size);
+        ret = (char *) allocator->alloc(allocator, new_size);
         if (ret != NULL && old_size > 0) {
             memcpy(ret, ptr, old_size);
         }
@@ -449,9 +465,9 @@ char *allocator_realloc(char *ptr, size_t old_size, size_t new_size)
 
 void allocator_free(char *ptr)
 {
-    assert(current_allocator != NULL);
-    if (current_allocator->free != NULL) {
-        current_allocator->free(current_allocator, ptr);
+    allocator_t *allocator = allocator_stack[current_allocator].allocator;
+    if (allocator->free != NULL) {
+        allocator->free(allocator, ptr);
     }
 }
 
@@ -468,12 +484,11 @@ slab_allocator_t *slab_allocator_init(size_t arena_capacity)
     slab_allocator_t *alloc = (slab_allocator_t *) buffer;
     alloc->alloc = slab_allocator_alloc;
     alloc->destroy = slab_allocator_destroy;
-    alloc->prev_allocator = current_allocator;
     alloc->head.capacity = arena_capacity;
     alloc->head.buffer = buffer;
     alloc->head.len = align_at(8, sizeof(slab_allocator_t));
     alloc->tail = &alloc->head;
-    current_allocator = (allocator_t *) alloc;
+    allocator_push((allocator_t *) alloc);
     return alloc;
 }
 

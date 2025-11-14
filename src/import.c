@@ -13,7 +13,7 @@
 
 #include "sweattrails.h"
 
-import_t import_init(db_t *db, sweattrails_entities_t *entities, bool rebuild)
+import_t import_init(db_t *db, repo_t *repo, bool rebuild)
 {
     char *home = getenv("HOME");
     assert(home != NULL);
@@ -35,7 +35,7 @@ import_t import_init(db_t *db, sweattrails_entities_t *entities, bool rebuild)
 
     return (import_t) {
         .db = db,
-        .entities = entities,
+        .repo = repo,
         .inbox_d = inbox,
         .done_d = done,
         .errors_d = errors,
@@ -66,7 +66,7 @@ bool import_file(import_t *this, path_t inbox_path)
 {
     slice_t filename = path_basename(&inbox_path);
     this->import_status = (struct import_status) { .status = ImportStatus_Importing, .importing = filename };
-    ptr activity = activity_import(this->entities, inbox_path);
+    ptr activity = activity_import(this->repo, inbox_path);
     db_begin(this->db);
     char const *err = activity_store(activity, this->db);
     if (err != NULL) {

@@ -73,9 +73,9 @@ opt_box_t box_from_start_end_coordinates(int32_t start_lon, int32_t start_lat, i
 
 int sort_sessions(void *thunk, void const *p1, void const *p2)
 {
-    sweattrails_entities_t *repo = (sweattrails_entities_t *) thunk;
-    session_t              *s1 = get_entity(session, repo, *((nodeptr *) p1));
-    session_t              *s2 = get_entity(session, repo, *((nodeptr *) p2));
+    repo_t    *repo = (repo_t *) thunk;
+    session_t *s1 = get_entity(session, repo, *((nodeptr *) p1));
+    session_t *s2 = get_entity(session, repo, *((nodeptr *) p2));
     if (s1->start_time < s2->start_time) {
         return -1;
     } else if (s1->start_time > s2->start_time) {
@@ -87,9 +87,9 @@ int sort_sessions(void *thunk, void const *p1, void const *p2)
 
 int sort_laps(void *thunk, void const *p1, void const *p2)
 {
-    sweattrails_entities_t *repo = (sweattrails_entities_t *) thunk;
-    lap_t                  *l1 = get_entity(lap, repo, *((nodeptr *) p1));
-    lap_t                  *l2 = get_entity(lap, repo, *((nodeptr *) p2));
+    repo_t *repo = (repo_t *) thunk;
+    lap_t  *l1 = get_entity(lap, repo, *((nodeptr *) p1));
+    lap_t  *l2 = get_entity(lap, repo, *((nodeptr *) p2));
     if (l1->start_time < l2->start_time) {
         return -1;
     } else if (l1->start_time > l2->start_time) {
@@ -101,28 +101,30 @@ int sort_laps(void *thunk, void const *p1, void const *p2)
 
 int sort_records(void *thunk, void const *p1, void const *p2)
 {
-    sweattrails_entities_t *repo = (sweattrails_entities_t *) thunk;
-    record_t               *r1 = get_entity(record, repo, *((nodeptr *) p1));
-    record_t               *r2 = get_entity(record, repo, *((nodeptr *) p2));
+    repo_t   *repo = (repo_t *) thunk;
+    record_t *r1 = get_entity(record, repo, *((nodeptr *) p1));
+    record_t *r2 = get_entity(record, repo, *((nodeptr *) p2));
     return (int) ((int64_t) r1->timestamp - (int64_t) r2->timestamp);
 }
 
-nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
+nodeptr read_fit_file(repo_t *repo, slice_t file_name)
 {
     FIT_CONVERT_RETURN convert_return = FIT_CONVERT_CONTINUE;
     // FIT_UINT32         mesg_index = 0;
 
     FitConvert_Init(FIT_TRUE);
-    path_t     path = path_parse(file_name);
-    slice_t    contents = sb_as_slice(MUSTOPT(sb_t, slurp_file(file_name)));
-    activity_t activity = { 0 };
-    nodeptrs   sessions = { 0 };
-    nodeptrs   laps = { 0 };
-    nodeptrs   records = { 0 };
-    nodeptr    ret = nullptr;
+    path_t   path = path_parse(file_name);
+    slice_t  contents = sb_as_slice(MUSTOPT(sb_t, slurp_file(file_name)));
+    file_t   file = { 0 };
+    nodeptrs sessions = { 0 };
+    nodeptrs laps = { 0 };
+    nodeptrs records = { 0 };
+    nodeptr  ret = nullptr;
 
     trace("Reading fit file `" SL "`", SLARG(file_name));
-    activity.start_time = FIT_UINT32_INVALID;
+    file.start_time = FIT_UINT32_INVALID;
+    file.end_time = FIT_UINT32_INVALID;
+    file.file_name = path_basename(&path);
     while (convert_return == FIT_CONVERT_CONTINUE) {
         uint16_t last_mesg_num = FIT_MESG_NUM_MFG_RANGE_MAX;
         size_t   mesg_num_count = 0;
@@ -154,7 +156,7 @@ nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
                 switch (mesg_num) {
                 case FIT_MESG_NUM_FILE_ID: {
                     const FIT_FILE_ID_MESG *id = (FIT_FILE_ID_MESG *) mesg;
-                    activity.serial_number = id->serial_number;
+                    file.serial_number = id->serial_number;
                     break;
                 }
                 case FIT_MESG_NUM_ACTIVITY: {
@@ -163,44 +165,44 @@ nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
                 }
                 case FIT_MESG_NUM_SESSION: {
                     const FIT_SESSION_MESG *s = (FIT_SESSION_MESG *) mesg;
-                    if (activity.start_time == FIT_UINT32_INVALID || activity.start_time > s->start_time) {
-                        activity.start_time = s->start_time;
+                    uint32_t                start = s->start_time + FIT_EPOCH_OFFSET;
+                    uint32_t                elapsed = s->total_elapsed_time / 1000;
+                    uint32_t                end = start + elapsed;
+                    if (file.start_time == FIT_UINT32_INVALID || file.start_time > start) {
+                        file.start_time = start;
                     }
-                    dynarr_append_s(sweattrails_entity_t, entities,
-                        .type = EntityType_session,
-                        .session = (session_t) {
-                            .timestamp = s->timestamp,
-                            .start_time = s->start_time,
-                            .end_time = s->start_time + s->total_elapsed_time,
-                            .sport = s->sport,
-                            .sub_sport = s->sub_sport,
-                            .description = path_basename(&path),
-                            .elapsed_time = s->total_elapsed_time / 1000.0,
-                            .moving_time = s->total_moving_time / 1000.0,
-                            .distance = s->total_distance / 100.0,
-                            .min_elevation = (s->enhanced_min_altitude != FIT_UINT32_INVALID) ? (s->enhanced_min_altitude / 5.0) - 500.0 : 10000,
-                            .max_elevation = (s->enhanced_max_altitude != FIT_UINT32_INVALID) ? (s->enhanced_max_altitude / 5.0) - 500.0 : -1000,
-                            .avg_elevation = (s->enhanced_avg_altitude != FIT_UINT32_INVALID) ? (s->enhanced_avg_altitude / 5.0) - 500.0 : -1000,
-                            .max_power = s->max_power,
-                            .avg_power = s->avg_power,
-                            .max_speed = s->enhanced_max_speed / 1000.0,
-                            .avg_speed = s->enhanced_avg_speed / 1000.0,
-                            .min_hr = s->min_heart_rate,
-                            .max_hr = s->max_heart_rate,
-                            .avg_hr = s->avg_heart_rate,
-                            .time_range = (Vector2) {
-                                .x = s->start_time,
-                                .y = s->start_time + s->total_elapsed_time,
-                            },
-                            .route_area = box_from_start_end_coordinates(s->start_position_long, s->start_position_lat, s->end_position_long, s->end_position_lat),
-                        });
-                    dynarr_append(&sessions, nodeptr_ptr(entities->len - 1));
-                    if (s->start_time + s->total_elapsed_time > activity.end_time) {
-                        activity.end_time = s->start_time + s->total_elapsed_time;
+                    if (file.end_time == FIT_UINT32_INVALID || end > file.end_time) {
+                        file.end_time = end;
                     }
+                    nodeptr session_ptr = append_entity_s(session, repo,
+                        .timestamp = s->timestamp,
+                        .start_time = start,
+                        .end_time = end,
+                        .sport = s->sport,
+                        .sub_sport = s->sub_sport,
+                        .description = sport_name(s->sport),
+                        .elapsed_time = s->total_elapsed_time / 1000.0,
+                        .moving_time = s->total_moving_time / 1000.0,
+                        .distance = s->total_distance / 100.0,
+                        .min_elevation = (s->enhanced_min_altitude != FIT_UINT32_INVALID) ? (s->enhanced_min_altitude / 5.0) - 500.0 : 10000,
+                        .max_elevation = (s->enhanced_max_altitude != FIT_UINT32_INVALID) ? (s->enhanced_max_altitude / 5.0) - 500.0 : -1000,
+                        .avg_elevation = (s->enhanced_avg_altitude != FIT_UINT32_INVALID) ? (s->enhanced_avg_altitude / 5.0) - 500.0 : -1000,
+                        .max_power = s->max_power,
+                        .avg_power = s->avg_power,
+                        .max_speed = s->enhanced_max_speed / 1000.0,
+                        .avg_speed = s->enhanced_avg_speed / 1000.0,
+                        .min_hr = s->min_heart_rate,
+                        .max_hr = s->max_heart_rate,
+                        .avg_hr = s->avg_heart_rate,
+                        .time_range = (Vector2) {
+                            .x = s->start_time,
+                            .y = s->start_time + s->total_elapsed_time,
+                        },
+                        .route_area = box_from_start_end_coordinates(s->start_position_long, s->start_position_lat, s->end_position_long, s->end_position_lat));
+                    dynarr_append(&sessions, session_ptr);
                     if (sessions.len > 2) {
-                        session_t *s1 = get_entity(session, entities, sessions.items[sessions.len - 1]);
-                        session_t *s2 = get_entity(session, entities, sessions.items[sessions.len - 2]);
+                        session_t *s1 = get_entity(session, repo, sessions.items[sessions.len - 1]);
+                        session_t *s2 = get_entity(session, repo, sessions.items[sessions.len - 2]);
                         assert(s2->start_time < s1->start_time);
                     }
                     break;
@@ -208,38 +210,37 @@ nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
 
                 case FIT_MESG_NUM_LAP: {
                     const FIT_LAP_MESG *l = (FIT_LAP_MESG *) mesg;
-                    trace("lap timestamp %d start_time %d elapsed %d end %d", l->timestamp, l->start_time, l->total_elapsed_time, l->start_time + l->total_elapsed_time);
-                    dynarr_append_s(sweattrails_entity_t, entities,
-                        .type = EntityType_lap,
-                        .lap = (lap_t) {
-                            .timestamp = l->timestamp,
-                            .start_time = l->start_time,
-                            .end_time = l->start_time + l->total_elapsed_time,
-                            .description = path_basename(&path),
-                            .elapsed_time = l->total_elapsed_time / 1000.0,
-                            .moving_time = l->total_moving_time / 1000.0,
-                            .distance = l->total_distance / 100.0,
-                            .min_elevation = (l->enhanced_min_altitude != FIT_UINT32_INVALID) ? (l->enhanced_min_altitude / 5.0) - 500.0 : 10000,
-                            .max_elevation = (l->enhanced_max_altitude != FIT_UINT32_INVALID) ? (l->enhanced_max_altitude / 5.0) - 500.0 : -1000,
-                            .avg_elevation = (l->enhanced_avg_altitude != FIT_UINT32_INVALID) ? (l->enhanced_avg_altitude / 5.0) - 500.0 : -1000,
-                            .max_power = l->max_power,
-                            .avg_power = l->avg_power,
-                            .max_speed = l->enhanced_max_speed / 1000.0,
-                            .avg_speed = l->enhanced_avg_speed / 1000.0,
-                            .min_hr = l->min_heart_rate,
-                            .max_hr = l->max_heart_rate,
-                            .avg_hr = l->avg_heart_rate,
-                            .time_range = (Vector2) {
-                                .x = l->start_time,
-                                .y = l->start_time + l->total_elapsed_time,
-                            },
-                            .route_area = box_from_start_end_coordinates(l->start_position_long, l->start_position_lat, l->end_position_long, l->end_position_lat),
-                        });
+                    uint32_t            start = l->start_time + FIT_EPOCH_OFFSET;
+                    uint32_t            elapsed = l->total_elapsed_time / 1000;
+                    uint32_t            end = start + elapsed;
+                    nodeptr             lap_ptr = append_entity_s(lap, repo,
+                                    .timestamp = l->timestamp,
+                                    .start_time = start,
+                                    .end_time = end,
+                                    .description = path_basename(&path),
+                                    .elapsed_time = l->total_elapsed_time / 1000.0,
+                                    .moving_time = l->total_moving_time / 1000.0,
+                                    .distance = l->total_distance / 100.0,
+                                    .min_elevation = (l->enhanced_min_altitude != FIT_UINT32_INVALID) ? (l->enhanced_min_altitude / 5.0) - 500.0 : 10000,
+                                    .max_elevation = (l->enhanced_max_altitude != FIT_UINT32_INVALID) ? (l->enhanced_max_altitude / 5.0) - 500.0 : -1000,
+                                    .avg_elevation = (l->enhanced_avg_altitude != FIT_UINT32_INVALID) ? (l->enhanced_avg_altitude / 5.0) - 500.0 : -1000,
+                                    .max_power = l->max_power,
+                                    .avg_power = l->avg_power,
+                                    .max_speed = l->enhanced_max_speed / 1000.0,
+                                    .avg_speed = l->enhanced_avg_speed / 1000.0,
+                                    .min_hr = l->min_heart_rate,
+                                    .max_hr = l->max_heart_rate,
+                                    .avg_hr = l->avg_heart_rate,
+                                    .time_range = (Vector2) {
+                                        .x = l->start_time,
+                                        .y = l->start_time + l->total_elapsed_time,
+                        },
+                                    .route_area = box_from_start_end_coordinates(l->start_position_long, l->start_position_lat, l->end_position_long, l->end_position_lat));
 
-                    dynarr_append(&laps, nodeptr_ptr(entities->len - 1));
+                    dynarr_append(&laps, lap_ptr);
                     if (laps.len > 1) {
-                        lap_t *l1 = get_entity(lap, entities, laps.items[laps.len - 1]);
-                        lap_t *l2 = get_entity(lap, entities, laps.items[laps.len - 2]);
+                        lap_t *l1 = get_entity(lap, repo, laps.items[laps.len - 1]);
+                        lap_t *l2 = get_entity(lap, repo, laps.items[laps.len - 2]);
                         assert(l2->start_time < l1->start_time);
                     }
                     break;
@@ -267,18 +268,15 @@ nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
                         distance = record->distance / 100.0f;
                     }
 
-                    dynarr_append_s(sweattrails_entity_t, entities,
-                        .type = EntityType_record,
-                        .record = (record_t) {
-                            .timestamp = record->timestamp,
-                            .position = coordinates_from_semicircles(record->position_long, record->position_lat),
-                            .elevation = (record->enhanced_altitude != (FIT_UINT32) -1) ? (record->enhanced_altitude / 5.0) - 500.0 : -1000,
-                            .distance = distance,
-                            .power = record->power,
-                            .speed = speed,
-                            .hr = record->heart_rate,
-                        });
-                    dynarr_append(&records, nodeptr_ptr(entities->len - 1));
+                    append_entity_s(record, repo,
+                        .timestamp = record->timestamp + FIT_EPOCH_OFFSET,
+                        .position = coordinates_from_semicircles(record->position_long, record->position_lat),
+                        .elevation = (record->enhanced_altitude != (FIT_UINT32) -1) ? (record->enhanced_altitude / 5.0) - 500.0 : -1000,
+                        .distance = distance,
+                        .power = record->power,
+                        .speed = speed,
+                        .hr = record->heart_rate, );
+                    dynarr_append(&records, nodeptr_ptr(repo->entities.len - 1));
                     break;
                 }
 
@@ -332,29 +330,67 @@ nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
         fprintf(stderr, "\n" SL ": File converted successfully.\n", SLARG(file_name));
     }
 
-    dynarr_sort(&sessions, sort_sessions, entities);
-    dynarr_sort(&laps, sort_laps, entities);
-    dynarr_sort(&records, sort_records, entities);
-    activity.sessions = sessions;
-    dynarr_append_s(sweattrails_entity_t, entities,
-        .type = EntityType_activity,
-        .activity = activity);
-    ret = nodeptr_ptr(entities->len - 1);
-    activity_t *a = &entities->items[ret.value].activity;
-    dynarr_foreach(nodeptr, p, &a->sessions)
+    dynarr_sort(&sessions, sort_sessions, repo);
+    dynarr_sort(&laps, sort_laps, repo);
+    dynarr_sort(&records, sort_records, repo);
+
+    nodeptrs overlapping = { 0 };
+    dynarr_foreach(entity_t, e, &repo->entities)
     {
-        session_t *s = &entities->items[p->value].session;
-        s->activity_id = ref_entity(activity, ret.value);
+        if (e->type != EntityType_activity) {
+            continue;
+        }
+        if ((file.start_time <= e->activity.start_time && file.end_time >= e->activity.start_time)
+            || (file.start_time >= e->activity.start_time && file.start_time <= e->activity.end_time)) {
+            dynarr_append(&overlapping, e->dummy_entity.id.entity_id);
+        }
+    }
+    activity_t *activity = NULL;
+    if (overlapping.len > 0) {
+        ret = overlapping.items[0];
+        activity = get_entity(activity, repo, ret);
+        activity->start_time = MIN(activity->start_time, file.start_time);
+        activity->end_time = MAX(activity->end_time, file.end_time);
+        for (size_t ix = 1; ix < overlapping.len; ++ix) {
+            activity_t *a = get_entity(activity, repo, overlapping.items[ix]);
+            activity->start_time = MIN(activity->start_time, a->start_time);
+            activity->end_time = MAX(activity->end_time, a->end_time);
+            dynarr_foreach(nodeptr, fp, &a->files)
+            {
+                get_entity(file, repo, *fp)->activity_id = activity->id;
+            }
+            dynarr_extend(&activity->files, &a->files);
+            a->id.entity_id.value = -1;
+        }
+    } else {
+        ret = append_entity_s(activity, repo,
+            .description = path_basename(&path),
+            .start_time = file.start_time,
+            .end_time = file.end_time);
+        activity = get_entity(activity, repo, ret);
+    }
+
+    file.sessions = sessions;
+    file.activity_id = activity->id;
+    nodeptr file_ptr = append_entity(file, repo, file);
+    dynarr_append(&activity->files, file_ptr);
+    hash_entity(repo, file_ptr);
+    activity = get_entity(activity, repo, ret);
+    file_t *f = get_entity(file, repo, file_ptr);
+    dynarr_foreach(nodeptr, p, &f->sessions)
+    {
+        session_t *s = &repo->entities.items[p->value].session;
+        s->file_id = f->id;
     }
     dynarr_foreach(nodeptr, p, &laps)
     {
-        lap_t *l = get_entity(lap, entities, *p);
-        for (size_t ix = 0; ix < a->sessions.len; ++ix) {
-            session_t *s = get_entity(session, entities, a->sessions.items[ix]);
+        lap_t *l = get_entity(lap, repo, *p);
+        for (size_t ix = 0; ix < f->sessions.len; ++ix) {
+            session_t *s = get_entity(session, repo, f->sessions.items[ix]);
             assert(l->start_time >= s->start_time);
-            session_t *s_next = (ix < a->sessions.len - 1) ? get_entity(session, entities, a->sessions.items[ix + 1]) : NULL;
+            session_t *s_next = (ix < f->sessions.len - 1) ? get_entity(session, repo, f->sessions.items[ix + 1]) : NULL;
             if (s_next == NULL || (l->start_time < s_next->start_time)) {
-                l->session_id = ref_entity(session, a->sessions.items[ix].value);
+                l->session_id = s->id;
                 dynarr_append(&s->laps, *p);
                 break;
             }
@@ -362,18 +398,18 @@ nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
     }
 
     size_t     session_ix = 0;
-    session_t *s = get_entity(session, entities, sessions.items[session_ix]);
-    session_t *s_next = (session_ix < sessions.len - 1) ? get_entity(session, entities, sessions.items[session_ix + 1]) : NULL;
+    session_t *s = get_entity(session, repo, sessions.items[session_ix]);
+    session_t *s_next = (session_ix < sessions.len - 1) ? get_entity(session, repo, sessions.items[session_ix + 1]) : NULL;
     size_t     lap_ix = 0;
-    lap_t     *l = (lap_ix < laps.len) ? get_entity(lap, entities, laps.items[lap_ix]) : NULL;
-    lap_t     *l_next = (lap_ix < laps.len - 1) ? get_entity(lap, entities, laps.items[lap_ix + 1]) : NULL;
+    lap_t     *l = (lap_ix < laps.len) ? get_entity(lap, repo, laps.items[lap_ix]) : NULL;
+    lap_t     *l_next = (lap_ix < laps.len - 1) ? get_entity(lap, repo, laps.items[lap_ix + 1]) : NULL;
     dynarr_foreach(nodeptr, p, &records)
     {
-        record_t *r = get_entity(record, entities, *p);
+        record_t *r = get_entity(record, repo, *p);
         while ((l_next != NULL && l_next->start_time < r->timestamp)) {
             l = l_next;
             ++lap_ix;
-            l_next = (lap_ix < laps.len - 1) ? get_entity(lap, entities, laps.items[lap_ix + 1]) : NULL;
+            l_next = (lap_ix < laps.len - 1) ? get_entity(lap, repo, laps.items[lap_ix + 1]) : NULL;
         }
         if (l != NULL) {
             dynarr_append(&l->records, *p);
@@ -387,10 +423,10 @@ nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
         while ((s_next != NULL && s_next->start_time < r->timestamp)) {
             s = s_next;
             ++session_ix;
-            s_next = (session_ix < sessions.len - 1) ? get_entity(session, entities, sessions.items[session_ix + 1]) : NULL;
+            s_next = (session_ix < sessions.len - 1) ? get_entity(session, repo, sessions.items[session_ix + 1]) : NULL;
         }
         assert(s != NULL);
-        r->session_id = ref_entity(session, sessions.items[session_ix].value);
+        r->session_id = s->id;
         dynarr_append(&s->records, *p);
         if (r->position.ok && s->route_area.ok) {
             s->route_area = OPTVAL(box_t, box_extend(s->route_area.value, r->position.value));
@@ -398,12 +434,13 @@ nodeptr read_fit_file(sweattrails_entities_t *entities, slice_t file_name)
             s->min_elevation = MIN(s->min_elevation, r->elevation);
         }
     }
-    dynarr_foreach(nodeptr, s, &a->sessions)
+    dynarr_foreach(nodeptr, s, &f->sessions)
     {
-        session_t *session = get_entity(session, entities, *s);
+        session_t *session = get_entity(session, repo, *s);
         if (session->route_area.ok) {
             session->atlas = atlas_for_box(session->route_area.value, 3, 3);
         }
     }
+    hash_entity(repo, ret);
     return ret;
 }

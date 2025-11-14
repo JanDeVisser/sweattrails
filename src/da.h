@@ -114,13 +114,21 @@ OPTDEF(nodeptrs);
         dynarr_ensure((arr), (arr)->len + 1); \
         (arr)->items[(arr)->len++] = (elem);  \
         ((arr)->len - 1);                     \
-    } while (0);
+    } while (0)
 
 #define dynarr_append_s(T, arr, ...) \
     do {                             \
         T __elem = { __VA_ARGS__ };  \
         dynarr_append(arr, __elem);  \
-    } while (0);
+    } while (0)
+
+#define dynarr_extend(arr, arr2)                            \
+    do {                                                    \
+        dynarr_ensure((arr), (arr)->len + (arr2)->len);     \
+        for (size_t __ix = 0; __ix < (arr2)->len; ++__ix) { \
+            dynarr_append((arr), (arr2)->items[ix]);        \
+        }                                                   \
+    } while (0)
 
 #define dynarr_pop(arr)       \
     do {                      \

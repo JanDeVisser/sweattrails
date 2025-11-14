@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -11,7 +12,7 @@
 
 #include <libpq-fe.h>
 
-#include "io.h"
+#include "da.h"
 #include "schema.h"
 #include "sweattrails.h"
 
@@ -66,7 +67,7 @@ char *render_parameter(void *value_ptr, sql_type_t type)
 
 void assign_parameter(ptr entity, schema_def_t *schema, column_def_t *col, cstrs *values)
 {
-    void *data = get_p(entity, entity);
+    void *data = get_p(dummy_entity, entity);
     void *value_ptr = data + col->offset;
     switch (col->kind) {
     case SQLTypeKind_Builtin:
@@ -100,14 +101,13 @@ void assign_parameter(ptr entity, schema_def_t *schema, column_def_t *col, cstrs
         if (col->reference.cardinality == Card_ManyToOne) {
             ref_t *ref = (ref_t *) value_ptr;
             assert(ref->entity_id.ok);
-            sweattrails_entity_t *e = entity.entities->items + ref->entity_id.value;
-            assert(e->entity.id.ok);
-            dynarr_append(values, temp_sprintf("%d", e->entity.id.value));
             if (!ref->db_id.ok) {
-                ref->db_id = nodeptr_ptr(e->entity.id.value);
-            } else {
-                assert(ref->db_id.value == (size_t) e->entity.id.value);
+                dummy_entity_t *target = &(entity.repo->entities.items + ref->entity_id.value)->dummy_entity;
+                assert(target->id.entity_id.value == ref->entity_id.value);
+                assert(target->id.db_id.ok);
+                *ref = target->id;
             }
+            dynarr_append(values, temp_sprintf("%zu", ref->db_id.value));
         }
         break;
     default:
@@ -115,37 +115,77 @@ void assign_parameter(ptr entity, schema_def_t *schema, column_def_t *col, cstrs
     }
 }
 
-char const *entity_store(ptr entity, db_t *db, int def_ix)
+bool entity_delete(ptr entity, db_t *db)
 {
-    void        *data = get_p(entity, entity);
-    serial      *id = &((entity_t *) data)->id;
+    int          def_ix = get_ptr(entity)->type;
+    void        *data = get_p(dummy_entity, entity);
+    serial      *id = &((dummy_entity_t *) data)->id;
+    size_t       cp = temp_save();
+    PGresult    *res;
+    table_def_t *def = db->schema.tables.items + def_ix;
+    char        *sql = temp_sprintf("DELETE FROM " SL " WHERE id = $1", SLARG(def->name));
+    cstrs        values = { 0 };
+    bool         ret = true;
+
+    dynarr_append(&values, temp_sprintf("%zu", id->db_id.value));
+    res = PQexecParams(db->conn, sql, values.len, NULL, (char const *const *) values.items, NULL, NULL, 0);
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        sb_t msg = sb_format(SL "_delete() failed: %s", SLARG(def->name), PQerrorMessage(db->conn));
+        trace("PQ error: " SL, SLARG(msg));
+        PQclear(res);
+        PQfinish(db->conn);
+        ret = false;
+    } else {
+        id->entity_id = id->db_id = nullptr;
+    }
+    dynarr_free(&values);
+    temp_rewind(cp);
+    return ret;
+}
+
+char const *entity_store(ptr entity, db_t *db)
+{
+    int          def_ix = get_ptr(entity)->type;
+    void        *data = get_p(dummy_entity, entity);
+    serial      *id = &((dummy_entity_t *) data)->id;
     size_t       cp = temp_save();
     PGresult    *res;
     table_def_t *def = db->schema.tables.items + def_ix;
     sb_t         sql = { 0 };
     cstrs        values = { 0 };
 
-    // trace("Storing ID %zu type " SL, entity.ptr.value, SLARG(def->name));
+    // trace("Storing " SL " db_id %zu/%d entity_id %zu/%d", SLARG(def->name), id->db_id.value, id->db_id.ok, id->entity_id.value, id->entity_id.ok);
 
-    if (id->ok) {
-        sb_printf(&sql, "UPDATE sweattrails." SL " SET ", SLARG(def->name));
-        dynarr_foreach(column_def_t, col, &def->columns)
-        {
-            if (slice_eq(col->name, C("id"))) {
-                continue;
+    if (id->db_id.ok) {
+        assert(id->entity_id.ok);
+        if (id->entity_id.value != (size_t) -1) {
+            if (hash_ptr(entity)) {
+                return NULL;
             }
-            if (!must_include(col)) {
-                continue;
+            sb_printf(&sql, "UPDATE sweattrails." SL " SET ", SLARG(def->name));
+            dynarr_foreach(column_def_t, col, &def->columns)
+            {
+                if (slice_eq(col->name, C("id"))) {
+                    continue;
+                }
+                if (!must_include(col)) {
+                    continue;
+                }
+                if (values.len > 0) {
+                    sb_append_cstr(&sql, ", ");
+                }
+                sb_printf(&sql, SL " = $%zu::" SL, SLARG(col->name), values.len + 1, SLARG(sql_type_sql(col->type)));
+                assign_parameter(entity, &db->schema, col, &values);
             }
-            if (values.len > 0) {
-                sb_append_cstr(&sql, ", ");
-            }
-            sb_printf(&sql, SL " = $%zu::" SL, SLARG(col->name), values.len + 1, SLARG(sql_type_sql(col->type)));
-            assign_parameter(entity, &db->schema, col, &values);
+            sb_printf(&sql, " WHERE id = $%zu RETURNING id", values.len + 1);
+            dynarr_append(&values, temp_sprintf("%zu", id->db_id.value));
+        } else {
+            entity_delete(entity, db);
         }
-        sb_printf(&sql, " WHERE id = $%zu RETURNING id", values.len);
-        dynarr_append(&values, temp_sprintf("%u", id->value));
     } else {
+        if (!id->entity_id.ok) {
+            return NULL;
+        }
         sb_printf(&sql, "INSERT INTO sweattrails." SL " ( ", SLARG(def->name));
         dynarr_foreach(column_def_t, col, &def->columns)
         {
@@ -170,9 +210,9 @@ char const *entity_store(ptr entity, db_t *db, int def_ix)
         }
         sb_append_cstr(&sql, " ) RETURNING id");
     }
-    // trace("SQL: " SL, SLARG(sql));
+    //    trace("SQL: " SL, SLARG(sql));
     //    for (size_t ix = 0; ix < values.len; ++ix) {
-    //        trace("value[%zu]: %s", ix + 1, values.items[ix]);
+    //	      trace("value[%zu]: %s", ix + 1, values.items[ix]);
     //    }
     res = PQexecParams(db->conn, sql.items, values.len, NULL, (char const *const *) values.items, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
@@ -183,11 +223,11 @@ char const *entity_store(ptr entity, db_t *db, int def_ix)
         return msg.items;
     }
     assert(atoi(PQcmdTuples(res)) == 1);
-    int returned_id = atoi(PQgetvalue(res, 0, 0));
-    if (id->ok) {
-        assert(id->value == returned_id);
+    size_t returned_id = atoi(PQgetvalue(res, 0, 0));
+    if (id->db_id.ok) {
+        assert(id->db_id.value == returned_id);
     } else {
-        *(id) = OPTVAL(int, returned_id);
+        id->db_id = nodeptr_ptr(returned_id);
         // trace("ID: %zu %d %d", entity.ptr.value, get_p(entity, entity)->id.ok, get_p(entity, entity)->id.value);
     }
     PQclear(res);
@@ -238,7 +278,7 @@ int unmarshall_builtin(char const *sql_value, void *value_ptr, sql_type_t type)
         *((float *) value_ptr) = atof(sql_value);
         break;
     case SQLType_Serial:
-        *((serial *) value_ptr) = OPTVAL(int, atoi(sql_value));
+        ((serial *) value_ptr)->db_id = nodeptr_ptr(atol(sql_value));
         break;
     case SQLType_String:
         *((slice_t *) value_ptr) = C(strdup(sql_value));
@@ -296,7 +336,7 @@ int unmarshall_value(schema_def_t *schema, char const *sql_value, void *value_pt
     return 0;
 }
 
-refs_t entity_load_all(db_t *db, sweattrails_entities_t *repo, int def_ix, char const *order_by)
+refs_t entity_load_all(db_t *db, repo_t *repo, int def_ix, char const *join, char const *order_by)
 {
     refs_t       ret = { 0 };
     PGresult    *res;
@@ -311,9 +351,14 @@ refs_t entity_load_all(db_t *db, sweattrails_entities_t *repo, int def_ix, char 
         if (col != def->columns.items) {
             sb_append_cstr(&sql, ", ");
         }
-        sb_append(&sql, col->name);
+        sb_printf(&sql, SL "." SL "." SL, SLARG(db->schema.schema), SLARG(def->name), SLARG(col->name));
     }
-    sb_printf(&sql, " FROM " SL "." SL " ORDER BY %s", SLARG(db->schema.schema), SLARG(def->name), (order_by != NULL) ? order_by : "id");
+    sb_printf(&sql, " FROM " SL "." SL, SLARG(db->schema.schema), SLARG(def->name));
+    if (join != NULL) {
+        sb_append_char(&sql, ' ');
+        sb_append_cstr(&sql, join);
+    }
+    sb_printf(&sql, " ORDER BY %s", (order_by != NULL) ? order_by : "id");
     res = PQexec(db->conn, sql.items);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         trace("PQ error: entity_load_all(" SL ") failed: %s", SLARG(def->name), PQerrorMessage(db->conn));
@@ -324,12 +369,9 @@ refs_t entity_load_all(db_t *db, sweattrails_entities_t *repo, int def_ix, char 
     size_t cp = temp_save();
     for (int ix = 0; ix < PQntuples(res); ++ix) {
         temp_rewind(cp);
-        dynarr_append_s(
-            sweattrails_entity_t,
-            repo,
-            .type = def_ix);
-        void *data = &repo->items[repo->len - 1].entity;
-        int   field_num = 0;
+        entity_t e = { .type = def_ix };
+        void    *data = &e.dummy_entity;
+        int      field_num = 0;
         dynarr_foreach(column_def_t, col, &def->columns)
         {
             if (!must_include(col)) {
@@ -338,33 +380,35 @@ refs_t entity_load_all(db_t *db, sweattrails_entities_t *repo, int def_ix, char 
             assert(unmarshall_value(&db->schema, PQgetvalue(res, ix, field_num), data + col->offset, col) == 0);
             ++field_num;
         }
+        nodeptr p = entity_append(repo, e);
         dynarr_append_s(
             ref_t,
             &ret,
             .type = def_ix,
-            .db_id = nodeptr_ptr(((entity_t *) data)->id.value),
-            .entity_id = nodeptr_ptr(repo->len - 1));
+            .db_id = nodeptr_ptr(e.dummy_entity.id.db_id.value),
+            .entity_id = p);
     }
     temp_rewind(cp);
     PQclear(res);
     sb_free(&sql);
 exit:
+    trace("Loaded %zu " SL " entities", ret.len, SLARG(def->name));
     return ret;
 }
 
 char const *record_store(ptr record, db_t *db)
 {
-    return entity_store(record, db, RECORD_DEF);
+    return entity_store(record, db);
 }
 
 char const *lap_store(ptr lap, db_t *db)
 {
-    return entity_store(lap, db, LAP_DEF);
+    return entity_store(lap, db);
 }
 
 char const *session_store(ptr session, db_t *db)
 {
-    char const *ret = entity_store(session, db, SESSION_DEF);
+    char const *ret = entity_store(session, db);
     if (ret == NULL) {
         session_t *s = get_p(session, session);
         dynarr_foreach(nodeptr, l, &s->laps)
@@ -375,7 +419,7 @@ char const *session_store(ptr session, db_t *db)
                 break;
             }
         }
-        trace("Stored session nodeptr %zu with psql id %d and %zu laps", session.ptr.value, s->id.value, s->laps.len);
+        trace("Stored session nodeptr %zu with psql id %zu and %zu laps", session.ptr.value, s->id.db_id.value, s->laps.len);
     }
     if (ret == NULL) {
         session_t *s = get_p(session, session);
@@ -391,34 +435,69 @@ char const *session_store(ptr session, db_t *db)
     return ret;
 }
 
-char const *activity_store(ptr activity, db_t *db)
+char const *file_store(ptr file, db_t *db)
 {
     size_t cp = temp_save();
     allocator_push(&temp_allocator);
-    char const *ret = entity_store(activity, db, ACTIVITY_DEF);
+    char const *ret = entity_store(file, db);
     if (ret == NULL) {
-        activity_t *a = get_p(activity, activity);
-        dynarr_foreach(nodeptr, s, &a->sessions)
+        file_t *f = get_p(file, file);
+        dynarr_foreach(nodeptr, s, &f->sessions)
         {
-            ptr         session = make_ptr(activity, *s);
+            ptr         session = make_ptr(file, *s);
             char const *ret = session_store(session, db);
             if (ret != NULL) {
                 break;
             }
         }
-        trace("Stored activity nodeptr %zu with psql id %d and %zu sessions", activity.ptr.value, a->id.value, a->sessions.len);
+        trace("Stored file nodeptr %zu with psql id %zu and %zu sessions", file.ptr.value, f->id.db_id.value, f->sessions.len);
     }
     allocator_pop();
     temp_rewind(cp);
     return ret;
 }
 
-bool reload_everything(sweattrails_entities_t *repo, db_t *db)
+char const *activity_store(ptr activity, db_t *db)
 {
-    refs_t activities = entity_load_all(db, repo, ACTIVITY_DEF, "start_time");
-    refs_t sessions = entity_load_all(db, repo, SESSION_DEF, "start_time");
-    refs_t laps = entity_load_all(db, repo, LAP_DEF, "session_id, start_time, end_time");
-    refs_t records = entity_load_all(db, repo, RECORD_DEF, "session_id, timestamp");
+    size_t cp = temp_save();
+    allocator_push(&temp_allocator);
+    char const *ret = entity_store(activity, db);
+    if (ret == NULL) {
+        activity_t *a = get_p(activity, activity);
+        dynarr_foreach(nodeptr, f, &a->files)
+        {
+            ptr         file = make_ptr(activity, *f);
+            char const *ret = file_store(file, db);
+            if (ret != NULL) {
+                break;
+            }
+        }
+        trace("Stored activity nodeptr %zu with psql id %zu and %zu files", activity.ptr.value, a->id.db_id.value, a->files.len);
+    }
+    allocator_pop();
+    temp_rewind(cp);
+    return ret;
+}
+
+bool store_everything(repo_t *repo, db_t *db)
+{
+    for (size_t ix = 0; ix < repo->entities.len; ++ix) {
+        entity_store((ptr) { .repo = repo, .ptr = nodeptr_ptr(ix) }, db);
+    }
+    return true;
+}
+
+bool reload_everything(repo_t *repo, db_t *db)
+{
+    refs_t activities = entity_load_all(db, repo, ACTIVITY_DEF, NULL, "start_time");
+    refs_t files = entity_load_all(db, repo, FILE_DEF, NULL, "start_time");
+    refs_t sessions = entity_load_all(db, repo, SESSION_DEF, NULL, "start_time");
+    refs_t laps = entity_load_all(db, repo, LAP_DEF,
+        "join sweattrails.session on sweattrails.lap.session_id = sweattrails.session.id",
+        "sweattrails.lap.start_time, sweattrails.lap.end_time");
+    refs_t records = entity_load_all(db, repo, RECORD_DEF,
+        "join sweattrails.session on sweattrails.record.session_id = sweattrails.session.id",
+        "sweattrails.record.timestamp");
 
     if (activities.len == 0) {
         assert(sessions.len == 0 && laps.len == 0 && records.len == 0);
@@ -426,55 +505,73 @@ bool reload_everything(sweattrails_entities_t *repo, db_t *db)
     }
     assert(sessions.len >= activities.len && records.len > 0);
 
-    size_t activity_ix = 0;
-    size_t session_ix = 0;
-    size_t lap_ix = 0;
-    size_t record_ix = 0;
+    size_t  activity_ix = 0;
+    size_t  file_ix = 0;
+    size_t  session_ix = 0;
+    size_t  lap_ix = 0;
+    size_t  record_ix = 0;
+    file_t *f = (file_ix < files.len) ? get_entity(file, repo, files.items[file_ix].entity_id) : NULL;
     do {
         activity_t *a = get_entity(activity, repo, activities.items[activity_ix].entity_id);
-        session_t  *s = (session_ix < sessions.len) ? get_entity(session, repo, sessions.items[session_ix].entity_id) : NULL;
-        while (s != NULL && (s->activity_id.db_id.value == activities.items[activity_ix].db_id.value)) {
-            s->activity_id = activities.items[activity_ix];
-            dynarr_append(&a->sessions, sessions.items[session_ix].entity_id);
-            if (s->route_area.ok) {
-                s->atlas = atlas_for_box(s->route_area.value, 3, 3);
-            }
+        while (f != NULL && (f->activity_id.db_id.value == a->id.db_id.value)) {
+            f->activity_id = a->id;
+            dynarr_append(&a->files, f->id.entity_id);
 
-            size_t lap_offset = lap_ix;
-            lap_t *l = (lap_ix < laps.len) ? get_entity(lap, repo, laps.items[lap_ix].entity_id) : NULL;
-            while (l != NULL && (l->session_id.db_id.value == sessions.items[session_ix].db_id.value)) {
-                l->session_id = sessions.items[session_ix];
-                dynarr_append(&s->laps, laps.items[lap_ix].entity_id);
-                ++lap_ix;
-                l = (lap_ix < laps.len) ? get_entity(lap, repo, laps.items[lap_ix].entity_id) : NULL;
+            trace("file_ix %zu f->id %zu:%zu session_ix %zu", file_ix, f->id.entity_id.value, f->id.db_id.value, session_ix);
+            session_t *s = (session_ix < sessions.len) ? get_entity(session, repo, sessions.items[session_ix].entity_id) : NULL;
+            trace("session_ix %zu len %zu", session_ix, sessions.len);
+            if (s != NULL) {
+                trace("session_ix %zu s->id %zu:%zu s->file_id %zu", session_ix, s->id.entity_id.value, s->id.db_id.value, s->file_id.db_id.value);
             }
-
-            record_t *r = (record_ix < records.len) ? get_entity(record, repo, records.items[record_ix].entity_id) : NULL;
-            while (r != NULL && r->timestamp < s->start_time) {
-                ++record_ix;
-                r = (record_ix < records.len) ? get_entity(record, repo, records.items[record_ix].entity_id) : NULL;
-            }
-            while (r != NULL && (r->session_id.db_id.value == sessions.items[session_ix].db_id.value)) {
-                r->session_id = sessions.items[session_ix];
-                dynarr_append(&s->records, records.items[record_ix].entity_id);
-
-                for (size_t ix = lap_offset; ix < lap_ix; ++ix) {
-                    lap_t *curlap = get_entity(lap, repo, laps.items[lap_offset].entity_id);
-                    assert(curlap->start_time <= r->timestamp);
-                    if (curlap->end_time < r->timestamp) {
-                        if (lap_offset == ix) {
-                            lap_offset = ix + 1;
-                        }
-                        continue;
-                    }
-                    dynarr_append(&curlap->records, records.items[record_ix].entity_id);
+            while (s != NULL && (s->file_id.db_id.value == f->id.db_id.value)) {
+                trace("session match");
+                s->file_id = files.items[file_ix];
+                dynarr_append(&f->sessions, s->id.entity_id);
+                if (s->route_area.ok) {
+                    s->atlas = atlas_for_box(s->route_area.value, 3, 3);
                 }
 
-                ++record_ix;
-                r = (record_ix < records.len) ? get_entity(record, repo, records.items[record_ix].entity_id) : NULL;
+                size_t lap_offset = lap_ix;
+                lap_t *l = (lap_ix < laps.len) ? get_entity(lap, repo, laps.items[lap_ix].entity_id) : NULL;
+                while (l != NULL && (l->session_id.db_id.value == s->id.db_id.value)) {
+                    l->session_id = s->id;
+                    dynarr_append(&s->laps, l->id.entity_id);
+                    ++lap_ix;
+                    l = (lap_ix < laps.len) ? get_entity(lap, repo, laps.items[lap_ix].entity_id) : NULL;
+                }
+
+                record_t *r = (record_ix < records.len) ? get_entity(record, repo, records.items[record_ix].entity_id) : NULL;
+                while (r != NULL && r->timestamp < s->start_time) {
+                    ++record_ix;
+                    r = (record_ix < records.len) ? get_entity(record, repo, records.items[record_ix].entity_id) : NULL;
+                }
+                while (r != NULL && (r->session_id.db_id.value == s->id.db_id.value)) {
+                    r->session_id = s->id;
+                    dynarr_append(&s->records, r->id.entity_id);
+
+                    for (size_t ix = lap_offset; ix < lap_ix; ++ix) {
+                        lap_t *curlap = get_entity(lap, repo, laps.items[lap_offset].entity_id);
+                        assert(curlap->start_time <= r->timestamp);
+                        if (curlap->end_time < r->timestamp) {
+                            if (lap_offset == ix) {
+                                lap_offset = ix + 1;
+                            }
+                            continue;
+                        }
+                        dynarr_append(&curlap->records, records.items[record_ix].entity_id);
+                    }
+
+                    ++record_ix;
+                    r = (record_ix < records.len) ? get_entity(record, repo, records.items[record_ix].entity_id) : NULL;
+                }
+                ++session_ix;
+                s = (session_ix < sessions.len) ? get_entity(session, repo, sessions.items[session_ix].entity_id) : NULL;
+                if (s != NULL) {
+                    trace("session_ix %zu s->id %zu:%zu s->file_id %zu", session_ix, s->id.entity_id.value, s->id.db_id.value, s->file_id.db_id.value);
+                }
             }
-            ++session_ix;
-            s = (session_ix < sessions.len) ? get_entity(session, repo, sessions.items[session_ix].entity_id) : NULL;
+            ++file_ix;
+            f = (file_ix < files.len) ? get_entity(file, repo, files.items[file_ix].entity_id) : NULL;
         }
         ++activity_ix;
     } while (activity_ix < activities.len);
