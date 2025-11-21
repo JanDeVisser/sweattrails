@@ -494,10 +494,10 @@ bool reload_everything(repo_t *repo, db_t *db)
     refs_t sessions = entity_load_all(db, repo, SESSION_DEF, NULL, "start_time");
     refs_t laps = entity_load_all(db, repo, LAP_DEF,
         "join sweattrails.session on sweattrails.lap.session_id = sweattrails.session.id",
-        "sweattrails.lap.start_time, sweattrails.lap.end_time");
+        "sweattrails.session.start_time, sweattrails.lap.start_time, sweattrails.lap.end_time");
     refs_t records = entity_load_all(db, repo, RECORD_DEF,
         "join sweattrails.session on sweattrails.record.session_id = sweattrails.session.id",
-        "sweattrails.record.timestamp");
+        "sweattrails.session.start_time, sweattrails.record.timestamp");
 
     if (activities.len == 0) {
         assert(sessions.len == 0 && laps.len == 0 && records.len == 0);

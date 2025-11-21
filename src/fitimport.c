@@ -191,6 +191,8 @@ nodeptr read_fit_file(repo_t *repo, slice_t file_name)
                         .avg_power = s->avg_power,
                         .max_speed = s->enhanced_max_speed / 1000.0,
                         .avg_speed = s->enhanced_avg_speed / 1000.0,
+                        .max_cadence = s->max_cadence,
+                        .avg_cadence = s->avg_cadence,
                         .min_hr = s->min_heart_rate,
                         .max_hr = s->max_heart_rate,
                         .avg_hr = s->avg_heart_rate,
@@ -210,32 +212,35 @@ nodeptr read_fit_file(repo_t *repo, slice_t file_name)
 
                 case FIT_MESG_NUM_LAP: {
                     const FIT_LAP_MESG *l = (FIT_LAP_MESG *) mesg;
-                    uint32_t            start = l->start_time + FIT_EPOCH_OFFSET;
-                    uint32_t            elapsed = l->total_elapsed_time / 1000;
-                    uint32_t            end = start + elapsed;
-                    nodeptr             lap_ptr = append_entity_s(lap, repo,
-                                    .timestamp = l->timestamp,
-                                    .start_time = start,
-                                    .end_time = end,
-                                    .description = path_basename(&path),
-                                    .elapsed_time = l->total_elapsed_time / 1000.0,
-                                    .moving_time = l->total_moving_time / 1000.0,
-                                    .distance = l->total_distance / 100.0,
-                                    .min_elevation = (l->enhanced_min_altitude != FIT_UINT32_INVALID) ? (l->enhanced_min_altitude / 5.0) - 500.0 : 10000,
-                                    .max_elevation = (l->enhanced_max_altitude != FIT_UINT32_INVALID) ? (l->enhanced_max_altitude / 5.0) - 500.0 : -1000,
-                                    .avg_elevation = (l->enhanced_avg_altitude != FIT_UINT32_INVALID) ? (l->enhanced_avg_altitude / 5.0) - 500.0 : -1000,
-                                    .max_power = l->max_power,
-                                    .avg_power = l->avg_power,
-                                    .max_speed = l->enhanced_max_speed / 1000.0,
-                                    .avg_speed = l->enhanced_avg_speed / 1000.0,
-                                    .min_hr = l->min_heart_rate,
-                                    .max_hr = l->max_heart_rate,
-                                    .avg_hr = l->avg_heart_rate,
-                                    .time_range = (Vector2) {
-                                        .x = l->start_time,
-                                        .y = l->start_time + l->total_elapsed_time,
+
+                    uint32_t start = l->start_time + FIT_EPOCH_OFFSET;
+                    uint32_t elapsed = l->total_elapsed_time / 1000;
+                    uint32_t end = start + elapsed;
+                    nodeptr  lap_ptr = append_entity_s(lap, repo,
+                         .timestamp = l->timestamp,
+                         .start_time = start,
+                         .end_time = end,
+                         .description = path_basename(&path),
+                         .elapsed_time = l->total_elapsed_time / 1000.0,
+                         .moving_time = l->total_moving_time / 1000.0,
+                         .distance = l->total_distance / 100.0,
+                         .min_elevation = (l->enhanced_min_altitude != FIT_UINT32_INVALID) ? (l->enhanced_min_altitude / 5.0) - 500.0 : 10000,
+                         .max_elevation = (l->enhanced_max_altitude != FIT_UINT32_INVALID) ? (l->enhanced_max_altitude / 5.0) - 500.0 : -1000,
+                         .avg_elevation = (l->enhanced_avg_altitude != FIT_UINT32_INVALID) ? (l->enhanced_avg_altitude / 5.0) - 500.0 : -1000,
+                         .max_power = l->max_power,
+                         .avg_power = l->avg_power,
+                         .max_speed = l->enhanced_max_speed / 1000.0,
+                         .avg_speed = l->enhanced_avg_speed / 1000.0,
+                         .max_cadence = l->max_cadence,
+                         .avg_cadence = l->avg_cadence,
+                         .min_hr = l->min_heart_rate,
+                         .max_hr = l->max_heart_rate,
+                         .avg_hr = l->avg_heart_rate,
+                         .time_range = (Vector2) {
+                             .x = l->start_time,
+                             .y = l->start_time + l->total_elapsed_time,
                         },
-                                    .route_area = box_from_start_end_coordinates(l->start_position_long, l->start_position_lat, l->end_position_long, l->end_position_lat));
+                         .route_area = box_from_start_end_coordinates(l->start_position_long, l->start_position_lat, l->end_position_long, l->end_position_lat));
 
                     dynarr_append(&laps, lap_ptr);
                     if (laps.len > 1) {
@@ -275,6 +280,7 @@ nodeptr read_fit_file(repo_t *repo, slice_t file_name)
                         .distance = distance,
                         .power = record->power,
                         .speed = speed,
+                        .cadence = record->cadence,
                         .hr = record->heart_rate, );
                     dynarr_append(&records, nodeptr_ptr(repo->entities.len - 1));
                     break;

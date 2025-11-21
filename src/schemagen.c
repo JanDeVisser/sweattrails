@@ -50,6 +50,7 @@ typedef struct _schema_type_def {
 typedef struct _schema_table_def {
     slice_t              name;
     schema_column_defs_t columns;
+    slices_t             indexes;
     bool                 no_id;
 } schema_table_def_t;
 
@@ -243,6 +244,10 @@ void parse_tables(json_t *json, nodeptr tablesptr)
                         if (slice_eq(colattr->key, C("pk"))) {
                             c.pk = true;
                             continue;
+                        }
+                        if (slice_eq(colattr->key, C("indexed"))) {
+                            assert(c.name.len > 0);
+                            dynarr_append(&t.indexes, c.name);
                         }
                     }
                     if (c.name.len == 0) {
@@ -667,7 +672,13 @@ int main(int argc, char **argv)
             }
             sb_append_cstr(&sql, " )");
         }
-        sb_append_cstr(&sql, "\n);\n\n");
+        sb_append_cstr(&sql, "\n);\n");
+        dynarr_foreach(slice_t, idx, &tbl->indexes)
+        {
+            sb_printf(&sql, "create index on " SL "." SL " ( " SL " );\n",
+                SLARG(schema_name), SLARG(tbl->name), SLARG(*idx));
+        }
+        sb_append_char(&sql, '\n');
     }
 
     path_replace_extension(&p, C("sql"));

@@ -13,7 +13,7 @@
 		{ "type": "serial",   "name": "id", "pk": true },
 		{ "ref": "file",      "name": "files", "cardinality": "1-n", "fk_column": "activity_id"},
 		{ "type": "slice_t",  "name": "description" },
-		{ "type": "uint32_t", "name": "start_time" },
+		{ "type": "uint32_t", "name": "start_time", "indexed": true },
 		{ "type": "uint32_t", "name": "end_time" },
 	    ]
 	},
@@ -26,9 +26,20 @@
 		{ "ref": "activity",  "name": "activity_id", "cardinality": "n-1" },
 		{ "ref": "session",   "name": "sessions", "cardinality": "1-n", "fk_column": "file_id"},
 		{ "type": "slice_t",  "name": "file_name" },
-		{ "type": "uint32_t", "name": "start_time" },
+		{ "type": "uint32_t", "name": "start_time", "indexed": true },
 		{ "type": "uint32_t", "name": "end_time" },
 		{ "type": "uint32_t", "name": "serial_number" }
+	    ]
+	},
+	{
+	    "key": "DEVICE",
+	    "table_name": "device",
+	    "name": "device",
+	    "columns": [
+		{ "type": "serial",   "name": "id", "pk": true },
+		{ "type": "uint32_t", "name": "device_type" },
+		{ "type": "slice_t",  "name": "device_id" },
+		{ "type": "uint32_t", "name": "protocol" }
 	    ]
 	},
 	{
@@ -44,7 +55,7 @@
 		{ "type": "uint32_t", "name": "sub_sport" },
 		{ "type": "uint32_t", "name": "timestamp" },
 		{ "type": "slice_t",  "name": "description" },
-		{ "type": "uint32_t", "name": "start_time" },
+		{ "type": "uint32_t", "name": "start_time", "indexed": true },
 		{ "type": "uint32_t", "name": "end_time" },
 		{ "type": "float",    "name": "elapsed_time" },
 		{ "type": "float",    "name": "moving_time" },
@@ -56,6 +67,8 @@
 		{ "type": "float",    "name": "avg_power" },
 		{ "type": "float",    "name": "max_speed" },
 		{ "type": "float",    "name": "avg_speed" },
+		{ "type": "float",    "name": "max_cadence" },
+		{ "type": "float",    "name": "avg_cadence" },
 		{ "type": "uint32_t", "name": "min_hr" },
 		{ "type": "uint32_t", "name": "max_hr" },
 		{ "type": "uint32_t", "name": "avg_hr" },
@@ -86,6 +99,8 @@
 		{ "type": "float",    "name": "avg_power" },
 		{ "type": "float",    "name": "max_speed" },
 		{ "type": "float",    "name": "avg_speed" },
+		{ "type": "float",    "name": "max_cadence" },
+		{ "type": "float",    "name": "avg_cadence" },
 		{ "type": "uint32_t", "name": "min_hr" },
 		{ "type": "uint32_t", "name": "max_hr" },
 		{ "type": "uint32_t", "name": "avg_hr" },
@@ -101,12 +116,13 @@
 	    "columns": [
 		{ "type": "serial",        "name": "id", "pk": true },
 		{ "ref": "session",        "name": "session_id", "cardinality": "n-1" },
-		{ "type": "uint32_t",      "name": "timestamp" },
+		{ "type": "uint32_t",      "name": "timestamp", "indexed": true },
 		{ "type": "coordinates_t", "name": "position", "optional": true},
 		{ "type": "float",         "name": "elevation" },
 		{ "type": "float",         "name": "distance" },
 		{ "type": "float",         "name": "power" },
 		{ "type": "float",         "name": "speed" },
+		{ "type": "float",         "name": "cadence" },
 		{ "type": "float",         "name": "hr" }
 	    ]
 	}
