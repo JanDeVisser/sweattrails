@@ -4,9 +4,12 @@
  * SPDX-License-Identifier: MIT
  */
 
+#define _XOPEN_SOURCE 600
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -281,7 +284,7 @@ int unmarshall_builtin(char const *sql_value, void *value_ptr, sql_type_t type)
         ((serial *) value_ptr)->db_id = nodeptr_ptr(atol(sql_value));
         break;
     case SQLType_String:
-        *((slice_t *) value_ptr) = C(strdup(sql_value));
+        *((slice_t *) value_ptr) = slice_from_cstr(strdup(sql_value));
         break;
     case SQLType_Point: {
         slice_t s = C(sql_value);

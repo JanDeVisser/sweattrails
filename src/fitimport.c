@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+#define _GNU_SOURCE
+
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -71,7 +73,7 @@ opt_box_t box_from_start_end_coordinates(int32_t start_lon, int32_t start_lat, i
     return OPTVAL(box_t, ret);
 }
 
-int sort_sessions(void *thunk, void const *p1, void const *p2)
+int sort_sessions(void const *p1, void const *p2, void *thunk)
 {
     repo_t    *repo = (repo_t *) thunk;
     session_t *s1 = get_entity(session, repo, *((nodeptr *) p1));
@@ -85,7 +87,7 @@ int sort_sessions(void *thunk, void const *p1, void const *p2)
     }
 }
 
-int sort_laps(void *thunk, void const *p1, void const *p2)
+int sort_laps(void const *p1, void const *p2, void *thunk)
 {
     repo_t *repo = (repo_t *) thunk;
     lap_t  *l1 = get_entity(lap, repo, *((nodeptr *) p1));
@@ -99,7 +101,7 @@ int sort_laps(void *thunk, void const *p1, void const *p2)
     }
 }
 
-int sort_records(void *thunk, void const *p1, void const *p2)
+int sort_records(void const *p1, void const *p2, void *thunk)
 {
     repo_t   *repo = (repo_t *) thunk;
     record_t *r1 = get_entity(record, repo, *((nodeptr *) p1));

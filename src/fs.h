@@ -62,7 +62,11 @@ void    paths_free(paths_t *paths);
 
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <unistd.h>
 
 static void path_reparse(path_t *path)
@@ -237,7 +241,7 @@ void path_mkdirs(path_t path)
             }
             fatal("path_mkdir(" SL "): stat(%p) failed: %s", SLARG(path.path), p, strerror(errno));
         }
-        if ((sb.st_mode & S_IFDIR) == 0) {
+        if (S_ISDIR(sb.st_mode)) {
             fatal("path_mkdir(" SL "): `%s` exists but is not a directory", SLARG(path.path), p);
         }
     }
@@ -264,7 +268,7 @@ bool path_is_dir(path_t path)
         ret = false;
         goto exit;
     }
-    ret = (sb.st_mode & S_IFDIR) == S_IFDIR;
+    ret = S_ISDIR(sb.st_mode);
 exit:
     temp_rewind(cp);
     return ret;
@@ -279,7 +283,7 @@ bool path_is_file(path_t path)
         ret = false;
         goto exit;
     }
-    ret = (sb.st_mode & S_IFREG) == S_IFREG;
+    ret = S_ISREG(sb.st_mode);
 exit:
     temp_rewind(cp);
     return ret;
@@ -305,7 +309,7 @@ paths_t path_file_listing(path_t path)
     DIR           *d = opendir(c_str);
     struct dirent *dp;
     while ((dp = readdir(d)) != NULL) {
-        path_t entry = path_extend(path, slice_make(dp->d_name, dp->d_namlen));
+        path_t entry = path_extend(path, slice_from_cstr(dp->d_name));
         dynarr_append(&ret, entry);
     }
     closedir(d);

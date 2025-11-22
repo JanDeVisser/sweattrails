@@ -17,6 +17,10 @@
 #include "io.h"
 #include "map.h"
 
+#ifndef M_PI
+#define M_PI (4 * atan2(1.0, 1.0))
+#endif
+
 int long2tilex(double lon, int z)
 {
     return (int) (floor((lon + 180.0) / 360.0 * (1 << z)));

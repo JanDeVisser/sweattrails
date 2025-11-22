@@ -351,7 +351,7 @@ json_decode_result_t json_decode(slice_t jsontext)
 
 int main()
 {
-    char const *jsontext = "{\"hello\":42,\"foo\":[true,false,null],\"s\":\"Hello, World!\"}";
+    char const jsontext[] = "{\"hello\":42,\"foo\":[true,false,null],\"s\":\"Hello, World!\"}";
 
     do_trace = true;
     json_decode_result_t res = json_decode(C(jsontext));

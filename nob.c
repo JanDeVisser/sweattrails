@@ -11,6 +11,18 @@
 
 Nob_Cmd cmd = { 0 };
 
+#ifdef __APPLE__
+#define PG_INC cmd_append(&cmd, "-I/opt/homebrew/include/postgresql")
+#define PG_LIB cmd_append(&cmd, "-L/opt/homebrew/lib/postgresql")
+#define RAYLIB_INC cmd_append(&cmd, "-L/opt/homebrew/include")
+#define RAYLIB_LIB
+#else
+#define PG_INC
+#define PG_LIB
+#define RAYLIB_INC
+#define RAYLIB_LIB
+#endif
+
 #define FIT_DIR "fitsdk/"
 #define BUILD_DIR "build/"
 #define SRC_DIR "src/"
@@ -37,7 +49,8 @@ Nob_Cmd cmd = { 0 };
 
 #define APP_HEADERS(S) \
     S(map)             \
-    S(sweattrails)
+    S(sweattrails)     \
+    S(zorro)
 
 #define APP_SOURCES(S) \
     S(db)              \
@@ -77,6 +90,18 @@ int format_sources()
     return 0;
 }
 
+void cc()
+{
+    static char const *compiler = NULL;
+    if (compiler == NULL) {
+        compiler = getenv("CC");
+        if (compiler == NULL) {
+            compiler = "cc";
+        }
+    }
+    cmd_append(&cmd, compiler, "-Wall", "-Wextra", "-g", "-std=c17", "-pthread");
+}
+
 int main(int argc, char **argv)
 {
     NOB_GO_REBUILD_URSELF(argc, argv);
@@ -106,20 +131,17 @@ int main(int argc, char **argv)
     if (!nob_file_exists("build")) {
         mkdir_if_not_exists("build");
     }
-    char *cc = getenv("CC");
-    if (cc == NULL) {
-        cc = "cc";
-    }
 
     bool fit_sources_updated = false;
 #undef S
-#define S(SRC)                                                                                              \
-    if (rebuild || nob_needs_rebuild1(BUILD_DIR "libfit.a", FIT_DIR #SRC ".c")) {                           \
-        cmd_append(&cmd, cc, "-Wall", "-Wextra", "-c", "-g", "-o", BUILD_DIR #SRC ".o", FIT_DIR #SRC ".c"); \
-        if (!cmd_run(&cmd)) {                                                                               \
-            return 1;                                                                                       \
-        }                                                                                                   \
-        fit_sources_updated = true;                                                                         \
+#define S(SRC)                                                                    \
+    if (rebuild || nob_needs_rebuild1(BUILD_DIR "libfit.a", FIT_DIR #SRC ".c")) { \
+        cc();                                                                     \
+        cmd_append(&cmd, "-c", "-o", BUILD_DIR #SRC ".o", FIT_DIR #SRC ".c");     \
+        if (!cmd_run(&cmd)) {                                                     \
+            return 1;                                                             \
+        }                                                                         \
+        fit_sources_updated == true;                                              \
     }
     FIT_SOURCES(S)
     if (fit_sources_updated) {
@@ -134,17 +156,18 @@ int main(int argc, char **argv)
 
     bool headers_updated = rebuild;
 #undef S
-#define S(H, T)                                                                                                          \
-    if (headers_updated || nob_needs_rebuild1(BUILD_DIR #H, SRC_DIR #H ".h")) {                                          \
-        cmd_append(&cmd, cc, "-D" #T "_TEST", "-Wall", "-Wextra", "-g", "-x", "c", "-o", BUILD_DIR #H, SRC_DIR #H ".h"); \
-        if (!cmd_run(&cmd)) {                                                                                            \
-            return 1;                                                                                                    \
-        }                                                                                                                \
-        cmd_append(&cmd, BUILD_DIR #H);                                                                                  \
-        if (!cmd_run(&cmd)) {                                                                                            \
-            return 1;                                                                                                    \
-        }                                                                                                                \
-        headers_updated = true;                                                                                          \
+#define S(H, T)                                                                            \
+    if (headers_updated || nob_needs_rebuild1(BUILD_DIR #H, SRC_DIR #H ".h")) {            \
+        cc();                                                                              \
+        cmd_append(&cmd, "-D" #T "_TEST", "-x", "c", "-o", BUILD_DIR #H, SRC_DIR #H ".h"); \
+        if (!cmd_run(&cmd)) {                                                              \
+            return 1;                                                                      \
+        }                                                                                  \
+        cmd_append(&cmd, BUILD_DIR #H);                                                    \
+        if (!cmd_run(&cmd)) {                                                              \
+            return 1;                                                                      \
+        }                                                                                  \
+        headers_updated = true;                                                            \
     }
     STB_HEADERS(S)
 
@@ -183,8 +206,8 @@ int main(int argc, char **argv)
         (char const *) "db/schema.json",
     };
     if (rebuild || nob_needs_rebuild("src/schema.h", schema_sources, 2)) {
-        cmd_append(&cmd, cc, "-Wall", "-Wextra", "-g",
-            "-o", BUILD_DIR "schemagen", "src/schemagen.c");
+        cc();
+        cmd_append(&cmd, "-o", BUILD_DIR "schemagen", "src/schemagen.c");
         if (!cmd_run(&cmd)) {
             return 1;
         }
@@ -203,9 +226,10 @@ int main(int argc, char **argv)
     if (headers_updated                                                                                                     \
         || fit_sources_updated || schema_updated                                                                            \
         || /* || profile_updated || */ nob_needs_rebuild(BUILD_DIR #SRC ".o", sources, sizeof(sources) / sizeof(char *))) { \
-        cmd_append(&cmd, cc, "-Wall", "-Wextra",                                                                            \
-            "-I/opt/homebrew/include", "-I../fitsdk", "-I/opt/homebrew/include/postgresql",                                 \
-            "-c", "-g", "-o", BUILD_DIR #SRC ".o", SRC_DIR #SRC ".c");                                                      \
+        cc();                                                                                                               \
+        RAYLIB_INC;                                                                                                         \
+        PG_INC;                                                                                                             \
+        cmd_append(&cmd, "-I../fitsdk", "-c", "-o", BUILD_DIR #SRC ".o", SRC_DIR #SRC ".c");                                \
         if (!cmd_run(&cmd)) {                                                                                               \
             return 1;                                                                                                       \
         }                                                                                                                   \
@@ -213,27 +237,34 @@ int main(int argc, char **argv)
     }
         APP_SOURCES(S)
         if (sources_updated) {
-            cmd_append(&cmd, cc, "-o", BUILD_DIR "sweattrails",
+            cc();
+            RAYLIB_LIB;
+            PG_LIB;
+            cmd_append(&cmd, "-o", BUILD_DIR "sweattrails",
 #undef S
 #define S(SRC) BUILD_DIR #SRC ".o",
-                APP_SOURCES(S) "-Lbuild", "-lfit", "-lraylib", "-lcurl", "-L/opt/homebrew/lib/postgresql", "-lpq", "-lm");
+                APP_SOURCES(S) "-Lbuild", "-lfit", "-lraylib", "-lcurl", "-lpq", "-lm");
             if (!cmd_run(&cmd)) {
                 return 1;
             }
         }
 
     } else {
-        cmd_append(&cmd, cc, "-Wall", "-Wextra",
-            "-I/opt/homebrew/include", "-c", "-g", "-o", BUILD_DIR "map.o", SRC_DIR "map.c");
+        cc();
+        RAYLIB_INC;
+        cmd_append(&cmd, "-c", "-o", BUILD_DIR "map.o", SRC_DIR "map.c");
         if (!cmd_run(&cmd)) {
             return 1;
         }
-        cmd_append(&cmd, cc, "-Wall", "-Wextra",
-            "-I/opt/homebrew/include", "-c", "-g", "-o", BUILD_DIR "displaymap.o", SRC_DIR "displaymap.c");
+        cc();
+        RAYLIB_INC;
+        cmd_append(&cmd, "-c", "-o", BUILD_DIR "displaymap.o", SRC_DIR "displaymap.c");
         if (!cmd_run(&cmd)) {
             return 1;
         }
-        cmd_append(&cmd, cc, "-o", BUILD_DIR "displaymap", BUILD_DIR "displaymap.o", BUILD_DIR "map.o", "-lraylib", "-lcurl", "-lm");
+        cc();
+        RAYLIB_LIB;
+        cmd_append(&cmd, "-o", BUILD_DIR "displaymap", BUILD_DIR "displaymap.o", BUILD_DIR "map.o", "-lraylib", "-lcurl", "-lm");
         if (!cmd_run(&cmd)) {
             return 1;
         }

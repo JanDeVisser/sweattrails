@@ -4,6 +4,10 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+
 #ifndef ZORRO_TYPES_ONLY
 #include <libpq-fe.h>
 #endif /* ZORRO_TYPES_ONLY */
@@ -75,12 +79,12 @@ typedef enum _cardinality {
 typedef struct _column_def {
     slice_t         name;
     sql_type_kind_t kind;
-    off_t           offset;
+    ptrdiff_t       offset;
     union {
         sql_type_t type;
         struct {
             sql_type_t type;
-            off_t      value_offset;
+            ptrdiff_t  value_offset;
         } optional;
         nodeptr composite;
         struct {
@@ -311,16 +315,25 @@ db_t db_make(slice_t dbname, slice_t user, slice_t passwd, slice_t hostname, int
     size_t      cp = temp_save();
     char const *conninfo;
     if (passwd.len == 0) {
-        conninfo = temp_sprintf(
-            "dbname=" SL " user=" SL " host=" SL " port=%d",
-            SLARG(dbname), SLARG(user), SLARG(hostname), port);
+        if (port > 0) {
+            conninfo = temp_sprintf(
+                "postgresql://" SL "@" SL ":%d/" SL, SLARG(user), SLARG(hostname), port, SLARG(dbname));
+        } else {
+            conninfo = temp_sprintf(
+                "postgresql://" SL "@" SL "/" SL, SLARG(user), SLARG(hostname), SLARG(dbname));
+        }
     } else {
-        conninfo = temp_sprintf(
-            "dbname=" SL " user=" SL "passwd=" SL " host=" SL " port=%d",
-            SLARG(dbname), SLARG(user), SLARG(passwd), SLARG(hostname), port);
+        if (port > 0) {
+            conninfo = temp_sprintf(
+                "postgresql://" SL ":" SL "@" SL ":%d/" SL, SLARG(user), SLARG(passwd), SLARG(hostname), port, SLARG(dbname));
+        } else {
+            conninfo = temp_sprintf(
+                "postgresql://" SL ":" SL "@" SL "/" SL, SLARG(user), SLARG(passwd), SLARG(hostname), SLARG(dbname));
+        }
     }
 
     // Establish a connection to the PostgreSQL database
+    trace("pgsql conn string: %s", conninfo);
     ret.conn = PQconnectdb(conninfo);
 
     // Check if the connection was successful

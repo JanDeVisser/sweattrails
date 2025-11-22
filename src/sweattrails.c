@@ -554,8 +554,8 @@ int main(int argc, char const **argv)
     db_t db = db_make(
         C("sweattrails"),
         C("sweattrails"),
-        C(""),
-        C("localhost"),
+        C("sweattrails"),
+        C("127.0.0.1"),
         5432);
     sweattrails_init_schema(&db);
     // read_fit_file(C(argv[1]));

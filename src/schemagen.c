@@ -273,7 +273,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: schemagen <schema json file> <schema header file>\n");
         return 1;
     }
-    slice_t              text = sb_as_slice(MUSTOPT(sb_t, slurp_file(C(argv[1]))));
+    slice_t              text = sb_as_slice(MUSTOPT(sb_t, slurp_file(slice_from_cstr(argv[1]))));
     json_decode_result_t res = json_decode(text);
     if (!res.ok) {
         fatal("JSON parse failed: %d:%d: " SL, res.error.line, res.error.column, SLARG(res.error.error));

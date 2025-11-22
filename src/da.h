@@ -71,7 +71,7 @@ OPTDEF(nodeptrs);
         {                                                              \
             size_t __ix = (ix);                                        \
             T      __deleted = { 0 };                                  \
-            if (__ix >= 0 && __ix < (arr)->len) {                      \
+            if (__ix < (arr)->len) {                                   \
                 __deleted = (arr)->items[ix];                          \
                 if (__ix < (arr)->len - 1) {                           \
                     (arr)->items[__ix] = (arr)->items[(arr)->len - 1]; \
@@ -86,7 +86,7 @@ OPTDEF(nodeptrs);
         {                                                               \
             size_t __ix = (ix);                                         \
             T      __deleted = { 0 };                                   \
-            if (__ix >= 0 || __ix < (arr)->len) {                       \
+            if (__ix < (arr)->len) {                                    \
                 __deleted = (arr)->items[ix];                           \
                 if (__ix < (arr)->len - 1) {                            \
                     memcpy((arr)->items + __ix,                         \
@@ -103,24 +103,26 @@ OPTDEF(nodeptrs);
         void  *__base = (arr)->items;                    \
         size_t __nel = (arr)->len;                       \
         size_t __width = sizeof((arr)->items[0]);        \
-        qsort_r(__base, __nel, __width, (thunk), (cmp)); \
+        qsort_r(__base, __nel, __width, (cmp), (thunk)); \
     } while (0)
 
 #define dynarr_clear(arr) generic_da_clear(GENDA(arr))
 #define dynarr_free(arr) generic_da_free(GENDA(arr))
 
-#define dynarr_append(arr, elem)              \
-    do {                                      \
-        dynarr_ensure((arr), (arr)->len + 1); \
-        (arr)->items[(arr)->len++] = (elem);  \
-        ((arr)->len - 1);                     \
-    } while (0)
+#define dynarr_append(arr, elem)                  \
+    (                                             \
+        {                                         \
+            dynarr_ensure((arr), (arr)->len + 1); \
+            (arr)->items[(arr)->len++] = (elem);  \
+            ((arr)->len - 1);                     \
+        })
 
-#define dynarr_append_s(T, arr, ...) \
-    do {                             \
-        T __elem = { __VA_ARGS__ };  \
-        dynarr_append(arr, __elem);  \
-    } while (0)
+#define dynarr_append_s(T, arr, ...)      \
+    (                                     \
+        {                                 \
+            T __elem = { __VA_ARGS__ };   \
+            (dynarr_append(arr, __elem)); \
+        })
 
 #define dynarr_extend(arr, arr2)                            \
     do {                                                    \
@@ -188,7 +190,7 @@ OPTDEF(nodeptrs);
         (sb)->len++;                        \
     } while (0);
 #define sb_append_sb(sb, a) sb_append((sb), (sb_as_slice((a))))
-#define sb_append_cstr(sb, a) sb_append((sb), C(a));
+#define sb_append_cstr(sb, a) sb_append((sb), slice_from_cstr(a));
 #define sb_make(s)                \
     (                             \
         {                         \

@@ -39,7 +39,7 @@ extern bool do_trace;
     } while (0)
 
 #define UNREACHABLE_MSG(msg, ...) _fatal(__FILE__, __LINE__, "Unreachable", msg, ##__VA_ARGS__)
-#define UNREACHABLE() _fatal(__FILE__, __LINE__, "Unreachable: ", "")
+#define UNREACHABLE() _fatal(__FILE__, __LINE__, "Unreachable: ", "Unreachable")
 #define TODO(msg, ...) _fatal(__FILE__, __LINE__, "Not Yet Implemented: ", msg, ##__VA_ARGS__)
 #define NYI(msg, ...) TODO(msg, ##__VA_ARGS__)
 #define fatal(msg, ...) _fatal(__FILE__, __LINE__, "", msg, ##__VA_ARGS__);
@@ -71,31 +71,10 @@ struct _allocator {
 void *stdc_alloc(allocator_t *alloc, size_t size);
 void *stdc_realloc(allocator_t *alloc, void *ptr, size_t old_size, size_t new_size);
 void  stdc_free(allocator_t *alloc, void *ptr);
-
-static allocator_t stdc_allocator = {
-    .alloc = stdc_alloc,
-    .realloc = stdc_realloc,
-    .free = stdc_free,
-    .destroy = NULL,
-};
-
 void *temp_allocator_alloc(allocator_t *alloc, size_t size);
 
-static allocator_t temp_allocator = {
-    .alloc = temp_allocator_alloc,
-    .realloc = NULL,
-    .free = NULL,
-    .destroy = NULL,
-};
-
-typedef struct _allocator_entry {
-} _allocator_entry_t;
-
-static struct {
-    allocator_t *allocator;
-    size_t       count;
-} allocator_stack[256] = { { .allocator = &stdc_allocator, .count = 1 } };
-static size_t current_allocator = 0;
+extern allocator_t stdc_allocator;
+extern allocator_t temp_allocator;
 
 void  allocator_push(allocator_t *alloc);
 void  allocator_pop();
@@ -254,6 +233,9 @@ OPTDEF(double);
 
 typedef opt_size_t nodeptr;
 #ifndef __cplusplus
+#ifdef nullptr
+#undef nullptr
+#endif
 extern nodeptr nullptr;
 #else
 #warning "Can't compile elrond with C++ yet"
@@ -280,7 +262,7 @@ typedef struct array {
 
 #define slice_make(s, l) ((slice_t) { .items = (s), .len = (l) })
 #define slice_from_cstr(s) ((slice_t) { .items = ((char *) s), .len = strlen((s)) })
-#define C(s) slice_from_cstr(s)
+#define C(s) ((slice_t) { .items = ((char *) s), .len = sizeof((s)) - 1 })
 #define slice_is_cstr(s) ((s).items[(s).len] == '\0')
 #define SL "%.*s"
 #define SLARG(s) (int) (s).len, (s).items
@@ -361,6 +343,25 @@ _Thread_local static size_t temp_size = 0;
 _Thread_local static char   temp_buffer[TEMP_CAPACITY] = { 0 };
 nodeptr nullptr = { 0 };
 
+allocator_t temp_allocator = {
+    .alloc = temp_allocator_alloc,
+    .realloc = NULL,
+    .free = NULL,
+    .destroy = NULL,
+};
+
+allocator_t stdc_allocator = {
+    .alloc = stdc_alloc,
+    .realloc = stdc_realloc,
+    .free = stdc_free,
+    .destroy = NULL,
+};
+
+static struct {
+    allocator_t *allocator;
+    size_t       count;
+} allocator_stack[256] = { { .allocator = &stdc_allocator, .count = 1 } };
+
 intptr_t align_at(intptr_t alignment, intptr_t bytes)
 {
     assert(alignment > 0 && (alignment & (alignment - 1)) == 0); // Align must be power of 2
@@ -401,6 +402,8 @@ void *temp_allocator_alloc(allocator_t *alloc, size_t size)
     void *ret = temp_alloc(size);
     return ret;
 }
+
+static size_t current_allocator = 0;
 
 void allocator_push(allocator_t *alloc)
 {

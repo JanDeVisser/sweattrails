@@ -14,6 +14,7 @@
 #define PROCESS_IMPLEMENTATION
 #endif /* PROCESS_TEST */
 
+#define _GNU_SOURCE
 #include <pthread.h>
 
 #include "da.h"
@@ -119,6 +120,8 @@ int              process_write(process_t *proc, slice_t sv);
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <signal.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define PROCESS_PIPE_END_READ 0
