@@ -14,7 +14,7 @@ Nob_Cmd cmd = { 0 };
 #ifdef __APPLE__
 #define PG_INC cmd_append(&cmd, "-I/opt/homebrew/include/postgresql")
 #define PG_LIB cmd_append(&cmd, "-L/opt/homebrew/lib/postgresql")
-#define RAYLIB_INC cmd_append(&cmd, "-L/opt/homebrew/include")
+#define RAYLIB_INC cmd_append(&cmd, "-I/opt/homebrew/include")
 #define RAYLIB_LIB
 #else
 #define PG_INC
@@ -178,7 +178,7 @@ int main(int argc, char **argv)
         APP_HEADERS(S)
     };
 
-#if 0    
+#if 0
     bool profile_updated = false;
     char const *profile_sources[] = {
                 (char const *) "src/profile.c",
@@ -187,7 +187,7 @@ int main(int argc, char **argv)
                 (char const *) "profile-messages.csv",
     };
     if (nob_needs_rebuild("src/fittypes.c", profile_sources, 4)) {
-        cmd_append(&cmd, cc, "-Wall", "-Wextra", "-g", 
+        cmd_append(&cmd, cc, "-Wall", "-Wextra", "-g",
             "-o", BUILD_DIR "profile", "src/profile.c");
         if (!cmd_run(&cmd)) {
             return 1;

@@ -235,6 +235,7 @@ ptr activity_import(repo_t *repo, path_t inbox_path)
 }
 
 typedef enum _gui_state {
+    GUIState_Initializing,
     GUIState_Importing,
     GUIState_List,
     GUIState_Display,
@@ -301,6 +302,10 @@ void gui_display_activity(gui_t *gui, nodeptr activity)
     Image const graph_img = session_graph_image(s, gui->screen_width - 40, gui->screen_height - map_height - 60);
     gui->s.display_state.graph_texture = LoadTextureFromImage(graph_img);
     UnloadImage(graph_img);
+}
+
+void gui_render_initalizing_state(gui_t *gui)
+{
 }
 
 void gui_render_import_state(gui_t *gui)
@@ -467,6 +472,8 @@ void gui_list_state_input(gui_t *gui)
 void gui_run(gui_t *gui)
 {
     InitWindow(gui->screen_width, gui->screen_height, "Sweattrails");
+    SetWindowState(FLAG_WINDOW_RESIZABLE);
+    MaximizeWindow();
     gui->font = LoadFontEx("VictorMono-Medium.ttf", 20, NULL, 0);
     gui->import = import_init(&gui->db, &gui->repo, cmdline_is_set("reload-all"));
     import_start(&gui->import);
@@ -476,8 +483,13 @@ void gui_run(gui_t *gui)
     while (!WindowShouldClose()) {
         BeginDrawing();
 
+        gui->screen_width = GetRenderWidth();
+        gui->screen_height = GetRenderHeight();
         ClearBackground(DARKGRAY);
         switch (gui->state) {
+        case GUIState_Initializing:
+            gui_render_initalizing_state(gui);
+            break;
         case GUIState_Importing:
             gui_render_import_state(gui);
             break;

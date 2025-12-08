@@ -98,6 +98,8 @@ OPTDEF(nodeptrs);
             (__deleted);                                                \
         })
 
+#ifndef __APPLE__
+
 #define dynarr_sort(arr, cmp, thunk)                     \
     do {                                                 \
         void  *__base = (arr)->items;                    \
@@ -105,6 +107,26 @@ OPTDEF(nodeptrs);
         size_t __width = sizeof((arr)->items[0]);        \
         qsort_r(__base, __nel, __width, (cmp), (thunk)); \
     } while (0)
+
+#else
+
+typedef struct _qsort_adapter {
+    int (*compare)(void const *, void const *, void *);
+    void *thunk;
+} qsort_adapter_t;
+
+extern int __qsort_adapter(void *adapter, void const *p1, void const *p2);
+
+#define dynarr_sort(arr, cmp, ctx)                                        \
+    do {                                                                  \
+        void           *__base = (arr)->items;                            \
+        size_t          __nel = (arr)->len;                               \
+        size_t          __width = sizeof((arr)->items[0]);                \
+        qsort_adapter_t __adapter = { .thunk = (ctx), .compare = (cmp) }; \
+        qsort_r(__base, __nel, __width, &__adapter, __qsort_adapter);     \
+    } while (0)
+
+#endif
 
 #define dynarr_clear(arr) generic_da_clear(GENDA(arr))
 #define dynarr_free(arr) generic_da_free(GENDA(arr))
@@ -276,6 +298,12 @@ int generic_da_cmp(generic_da_t *da1, generic_da_t *da2, size_t elem_size)
         return da1->len - da2->len;
     }
     return memcmp(da1->items, da2->items, da1->len * elem_size);
+}
+
+int __qsort_adapter(void *adapter, void const *p1, void const *p2)
+{
+    qsort_adapter_t *a = (qsort_adapter_t *) adapter;
+    return (*a->compare)(p1, p2, a->thunk);
 }
 
 sb_t sb_format(char const *fmt, ...)

@@ -66,7 +66,9 @@ void    paths_free(paths_t *paths);
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#ifndef __APPLE__
 #include <sys/sysmacros.h>
+#endif
 #include <unistd.h>
 
 static void path_reparse(path_t *path)
@@ -241,7 +243,7 @@ void path_mkdirs(path_t path)
             }
             fatal("path_mkdir(" SL "): stat(%p) failed: %s", SLARG(path.path), p, strerror(errno));
         }
-        if (S_ISDIR(sb.st_mode)) {
+        if (!S_ISDIR(sb.st_mode)) {
             fatal("path_mkdir(" SL "): `%s` exists but is not a directory", SLARG(path.path), p);
         }
     }

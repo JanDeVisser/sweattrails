@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <pthread.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -123,6 +124,13 @@ typedef struct _schema_def {
 } schema_def_t;
 
 #ifndef ZORRO_TYPES_ONLY
+typedef struct _db_conn_info {
+    slice_t dbname;
+    slice_t user;
+    slice_t passwd;
+    slice_t hostname;
+    int     port;
+} db_conn_info_t;
 
 typedef struct _db_result {
     PGresult *res;
@@ -130,10 +138,41 @@ typedef struct _db_result {
 
 typedef DA(db_result_t) db_results_t;
 
+typedef struct _db_exec_req {
+    slice_t            sql;
+    char const *const *args;
+    int                nargs;
+} db_exec_req_t;
+
+#define DBSTATES(S)  \
+    S(Initial)       \
+    S(Connecting)    \
+    S(Idle)          \
+    S(ExecutionReq)  \
+    S(Executing)     \
+    S(ExecutionDone) \
+    S(CloseReq)      \
+    S(Closed)        \
+    S(Error)         \
+    S(FatalError)
+
+typedef enum _db_state {
+#undef S
+#define S(State) DBS_##State,
+    DBSTATES(S)
+#undef S
+} db_state_t;
+
 typedef struct _db {
-    schema_def_t schema;
-    PGconn      *conn;
-    db_results_t results;
+    db_state_t      state;
+    pthread_t       thread;
+    pthread_mutex_t mutex;
+    schema_def_t    schema;
+    db_conn_info_t  conn_info;
+    PGconn         *conn;
+    db_exec_req_t   req;
+    db_result_t     result;
+    char            errormsg[1024];
 } db_t;
 
 OPTDEF(db_result_t);
@@ -156,8 +195,9 @@ nodeptr      schema_find_type(schema_def_t *schema, slice_t type);
 nodeptr      schema_find_type_by_c_type(schema_def_t *schema, slice_t c_type);
 nodeptr      schema_find_table(schema_def_t *schema, slice_t table);
 db_t         db_make(slice_t dbname, slice_t user, slice_t passwd, slice_t hostname, int port);
-bool         db_exec(db_t *db, char const *sql);
-nodeptr      db_query(db_t *db, char const *sql);
+db_t        *db_connect(db_t *this);
+void         db_exec(db_t *db, char const *sql);
+void         db_query(db_t *db, char const *sql);
 void         db_close(db_t *db);
 void         db_result_close(db_t *db, nodeptr result);
 table_def_t *db_table_def(db_t *sb);
@@ -275,12 +315,31 @@ nodeptr schema_find_table(schema_def_t *schema, slice_t table)
     return nullptr;
 }
 
-bool db_exec(db_t *db, char const *sql)
+#define check_idle(db)                                                                            \
+    do {                                                                                          \
+        db_t *__db = (db);                                                                        \
+        if (__db->conn == NULL || __db->state != DBS_Idle) {                                      \
+            __db->state = DBS_Error;                                                              \
+            snprintf(__db->errormsg, sizeof(__db->errormsg), "Connection object in wrong state"); \
+            return;                                                                               \
+        }                                                                                         \
+    } while (0)
+
+void db_exec(db_t *db, char const *sql)
+{
+    check_idle(db);
+    db->req.sql = slice_from_cstr(sql);
+    db->state = DBS_ExecutionReq;
+    return;
+}
+
+void _db_exec(db_t *db)
 {
     nodeptr res = db_query(db, sql);
     if (!res.ok) {
         return false;
     }
+
     ExecStatusType result_status = pg_status(db, res);
     bool           ret = result_status == PGRES_COMMAND_OK
         || result_status == PGRES_TUPLES_OK
@@ -311,49 +370,99 @@ nodeptr db_query(db_t *db, char const *sql)
 db_t db_make(slice_t dbname, slice_t user, slice_t passwd, slice_t hostname, int port)
 {
     db_t ret = { 0 };
+    ret.conn_info.dbname = dbname;
+    ret.conn_info.user = user;
+    ret.conn_info.passwd = passwd;
+    ret.conn_info.hostname = hostname;
+    ret.conn_info.port = port;
+    db_connect(&ret);
+    return ret;
+}
 
-    size_t      cp = temp_save();
-    char const *conninfo;
-    if (passwd.len == 0) {
-        if (port > 0) {
+db_t *db_connect(db_t *this)
+{
+    assert(this->state == DBS_Initial);
+    this->state = DBS_Connecting;
+    size_t          cp = temp_save();
+    char const     *conninfo;
+    db_conn_info_t *info = &this->conn_info;
+    if (info->passwd.len == 0) {
+        if (info->port > 0) {
             conninfo = temp_sprintf(
-                "postgresql://" SL "@" SL ":%d/" SL, SLARG(user), SLARG(hostname), port, SLARG(dbname));
+                "postgresql://" SL "@" SL ":%d/" SL, SLARG(info->user), SLARG(info->hostname), info->port, SLARG(info->dbname));
         } else {
             conninfo = temp_sprintf(
-                "postgresql://" SL "@" SL "/" SL, SLARG(user), SLARG(hostname), SLARG(dbname));
+                "postgresql://" SL "@" SL "/" SL, SLARG(info->user), SLARG(info->hostname), SLARG(info->dbname));
         }
     } else {
-        if (port > 0) {
+        if (info->port > 0) {
             conninfo = temp_sprintf(
-                "postgresql://" SL ":" SL "@" SL ":%d/" SL, SLARG(user), SLARG(passwd), SLARG(hostname), port, SLARG(dbname));
+                "postgresql://" SL ":" SL "@" SL ":%d/" SL, SLARG(info->user), SLARG(info->passwd), SLARG(info->hostname), info->port, SLARG(info->dbname));
         } else {
             conninfo = temp_sprintf(
-                "postgresql://" SL ":" SL "@" SL "/" SL, SLARG(user), SLARG(passwd), SLARG(hostname), SLARG(dbname));
+                "postgresql://" SL ":" SL "@" SL "/" SL, SLARG(info->user), SLARG(info->passwd), SLARG(info->hostname), SLARG(info->dbname));
         }
     }
 
-    // Establish a connection to the PostgreSQL database
     trace("pgsql conn string: %s", conninfo);
-    ret.conn = PQconnectdb(conninfo);
-
-    // Check if the connection was successful
-    if (PQstatus(ret.conn) != CONNECTION_OK) {
-        PQfinish(ret.conn);
-        fatal("Connection to database failed: %s\n", PQerrorMessage(ret.conn));
+    this->conn = PQconnectdb(conninfo);
+    if (PQstatus(this->conn) != CONNECTION_OK) {
+        PQfinish(this->conn);
+        this->conn = NULL;
+        this->state = DBS_FatalError;
+        snprintf(this->errormsg, sizeof(this->errormsg), "Connection to database failed: %s\n", PQerrorMessage(this->conn));
+    } else {
+        this->state = DBS_Idle;
     }
     temp_rewind(cp);
-    return ret;
+    return this;
+}
+
+void *db_run(void *db)
+{
+    db_t *this = (db_t *) db;
+    while (true) {
+        switch (this->state) {
+        case DBS_Initial:
+            db_connect(this);
+            break;
+        default:
+            break;
+        }
+    }
+    return db;
+}
+
+void db_start(db_t *this)
+{
+    int result = pthread_create(&this->thread, NULL, import_run, (void *) this);
+    if (result != 0) {
+        fatal("Error starting db thread: %d", result);
+    }
+    pthread_detach(this->thread);
 }
 
 void db_close(db_t *db)
 {
+    check_idle(db);
+    db->state = DBS_CloseReq;
     if (db->conn != NULL) {
         while (db->results.len > 0) {
             db_result_close(db, nodeptr_ptr(db->results.len - 1));
         }
-        PQfinish(db->conn);
-        db->conn = NULL;
     }
+}
+
+void _db_close(db_t *db)
+{
+    assert(db->state == DBS_CloseReq);
+    if (db->result.res != NULL) {
+        PQclear(db->result.res);
+        db->result.res = NULL;
+    }
+    PQfinish(db->conn);
+    db->conn = NULL;
+    db->state = DBS_Closed;
 }
 
 void db_result_close(db_t *db, nodeptr res)
@@ -369,26 +478,17 @@ void db_result_close(db_t *db, nodeptr res)
 
 void db_begin(db_t *db)
 {
-    if (!db_exec(db, "BEGIN")) {
-        db_close(db);
-        fatal("Problem beginning transaction");
-    }
+    db_exec(db, "BEGIN");
 }
 
 void db_commit(db_t *db)
 {
-    if (!db_exec(db, "COMMIT")) {
-        db_close(db);
-        fatal("Problem committing transaction");
-    }
+    db_exec(db, "COMMIT");
 }
 
 void db_rollback(db_t *db)
 {
-    if (!db_exec(db, "ROLLBACK")) {
-        db_close(db);
-        fatal("Problem rolling back transaction");
-    }
+    db_exec(db, "ROLLBACK");
 }
 
 #endif /* ZORRO_TYPES_ONLY */
