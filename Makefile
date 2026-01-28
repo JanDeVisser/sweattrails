@@ -1,9 +1,9 @@
 CC = clang
-CFLAGS = -Wall -Wextra -O2 $(shell pkg-config --cflags raylib)
-LDFLAGS = $(shell pkg-config --libs raylib) -framework IOKit -framework Cocoa -framework OpenGL
+CFLAGS = -Wall -Wextra -O2 $(shell pkg-config --cflags raylib libcurl)
+LDFLAGS = $(shell pkg-config --libs raylib libcurl) -framework IOKit -framework Cocoa -framework OpenGL
 
 TARGET = fitpower
-SRCS = main.c fit_parser.c
+SRCS = main.c fit_parser.c strava_api.c
 OBJS = $(SRCS:.c=.o)
 
 all: $(TARGET)
