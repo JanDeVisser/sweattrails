@@ -1,0 +1,6 @@
+# Build artifacts
+*.o
+fitpower
+
+# macOS
+.DS_Store
