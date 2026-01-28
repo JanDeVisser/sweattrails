@@ -7,8 +7,10 @@
 #define FIT_MESG_RECORD 20
 
 // FIT Record Field Definition Numbers
-#define FIT_FIELD_TIMESTAMP 253
+#define FIT_FIELD_POSITION_LAT 0
+#define FIT_FIELD_POSITION_LONG 1
 #define FIT_FIELD_POWER 7
+#define FIT_FIELD_TIMESTAMP 253
 
 // FIT base types
 #define FIT_BASE_TYPE_ENUM    0x00
@@ -68,6 +70,10 @@ static uint32_t read_uint32(const uint8_t *data, bool big_endian) {
            (uint32_t)data[1] << 8 | data[0];
 }
 
+static int32_t read_sint32(const uint8_t *data, bool big_endian) {
+    return (int32_t)read_uint32(data, big_endian);
+}
+
 static uint64_t read_field_value(const uint8_t *data, uint8_t size, uint8_t base_type __attribute__((unused)), bool big_endian) {
     switch (size) {
         case 1:
@@ -89,7 +95,13 @@ static uint64_t read_field_value(const uint8_t *data, uint8_t size, uint8_t base
     }
 }
 
-static bool add_power_sample(FitPowerData *data, uint32_t timestamp, uint16_t power) {
+static bool add_sample(FitPowerData *data, uint32_t timestamp, uint16_t power, bool has_power,
+                       int32_t latitude, int32_t longitude, bool has_gps) {
+    // Only add sample if it has power or GPS data
+    if (!has_power && !has_gps) {
+        return true;
+    }
+
     if (data->count >= data->capacity) {
         size_t new_capacity = data->capacity == 0 ? 1024 : data->capacity * 2;
         if (new_capacity > FIT_MAX_POWER_SAMPLES) {
@@ -106,9 +118,13 @@ static bool add_power_sample(FitPowerData *data, uint32_t timestamp, uint16_t po
         data->capacity = new_capacity;
     }
 
-    data->samples[data->count].timestamp = timestamp;
-    data->samples[data->count].power = power;
-    data->samples[data->count].has_power = true;
+    FitPowerSample *sample = &data->samples[data->count];
+    sample->timestamp = timestamp;
+    sample->power = power;
+    sample->has_power = has_power;
+    sample->latitude = latitude;
+    sample->longitude = longitude;
+    sample->has_gps = has_gps;
     data->count++;
 
     return true;
@@ -198,6 +214,9 @@ bool fit_parse_file(const char *filename, FitPowerData *data) {
             if (def->global_msg_num == FIT_MESG_RECORD) {
                 uint16_t power = 0;
                 bool has_power = false;
+                int32_t latitude = 0x7FFFFFFF;  // Invalid value
+                int32_t longitude = 0x7FFFFFFF;
+                bool has_gps = false;
                 size_t offset = 0;
 
                 for (int i = 0; i < def->num_fields; i++) {
@@ -212,13 +231,20 @@ bool fit_parse_file(const char *filename, FitPowerData *data) {
                     } else if (field->field_def_num == FIT_FIELD_TIMESTAMP && field->size >= 4) {
                         timestamp = (uint32_t)read_field_value(record_data + offset, field->size,
                                                                field->base_type, def->arch == 1);
+                    } else if (field->field_def_num == FIT_FIELD_POSITION_LAT && field->size >= 4) {
+                        latitude = read_sint32(record_data + offset, def->arch == 1);
+                        if (latitude != 0x7FFFFFFF) {
+                            has_gps = true;
+                        }
+                    } else if (field->field_def_num == FIT_FIELD_POSITION_LONG && field->size >= 4) {
+                        longitude = read_sint32(record_data + offset, def->arch == 1);
                     }
 
                     offset += field->size;
                 }
 
+                add_sample(data, timestamp, power, has_power, latitude, longitude, has_gps);
                 if (has_power) {
-                    add_power_sample(data, timestamp, power);
                     if (power > data->max_power) data->max_power = power;
                     if (power < data->min_power) data->min_power = power;
                 }
@@ -303,6 +329,9 @@ bool fit_parse_file(const char *filename, FitPowerData *data) {
             if (def->global_msg_num == FIT_MESG_RECORD) {
                 uint16_t power = 0;
                 bool has_power = false;
+                int32_t latitude = 0x7FFFFFFF;  // Invalid value
+                int32_t longitude = 0x7FFFFFFF;
+                bool has_gps = false;
                 size_t offset = 0;
 
                 for (int i = 0; i < def->num_fields; i++) {
@@ -317,13 +346,20 @@ bool fit_parse_file(const char *filename, FitPowerData *data) {
                     } else if (field->field_def_num == FIT_FIELD_TIMESTAMP && field->size >= 4) {
                         timestamp = (uint32_t)read_field_value(record_data + offset, field->size,
                                                                field->base_type, def->arch == 1);
+                    } else if (field->field_def_num == FIT_FIELD_POSITION_LAT && field->size >= 4) {
+                        latitude = read_sint32(record_data + offset, def->arch == 1);
+                        if (latitude != 0x7FFFFFFF) {
+                            has_gps = true;
+                        }
+                    } else if (field->field_def_num == FIT_FIELD_POSITION_LONG && field->size >= 4) {
+                        longitude = read_sint32(record_data + offset, def->arch == 1);
                     }
 
                     offset += field->size;
                 }
 
+                add_sample(data, timestamp, power, has_power, latitude, longitude, has_gps);
                 if (has_power) {
-                    add_power_sample(data, timestamp, power);
                     if (power > data->max_power) data->max_power = power;
                     if (power < data->min_power) data->min_power = power;
                 }
@@ -335,20 +371,46 @@ bool fit_parse_file(const char *filename, FitPowerData *data) {
 
     fclose(file);
 
-    // Calculate average power
+    // Calculate average power and GPS bounding box
     if (data->count > 0) {
         uint64_t total = 0;
+        size_t power_count = 0;
+        data->min_lat = 90.0;
+        data->max_lat = -90.0;
+        data->min_lon = 180.0;
+        data->max_lon = -180.0;
+
         for (size_t i = 0; i < data->count; i++) {
-            total += data->samples[i].power;
+            FitPowerSample *sample = &data->samples[i];
+            if (sample->has_power) {
+                total += sample->power;
+                power_count++;
+            }
+            if (sample->has_gps) {
+                double lat = sample->latitude * FIT_SEMICIRCLE_TO_DEGREES;
+                double lon = sample->longitude * FIT_SEMICIRCLE_TO_DEGREES;
+                if (lat < data->min_lat) data->min_lat = lat;
+                if (lat > data->max_lat) data->max_lat = lat;
+                if (lon < data->min_lon) data->min_lon = lon;
+                if (lon > data->max_lon) data->max_lon = lon;
+                data->gps_sample_count++;
+                data->has_gps_data = true;
+            }
         }
-        data->avg_power = (double)total / data->count;
+        if (power_count > 0) {
+            data->avg_power = (double)total / power_count;
+        }
     }
 
     if (data->count == 0) {
         data->min_power = 0;
     }
 
-    printf("Parsed %zu power samples\n", data->count);
+    printf("Parsed %zu samples (%zu with GPS)\n", data->count, data->gps_sample_count);
+    if (data->has_gps_data) {
+        printf("GPS bounds: lat [%.5f, %.5f], lon [%.5f, %.5f]\n",
+               data->min_lat, data->max_lat, data->min_lon, data->max_lon);
+    }
     printf("Power range: %u - %u watts, average: %.1f watts\n",
            data->min_power, data->max_power, data->avg_power);
     fflush(stdout);

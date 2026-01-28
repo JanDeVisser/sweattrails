@@ -8,6 +8,9 @@
 #define FIT_MAX_FIELDS 256
 #define FIT_MAX_POWER_SAMPLES 100000
 
+// GPS coordinate conversion: FIT uses semicircles (2^31 = 180 degrees)
+#define FIT_SEMICIRCLE_TO_DEGREES (180.0 / 2147483648.0)
+
 typedef struct {
     uint8_t field_def_num;
     uint8_t size;
@@ -28,6 +31,9 @@ typedef struct {
     uint32_t timestamp;
     uint16_t power;
     bool has_power;
+    int32_t latitude;    // semicircles (raw FIT format)
+    int32_t longitude;   // semicircles (raw FIT format)
+    bool has_gps;
 } FitPowerSample;
 
 typedef struct {
@@ -37,6 +43,10 @@ typedef struct {
     uint16_t max_power;
     uint16_t min_power;
     double avg_power;
+    bool has_gps_data;       // true if any sample has GPS
+    size_t gps_sample_count;
+    double min_lat, max_lat; // bounding box (decimal degrees)
+    double min_lon, max_lon;
 } FitPowerData;
 
 // Parse a FIT file and extract power data

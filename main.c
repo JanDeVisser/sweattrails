@@ -9,6 +9,7 @@
 #include "strava_api.h"
 #include "file_organizer.h"
 #include "activity_tree.h"
+#include "tile_map.h"
 
 #define MAX_FIT_FILES 256
 #define WINDOW_WIDTH 1200
@@ -26,6 +27,11 @@ typedef enum {
     TAB_LOCAL,
     TAB_STRAVA
 } TabMode;
+
+typedef enum {
+    GRAPH_VIEW_POWER,
+    GRAPH_VIEW_MAP
+} GraphViewMode;
 
 typedef struct {
     char path[512];
@@ -283,6 +289,7 @@ int main(int argc, char *argv[]) {
 
     // State
     TabMode current_tab = TAB_LOCAL;
+    GraphViewMode graph_view = GRAPH_VIEW_POWER;
     int selected_tree = 0;
     int selected_strava = 0;
     int tree_scroll_offset = 0;
@@ -292,6 +299,11 @@ int main(int argc, char *argv[]) {
     bool file_loaded = false;
     char status_message[256] = "Select a file to view power data";
     char current_title[256] = "";
+
+    // Map state
+    TileCache tile_cache;
+    tile_cache_init(&tile_cache);
+    MapView map_view = {0};
 
     // Load first file from activity tree if available
     size_t tree_visible = activity_tree_visible_count(&activity_tree);
@@ -305,6 +317,8 @@ int main(int argc, char *argv[]) {
                 fflush(stdout);
                 if (fit_parse_file(node->full_path, &power_data)) {
                     file_loaded = true;
+                    graph_view = GRAPH_VIEW_POWER;
+                    map_view.zoom = 0;  // Reset to recalculate on next map view
                     snprintf(status_message, sizeof(status_message), "Loaded: %s (%zu samples)", node->name, power_data.count);
                     strncpy(current_title, node->name, sizeof(current_title) - 1);
                 }
@@ -320,6 +334,10 @@ int main(int argc, char *argv[]) {
         // Tab switching with number keys
         if (key == KEY_ONE) current_tab = TAB_LOCAL;
         if (key == KEY_TWO) current_tab = TAB_STRAVA;
+
+        // Graph view switching with P/M keys
+        if (key == KEY_P) graph_view = GRAPH_VIEW_POWER;
+        if (key == KEY_M && power_data.has_gps_data) graph_view = GRAPH_VIEW_MAP;
 
         // Update tree visible count (may change with expand/collapse)
         tree_visible = activity_tree_visible_count(&activity_tree);
@@ -379,6 +397,8 @@ int main(int argc, char *argv[]) {
                     // Load the file
                     fit_power_data_free(&power_data);
                     file_loaded = false;
+                    graph_view = GRAPH_VIEW_POWER;
+                    map_view.zoom = 0;  // Reset to recalculate on next map view
 
                     if (fit_parse_file(node->full_path, &power_data)) {
                         file_loaded = true;
@@ -456,6 +476,8 @@ int main(int argc, char *argv[]) {
                     if (node->type == NODE_FILE) {
                         fit_power_data_free(&power_data);
                         file_loaded = false;
+                        graph_view = GRAPH_VIEW_POWER;
+                        map_view.zoom = 0;  // Reset to recalculate on next map view
 
                         if (fit_parse_file(node->full_path, &power_data)) {
                             file_loaded = true;
@@ -597,7 +619,8 @@ int main(int argc, char *argv[]) {
 
         if (file_loaded && power_data.count > 0) {
             char title[300];
-            snprintf(title, sizeof(title), "Power Graph - %s", current_title);
+            snprintf(title, sizeof(title), "%s - %s",
+                     graph_view == GRAPH_VIEW_MAP ? "Map" : "Power Graph", current_title);
             DrawTextF(title, 320, 15, 18, WHITE);
 
             char stats[256];
@@ -605,7 +628,47 @@ int main(int argc, char *argv[]) {
                      power_data.min_power, power_data.max_power, power_data.avg_power, power_data.count);
             DrawTextF(stats, 320, 40, 15, LIGHTGRAY);
 
-            draw_power_graph(&power_data, graph_x, graph_y, graph_w, graph_h);
+            // Power/Map tab buttons
+            int tab_btn_y = 58;
+            if (draw_button(320, tab_btn_y, 70, 20, "P: Power", true)) {
+                graph_view = GRAPH_VIEW_POWER;
+            }
+            if (graph_view == GRAPH_VIEW_POWER) {
+                DrawRectangle(320, tab_btn_y + 18, 70, 2, (Color){100, 150, 255, 255});
+            }
+
+            bool has_gps = power_data.has_gps_data;
+            if (draw_button(395, tab_btn_y, 60, 20, "M: Map", has_gps)) {
+                if (has_gps) graph_view = GRAPH_VIEW_MAP;
+            }
+            if (graph_view == GRAPH_VIEW_MAP) {
+                DrawRectangle(395, tab_btn_y + 18, 60, 2, (Color){100, 200, 100, 255});
+            }
+
+            // Adjust graph area to be below the tab buttons
+            int content_y = tab_btn_y + 25;
+            int content_h = graph_h - (content_y - graph_y);
+
+            if (graph_view == GRAPH_VIEW_MAP && has_gps) {
+                // Initialize map view if needed
+                if (map_view.zoom == 0) {
+                    map_view_fit_bounds(&map_view, power_data.min_lat, power_data.max_lat,
+                                        power_data.min_lon, power_data.max_lon, graph_w, content_h);
+                }
+                map_view.view_width = graph_w;
+                map_view.view_height = content_h;
+
+                // Draw map tiles
+                tile_map_draw(&tile_cache, &map_view, graph_x, content_y);
+
+                // Draw activity path
+                tile_map_draw_path(&map_view, graph_x, content_y, power_data.samples, power_data.count);
+
+                // Draw OSM attribution
+                tile_map_draw_attribution(graph_x + graph_w - 200, content_y + content_h - 18, 12);
+            } else {
+                draw_power_graph(&power_data, graph_x, content_y, graph_w, content_h);
+            }
         } else {
             DrawRectangle(graph_x, graph_y, graph_w, graph_h, (Color){30, 30, 40, 255});
             const char *msg;
@@ -626,12 +689,13 @@ int main(int argc, char *argv[]) {
 
         // Status bar
         DrawTextF(status_message, 10, GetScreenHeight() - 25, 14, DARKGRAY);
-        DrawTextF("Up/Down: Navigate | Left/Right: Collapse/Expand | Enter: Load/Toggle | ESC: Quit", 320, GetScreenHeight() - 25, 14, GRAY);
+        DrawTextF("Up/Down: Navigate | Left/Right: Collapse/Expand | P/M: Power/Map | ESC: Quit", 320, GetScreenHeight() - 25, 14, GRAY);
 
         EndDrawing();
     }
 
     // Cleanup
+    tile_cache_free(&tile_cache);
     UnloadFont(g_font);
     fit_power_data_free(&power_data);
     strava_activity_list_free(&strava_activities);

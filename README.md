@@ -61,6 +61,7 @@ On startup, files are automatically organized into `activity/YYYY/MM/` based on 
 ### Controls
 
 - **1/2**: Switch between Local and Strava tabs
+- **P/M**: Switch between Power graph and Map view (Map only available for GPS activities)
 - **Up/Down** or **J/K**: Navigate tree/list
 - **Left/Right**: Collapse/expand year or month nodes
 - **Enter/Space**: Load selected file or toggle expand/collapse
@@ -77,14 +78,16 @@ Activities are stored in a platform-specific location:
 ```
 ~/.local/share/fitpower/
 ├── inbox/              # Drop new .fit files here
-└── activity/
-    ├── 2024/
-    │   ├── 07/         # July
-    │   ├── 08/         # August
-    │   └── 12/         # December
-    └── 2025/
-        ├── 01/         # January
-        └── ...
+├── activity/
+│   ├── 2024/
+│   │   ├── 07/         # July
+│   │   ├── 08/         # August
+│   │   └── 12/         # December
+│   └── 2025/
+│       ├── 01/         # January
+│       └── ...
+└── tiles/              # Cached OpenStreetMap tiles
+    └── {z}/{x}/{y}.png
 ```
 
 **macOS**: `~/Library/Application Support/fitpower/`
@@ -109,7 +112,7 @@ Activities are stored in a platform-specific location:
 - Automatic inbox processing and organization by date
 - Year/month tree browser with expand/collapse
 - Parses FIT binary protocol (definition messages, data messages, compressed timestamps)
-- Extracts power data and activity timestamps from record messages
+- Extracts power data, GPS coordinates, and activity timestamps from record messages
 
 ### Strava Integration
 - OAuth2 authentication (opens browser, captures callback on localhost:8089)
@@ -124,13 +127,22 @@ Activities are stored in a platform-specific location:
 - Average power line
 - Stats display (min/max/avg, sample count)
 
+### GPS Map View
+- Displays activity route on OpenStreetMap tiles
+- Automatic zoom to fit activity bounds
+- Route colored by power intensity (blue/green/red)
+- Start (green) and end (red) markers
+- Tiles cached locally for offline viewing
+- Only available for activities with GPS data (press M to switch)
+
 ## Project Structure
 
 - `main.c` - Raylib GUI, activity tree browser, tab system, graph rendering
-- `fit_parser.c/h` - FIT file parser for power data
+- `fit_parser.c/h` - FIT file parser for power and GPS data
 - `file_organizer.c/h` - Inbox processing and file organization
 - `activity_tree.c/h` - Year/month tree data structure
 - `strava_api.c/h` - Strava OAuth and API client
+- `tile_map.c/h` - OpenStreetMap tile fetching, caching, and map rendering
 - `Makefile` - Build configuration (Linux and macOS)
 
 ## Potential Improvements

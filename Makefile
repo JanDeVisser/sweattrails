@@ -9,7 +9,7 @@ else
 endif
 
 TARGET = fitpower
-SRCS = main.c fit_parser.c strava_api.c file_organizer.c activity_tree.c
+SRCS = main.c fit_parser.c strava_api.c file_organizer.c activity_tree.c tile_map.c
 OBJS = $(SRCS:.c=.o)
 
 all: $(TARGET)
