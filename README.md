@@ -4,10 +4,34 @@ A C program using raylib that parses `.fit` files and displays power data in an 
 
 ## Requirements
 
-- macOS (tested on Apple Silicon)
-- raylib (`brew install raylib`)
-- libcurl (usually pre-installed on macOS)
+- raylib
+- libcurl
 - clang
+- pkg-config
+
+### macOS
+
+```bash
+brew install raylib
+```
+
+### Linux (Fedora)
+
+```bash
+sudo dnf install raylib-devel libcurl-devel
+```
+
+### Linux (Ubuntu/Debian)
+
+```bash
+sudo apt install libraylib-dev libcurl4-openssl-dev
+```
+
+### Optional: JetBrains Mono font
+
+The app uses JetBrains Mono if available, otherwise falls back to raylib's default font. Install locations checked:
+- Linux: `~/.local/share/fonts/JetBrainsMono-Regular.ttf`
+- macOS: `~/Library/Fonts/JetBrainsMono-VariableFont_wght.ttf`
 
 ## Build
 
@@ -22,7 +46,7 @@ make
 ```
 
 The program has two tabs:
-- **Local**: Scans `/Users/jan/Downloads` for `.fit` files (sorted by date, newest first)
+- **Local**: Scans `~/Downloads` for `.fit` files (sorted by date, newest first)
 - **Strava**: Browse and view activities from your Strava account
 
 ### Controls
@@ -79,7 +103,6 @@ The program has two tabs:
 ## Potential Improvements
 
 - Power graph for Strava activities (fetch streams)
-- Configurable Downloads path
 - Zoom/pan on graph
 - Heart rate overlay
 - Cadence display
