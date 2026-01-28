@@ -1,11 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include "raylib.h"
 #include "fit_parser.h"
 #include "strava_api.h"
+#include "file_organizer.h"
+#include "activity_tree.h"
 
 #define MAX_FIT_FILES 256
 #define WINDOW_WIDTH 1200
@@ -17,6 +20,7 @@
 
 static char g_downloads_path[512];
 static char g_font_path[512];
+static char g_data_dir[512];
 
 typedef enum {
     TAB_LOCAL,
@@ -96,7 +100,7 @@ static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int g
 
         char label[32];
         snprintf(label, sizeof(label), "%dW", (int)power_val);
-        DrawTextF(label, graph_x - 55, y - 8, 14, LIGHTGRAY);
+        DrawTextF(label, graph_x - 55, y - 8, 16, LIGHTGRAY);
     }
 
     // Vertical grid lines (time)
@@ -117,7 +121,7 @@ static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int g
 
         char label[32];
         snprintf(label, sizeof(label), "%d:%02d", minutes, seconds);
-        DrawTextF(label, x - 20, graph_y + graph_h + 10, 12, LIGHTGRAY);
+        DrawTextF(label, x - 20, graph_y + graph_h + 10, 14, LIGHTGRAY);
     }
 
     float x_scale = (float)graph_w / (data->count - 1);
@@ -177,7 +181,7 @@ static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int g
 
     char avg_label[64];
     snprintf(avg_label, sizeof(avg_label), "Avg: %.0fW", data->avg_power);
-    DrawTextF(avg_label, graph_x + graph_w - 100, avg_y - 20, 14, (Color){255, 200, 50, 255});
+    DrawTextF(avg_label, graph_x + graph_w - 100, avg_y - 20, 16, (Color){255, 200, 50, 255});
 }
 
 static bool draw_button(int x, int y, int w, int h, const char *text, bool enabled) {
@@ -192,7 +196,7 @@ static bool draw_button(int x, int y, int w, int h, const char *text, bool enabl
     DrawRectangleLines(x, y, w, h, (Color){100, 120, 160, 255});
 
     int text_w = MeasureTextF(text, 14);
-    DrawTextF(text, x + (w - text_w) / 2, y + (h - 14) / 2, 14, fg);
+    DrawTextF(text, x + (w - text_w) / 2, y + (h - 16) / 2, 16, fg);
 
     return clicked;
 }
@@ -203,6 +207,13 @@ static void init_paths(void) {
 
     // Set downloads path
     snprintf(g_downloads_path, sizeof(g_downloads_path), "%s/Downloads", home);
+
+    // Set data directory (platform-specific)
+#ifdef __APPLE__
+    snprintf(g_data_dir, sizeof(g_data_dir), "%s/Library/Application Support/fitpower", home);
+#else
+    snprintf(g_data_dir, sizeof(g_data_dir), "%s/.local/share/fitpower", home);
+#endif
 
     // Try multiple font locations
     const char *font_paths[] = {
@@ -229,10 +240,26 @@ int main(int argc, char *argv[]) {
 
     init_paths();
 
-    // Find local FIT files
+    // Create data directories and process inbox
+    char inbox_path[512];
+    snprintf(inbox_path, sizeof(inbox_path), "%s/inbox", g_data_dir);
+    create_directory_path(inbox_path);
+
+    int inbox_processed = process_inbox(g_data_dir);
+    if (inbox_processed > 0) {
+        printf("Processed %d files from inbox\n", inbox_processed);
+    }
+
+    // Build activity tree
+    ActivityTree activity_tree;
+    activity_tree_init(&activity_tree);
+    activity_tree_scan(&activity_tree, g_data_dir);
+    printf("Scanned activity tree: %zu years\n", activity_tree.year_count);
+
+    // Keep legacy file list for backwards compatibility (may be removed later)
     FitFileEntry *fit_files = malloc(MAX_FIT_FILES * sizeof(FitFileEntry));
     int num_files = find_fit_files(fit_files, MAX_FIT_FILES);
-    printf("Found %d local FIT files\n", num_files);
+    printf("Found %d local FIT files in Downloads\n", num_files);
 
     // Load Strava config
     StravaConfig strava_config = {0};
@@ -256,9 +283,9 @@ int main(int argc, char *argv[]) {
 
     // State
     TabMode current_tab = TAB_LOCAL;
-    int selected_file = 0;
+    int selected_tree = 0;
     int selected_strava = 0;
-    int scroll_offset = 0;
+    int tree_scroll_offset = 0;
     int strava_scroll_offset = 0;
     int visible_files = 15;
     FitPowerData power_data = {0};
@@ -266,14 +293,23 @@ int main(int argc, char *argv[]) {
     char status_message[256] = "Select a file to view power data";
     char current_title[256] = "";
 
-    // Load first local file if available
-    if (num_files > 0) {
-        printf("Loading: %s\n", fit_files[0].path);
-        fflush(stdout);
-        if (fit_parse_file(fit_files[0].path, &power_data)) {
-            file_loaded = true;
-            snprintf(status_message, sizeof(status_message), "Loaded: %s (%zu samples)", fit_files[0].name, power_data.count);
-            strncpy(current_title, fit_files[0].name, sizeof(current_title) - 1);
+    // Load first file from activity tree if available
+    size_t tree_visible = activity_tree_visible_count(&activity_tree);
+    if (tree_visible > 0) {
+        // Find first file node
+        for (size_t i = 0; i < tree_visible; i++) {
+            TreeNode *node = activity_tree_get_visible(&activity_tree, i);
+            if (node && node->type == NODE_FILE) {
+                selected_tree = (int)i;
+                printf("Loading: %s\n", node->full_path);
+                fflush(stdout);
+                if (fit_parse_file(node->full_path, &power_data)) {
+                    file_loaded = true;
+                    snprintf(status_message, sizeof(status_message), "Loaded: %s (%zu samples)", node->name, power_data.count);
+                    strncpy(current_title, node->name, sizeof(current_title) - 1);
+                }
+                break;
+            }
         }
     }
 
@@ -285,9 +321,12 @@ int main(int argc, char *argv[]) {
         if (key == KEY_ONE) current_tab = TAB_LOCAL;
         if (key == KEY_TWO) current_tab = TAB_STRAVA;
 
-        int list_count = (current_tab == TAB_LOCAL) ? num_files : (int)strava_activities.count;
-        int *selected = (current_tab == TAB_LOCAL) ? &selected_file : &selected_strava;
-        int *scroll = (current_tab == TAB_LOCAL) ? &scroll_offset : &strava_scroll_offset;
+        // Update tree visible count (may change with expand/collapse)
+        tree_visible = activity_tree_visible_count(&activity_tree);
+
+        int list_count = (current_tab == TAB_LOCAL) ? (int)tree_visible : (int)strava_activities.count;
+        int *selected = (current_tab == TAB_LOCAL) ? &selected_tree : &selected_strava;
+        int *scroll = (current_tab == TAB_LOCAL) ? &tree_scroll_offset : &strava_scroll_offset;
 
         // Navigation
         if (key == KEY_DOWN || key == KEY_J) {
@@ -316,17 +355,42 @@ int main(int argc, char *argv[]) {
             *scroll = *selected;
         }
 
-        // Load on Enter (local files only for now)
-        if ((key == KEY_ENTER || key == KEY_SPACE) && current_tab == TAB_LOCAL && num_files > 0) {
-            fit_power_data_free(&power_data);
-            file_loaded = false;
+        // Handle tree expansion/collapse with LEFT/RIGHT keys
+        if (current_tab == TAB_LOCAL && tree_visible > 0) {
+            TreeNode *selected_node = activity_tree_get_visible(&activity_tree, (size_t)selected_tree);
+            if (selected_node) {
+                if (key == KEY_LEFT && (selected_node->type == NODE_YEAR || selected_node->type == NODE_MONTH)) {
+                    if (selected_node->expanded) {
+                        selected_node->expanded = false;
+                    }
+                } else if (key == KEY_RIGHT && (selected_node->type == NODE_YEAR || selected_node->type == NODE_MONTH)) {
+                    if (!selected_node->expanded) {
+                        selected_node->expanded = true;
+                    }
+                }
+            }
+        }
 
-            if (fit_parse_file(fit_files[selected_file].path, &power_data)) {
-                file_loaded = true;
-                snprintf(status_message, sizeof(status_message), "Loaded: %s (%zu samples)", fit_files[selected_file].name, power_data.count);
-                strncpy(current_title, fit_files[selected_file].name, sizeof(current_title) - 1);
-            } else {
-                snprintf(status_message, sizeof(status_message), "Failed to load: %s", fit_files[selected_file].name);
+        // Load on Enter/Space for local tree files
+        if ((key == KEY_ENTER || key == KEY_SPACE) && current_tab == TAB_LOCAL && tree_visible > 0) {
+            TreeNode *node = activity_tree_get_visible(&activity_tree, (size_t)selected_tree);
+            if (node) {
+                if (node->type == NODE_FILE) {
+                    // Load the file
+                    fit_power_data_free(&power_data);
+                    file_loaded = false;
+
+                    if (fit_parse_file(node->full_path, &power_data)) {
+                        file_loaded = true;
+                        snprintf(status_message, sizeof(status_message), "Loaded: %s (%zu samples)", node->name, power_data.count);
+                        strncpy(current_title, node->name, sizeof(current_title) - 1);
+                    } else {
+                        snprintf(status_message, sizeof(status_message), "Failed to load: %s", node->name);
+                    }
+                } else {
+                    // Toggle expand/collapse for year/month nodes
+                    node->expanded = !node->expanded;
+                }
             }
         }
 
@@ -346,7 +410,7 @@ int main(int argc, char *argv[]) {
         ClearBackground((Color){20, 20, 25, 255});
 
         // Title
-        DrawTextF("FIT Power Viewer", 10, 10, 22, WHITE);
+        DrawTextF("FIT Power Viewer", 10, 10, 26, WHITE);
 
         // Tabs
         int tab_y = 45;
@@ -369,47 +433,84 @@ int main(int argc, char *argv[]) {
         DrawRectangle(5, list_y, 290, visible_files * 25 + 10, (Color){35, 35, 45, 255});
 
         if (current_tab == TAB_LOCAL) {
-            DrawTextF("Local FIT Files:", 10, list_y + 5, 13, LIGHTGRAY);
+            DrawTextF("Activities:", 10, list_y + 5, 15, LIGHTGRAY);
 
-            for (int i = 0; i < visible_files && i + scroll_offset < num_files; i++) {
-                int file_idx = i + scroll_offset;
+            for (int i = 0; i < visible_files && i + tree_scroll_offset < (int)tree_visible; i++) {
+                int node_idx = i + tree_scroll_offset;
                 int y = list_y + 25 + i * 25;
+
+                TreeNode *node = activity_tree_get_visible(&activity_tree, (size_t)node_idx);
+                if (!node) continue;
 
                 bool hover = mouse.x >= 8 && mouse.x < 292 && mouse.y >= y - 2 && mouse.y < y + 20;
 
-                if (file_idx == selected_file) {
+                if (node_idx == selected_tree) {
                     DrawRectangle(8, y - 2, 284, 22, (Color){60, 80, 120, 255});
                 } else if (hover) {
                     DrawRectangle(8, y - 2, 284, 22, (Color){45, 45, 55, 255});
                 }
 
-                // Click to select and load
+                // Click to select and possibly load/toggle
                 if (hover && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-                    selected_file = file_idx;
-                    fit_power_data_free(&power_data);
-                    file_loaded = false;
+                    selected_tree = node_idx;
+                    if (node->type == NODE_FILE) {
+                        fit_power_data_free(&power_data);
+                        file_loaded = false;
 
-                    if (fit_parse_file(fit_files[file_idx].path, &power_data)) {
-                        file_loaded = true;
-                        snprintf(status_message, sizeof(status_message), "Loaded: %s (%zu samples)", fit_files[file_idx].name, power_data.count);
-                        strncpy(current_title, fit_files[file_idx].name, sizeof(current_title) - 1);
+                        if (fit_parse_file(node->full_path, &power_data)) {
+                            file_loaded = true;
+                            snprintf(status_message, sizeof(status_message), "Loaded: %s (%zu samples)", node->name, power_data.count);
+                            strncpy(current_title, node->name, sizeof(current_title) - 1);
+                        }
+                    } else {
+                        // Toggle expand/collapse
+                        node->expanded = !node->expanded;
                     }
                 }
 
-                char display_name[40];
-                strncpy(display_name, fit_files[file_idx].name, 35);
-                display_name[35] = '\0';
-                if (strlen(fit_files[file_idx].name) > 35) strcat(display_name, "...");
+                // Determine indentation and prefix based on node type
+                int indent = 0;
+                char prefix[8] = "";
+                Color text_color = (node_idx == selected_tree) ? WHITE : LIGHTGRAY;
 
-                DrawTextF(display_name, 12, y, 13, file_idx == selected_file ? WHITE : LIGHTGRAY);
+                if (node->type == NODE_YEAR) {
+                    snprintf(prefix, sizeof(prefix), "%s ", node->expanded ? "[-]" : "[+]");
+                    text_color = (node_idx == selected_tree) ? WHITE : (Color){150, 180, 255, 255};
+                } else if (node->type == NODE_MONTH) {
+                    indent = 16;
+                    snprintf(prefix, sizeof(prefix), "%s ", node->expanded ? "[-]" : "[+]");
+                    text_color = (node_idx == selected_tree) ? WHITE : (Color){180, 200, 150, 255};
+                } else if (node->type == NODE_FILE) {
+                    indent = 32;
+                }
+
+                char display_name[50];
+                int max_chars = 32 - (indent / 8);
+                snprintf(display_name, sizeof(display_name), "%s%.*s%s",
+                         prefix, max_chars, node->name,
+                         (int)strlen(node->name) > max_chars ? "..." : "");
+
+                DrawTextF(display_name, 12 + indent, y, 15, text_color);
             }
 
-            if (scroll_offset > 0) DrawTextF("^", 145, list_y + 8, 13, GRAY);
-            if (scroll_offset + visible_files < num_files) DrawTextF("v", 145, list_y + visible_files * 25 + 5, 13, GRAY);
+            if (tree_scroll_offset > 0) DrawTextF("^", 145, list_y + 8, 15, GRAY);
+            if (tree_scroll_offset + visible_files < (int)tree_visible) DrawTextF("v", 145, list_y + visible_files * 25 + 5, 15, GRAY);
+
+            // Show hint if tree is empty
+            if (tree_visible == 0) {
+                DrawTextF("No activities found.", 12, list_y + 30, 14, GRAY);
+                DrawTextF("Drop .fit files in:", 12, list_y + 50, 14, GRAY);
+#ifdef __APPLE__
+                DrawTextF("~/Library/Application Support/", 12, list_y + 70, 13, (Color){100, 150, 200, 255});
+                DrawTextF("fitpower/inbox/", 12, list_y + 88, 13, (Color){100, 150, 200, 255});
+#else
+                DrawTextF("~/.local/share/fitpower/inbox/", 12, list_y + 70, 13, (Color){100, 150, 200, 255});
+#endif
+            }
 
         } else if (current_tab == TAB_STRAVA) {
             if (!strava_is_authenticated(&strava_config)) {
-                DrawTextF("Strava: Not connected", 10, list_y + 5, 13, (Color){252, 82, 0, 255});
+                DrawTextF("Strava: Not connected", 10, list_y + 5, 15, (Color){252, 82, 0, 255});
 
                 if (draw_button(10, list_y + 30, 280, 30, "Connect to Strava", true)) {
                     snprintf(status_message, sizeof(status_message), "Authenticating with Strava...");
@@ -420,7 +521,7 @@ int main(int argc, char *argv[]) {
                     }
                 }
             } else {
-                DrawTextF("Strava Activities:", 10, list_y + 5, 13, (Color){252, 82, 0, 255});
+                DrawTextF("Strava Activities:", 10, list_y + 5, 15, (Color){252, 82, 0, 255});
 
                 // Fetch activities button
                 if (!strava_activities_loaded && !strava_loading) {
@@ -477,12 +578,12 @@ int main(int argc, char *argv[]) {
                             strncpy(current_title, act->name, sizeof(current_title) - 1);
                         }
 
-                        DrawTextF(display, 12, y, 13, act_idx == selected_strava ? WHITE : LIGHTGRAY);
+                        DrawTextF(display, 12, y, 15, act_idx == selected_strava ? WHITE : LIGHTGRAY);
                     }
 
-                    if (strava_scroll_offset > 0) DrawTextF("^", 145, list_y + 8, 13, GRAY);
+                    if (strava_scroll_offset > 0) DrawTextF("^", 145, list_y + 8, 15, GRAY);
                     if (strava_scroll_offset + visible_files < (int)strava_activities.count) {
-                        DrawTextF("v", 145, list_y + visible_files * 25 + 5, 13, GRAY);
+                        DrawTextF("v", 145, list_y + visible_files * 25 + 5, 15, GRAY);
                     }
                 }
             }
@@ -497,26 +598,35 @@ int main(int argc, char *argv[]) {
         if (file_loaded && power_data.count > 0) {
             char title[300];
             snprintf(title, sizeof(title), "Power Graph - %s", current_title);
-            DrawTextF(title, 320, 15, 16, WHITE);
+            DrawTextF(title, 320, 15, 18, WHITE);
 
             char stats[256];
             snprintf(stats, sizeof(stats), "Min: %dW | Max: %dW | Avg: %.0fW | Samples: %zu",
                      power_data.min_power, power_data.max_power, power_data.avg_power, power_data.count);
-            DrawTextF(stats, 320, 40, 13, LIGHTGRAY);
+            DrawTextF(stats, 320, 40, 15, LIGHTGRAY);
 
             draw_power_graph(&power_data, graph_x, graph_y, graph_w, graph_h);
         } else {
             DrawRectangle(graph_x, graph_y, graph_w, graph_h, (Color){30, 30, 40, 255});
-            const char *msg = current_tab == TAB_STRAVA ?
-                (strava_activities_loaded ? "Select activity (* = has power)" : "Fetch activities to browse") :
-                (num_files > 0 ? "Select a file" : "No FIT files in Downloads");
+            const char *msg;
+            if (current_tab == TAB_STRAVA) {
+                msg = strava_activities_loaded ? "Select activity (* = has power)" : "Fetch activities to browse";
+            } else if (tree_visible > 0) {
+                msg = "Select an activity";
+            } else {
+#ifdef __APPLE__
+                msg = "Drop .fit files in ~/Library/Application Support/fitpower/inbox/";
+#else
+                msg = "Drop .fit files in ~/.local/share/fitpower/inbox/";
+#endif
+            }
             int text_width = MeasureTextF(msg, 18);
-            DrawTextF(msg, graph_x + (graph_w - text_width) / 2, graph_y + graph_h / 2, 18, GRAY);
+            DrawTextF(msg, graph_x + (graph_w - text_width) / 2, graph_y + graph_h / 2, 20, GRAY);
         }
 
         // Status bar
-        DrawTextF(status_message, 10, GetScreenHeight() - 25, 12, DARKGRAY);
-        DrawTextF("1/2: Switch tabs | Up/Down: Select | Enter: Load | ESC: Quit", 320, GetScreenHeight() - 25, 12, GRAY);
+        DrawTextF(status_message, 10, GetScreenHeight() - 25, 14, DARKGRAY);
+        DrawTextF("Up/Down: Navigate | Left/Right: Collapse/Expand | Enter: Load/Toggle | ESC: Quit", 320, GetScreenHeight() - 25, 14, GRAY);
 
         EndDrawing();
     }
@@ -525,6 +635,7 @@ int main(int argc, char *argv[]) {
     UnloadFont(g_font);
     fit_power_data_free(&power_data);
     strava_activity_list_free(&strava_activities);
+    activity_tree_free(&activity_tree);
     free(fit_files);
     CloseWindow();
 
