@@ -1,11 +1,12 @@
 # FIT Power Viewer
 
-A C program using raylib that parses `.fit` files and displays power data in an interactive graph.
+A C program using raylib that parses `.fit` files and displays power data in an interactive graph. Includes Strava integration for browsing activities.
 
 ## Requirements
 
 - macOS (tested on Apple Silicon)
 - raylib (`brew install raylib`)
+- libcurl (usually pre-installed on macOS)
 - clang
 
 ## Build
@@ -20,38 +21,65 @@ make
 ./fitpower
 ```
 
-The program scans `/Users/jan/Downloads` for `.fit` files and displays them sorted by date (newest first).
+The program has two tabs:
+- **Local**: Scans `/Users/jan/Downloads` for `.fit` files (sorted by date, newest first)
+- **Strava**: Browse and view activities from your Strava account
 
 ### Controls
 
-- **Up/Down** or **J/K**: Navigate file list
+- **1/2**: Switch between Local and Strava tabs
+- **Up/Down** or **J/K**: Navigate file/activity list
 - **Enter/Space**: Load selected file
-- **Mouse wheel**: Scroll file list
-- **Click**: Select and load file
-- **Page Up/Down**: Jump through file list
+- **Mouse wheel**: Scroll list
+- **Click**: Select and load file/activity
+- **Page Up/Down**: Jump through list
 - **ESC**: Quit
+
+## Strava Setup
+
+1. Create a Strava API application at https://www.strava.com/settings/api
+2. Set "Authorization Callback Domain" to `localhost`
+3. Create config file `~/.config/fitpower/config`:
+   ```json
+   {
+     "client_id": "YOUR_CLIENT_ID",
+     "client_secret": "YOUR_CLIENT_SECRET"
+   }
+   ```
+4. Run fitpower, switch to Strava tab (press `2`), click "Connect to Strava"
+5. Authorize in browser, then click "Fetch Activities"
 
 ## Features
 
-- Parses FIT binary protocol (handles definition messages, data messages, compressed timestamps)
+### Local FIT Files
+- Parses FIT binary protocol (definition messages, data messages, compressed timestamps)
 - Extracts power data from record messages
 - Interactive file browser
-- Power graph with:
-  - Color-coded curve (blue=low, green=medium, red=high intensity)
-  - Filled area under curve
-  - Grid lines with power (W) and time labels
-  - Average power line
-  - Stats display (min/max/avg, sample count)
+
+### Strava Integration
+- OAuth2 authentication (opens browser, captures callback on localhost:8089)
+- Fetches activity list from Strava API
+- Shows activity details (date, type, distance, power indicator)
+- Tokens automatically refreshed and saved
+
+### Power Graph
+- Color-coded curve (blue=low, green=medium, red=high intensity)
+- Filled area under curve
+- Grid lines with power (W) and time labels
+- Average power line
+- Stats display (min/max/avg, sample count)
 
 ## Project Structure
 
-- `main.c` - Raylib GUI, file browser, graph rendering
+- `main.c` - Raylib GUI, file browser, tab system, graph rendering
 - `fit_parser.c/h` - FIT file parser
+- `strava_api.c/h` - Strava OAuth and API client
 - `Makefile` - Build configuration
 
 ## Potential Improvements
 
-- Configurable Downloads path (currently hardcoded)
+- Power graph for Strava activities (fetch streams)
+- Configurable Downloads path
 - Zoom/pan on graph
 - Heart rate overlay
 - Cadence display
