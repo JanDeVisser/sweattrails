@@ -7,7 +7,6 @@
 #include "fit_parser.h"
 #include "strava_api.h"
 
-#define DOWNLOADS_PATH "/Users/jan/Downloads"
 #define MAX_FIT_FILES 256
 #define WINDOW_WIDTH 1200
 #define WINDOW_HEIGHT 700
@@ -16,7 +15,8 @@
 #define GRAPH_MARGIN_TOP 80
 #define GRAPH_MARGIN_BOTTOM 60
 
-#define FONT_PATH "/Users/jan/Library/Fonts/JetBrainsMono-VariableFont_wght.ttf"
+static char g_downloads_path[512];
+static char g_font_path[512];
 
 typedef enum {
     TAB_LOCAL,
@@ -48,9 +48,9 @@ static int compare_fit_files(const void *a, const void *b) {
 }
 
 static int find_fit_files(FitFileEntry *files, int max_files) {
-    DIR *dir = opendir(DOWNLOADS_PATH);
+    DIR *dir = opendir(g_downloads_path);
     if (!dir) {
-        fprintf(stderr, "Cannot open Downloads directory\n");
+        fprintf(stderr, "Cannot open Downloads directory: %s\n", g_downloads_path);
         return 0;
     }
 
@@ -60,7 +60,7 @@ static int find_fit_files(FitFileEntry *files, int max_files) {
         size_t len = strlen(entry->d_name);
         if (len > 4 && strcasecmp(entry->d_name + len - 4, ".fit") == 0) {
             snprintf(files[count].path, sizeof(files[count].path),
-                     "%s/%s", DOWNLOADS_PATH, entry->d_name);
+                     "%s/%s", g_downloads_path, entry->d_name);
             strncpy(files[count].name, entry->d_name, sizeof(files[count].name) - 1);
 
             struct stat st;
@@ -197,9 +197,37 @@ static bool draw_button(int x, int y, int w, int h, const char *text, bool enabl
     return clicked;
 }
 
+static void init_paths(void) {
+    const char *home = getenv("HOME");
+    if (!home) home = ".";
+
+    // Set downloads path
+    snprintf(g_downloads_path, sizeof(g_downloads_path), "%s/Downloads", home);
+
+    // Try multiple font locations
+    const char *font_paths[] = {
+        "%s/.local/share/fonts/JetBrainsMono-Regular.ttf",
+        "%s/.local/share/fonts/JetBrainsMonoNerdFont-Regular.ttf",
+        "%s/Library/Fonts/JetBrainsMono-VariableFont_wght.ttf",
+        NULL
+    };
+
+    g_font_path[0] = '\0';
+    for (int i = 0; font_paths[i]; i++) {
+        char path[512];
+        snprintf(path, sizeof(path), font_paths[i], home);
+        if (FileExists(path)) {
+            strncpy(g_font_path, path, sizeof(g_font_path) - 1);
+            break;
+        }
+    }
+}
+
 int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
+
+    init_paths();
 
     // Find local FIT files
     FitFileEntry *fit_files = malloc(MAX_FIT_FILES * sizeof(FitFileEntry));
@@ -219,8 +247,12 @@ int main(int argc, char *argv[]) {
     SetTargetFPS(60);
 
     // Load custom font
-    g_font = LoadFontEx(FONT_PATH, 32, NULL, 0);
-    SetTextureFilter(g_font.texture, TEXTURE_FILTER_BILINEAR);
+    if (g_font_path[0]) {
+        g_font = LoadFontEx(g_font_path, 32, NULL, 0);
+        SetTextureFilter(g_font.texture, TEXTURE_FILTER_BILINEAR);
+    } else {
+        g_font = GetFontDefault();
+    }
 
     // State
     TabMode current_tab = TAB_LOCAL;
