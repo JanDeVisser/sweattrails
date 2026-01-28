@@ -16,6 +16,8 @@
 #define GRAPH_MARGIN_TOP 80
 #define GRAPH_MARGIN_BOTTOM 60
 
+#define FONT_PATH "/Users/jan/Library/Fonts/JetBrainsMono-VariableFont_wght.ttf"
+
 typedef enum {
     TAB_LOCAL,
     TAB_STRAVA
@@ -26,6 +28,18 @@ typedef struct {
     char name[256];
     time_t mtime;
 } FitFileEntry;
+
+// Global font
+static Font g_font;
+
+// Helper to draw text with our font
+static void DrawTextF(const char *text, int x, int y, int size, Color color) {
+    DrawTextEx(g_font, text, (Vector2){(float)x, (float)y}, (float)size, 1.0f, color);
+}
+
+static int MeasureTextF(const char *text, int size) {
+    return (int)MeasureTextEx(g_font, text, (float)size, 1.0f).x;
+}
 
 static int compare_fit_files(const void *a, const void *b) {
     const FitFileEntry *fa = (const FitFileEntry *)a;
@@ -82,7 +96,7 @@ static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int g
 
         char label[32];
         snprintf(label, sizeof(label), "%dW", (int)power_val);
-        DrawText(label, graph_x - 50, y - 8, 16, LIGHTGRAY);
+        DrawTextF(label, graph_x - 55, y - 8, 14, LIGHTGRAY);
     }
 
     // Vertical grid lines (time)
@@ -103,7 +117,7 @@ static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int g
 
         char label[32];
         snprintf(label, sizeof(label), "%d:%02d", minutes, seconds);
-        DrawText(label, x - 20, graph_y + graph_h + 10, 14, LIGHTGRAY);
+        DrawTextF(label, x - 20, graph_y + graph_h + 10, 12, LIGHTGRAY);
     }
 
     float x_scale = (float)graph_w / (data->count - 1);
@@ -163,7 +177,7 @@ static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int g
 
     char avg_label[64];
     snprintf(avg_label, sizeof(avg_label), "Avg: %.0fW", data->avg_power);
-    DrawText(avg_label, graph_x + graph_w - 100, avg_y - 20, 16, (Color){255, 200, 50, 255});
+    DrawTextF(avg_label, graph_x + graph_w - 100, avg_y - 20, 14, (Color){255, 200, 50, 255});
 }
 
 static bool draw_button(int x, int y, int w, int h, const char *text, bool enabled) {
@@ -177,8 +191,8 @@ static bool draw_button(int x, int y, int w, int h, const char *text, bool enabl
     DrawRectangle(x, y, w, h, bg);
     DrawRectangleLines(x, y, w, h, (Color){100, 120, 160, 255});
 
-    int text_w = MeasureText(text, 14);
-    DrawText(text, x + (w - text_w) / 2, y + (h - 14) / 2, 14, fg);
+    int text_w = MeasureTextF(text, 14);
+    DrawTextF(text, x + (w - text_w) / 2, y + (h - 14) / 2, 14, fg);
 
     return clicked;
 }
@@ -203,6 +217,10 @@ int main(int argc, char *argv[]) {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "FIT Power Viewer");
     SetTargetFPS(60);
+
+    // Load custom font
+    g_font = LoadFontEx(FONT_PATH, 32, NULL, 0);
+    SetTextureFilter(g_font.texture, TEXTURE_FILTER_BILINEAR);
 
     // State
     TabMode current_tab = TAB_LOCAL;
@@ -296,7 +314,7 @@ int main(int argc, char *argv[]) {
         ClearBackground((Color){20, 20, 25, 255});
 
         // Title
-        DrawText("FIT Power Viewer", 10, 10, 24, WHITE);
+        DrawTextF("FIT Power Viewer", 10, 10, 22, WHITE);
 
         // Tabs
         int tab_y = 45;
@@ -319,7 +337,7 @@ int main(int argc, char *argv[]) {
         DrawRectangle(5, list_y, 290, visible_files * 25 + 10, (Color){35, 35, 45, 255});
 
         if (current_tab == TAB_LOCAL) {
-            DrawText("Local FIT Files:", 10, list_y + 5, 14, LIGHTGRAY);
+            DrawTextF("Local FIT Files:", 10, list_y + 5, 13, LIGHTGRAY);
 
             for (int i = 0; i < visible_files && i + scroll_offset < num_files; i++) {
                 int file_idx = i + scroll_offset;
@@ -351,15 +369,15 @@ int main(int argc, char *argv[]) {
                 display_name[35] = '\0';
                 if (strlen(fit_files[file_idx].name) > 35) strcat(display_name, "...");
 
-                DrawText(display_name, 12, y, 14, file_idx == selected_file ? WHITE : LIGHTGRAY);
+                DrawTextF(display_name, 12, y, 13, file_idx == selected_file ? WHITE : LIGHTGRAY);
             }
 
-            if (scroll_offset > 0) DrawText("^", 145, list_y + 8, 14, GRAY);
-            if (scroll_offset + visible_files < num_files) DrawText("v", 145, list_y + visible_files * 25 + 5, 14, GRAY);
+            if (scroll_offset > 0) DrawTextF("^", 145, list_y + 8, 13, GRAY);
+            if (scroll_offset + visible_files < num_files) DrawTextF("v", 145, list_y + visible_files * 25 + 5, 13, GRAY);
 
         } else if (current_tab == TAB_STRAVA) {
             if (!strava_is_authenticated(&strava_config)) {
-                DrawText("Strava: Not connected", 10, list_y + 5, 14, (Color){252, 82, 0, 255});
+                DrawTextF("Strava: Not connected", 10, list_y + 5, 13, (Color){252, 82, 0, 255});
 
                 if (draw_button(10, list_y + 30, 280, 30, "Connect to Strava", true)) {
                     snprintf(status_message, sizeof(status_message), "Authenticating with Strava...");
@@ -370,7 +388,7 @@ int main(int argc, char *argv[]) {
                     }
                 }
             } else {
-                DrawText("Strava Activities:", 10, list_y + 5, 14, (Color){252, 82, 0, 255});
+                DrawTextF("Strava Activities:", 10, list_y + 5, 13, (Color){252, 82, 0, 255});
 
                 // Fetch activities button
                 if (!strava_activities_loaded && !strava_loading) {
@@ -427,12 +445,12 @@ int main(int argc, char *argv[]) {
                             strncpy(current_title, act->name, sizeof(current_title) - 1);
                         }
 
-                        DrawText(display, 12, y, 14, act_idx == selected_strava ? WHITE : LIGHTGRAY);
+                        DrawTextF(display, 12, y, 13, act_idx == selected_strava ? WHITE : LIGHTGRAY);
                     }
 
-                    if (strava_scroll_offset > 0) DrawText("^", 145, list_y + 8, 14, GRAY);
+                    if (strava_scroll_offset > 0) DrawTextF("^", 145, list_y + 8, 13, GRAY);
                     if (strava_scroll_offset + visible_files < (int)strava_activities.count) {
-                        DrawText("v", 145, list_y + visible_files * 25 + 5, 14, GRAY);
+                        DrawTextF("v", 145, list_y + visible_files * 25 + 5, 13, GRAY);
                     }
                 }
             }
@@ -447,12 +465,12 @@ int main(int argc, char *argv[]) {
         if (file_loaded && power_data.count > 0) {
             char title[300];
             snprintf(title, sizeof(title), "Power Graph - %s", current_title);
-            DrawText(title, 320, 15, 18, WHITE);
+            DrawTextF(title, 320, 15, 16, WHITE);
 
             char stats[256];
             snprintf(stats, sizeof(stats), "Min: %dW | Max: %dW | Avg: %.0fW | Samples: %zu",
                      power_data.min_power, power_data.max_power, power_data.avg_power, power_data.count);
-            DrawText(stats, 320, 40, 14, LIGHTGRAY);
+            DrawTextF(stats, 320, 40, 13, LIGHTGRAY);
 
             draw_power_graph(&power_data, graph_x, graph_y, graph_w, graph_h);
         } else {
@@ -460,18 +478,19 @@ int main(int argc, char *argv[]) {
             const char *msg = current_tab == TAB_STRAVA ?
                 (strava_activities_loaded ? "Select activity (* = has power)" : "Fetch activities to browse") :
                 (num_files > 0 ? "Select a file" : "No FIT files in Downloads");
-            int text_width = MeasureText(msg, 20);
-            DrawText(msg, graph_x + (graph_w - text_width) / 2, graph_y + graph_h / 2, 20, GRAY);
+            int text_width = MeasureTextF(msg, 18);
+            DrawTextF(msg, graph_x + (graph_w - text_width) / 2, graph_y + graph_h / 2, 18, GRAY);
         }
 
         // Status bar
-        DrawText(status_message, 10, GetScreenHeight() - 25, 14, DARKGRAY);
-        DrawText("1/2: Switch tabs | Up/Down: Select | Enter: Load | ESC: Quit", 320, GetScreenHeight() - 25, 14, GRAY);
+        DrawTextF(status_message, 10, GetScreenHeight() - 25, 12, DARKGRAY);
+        DrawTextF("1/2: Switch tabs | Up/Down: Select | Enter: Load | ESC: Quit", 320, GetScreenHeight() - 25, 12, GRAY);
 
         EndDrawing();
     }
 
     // Cleanup
+    UnloadFont(g_font);
     fit_power_data_free(&power_data);
     strava_activity_list_free(&strava_activities);
     free(fit_files);
