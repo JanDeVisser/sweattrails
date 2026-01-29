@@ -134,6 +134,7 @@ Activities are stored in a platform-specific location:
 - Start (green) and end (red) markers
 - Tiles cached locally for offline viewing
 - Only available for activities with GPS data (press M to switch)
+- Zwift activities automatically display on the corresponding Zwift world map (Watopia)
 
 ## Project Structure
 
@@ -143,6 +144,7 @@ Activities are stored in a platform-specific location:
 - `activity_tree.c/h` - Year/month tree data structure
 - `strava_api.c/h` - Strava OAuth and API client
 - `tile_map.c/h` - OpenStreetMap tile fetching, caching, and map rendering
+- `zwift_worlds.c/h` - Zwift world detection and map image handling
 - `Makefile` - Build configuration (Linux and macOS)
 
 ## Potential Improvements

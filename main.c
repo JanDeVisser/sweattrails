@@ -398,6 +398,7 @@ int main(int argc, char *argv[]) {
                     fit_power_data_free(&power_data);
                     file_loaded = false;
                     graph_view = GRAPH_VIEW_POWER;
+                    zwift_map_free(&map_view);  // Free any loaded Zwift map
                     map_view.zoom = 0;  // Reset to recalculate on next map view
 
                     if (fit_parse_file(node->full_path, &power_data)) {
@@ -477,6 +478,7 @@ int main(int argc, char *argv[]) {
                         fit_power_data_free(&power_data);
                         file_loaded = false;
                         graph_view = GRAPH_VIEW_POWER;
+                        zwift_map_free(&map_view);  // Free any loaded Zwift map
                         map_view.zoom = 0;  // Reset to recalculate on next map view
 
                         if (fit_parse_file(node->full_path, &power_data)) {
@@ -654,18 +656,25 @@ int main(int argc, char *argv[]) {
                 if (map_view.zoom == 0) {
                     map_view_fit_bounds(&map_view, power_data.min_lat, power_data.max_lat,
                                         power_data.min_lon, power_data.max_lon, graph_w, content_h);
+                    // Load Zwift map if detected
+                    if (map_view.source == MAP_SOURCE_ZWIFT && map_view.zwift_world) {
+                        zwift_map_load(&map_view, tile_cache.cache_dir);
+                    }
                 }
                 map_view.view_width = graph_w;
                 map_view.view_height = content_h;
 
-                // Draw map tiles
-                tile_map_draw(&tile_cache, &map_view, graph_x, content_y);
+                // Draw map (Zwift or OSM)
+                if (map_view.source == MAP_SOURCE_ZWIFT && map_view.zwift_map_loaded) {
+                    zwift_map_draw(&map_view, graph_x, content_y);
+                    zwift_map_draw_path(&map_view, graph_x, content_y, power_data.samples, power_data.count);
+                } else {
+                    tile_map_draw(&tile_cache, &map_view, graph_x, content_y);
+                    tile_map_draw_path(&map_view, graph_x, content_y, power_data.samples, power_data.count);
+                }
 
-                // Draw activity path
-                tile_map_draw_path(&map_view, graph_x, content_y, power_data.samples, power_data.count);
-
-                // Draw OSM attribution
-                tile_map_draw_attribution(graph_x + graph_w - 200, content_y + content_h - 18, 12);
+                // Draw attribution (shows "Map: Zwift" or OSM depending on source)
+                tile_map_draw_attribution(&map_view, graph_x + graph_w - 200, content_y + content_h - 18, 12);
             } else {
                 draw_power_graph(&power_data, graph_x, content_y, graph_w, content_h);
             }
@@ -695,6 +704,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Cleanup
+    zwift_map_free(&map_view);
     tile_cache_free(&tile_cache);
     UnloadFont(g_font);
     fit_power_data_free(&power_data);

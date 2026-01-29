@@ -6,11 +6,17 @@
 #include <time.h>
 #include "raylib.h"
 #include "fit_parser.h"
+#include "zwift_worlds.h"
 
 #define TILE_SIZE 256
 #define MAX_CACHED_TILES 64
 #define MIN_ZOOM 1
 #define MAX_ZOOM 18
+
+typedef enum {
+    MAP_SOURCE_OSM,
+    MAP_SOURCE_ZWIFT
+} MapSource;
 
 typedef struct {
     int x, y, z;           // Tile coordinates (x, y) and zoom level (z)
@@ -31,6 +37,10 @@ typedef struct {
     double center_lat, center_lon;
     int zoom;
     int view_width, view_height;
+    MapSource source;
+    const ZwiftWorld *zwift_world;  // non-NULL if Zwift
+    Texture2D zwift_map_texture;    // loaded Zwift mini-map
+    bool zwift_map_loaded;
 } MapView;
 
 // Tile cache lifecycle
@@ -54,7 +64,20 @@ void tile_map_draw(TileCache *cache, MapView *view, int screen_x, int screen_y);
 void tile_map_draw_path(MapView *view, int screen_x, int screen_y,
                         const FitPowerSample *samples, size_t count);
 
-// Draw OSM attribution (required by OSM terms)
-void tile_map_draw_attribution(int x, int y, int font_size);
+// Draw map attribution (OSM or Zwift depending on source)
+void tile_map_draw_attribution(MapView *view, int x, int y, int font_size);
+
+// Load Zwift mini-map for the detected world
+bool zwift_map_load(MapView *view, const char *cache_dir);
+
+// Free Zwift map texture
+void zwift_map_free(MapView *view);
+
+// Draw Zwift mini-map
+void zwift_map_draw(MapView *view, int screen_x, int screen_y);
+
+// Draw path on Zwift map
+void zwift_map_draw_path(MapView *view, int screen_x, int screen_y,
+                         const FitPowerSample *samples, size_t count);
 
 #endif // TILE_MAP_H
