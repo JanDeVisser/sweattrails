@@ -15,13 +15,35 @@
 #define CALLBACK_PORT 8089
 #define REDIRECT_URI "http://localhost:8089/callback"
 
-// Simple JSON value extraction (not a full parser)
-static bool json_get_string(const char *json, const char *key, char *out, size_t out_size) {
+// Helper to find a key at object top-level (not inside nested objects)
+static const char *json_find_key(const char *json, const char *key) {
     char search[256];
     snprintf(search, sizeof(search), "\"%s\"", key);
-    const char *pos = strstr(json, search);
+    const char *pos = json;
+
+    while ((pos = strstr(pos, search)) != NULL) {
+        // Count braces from start to check nesting level
+        int depth = 0;
+        for (const char *p = json; p < pos; p++) {
+            if (*p == '{') depth++;
+            else if (*p == '}') depth--;
+        }
+        // depth == 1 means top level of the object
+        if (depth <= 1) {
+            return pos;
+        }
+        pos++;
+    }
+    return NULL;
+}
+
+// Simple JSON value extraction (not a full parser)
+static bool json_get_string(const char *json, const char *key, char *out, size_t out_size) {
+    const char *pos = json_find_key(json, key);
     if (!pos) return false;
 
+    char search[256];
+    snprintf(search, sizeof(search), "\"%s\"", key);
     pos = strchr(pos + strlen(search), ':');
     if (!pos) return false;
 
@@ -41,11 +63,11 @@ static bool json_get_string(const char *json, const char *key, char *out, size_t
 }
 
 static bool json_get_int64(const char *json, const char *key, int64_t *out) {
-    char search[256];
-    snprintf(search, sizeof(search), "\"%s\"", key);
-    const char *pos = strstr(json, search);
+    const char *pos = json_find_key(json, key);
     if (!pos) return false;
 
+    char search[256];
+    snprintf(search, sizeof(search), "\"%s\"", key);
     pos = strchr(pos + strlen(search), ':');
     if (!pos) return false;
 
@@ -66,11 +88,11 @@ static bool json_get_int(const char *json, const char *key, int *out) {
 }
 
 static bool json_get_float(const char *json, const char *key, float *out) {
-    char search[256];
-    snprintf(search, sizeof(search), "\"%s\"", key);
-    const char *pos = strstr(json, search);
+    const char *pos = json_find_key(json, key);
     if (!pos) return false;
 
+    char search[256];
+    snprintf(search, sizeof(search), "\"%s\"", key);
     pos = strchr(pos + strlen(search), ':');
     if (!pos) return false;
 
@@ -82,11 +104,11 @@ static bool json_get_float(const char *json, const char *key, float *out) {
 }
 
 static bool json_get_bool(const char *json, const char *key, bool *out) {
-    char search[256];
-    snprintf(search, sizeof(search), "\"%s\"", key);
-    const char *pos = strstr(json, search);
+    const char *pos = json_find_key(json, key);
     if (!pos) return false;
 
+    char search[256];
+    snprintf(search, sizeof(search), "\"%s\"", key);
     pos = strchr(pos + strlen(search), ':');
     if (!pos) return false;
 
@@ -494,58 +516,158 @@ bool strava_download_activity(StravaConfig *config, int64_t activity_id, const c
         return false;
     }
 
-    // First, get the activity streams or export
-    // Strava doesn't provide direct FIT download via API, so we get streams
-    // and would need to convert - OR we can try to get the original file
-    // through an undocumented endpoint
+    char auth_header[256];
+    snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", config->access_token);
 
+    // Step 1: Fetch activity details
     CURL *curl = curl_easy_init();
     if (!curl) return false;
 
-    // Try to export as FIT (this requires the activity to have been uploaded as FIT originally)
     char url[512];
-    snprintf(url, sizeof(url), "%s/activities/%lld/streams?keys=watts,time&key_by_type=true",
+    snprintf(url, sizeof(url), "%s/activities/%lld",
              STRAVA_API_URL, (long long)activity_id);
-
-    char auth_header[256];
-    snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", config->access_token);
 
     struct curl_slist *headers = NULL;
     headers = curl_slist_append(headers, auth_header);
 
-    CurlBuffer buf = {0};
+    CurlBuffer activity_buf = {0};
 
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &activity_buf);
 
     CURLcode res = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        curl_slist_free_all(headers);
+        curl_buffer_free(&activity_buf);
+        return false;
+    }
+
+    // Extract activity metadata
+    char name[256] = "";
+    char type[64] = "";
+    char start_date[64] = "";
+    float distance = 0;
+    int moving_time = 0;
+
+    json_get_string(activity_buf.data, "name", name, sizeof(name));
+    json_get_string(activity_buf.data, "type", type, sizeof(type));
+    json_get_string(activity_buf.data, "start_date", start_date, sizeof(start_date));
+    json_get_float(activity_buf.data, "distance", &distance);
+    json_get_int(activity_buf.data, "moving_time", &moving_time);
+
+    curl_buffer_free(&activity_buf);
+
+    // Step 2: Fetch all available streams
+    curl = curl_easy_init();
+    if (!curl) {
+        curl_slist_free_all(headers);
+        return false;
+    }
+
+    snprintf(url, sizeof(url), "%s/activities/%lld/streams?keys=time,watts,latlng,heartrate,cadence,altitude,distance&key_by_type=true",
+             STRAVA_API_URL, (long long)activity_id);
+
+    CurlBuffer streams_buf = {0};
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &streams_buf);
+
+    res = curl_easy_perform(curl);
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        curl_buffer_free(&buf);
+        curl_buffer_free(&streams_buf);
         return false;
     }
 
-    // For now, save the stream data as JSON
-    // A proper implementation would convert this to FIT format
-    // or use a different approach to get the original file
-
+    // Step 3: Build structured JSON output
     FILE *f = fopen(output_path, "w");
     if (!f) {
-        curl_buffer_free(&buf);
+        curl_buffer_free(&streams_buf);
         return false;
     }
 
-    fwrite(buf.data, 1, buf.size, f);
+    // Escape name for JSON (handle quotes and backslashes)
+    char escaped_name[512];
+    size_t j = 0;
+    for (size_t i = 0; name[i] && j < sizeof(escaped_name) - 2; i++) {
+        if (name[i] == '"' || name[i] == '\\') {
+            escaped_name[j++] = '\\';
+        }
+        escaped_name[j++] = name[i];
+    }
+    escaped_name[j] = '\0';
+
+    fprintf(f, "{\n");
+    fprintf(f, "  \"source\": \"strava\",\n");
+    fprintf(f, "  \"activity_id\": %lld,\n", (long long)activity_id);
+    fprintf(f, "  \"name\": \"%s\",\n", escaped_name);
+    fprintf(f, "  \"type\": \"%s\",\n", type);
+    fprintf(f, "  \"start_date\": \"%s\",\n", start_date);
+    fprintf(f, "  \"distance\": %.1f,\n", distance);
+    fprintf(f, "  \"moving_time\": %d,\n", moving_time);
+
+    // Parse and reformat streams from Strava's key_by_type format
+    // Strava returns: {"time": {"data": [...]}, "watts": {"data": [...]}, ...}
+    fprintf(f, "  \"streams\": {\n");
+
+    const char *stream_keys[] = {"time", "watts", "latlng", "heartrate", "cadence", "altitude", "distance", NULL};
+    bool first_stream = true;
+
+    for (int k = 0; stream_keys[k]; k++) {
+        // Find the stream key in the response
+        char search[64];
+        snprintf(search, sizeof(search), "\"%s\"", stream_keys[k]);
+        const char *stream_pos = strstr(streams_buf.data, search);
+        if (!stream_pos) continue;
+
+        // Find the "data" array within this stream
+        const char *data_pos = strstr(stream_pos, "\"data\"");
+        if (!data_pos) continue;
+
+        // Find the opening bracket of the data array
+        const char *arr_start = strchr(data_pos, '[');
+        if (!arr_start) continue;
+
+        // Find the matching closing bracket
+        int depth = 1;
+        const char *arr_end = arr_start + 1;
+        while (*arr_end && depth > 0) {
+            if (*arr_end == '[') depth++;
+            else if (*arr_end == ']') depth--;
+            arr_end++;
+        }
+
+        if (depth != 0) continue;
+
+        // Extract the array content
+        size_t arr_len = arr_end - arr_start;
+        char *arr_content = malloc(arr_len + 1);
+        if (!arr_content) continue;
+        strncpy(arr_content, arr_start, arr_len);
+        arr_content[arr_len] = '\0';
+
+        if (!first_stream) fprintf(f, ",\n");
+        first_stream = false;
+        fprintf(f, "    \"%s\": %s", stream_keys[k], arr_content);
+
+        free(arr_content);
+    }
+
+    fprintf(f, "\n  }\n");
+    fprintf(f, "}\n");
     fclose(f);
 
-    curl_buffer_free(&buf);
+    curl_buffer_free(&streams_buf);
 
-    printf("Note: Strava API provides streams, not FIT files.\n");
-    printf("Saved stream data to: %s\n", output_path);
+    printf("Downloaded activity to: %s\n", output_path);
     fflush(stdout);
 
     return true;

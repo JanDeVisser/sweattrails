@@ -47,7 +47,7 @@ make
 
 ### Adding Activities
 
-Drop `.fit` files into the inbox folder:
+Drop `.fit` files into the inbox folder (or download from Strava):
 - **Linux**: `~/.local/share/fitpower/inbox/`
 - **macOS**: `~/Library/Application Support/fitpower/inbox/`
 
@@ -108,16 +108,19 @@ Activities are stored in a platform-specific location:
 
 ## Features
 
-### Local FIT Files
+### Local Activities
+- Supports both FIT files and JSON files (downloaded from Strava)
 - Automatic inbox processing and organization by date
 - Year/month tree browser with expand/collapse
 - Parses FIT binary protocol (definition messages, data messages, compressed timestamps)
-- Extracts power data, GPS coordinates, and activity timestamps from record messages
+- Extracts power data, GPS coordinates, and activity timestamps
 
 ### Strava Integration
 - OAuth2 authentication (opens browser, captures callback on localhost:8089)
 - Fetches activity list from Strava API
 - Shows activity details (date, type, distance, power indicator)
+- Download activities as JSON with full stream data (power, GPS, heartrate, cadence)
+- Downloaded activities appear in the Local tab and can be viewed like FIT files
 - Tokens automatically refreshed and saved
 
 ### Power Graph
@@ -149,7 +152,6 @@ Activities are stored in a platform-specific location:
 
 ## Potential Improvements
 
-- Power graph for Strava activities (fetch streams)
 - Zoom/pan on graph
 - Heart rate overlay
 - Cadence display

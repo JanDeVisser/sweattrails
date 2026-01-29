@@ -178,7 +178,9 @@ bool activity_tree_scan(ActivityTree *tree, const char *data_dir) {
             struct dirent *file_entry;
             while ((file_entry = readdir(file_dir)) != NULL) {
                 size_t len = strlen(file_entry->d_name);
-                if (len <= 4 || strcasecmp(file_entry->d_name + len - 4, ".fit") != 0) continue;
+                bool is_fit = (len > 4 && strcasecmp(file_entry->d_name + len - 4, ".fit") == 0);
+                bool is_json = (len > 5 && strcasecmp(file_entry->d_name + len - 5, ".json") == 0);
+                if (!is_fit && !is_json) continue;
 
                 if (month_node->child_count >= file_capacity) {
                     file_capacity *= 2;

@@ -53,6 +53,10 @@ typedef struct {
 // Returns true on success, false on failure
 bool fit_parse_file(const char *filename, FitPowerData *data);
 
+// Parse a JSON activity file (from Strava download) and extract power data
+// Returns true on success, false on failure
+bool json_parse_activity(const char *filename, FitPowerData *data);
+
 // Free power data resources
 void fit_power_data_free(FitPowerData *data);
 

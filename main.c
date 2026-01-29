@@ -57,6 +57,15 @@ static int compare_fit_files(const void *a, const void *b) {
     return (int)(fb->mtime - fa->mtime);
 }
 
+// Load activity file - detects .json vs .fit and calls appropriate parser
+static bool load_activity_file(const char *path, FitPowerData *data) {
+    size_t len = strlen(path);
+    if (len > 5 && strcasecmp(path + len - 5, ".json") == 0) {
+        return json_parse_activity(path, data);
+    }
+    return fit_parse_file(path, data);
+}
+
 static int find_fit_files(FitFileEntry *files, int max_files) {
     DIR *dir = opendir(g_downloads_path);
     if (!dir) {
@@ -273,6 +282,7 @@ int main(int argc, char *argv[]) {
     StravaActivityList strava_activities = {0};
     bool strava_activities_loaded = false;
     bool strava_loading = false;
+    bool strava_downloading = false;
 
     // Initialize raylib
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
@@ -316,7 +326,7 @@ int main(int argc, char *argv[]) {
                 selected_tree = (int)i;
                 printf("Loading: %s\n", node->full_path);
                 fflush(stdout);
-                if (fit_parse_file(node->full_path, &power_data)) {
+                if (load_activity_file(node->full_path, &power_data)) {
                     file_loaded = true;
                     graph_view = GRAPH_VIEW_POWER;
                     map_view.zoom = 0;  // Reset to recalculate on next map view
@@ -402,7 +412,7 @@ int main(int argc, char *argv[]) {
                     zwift_map_free(&map_view);  // Free any loaded Zwift map
                     map_view.zoom = 0;  // Reset to recalculate on next map view
 
-                    if (fit_parse_file(node->full_path, &power_data)) {
+                    if (load_activity_file(node->full_path, &power_data)) {
                         file_loaded = true;
                         snprintf(status_message, sizeof(status_message), "Loaded: %s (%zu samples)", node->name, power_data.count);
                         strncpy(current_title, node->name, sizeof(current_title) - 1);
@@ -486,7 +496,7 @@ int main(int argc, char *argv[]) {
                         zwift_map_free(&map_view);  // Free any loaded Zwift map
                         map_view.zoom = 0;  // Reset to recalculate on next map view
 
-                        if (fit_parse_file(node->full_path, &power_data)) {
+                        if (load_activity_file(node->full_path, &power_data)) {
                             file_loaded = true;
                             snprintf(status_message, sizeof(status_message), "Loaded: %s (%zu samples)", node->name, power_data.count);
                             strncpy(current_title, node->name, sizeof(current_title) - 1);
@@ -574,6 +584,47 @@ int main(int argc, char *argv[]) {
                 }
 
                 if (strava_activities_loaded) {
+                    // Download button next to header
+                    bool can_download = selected_strava >= 0 && selected_strava < (int)strava_activities.count && !strava_downloading;
+                    if (draw_button(200, list_y + 2, 90, 20, strava_downloading ? "..." : "Download", can_download)) {
+                        strava_downloading = true;
+                    }
+
+                    // Handle download in separate frame to avoid blocking
+                    if (strava_downloading) {
+                        EndDrawing();
+                        StravaActivity *act = &strava_activities.activities[selected_strava];
+
+                        // Parse year and month from start_date (format: YYYY-MM-DDTHH:MM:SSZ)
+                        char year[5] = "";
+                        char month[3] = "";
+                        if (strlen(act->start_date) >= 10) {
+                            strncpy(year, act->start_date, 4);
+                            year[4] = '\0';
+                            strncpy(month, act->start_date + 5, 2);
+                            month[2] = '\0';
+                        }
+
+                        // Create output directory
+                        char output_dir[512];
+                        snprintf(output_dir, sizeof(output_dir), "%s/activity/%s/%s", g_data_dir, year, month);
+                        create_directory_path(output_dir);
+
+                        // Create output path
+                        char output_path[512];
+                        snprintf(output_path, sizeof(output_path), "%s/%lld.json", output_dir, (long long)act->id);
+
+                        if (strava_download_activity(&strava_config, act->id, output_path)) {
+                            snprintf(status_message, sizeof(status_message), "Downloaded: %s", act->name);
+                            // Refresh activity tree
+                            activity_tree_scan(&activity_tree, g_data_dir);
+                        } else {
+                            snprintf(status_message, sizeof(status_message), "Download failed: %s", act->name);
+                        }
+                        strava_downloading = false;
+                        continue;  // Restart frame
+                    }
+
                     for (int i = 0; i < visible_files && i + strava_scroll_offset < (int)strava_activities.count; i++) {
                         int act_idx = i + strava_scroll_offset;
                         int y = list_y + 25 + i * 25;
