@@ -277,6 +277,7 @@ int main(int argc, char *argv[]) {
     // Initialize raylib
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "FIT Power Viewer");
+    MaximizeWindow();
     SetTargetFPS(60);
 
     // Load custom font
@@ -429,6 +430,10 @@ int main(int argc, char *argv[]) {
         // Drawing
         BeginDrawing();
         ClearBackground((Color){20, 20, 25, 255});
+
+        // Calculate visible files based on window height (status bar takes 30px)
+        visible_files = (GetScreenHeight() - 110) / 25;
+        if (visible_files < 5) visible_files = 5;
 
         // Title
         DrawTextF("FIT Power Viewer", 10, 10, 26, WHITE);
@@ -697,8 +702,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Status bar
-        DrawTextF(status_message, 10, GetScreenHeight() - 25, 14, DARKGRAY);
-        DrawTextF("Up/Down: Navigate | Left/Right: Collapse/Expand | P/M: Power/Map | ESC: Quit", 320, GetScreenHeight() - 25, 14, GRAY);
+        DrawTextF("Up/Down: Navigate | Left/Right: Collapse/Expand | P/M: Power/Map | ESC: Quit", 10, GetScreenHeight() - 25, 14, GRAY);
 
         EndDrawing();
     }
