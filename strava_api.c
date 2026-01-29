@@ -465,13 +465,18 @@ bool strava_fetch_activities(StravaConfig *config, StravaActivityList *list, int
     // Parse JSON array - find each activity object
     const char *pos = buf.data;
     while ((pos = strchr(pos, '{')) != NULL) {
-        // Find end of this object
+        // Find end of this object, skipping string contents
         int depth = 1;
         const char *start = pos;
         pos++;
+        bool in_string = false;
         while (*pos && depth > 0) {
-            if (*pos == '{') depth++;
-            else if (*pos == '}') depth--;
+            if (*pos == '"' && *(pos - 1) != '\\') {
+                in_string = !in_string;
+            } else if (!in_string) {
+                if (*pos == '{') depth++;
+                else if (*pos == '}') depth--;
+            }
             pos++;
         }
 
