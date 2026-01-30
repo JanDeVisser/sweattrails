@@ -4,6 +4,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
+
+// Haversine distance between two lat/lon points (in meters)
+static double haversine_distance(double lat1, double lon1, double lat2, double lon2) {
+    const double R = 6371000.0;  // Earth radius in meters
+    double dlat = (lat2 - lat1) * M_PI / 180.0;
+    double dlon = (lon2 - lon1) * M_PI / 180.0;
+    double a = sin(dlat / 2) * sin(dlat / 2) +
+               cos(lat1 * M_PI / 180.0) * cos(lat2 * M_PI / 180.0) *
+               sin(dlon / 2) * sin(dlon / 2);
+    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return R * c;
+}
 
 // FIT Global Message Numbers
 #define FIT_MESG_RECORD 20
@@ -11,6 +24,8 @@
 // FIT Record Field Definition Numbers
 #define FIT_FIELD_POSITION_LAT 0
 #define FIT_FIELD_POSITION_LONG 1
+#define FIT_FIELD_HEART_RATE 3
+#define FIT_FIELD_CADENCE 4
 #define FIT_FIELD_POWER 7
 #define FIT_FIELD_TIMESTAMP 253
 
@@ -98,9 +113,11 @@ static uint64_t read_field_value(const uint8_t *data, uint8_t size, uint8_t base
 }
 
 static bool add_sample(FitPowerData *data, uint32_t timestamp, uint16_t power, bool has_power,
-                       int32_t latitude, int32_t longitude, bool has_gps) {
-    // Only add sample if it has power or GPS data
-    if (!has_power && !has_gps) {
+                       int32_t latitude, int32_t longitude, bool has_gps,
+                       uint8_t heart_rate, bool has_heart_rate,
+                       uint8_t cadence, bool has_cadence) {
+    // Only add sample if it has power, GPS, heart rate, or cadence data
+    if (!has_power && !has_gps && !has_heart_rate && !has_cadence) {
         return true;
     }
 
@@ -127,6 +144,10 @@ static bool add_sample(FitPowerData *data, uint32_t timestamp, uint16_t power, b
     sample->latitude = latitude;
     sample->longitude = longitude;
     sample->has_gps = has_gps;
+    sample->heart_rate = heart_rate;
+    sample->has_heart_rate = has_heart_rate;
+    sample->cadence = cadence;
+    sample->has_cadence = has_cadence;
     data->count++;
 
     return true;
@@ -219,6 +240,10 @@ bool fit_parse_file(const char *filename, FitPowerData *data) {
                 int32_t latitude = 0x7FFFFFFF;  // Invalid value
                 int32_t longitude = 0x7FFFFFFF;
                 bool has_gps = false;
+                uint8_t heart_rate = 0;
+                bool has_heart_rate = false;
+                uint8_t cadence = 0;
+                bool has_cadence = false;
                 size_t offset = 0;
 
                 for (int i = 0; i < def->num_fields; i++) {
@@ -240,12 +265,25 @@ bool fit_parse_file(const char *filename, FitPowerData *data) {
                         }
                     } else if (field->field_def_num == FIT_FIELD_POSITION_LONG && field->size >= 4) {
                         longitude = read_sint32(record_data + offset, def->arch == 1);
+                    } else if (field->field_def_num == FIT_FIELD_HEART_RATE && field->size >= 1) {
+                        heart_rate = (uint8_t)read_field_value(record_data + offset, field->size,
+                                                               field->base_type, def->arch == 1);
+                        if (heart_rate != 0xFF && heart_rate > 0) {
+                            has_heart_rate = true;
+                        }
+                    } else if (field->field_def_num == FIT_FIELD_CADENCE && field->size >= 1) {
+                        cadence = (uint8_t)read_field_value(record_data + offset, field->size,
+                                                           field->base_type, def->arch == 1);
+                        if (cadence != 0xFF && cadence > 0) {
+                            has_cadence = true;
+                        }
                     }
 
                     offset += field->size;
                 }
 
-                add_sample(data, timestamp, power, has_power, latitude, longitude, has_gps);
+                add_sample(data, timestamp, power, has_power, latitude, longitude, has_gps,
+                           heart_rate, has_heart_rate, cadence, has_cadence);
                 if (has_power) {
                     if (power > data->max_power) data->max_power = power;
                     if (power < data->min_power) data->min_power = power;
@@ -334,6 +372,10 @@ bool fit_parse_file(const char *filename, FitPowerData *data) {
                 int32_t latitude = 0x7FFFFFFF;  // Invalid value
                 int32_t longitude = 0x7FFFFFFF;
                 bool has_gps = false;
+                uint8_t heart_rate = 0;
+                bool has_heart_rate = false;
+                uint8_t cadence = 0;
+                bool has_cadence = false;
                 size_t offset = 0;
 
                 for (int i = 0; i < def->num_fields; i++) {
@@ -355,12 +397,25 @@ bool fit_parse_file(const char *filename, FitPowerData *data) {
                         }
                     } else if (field->field_def_num == FIT_FIELD_POSITION_LONG && field->size >= 4) {
                         longitude = read_sint32(record_data + offset, def->arch == 1);
+                    } else if (field->field_def_num == FIT_FIELD_HEART_RATE && field->size >= 1) {
+                        heart_rate = (uint8_t)read_field_value(record_data + offset, field->size,
+                                                               field->base_type, def->arch == 1);
+                        if (heart_rate != 0xFF && heart_rate > 0) {
+                            has_heart_rate = true;
+                        }
+                    } else if (field->field_def_num == FIT_FIELD_CADENCE && field->size >= 1) {
+                        cadence = (uint8_t)read_field_value(record_data + offset, field->size,
+                                                           field->base_type, def->arch == 1);
+                        if (cadence != 0xFF && cadence > 0) {
+                            has_cadence = true;
+                        }
                     }
 
                     offset += field->size;
                 }
 
-                add_sample(data, timestamp, power, has_power, latitude, longitude, has_gps);
+                add_sample(data, timestamp, power, has_power, latitude, longitude, has_gps,
+                           heart_rate, has_heart_rate, cadence, has_cadence);
                 if (has_power) {
                     if (power > data->max_power) data->max_power = power;
                     if (power < data->min_power) data->min_power = power;
@@ -373,19 +428,30 @@ bool fit_parse_file(const char *filename, FitPowerData *data) {
 
     fclose(file);
 
-    // Calculate average power and GPS bounding box
+    // Store source file
+    strncpy(data->source_file, filename, sizeof(data->source_file) - 1);
+
+    // Calculate statistics
     if (data->count > 0) {
-        uint64_t total = 0;
+        uint64_t total_power = 0;
+        uint64_t total_hr = 0;
         size_t power_count = 0;
+        size_t hr_count = 0;
         data->min_lat = 90.0;
         data->max_lat = -90.0;
         data->min_lon = 180.0;
         data->max_lon = -180.0;
+        data->max_heart_rate = 0;
+
+        double prev_lat = 0, prev_lon = 0;
+        bool has_prev_gps = false;
+        uint64_t total_cadence = 0;
+        size_t cadence_count = 0;
 
         for (size_t i = 0; i < data->count; i++) {
             FitPowerSample *sample = &data->samples[i];
             if (sample->has_power) {
-                total += sample->power;
+                total_power += sample->power;
                 power_count++;
             }
             if (sample->has_gps) {
@@ -397,10 +463,63 @@ bool fit_parse_file(const char *filename, FitPowerData *data) {
                 if (lon > data->max_lon) data->max_lon = lon;
                 data->gps_sample_count++;
                 data->has_gps_data = true;
+
+                // Calculate distance from previous GPS point
+                if (has_prev_gps) {
+                    data->total_distance += (float)haversine_distance(prev_lat, prev_lon, lat, lon);
+                }
+                prev_lat = lat;
+                prev_lon = lon;
+                has_prev_gps = true;
+            }
+            if (sample->has_heart_rate) {
+                total_hr += sample->heart_rate;
+                hr_count++;
+                if (sample->heart_rate > data->max_heart_rate) {
+                    data->max_heart_rate = sample->heart_rate;
+                }
+                data->has_heart_rate_data = true;
+            }
+            if (sample->has_cadence) {
+                if (sample->cadence > data->max_cadence) {
+                    data->max_cadence = sample->cadence;
+                }
+                data->has_cadence_data = true;
+                // Only include non-zero cadence in average
+                if (sample->cadence > 0) {
+                    total_cadence += sample->cadence;
+                    cadence_count++;
+                }
             }
         }
         if (power_count > 0) {
-            data->avg_power = (double)total / power_count;
+            data->avg_power = (double)total_power / power_count;
+        }
+        if (hr_count > 0) {
+            data->avg_heart_rate = (uint8_t)(total_hr / hr_count);
+        }
+        if (cadence_count > 0) {
+            data->avg_cadence = (uint8_t)(total_cadence / cadence_count);
+        }
+
+        // Calculate elapsed time from first/last timestamp
+        // FIT timestamps are seconds since 1989-12-31 00:00:00 UTC
+        uint32_t first_ts = data->samples[0].timestamp;
+        uint32_t last_ts = data->samples[data->count - 1].timestamp;
+        data->elapsed_time = (int)(last_ts - first_ts);
+
+        // Convert FIT timestamp to Unix timestamp (FIT epoch is 631065600 seconds after Unix epoch)
+        data->start_time = (time_t)(first_ts + 631065600);
+
+        // Default activity type for FIT files
+        strncpy(data->activity_type, "Ride", sizeof(data->activity_type) - 1);
+
+        // Generate default title: "YYYY-MM-DD HH:MM Ride"
+        struct tm *tm_info = localtime(&data->start_time);
+        if (tm_info) {
+            char time_str[32];
+            strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M", tm_info);
+            snprintf(data->title, sizeof(data->title), "%s %s", time_str, data->activity_type);
         }
     }
 
@@ -415,6 +534,9 @@ bool fit_parse_file(const char *filename, FitPowerData *data) {
     }
     printf("Power range: %u - %u watts, average: %.1f watts\n",
            data->min_power, data->max_power, data->avg_power);
+    if (data->has_heart_rate_data) {
+        printf("Heart rate: avg %d bpm, max %d bpm\n", data->avg_heart_rate, data->max_heart_rate);
+    }
     fflush(stdout);
 
     return data->count > 0;
@@ -452,6 +574,22 @@ static bool json_get_string(const char *json, const char *key, char *out, size_t
     }
     out[i] = '\0';
     return true;
+}
+
+static bool json_get_number(const char *json, const char *key, double *out) {
+    char search[256];
+    snprintf(search, sizeof(search), "\"%s\"", key);
+    const char *pos = strstr(json, search);
+    if (!pos) return false;
+
+    pos = strchr(pos + strlen(search), ':');
+    if (!pos) return false;
+
+    while (*pos && (*pos == ':' || *pos == ' ' || *pos == '\t' || *pos == '\n')) pos++;
+
+    char *end;
+    *out = strtod(pos, &end);
+    return end != pos;
 }
 
 // Parse ISO 8601 date string to Unix timestamp
@@ -565,10 +703,30 @@ bool json_parse_activity(const char *filename, FitPowerData *data) {
     memset(data, 0, sizeof(FitPowerData));
     data->min_power = UINT16_MAX;
 
+    // Store source file
+    strncpy(data->source_file, filename, sizeof(data->source_file) - 1);
+
+    // Get activity metadata
+    json_get_string(json, "name", data->title, sizeof(data->title));
+    json_get_string(json, "type", data->activity_type, sizeof(data->activity_type));
+
     // Get start_date for timestamp calculation
     char start_date[64] = "";
     json_get_string(json, "start_date", start_date, sizeof(start_date));
     time_t base_timestamp = parse_iso8601(start_date);
+    data->start_time = base_timestamp;
+
+    // Get duration and distance
+    double moving_time = 0, elapsed_time = 0, distance = 0;
+    if (json_get_number(json, "moving_time", &moving_time)) {
+        data->moving_time = (int)moving_time;
+    }
+    if (json_get_number(json, "elapsed_time", &elapsed_time)) {
+        data->elapsed_time = (int)elapsed_time;
+    }
+    if (json_get_number(json, "distance", &distance)) {
+        data->total_distance = (float)distance;
+    }
 
     // Find streams section
     const char *streams_pos = strstr(json, "\"streams\"");
@@ -654,22 +812,73 @@ bool json_parse_activity(const char *filename, FitPowerData *data) {
         }
     }
 
+    // Parse heartrate array if present
+    const char *hr_arr = json_find_array(streams_pos, "heartrate");
+    if (hr_arr) {
+        p = hr_arr + 1;
+        for (size_t i = 0; i < sample_count; i++) {
+            int hr = (int)json_parse_number(&p);
+            if (hr > 0 && hr < 255) {
+                data->samples[i].heart_rate = (uint8_t)hr;
+                data->samples[i].has_heart_rate = true;
+            }
+            json_skip_to_next(&p);
+        }
+    }
+
+    // Parse cadence array if present
+    const char *cadence_arr = json_find_array(streams_pos, "cadence");
+    if (cadence_arr) {
+        p = cadence_arr + 1;
+        for (size_t i = 0; i < sample_count; i++) {
+            int cad = (int)json_parse_number(&p);
+            if (cad > 0 && cad < 255) {
+                data->samples[i].cadence = (uint8_t)cad;
+                data->samples[i].has_cadence = true;
+            }
+            json_skip_to_next(&p);
+        }
+    }
+
     // Set count
     data->count = sample_count;
 
+    // Calculate elapsed_time from time stream if not set
+    if (data->elapsed_time == 0 && sample_count > 1) {
+        // Time stream contains offsets from start, so last value is duration
+        const char *p_time = time_arr + 1;
+        int last_time = 0;
+        for (size_t i = 0; i < sample_count; i++) {
+            last_time = (int)json_parse_number(&p_time);
+            json_skip_to_next(&p_time);
+        }
+        data->elapsed_time = last_time;
+    }
+
+    // Use moving_time as fallback for elapsed_time
+    if (data->elapsed_time == 0 && data->moving_time > 0) {
+        data->elapsed_time = data->moving_time;
+    }
+
     // Calculate statistics
     if (data->count > 0) {
-        uint64_t total = 0;
+        uint64_t total_power = 0;
+        uint64_t total_hr = 0;
+        uint64_t total_cadence = 0;
         size_t power_count = 0;
+        size_t hr_count = 0;
+        size_t cadence_count = 0;
         data->min_lat = 90.0;
         data->max_lat = -90.0;
         data->min_lon = 180.0;
         data->max_lon = -180.0;
+        data->max_heart_rate = 0;
+        data->max_cadence = 0;
 
         for (size_t i = 0; i < data->count; i++) {
             FitPowerSample *sample = &data->samples[i];
             if (sample->has_power) {
-                total += sample->power;
+                total_power += sample->power;
                 power_count++;
                 if (sample->power > data->max_power) data->max_power = sample->power;
                 if (sample->power < data->min_power) data->min_power = sample->power;
@@ -684,9 +893,34 @@ bool json_parse_activity(const char *filename, FitPowerData *data) {
                 data->gps_sample_count++;
                 data->has_gps_data = true;
             }
+            if (sample->has_heart_rate) {
+                total_hr += sample->heart_rate;
+                hr_count++;
+                if (sample->heart_rate > data->max_heart_rate) {
+                    data->max_heart_rate = sample->heart_rate;
+                }
+                data->has_heart_rate_data = true;
+            }
+            if (sample->has_cadence) {
+                if (sample->cadence > data->max_cadence) {
+                    data->max_cadence = sample->cadence;
+                }
+                data->has_cadence_data = true;
+                // Only include non-zero cadence in average
+                if (sample->cadence > 0) {
+                    total_cadence += sample->cadence;
+                    cadence_count++;
+                }
+            }
         }
         if (power_count > 0) {
-            data->avg_power = (double)total / power_count;
+            data->avg_power = (double)total_power / power_count;
+        }
+        if (hr_count > 0) {
+            data->avg_heart_rate = (uint8_t)(total_hr / hr_count);
+        }
+        if (cadence_count > 0) {
+            data->avg_cadence = (uint8_t)(total_cadence / cadence_count);
         }
     }
 
@@ -703,6 +937,9 @@ bool json_parse_activity(const char *filename, FitPowerData *data) {
     }
     printf("Power range: %u - %u watts, average: %.1f watts\n",
            data->min_power, data->max_power, data->avg_power);
+    if (data->has_heart_rate_data) {
+        printf("Heart rate: avg %d bpm, max %d bpm\n", data->avg_heart_rate, data->max_heart_rate);
+    }
     fflush(stdout);
 
     return data->count > 0;

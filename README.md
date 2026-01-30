@@ -61,7 +61,7 @@ On startup, files are automatically organized into `activity/YYYY/MM/` based on 
 ### Controls
 
 - **1/2**: Switch between Local and Strava tabs
-- **P/M**: Switch between Power graph and Map view (Map only available for GPS activities)
+- **S/P/M**: Switch between Summary, Power graph, and Map view
 - **Up/Down** or **J/K**: Navigate tree/list
 - **Left/Right**: Collapse/expand year or month nodes
 - **Enter/Space**: Load selected file or toggle expand/collapse
@@ -113,7 +113,7 @@ Activities are stored in a platform-specific location:
 - Automatic inbox processing and organization by date
 - Year/month tree browser with expand/collapse
 - Parses FIT binary protocol (definition messages, data messages, compressed timestamps)
-- Extracts power data, GPS coordinates, and activity timestamps
+- Extracts power, GPS coordinates, heart rate, cadence, and activity timestamps
 
 ### Strava Integration
 - OAuth2 authentication (opens browser, captures callback on localhost:8089)
@@ -122,6 +122,13 @@ Activities are stored in a platform-specific location:
 - Download activities as JSON with full stream data (power, GPS, heartrate, cadence)
 - Downloaded activities appear in the Local tab and can be viewed like FIT files
 - Tokens automatically refreshed and saved
+
+### Summary Tab
+- Displays activity metadata: title, type, date, duration, distance, speed
+- Shows power stats (avg/max), heart rate (avg/max), cadence (avg/max)
+- Editable title and description fields
+- Auto-saves edits to `.meta.json` sidecar files
+- User edits persist and override default metadata on reload
 
 ### Power Graph
 - Color-coded curve (blue=low, green=medium, red=high intensity)
@@ -142,7 +149,8 @@ Activities are stored in a platform-specific location:
 ## Project Structure
 
 - `main.c` - Raylib GUI, activity tree browser, tab system, graph rendering
-- `fit_parser.c/h` - FIT file parser for power and GPS data
+- `fit_parser.c/h` - FIT/JSON file parser for power, GPS, heart rate, cadence
+- `activity_meta.c/h` - Metadata persistence for user-edited title/description
 - `file_organizer.c/h` - Inbox processing and file organization
 - `activity_tree.c/h` - Year/month tree data structure
 - `strava_api.c/h` - Strava OAuth and API client
@@ -153,8 +161,7 @@ Activities are stored in a platform-specific location:
 ## Potential Improvements
 
 - Zoom/pan on graph
-- Heart rate overlay
-- Cadence display
+- Heart rate/cadence graph overlays
 - Export to image
 - Smoothing/averaging options
 - Power zones visualization

@@ -115,7 +115,7 @@ bool activity_tree_scan(ActivityTree *tree, const char *data_dir) {
         memset(year_node, 0, sizeof(TreeNode));
         year_node->type = NODE_YEAR;
         strncpy(year_node->name, year_entry->d_name, sizeof(year_node->name) - 1);
-        year_node->expanded = (tree->year_count == 0);  // Expand first year by default
+        year_node->expanded = false;
 
         // Scan months in this year
         DIR *month_dir = opendir(year_path);
@@ -180,6 +180,8 @@ bool activity_tree_scan(ActivityTree *tree, const char *data_dir) {
                 size_t len = strlen(file_entry->d_name);
                 bool is_fit = (len > 4 && strcasecmp(file_entry->d_name + len - 4, ".fit") == 0);
                 bool is_json = (len > 5 && strcasecmp(file_entry->d_name + len - 5, ".json") == 0);
+                bool is_meta = (len > 10 && strcasecmp(file_entry->d_name + len - 10, ".meta.json") == 0);
+                if (is_meta) continue;  // Skip metadata sidecar files
                 if (!is_fit && !is_json) continue;
 
                 if (month_node->child_count >= file_capacity) {
@@ -223,11 +225,6 @@ bool activity_tree_scan(ActivityTree *tree, const char *data_dir) {
             qsort(year_node->children, year_node->child_count, sizeof(TreeNode), compare_months_desc);
         }
 
-        // Expand first month if year is expanded
-        if (year_node->expanded && year_node->child_count > 0) {
-            year_node->children[0].expanded = true;
-        }
-
         tree->year_count++;
     }
     closedir(year_dir);
@@ -235,6 +232,14 @@ bool activity_tree_scan(ActivityTree *tree, const char *data_dir) {
     // Sort years (newest first)
     if (tree->year_count > 1) {
         qsort(tree->years, tree->year_count, sizeof(TreeNode), compare_years_desc);
+    }
+
+    // Expand newest year and its newest month
+    if (tree->year_count > 0) {
+        tree->years[0].expanded = true;
+        if (tree->years[0].child_count > 0) {
+            tree->years[0].children[0].expanded = true;
+        }
     }
 
     return true;

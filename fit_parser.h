@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <time.h>
 
 #define FIT_MAX_FIELDS 256
 #define FIT_MAX_POWER_SAMPLES 100000
@@ -34,6 +35,10 @@ typedef struct {
     int32_t latitude;    // semicircles (raw FIT format)
     int32_t longitude;   // semicircles (raw FIT format)
     bool has_gps;
+    uint8_t heart_rate;  // bpm (0 = invalid)
+    bool has_heart_rate;
+    uint8_t cadence;     // rpm (0 = invalid)
+    bool has_cadence;
 } FitPowerSample;
 
 typedef struct {
@@ -47,6 +52,28 @@ typedef struct {
     size_t gps_sample_count;
     double min_lat, max_lat; // bounding box (decimal degrees)
     double min_lon, max_lon;
+
+    // Activity metadata (from JSON or calculated from FIT)
+    char title[256];
+    char description[2048];
+    char activity_type[64];       // "Ride", "Run", etc.
+    time_t start_time;            // Unix timestamp
+    int elapsed_time;             // seconds (from samples or JSON)
+    int moving_time;              // seconds (from JSON if available)
+    float total_distance;         // meters
+
+    // Heart rate stats
+    uint8_t max_heart_rate;
+    uint8_t avg_heart_rate;
+    bool has_heart_rate_data;
+
+    // Cadence stats
+    uint8_t max_cadence;
+    uint8_t avg_cadence;
+    bool has_cadence_data;
+
+    // Source tracking
+    char source_file[512];        // Path to original file
 } FitPowerData;
 
 // Parse a FIT file and extract power data
