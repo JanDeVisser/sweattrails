@@ -424,12 +424,16 @@ static bool draw_text_area(int x, int y, int w, int h, const char *text,
 }
 
 // Draw the Summary tab content
-static void draw_summary_tab(FitPowerData *data, ActivityMeta *meta, EditField *edit_field,
-                             int *cursor_pos, double blink_time, int x, int y, int w, int h) {
+// Returns index of clicked activity in group (0-based), or -1 if none clicked
+static int draw_summary_tab(FitPowerData *data, ActivityMeta *meta, EditField *edit_field,
+                             int *cursor_pos, double blink_time, int x, int y, int w, int h,
+                             bool is_group, FitPowerData **group_data, int group_count, TreeNode *group_node) {
     int label_x = x + 20;
     int value_x = x + 150;
     int row_height = 28;
     int current_y = y + 15;
+    int clicked_activity = -1;
+    Vector2 mouse = GetMousePosition();
 
     // Title (editable)
     DrawTextF("Title:", label_x, current_y + 4, 15, LIGHTGRAY);
@@ -441,6 +445,73 @@ static void draw_summary_tab(FitPowerData *data, ActivityMeta *meta, EditField *
     }
     current_y += row_height;
 
+    if (is_group && group_data && group_count > 0) {
+        // Group mode: show list of activities
+        DrawTextF("Activities:", label_x, current_y + 4, 15, LIGHTGRAY);
+        current_y += row_height;
+
+        for (int i = 0; i < group_count; i++) {
+            if (!group_data[i]) continue;
+
+            int item_y = current_y;
+            int item_h = 24;
+            int item_w = w - 40;
+
+            // Check for hover/click
+            bool hover = mouse.x >= label_x && mouse.x < label_x + item_w &&
+                         mouse.y >= item_y && mouse.y < item_y + item_h;
+
+            if (hover) {
+                DrawRectangle(label_x, item_y, item_w, item_h, (Color){50, 60, 80, 255});
+                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                    clicked_activity = i;
+                }
+            }
+
+            // Draw color indicator matching graph colors
+            Color colors[] = {
+                {50, 150, 255, 255}, {255, 100, 100, 255}, {100, 200, 100, 255},
+                {255, 200, 50, 255}, {200, 100, 255, 255}, {100, 255, 255, 255},
+                {255, 150, 100, 255}, {200, 200, 200, 255}
+            };
+            DrawRectangle(label_x + 5, item_y + 6, 12, 12, colors[i % 8]);
+
+            // Draw title and avg power
+            char item_text[256];
+            snprintf(item_text, sizeof(item_text), "%s (%.0f W avg)",
+                     group_data[i]->title, group_data[i]->avg_power);
+            DrawTextF(item_text, label_x + 25, item_y + 4, 15, hover ? WHITE : LIGHTGRAY);
+
+            current_y += row_height;
+        }
+
+        current_y += 10;
+
+        // Description (editable)
+        DrawTextF("Notes:", label_x, current_y + 4, 15, LIGHTGRAY);
+        current_y += 22;
+
+        int desc_height = h - (current_y - y) - 20;
+        if (desc_height < 60) desc_height = 60;
+
+        bool desc_clicked = draw_text_area(label_x, current_y, w - 40, desc_height,
+                                           data->description, *edit_field == EDIT_DESCRIPTION, *cursor_pos, blink_time);
+        if (desc_clicked && *edit_field != EDIT_DESCRIPTION) {
+            *edit_field = EDIT_DESCRIPTION;
+            *cursor_pos = (int)strlen(data->description);
+        }
+
+        // Click outside to stop editing
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !title_clicked && !desc_clicked && clicked_activity < 0) {
+            *edit_field = EDIT_NONE;
+        }
+
+        (void)meta;
+        (void)group_node;
+        return clicked_activity;
+    }
+
+    // Single activity mode: show stats
     // Activity Type (read-only)
     DrawTextF("Type:", label_x, current_y + 4, 15, LIGHTGRAY);
     DrawTextF(data->activity_type[0] ? data->activity_type : "-", value_x, current_y + 4, 15, WHITE);
@@ -557,6 +628,7 @@ static void draw_summary_tab(FitPowerData *data, ActivityMeta *meta, EditField *
 
     // Store meta state for saving
     (void)meta;  // Meta is updated in main loop when editing stops
+    return -1;  // No activity clicked
 }
 
 static void init_paths(void) {
@@ -844,7 +916,7 @@ int main(int argc, char *argv[]) {
                     group_dataset_count = 0;
                     group_selected = true;
                     file_loaded = false;
-                    graph_view = GRAPH_VIEW_POWER;  // Switch to graph view for comparison
+                    graph_view = GRAPH_VIEW_SUMMARY;  // Switch to summary view for group
                     edit_field = EDIT_NONE;
                     zwift_map_free(&map_view);
                     map_view.zoom = 0;
@@ -1129,7 +1201,7 @@ int main(int argc, char *argv[]) {
                         group_dataset_count = 0;
                         group_selected = true;
                         file_loaded = false;
-                        graph_view = GRAPH_VIEW_POWER;  // Switch to graph view for comparison
+                        graph_view = GRAPH_VIEW_SUMMARY;  // Switch to summary view for group
                         edit_field = EDIT_NONE;
                         zwift_map_free(&map_view);
                         map_view.zoom = 0;
@@ -1426,8 +1498,71 @@ int main(int argc, char *argv[]) {
             int content_h = graph_h - (content_y - graph_y);
 
             if (graph_view == GRAPH_VIEW_SUMMARY) {
-                draw_summary_tab(&power_data, &activity_meta, &edit_field, &cursor_pos, blink_time,
-                                 400, content_y, graph_w + GRAPH_MARGIN_LEFT, content_h);
+                TreeNode *current_node = activity_tree_get_visible(&activity_tree, (size_t)selected_tree);
+                int clicked_idx = draw_summary_tab(&power_data, &activity_meta, &edit_field, &cursor_pos, blink_time,
+                                 400, content_y, graph_w + GRAPH_MARGIN_LEFT, content_h,
+                                 group_selected, group_datasets, group_dataset_count, current_node);
+
+                // Handle click on activity in group list
+                if (clicked_idx >= 0 && current_node && current_node->type == NODE_GROUP &&
+                    (size_t)clicked_idx < current_node->child_count) {
+                    TreeNode *child = &current_node->children[clicked_idx];
+                    if (child->type == NODE_FILE) {
+                        // Save pending edits first
+                        if (edit_field != EDIT_NONE) {
+                            bool title_changed = strcmp(power_data.title, original_title) != 0;
+                            bool desc_changed = strcmp(power_data.description, original_description) != 0;
+                            if (title_changed || desc_changed) {
+                                if (title_changed) {
+                                    strncpy(group_meta.title, power_data.title, sizeof(group_meta.title) - 1);
+                                    group_meta.title_edited = true;
+                                }
+                                if (desc_changed) {
+                                    strncpy(group_meta.description, power_data.description, sizeof(group_meta.description) - 1);
+                                    group_meta.description_edited = true;
+                                }
+                                if (current_group_meta_path[0]) {
+                                    group_meta_save(current_group_meta_path, &group_meta);
+                                }
+                            }
+                            edit_field = EDIT_NONE;
+                        }
+
+                        // Free group datasets
+                        power_data.samples = NULL;  // Shared pointer
+                        fit_power_data_free(&power_data);
+                        for (int gi = 0; gi < group_dataset_count; gi++) {
+                            if (group_datasets[gi]) {
+                                fit_power_data_free(group_datasets[gi]);
+                                free(group_datasets[gi]);
+                                group_datasets[gi] = NULL;
+                            }
+                        }
+                        group_dataset_count = 0;
+                        group_selected = false;
+
+                        // Load the selected activity
+                        if (load_activity_file(child->full_path, &power_data)) {
+                            file_loaded = true;
+                            snprintf(status_message, sizeof(status_message), "Loaded: %s", child->name);
+                            strncpy(current_title, power_data.title, sizeof(current_title) - 1);
+
+                            // Load metadata
+                            memset(&activity_meta, 0, sizeof(activity_meta));
+                            if (activity_meta_load(child->full_path, &activity_meta)) {
+                                if (activity_meta.title_edited && activity_meta.title[0]) {
+                                    strncpy(power_data.title, activity_meta.title, sizeof(power_data.title) - 1);
+                                    strncpy(current_title, power_data.title, sizeof(current_title) - 1);
+                                }
+                                if (activity_meta.description_edited && activity_meta.description[0]) {
+                                    strncpy(power_data.description, activity_meta.description, sizeof(power_data.description) - 1);
+                                }
+                            }
+                            strncpy(original_title, power_data.title, sizeof(original_title) - 1);
+                            strncpy(original_description, power_data.description, sizeof(original_description) - 1);
+                        }
+                    }
+                }
             } else if (graph_view == GRAPH_VIEW_MAP && has_gps) {
                 // Initialize map view if needed
                 if (map_view.zoom == 0) {
