@@ -778,7 +778,7 @@ int main(int argc, char *argv[]) {
 
         // Mouse wheel scrolling
         float wheel = GetMouseWheelMove();
-        if (wheel != 0 && mouse.x < 300) {
+        if (wheel != 0 && mouse.x < 375) {
             *scroll -= (int)wheel * 3;
             if (*scroll < 0) *scroll = 0;
             if (*scroll > list_count - visible_files) {
@@ -904,7 +904,7 @@ int main(int argc, char *argv[]) {
 
         // List panel
         int list_y = tab_y + 35;
-        DrawRectangle(5, list_y, 290, visible_files * 25 + 10, (Color){35, 35, 45, 255});
+        DrawRectangle(5, list_y, 365, visible_files * 25 + 10, (Color){35, 35, 45, 255});
 
         if (current_tab == TAB_LOCAL) {
             DrawTextF("Activities:", 10, list_y + 5, 15, LIGHTGRAY);
@@ -916,12 +916,12 @@ int main(int argc, char *argv[]) {
                 TreeNode *node = activity_tree_get_visible(&activity_tree, (size_t)node_idx);
                 if (!node) continue;
 
-                bool hover = mouse.x >= 8 && mouse.x < 292 && mouse.y >= y - 2 && mouse.y < y + 20;
+                bool hover = mouse.x >= 8 && mouse.x < 367 && mouse.y >= y - 2 && mouse.y < y + 20;
 
                 if (node_idx == selected_tree) {
-                    DrawRectangle(8, y - 2, 284, 22, (Color){60, 80, 120, 255});
+                    DrawRectangle(8, y - 2, 359, 22, (Color){60, 80, 120, 255});
                 } else if (hover) {
-                    DrawRectangle(8, y - 2, 284, 22, (Color){45, 45, 55, 255});
+                    DrawRectangle(8, y - 2, 359, 22, (Color){45, 45, 55, 255});
                 }
 
                 // Click to select and possibly load/toggle
@@ -977,10 +977,11 @@ int main(int argc, char *argv[]) {
                 }
 
                 char display_name[50];
-                int max_chars = 32 - (indent / 8);
+                int max_chars = 40 - (indent / 8);
+                const char *text = (node->type == NODE_FILE) ? node->display_title : node->name;
                 snprintf(display_name, sizeof(display_name), "%s%.*s%s",
-                         prefix, max_chars, node->name,
-                         (int)strlen(node->name) > max_chars ? "..." : "");
+                         prefix, max_chars, text,
+                         (int)strlen(text) > max_chars ? "..." : "");
 
                 DrawTextF(display_name, 12 + indent, y, 15, text_color);
             }
@@ -1004,7 +1005,7 @@ int main(int argc, char *argv[]) {
             if (!strava_is_authenticated(&strava_config)) {
                 DrawTextF("Strava: Not connected", 10, list_y + 5, 15, (Color){252, 82, 0, 255});
 
-                if (draw_button(10, list_y + 30, 280, 30, "Connect to Strava", true)) {
+                if (draw_button(10, list_y + 30, 355, 30, "Connect to Strava", true)) {
                     snprintf(status_message, sizeof(status_message), "Authenticating with Strava...");
                     if (strava_authenticate(&strava_config)) {
                         snprintf(status_message, sizeof(status_message), "Connected to Strava!");
@@ -1017,7 +1018,7 @@ int main(int argc, char *argv[]) {
 
                 // Fetch activities button
                 if (!strava_activities_loaded && !strava_loading) {
-                    if (draw_button(10, list_y + 25, 280, 25, "Fetch Activities", true)) {
+                    if (draw_button(10, list_y + 25, 355, 25, "Fetch Activities", true)) {
                         strava_loading = true;
                         snprintf(status_message, sizeof(status_message), "Fetching activities from Strava...");
                     }
@@ -1084,12 +1085,12 @@ int main(int argc, char *argv[]) {
 
                         StravaActivity *act = &strava_activities.activities[act_idx];
 
-                        bool hover = mouse.x >= 8 && mouse.x < 292 && mouse.y >= y - 2 && mouse.y < y + 20;
+                        bool hover = mouse.x >= 8 && mouse.x < 367 && mouse.y >= y - 2 && mouse.y < y + 20;
 
                         if (act_idx == selected_strava) {
-                            DrawRectangle(8, y - 2, 284, 22, (Color){120, 60, 40, 255});
+                            DrawRectangle(8, y - 2, 359, 22, (Color){120, 60, 40, 255});
                         } else if (hover) {
-                            DrawRectangle(8, y - 2, 284, 22, (Color){55, 45, 45, 255});
+                            DrawRectangle(8, y - 2, 359, 22, (Color){55, 45, 45, 255});
                         }
 
                         // Format: date + type + power indicator
@@ -1123,9 +1124,9 @@ int main(int argc, char *argv[]) {
         }
 
         // Graph area
-        int graph_x = 320 + GRAPH_MARGIN_LEFT;
+        int graph_x = 400 + GRAPH_MARGIN_LEFT;
         int graph_y = GRAPH_MARGIN_TOP;
-        int graph_w = GetScreenWidth() - 320 - GRAPH_MARGIN_LEFT - GRAPH_MARGIN_RIGHT;
+        int graph_w = GetScreenWidth() - 400 - GRAPH_MARGIN_LEFT - GRAPH_MARGIN_RIGHT;
         int graph_h = GetScreenHeight() - GRAPH_MARGIN_TOP - GRAPH_MARGIN_BOTTOM - 40;
 
         if (file_loaded && power_data.count > 0) {
@@ -1135,16 +1136,16 @@ int main(int argc, char *argv[]) {
 
             char title[300];
             snprintf(title, sizeof(title), "%s - %s", view_name, current_title);
-            DrawTextF(title, 320, 15, 18, WHITE);
+            DrawTextF(title, 400, 15, 18, WHITE);
 
             char stats[256];
             snprintf(stats, sizeof(stats), "Min: %dW | Max: %dW | Avg: %.0fW | Samples: %zu",
                      power_data.min_power, power_data.max_power, power_data.avg_power, power_data.count);
-            DrawTextF(stats, 320, 40, 15, LIGHTGRAY);
+            DrawTextF(stats, 400, 40, 15, LIGHTGRAY);
 
             // Summary/Power/Map tab buttons
             int tab_btn_y = 58;
-            int btn_x = 320;
+            int btn_x = 400;
 
             if (draw_button(btn_x, tab_btn_y, 85, 20, "S: Summary", true)) {
                 graph_view = GRAPH_VIEW_SUMMARY;
@@ -1176,7 +1177,7 @@ int main(int argc, char *argv[]) {
 
             if (graph_view == GRAPH_VIEW_SUMMARY) {
                 draw_summary_tab(&power_data, &activity_meta, &edit_field, &cursor_pos, blink_time,
-                                 320, content_y, graph_w + GRAPH_MARGIN_LEFT, content_h);
+                                 400, content_y, graph_w + GRAPH_MARGIN_LEFT, content_h);
             } else if (graph_view == GRAPH_VIEW_MAP && has_gps) {
                 // Initialize map view if needed
                 if (map_view.zoom == 0) {

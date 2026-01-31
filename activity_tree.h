@@ -14,6 +14,7 @@ typedef enum {
 typedef struct TreeNode {
     TreeNodeType type;
     char name[64];           // "2024", "January", "ride.fit"
+    char display_title[128]; // Title for display in treeview
     char full_path[512];     // Full path for files
     time_t activity_time;    // For sorting
     bool expanded;

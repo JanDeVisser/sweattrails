@@ -1,5 +1,6 @@
 #include "activity_tree.h"
 #include "file_organizer.h"
+#include "activity_meta.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,6 +65,98 @@ static int compare_files_desc(const void *a, const void *b) {
     if (nb->activity_time > na->activity_time) return 1;
     if (nb->activity_time < na->activity_time) return -1;
     return 0;
+}
+
+// Quick extract a string field from JSON file buffer
+static bool json_extract_field(const char *buf, const char *field, char *out, size_t out_size) {
+    char search[64];
+    snprintf(search, sizeof(search), "\"%s\"", field);
+    const char *pos = strstr(buf, search);
+    if (!pos) return false;
+
+    pos = strchr(pos + strlen(search), ':');
+    if (!pos) return false;
+
+    while (*pos && (*pos == ':' || *pos == ' ' || *pos == '\t' || *pos == '\n')) pos++;
+    if (*pos != '"') return false;
+    pos++;
+
+    size_t i = 0;
+    while (*pos && *pos != '"' && i < out_size - 1) {
+        if (*pos == '\\' && *(pos + 1)) {
+            pos++;
+            switch (*pos) {
+                case 'n': out[i++] = ' '; break;  // Replace newlines with space
+                case '"': out[i++] = '"'; break;
+                case '\\': out[i++] = '\\'; break;
+                default: out[i++] = *pos; break;
+            }
+        } else {
+            out[i++] = *pos;
+        }
+        pos++;
+    }
+    out[i] = '\0';
+    return i > 0;
+}
+
+// Get sport icon based on activity type (disabled for now)
+static const char *get_sport_icon(const char *activity_type) {
+    (void)activity_type;
+    return "";
+}
+
+// Load display title for a file node
+// Priority: 1) .meta.json sidecar 2) JSON name field 3) filename without extension
+static void load_activity_title(TreeNode *node) {
+    char title[128] = "";
+    char activity_type[32] = "";
+
+    // Default to filename without extension
+    strncpy(title, node->name, sizeof(title) - 1);
+    char *dot = strrchr(title, '.');
+    if (dot && (strcasecmp(dot, ".fit") == 0 || strcasecmp(dot, ".json") == 0)) {
+        *dot = '\0';
+    }
+
+    size_t len = strlen(node->name);
+    bool is_json = (len > 5 && strcasecmp(node->name + len - 5, ".json") == 0);
+
+    // Read JSON file once for both name and type
+    char json_buf[4096] = "";
+    if (is_json) {
+        FILE *f = fopen(node->full_path, "r");
+        if (f) {
+            size_t n = fread(json_buf, 1, sizeof(json_buf) - 1, f);
+            json_buf[n] = '\0';
+            fclose(f);
+        }
+    }
+
+    // 1. Try .meta.json sidecar first (for user-edited title)
+    ActivityMeta meta = {0};
+    if (activity_meta_load(node->full_path, &meta) && meta.title_edited && meta.title[0]) {
+        strncpy(title, meta.title, sizeof(title) - 1);
+    }
+    // 2. For JSON files, extract the "name" field
+    else if (is_json && json_buf[0]) {
+        char name[128];
+        if (json_extract_field(json_buf, "name", name, sizeof(name)) && name[0]) {
+            strncpy(title, name, sizeof(title) - 1);
+        }
+    }
+
+    // Get activity type for icon
+    if (is_json && json_buf[0]) {
+        json_extract_field(json_buf, "type", activity_type, sizeof(activity_type));
+    } else {
+        // FIT files default to cycling
+        strncpy(activity_type, "Ride", sizeof(activity_type) - 1);
+    }
+
+    // Build final display title with icon prefix
+    const char *icon = get_sport_icon(activity_type);
+    snprintf(node->display_title, sizeof(node->display_title), "%s%s", icon, title);
 }
 
 bool activity_tree_scan(ActivityTree *tree, const char *data_dir) {
@@ -197,6 +290,9 @@ bool activity_tree_scan(ActivityTree *tree, const char *data_dir) {
                 strncpy(file_node->name, file_entry->d_name, sizeof(file_node->name) - 1);
                 snprintf(file_node->full_path, sizeof(file_node->full_path), "%s/%s",
                          month_path, file_entry->d_name);
+
+                // Load display title for treeview
+                load_activity_title(file_node);
 
                 // Get activity timestamp for sorting
                 file_node->activity_time = fit_get_activity_timestamp(file_node->full_path);
