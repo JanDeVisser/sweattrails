@@ -104,8 +104,24 @@ static int find_fit_files(FitFileEntry *files, int max_files) {
     return count;
 }
 
-static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int graph_w, int graph_h) {
+static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int graph_w, int graph_h, int smoothing_seconds) {
     if (data->count < 2) return;
+
+    // Apply smoothing if requested
+    float *smoothed = NULL;
+    if (smoothing_seconds > 0) {
+        smoothed = malloc(data->count * sizeof(float));
+        if (smoothed) {
+            int half_window = smoothing_seconds / 2;
+            for (size_t i = 0; i < data->count; i++) {
+                size_t start = (i > (size_t)half_window) ? i - half_window : 0;
+                size_t end = (i + half_window < data->count) ? i + half_window : data->count - 1;
+                float sum = 0;
+                for (size_t j = start; j <= end; j++) sum += data->samples[j].power;
+                smoothed[i] = sum / (end - start + 1);
+            }
+        }
+    }
 
     DrawRectangle(graph_x, graph_y, graph_w, graph_h, (Color){30, 30, 40, 255});
 
@@ -155,8 +171,8 @@ static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int g
         float x1 = graph_x + i * x_scale;
         float x2 = graph_x + (i + 1) * x_scale;
 
-        float power1 = data->samples[i].power;
-        float power2 = data->samples[i + 1].power;
+        float power1 = smoothed ? smoothed[i] : data->samples[i].power;
+        float power2 = smoothed ? smoothed[i + 1] : data->samples[i + 1].power;
 
         float y1_ratio = (max_display - power1) / display_range;
         float y2_ratio = (max_display - power2) / display_range;
@@ -174,8 +190,8 @@ static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int g
         float x1 = graph_x + i * x_scale;
         float x2 = graph_x + (i + 1) * x_scale;
 
-        float power1 = data->samples[i].power;
-        float power2 = data->samples[i + 1].power;
+        float power1 = smoothed ? smoothed[i] : data->samples[i].power;
+        float power2 = smoothed ? smoothed[i + 1] : data->samples[i + 1].power;
 
         float y1_ratio = (max_display - power1) / display_range;
         float y2_ratio = (max_display - power2) / display_range;
@@ -183,17 +199,7 @@ static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int g
         float y1 = graph_y + y1_ratio * graph_h;
         float y2 = graph_y + y2_ratio * graph_h;
 
-        Color line_color;
-        float avg_power = (power1 + power2) / 2;
-        float intensity = (avg_power - min_display) / display_range;
-
-        if (intensity < 0.5) {
-            line_color = (Color){50, 150, 255, 255};
-        } else if (intensity < 0.75) {
-            line_color = (Color){100, 200, 100, 255};
-        } else {
-            line_color = (Color){255, 100, 100, 255};
-        }
+        Color line_color = (Color){50, 150, 255, 255};  // Consistent blue
 
         DrawLineEx((Vector2){x1, y1}, (Vector2){x2, y2}, 2.0f, line_color);
     }
@@ -206,6 +212,9 @@ static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int g
     char avg_label[64];
     snprintf(avg_label, sizeof(avg_label), "Avg: %.0fW", data->avg_power);
     DrawTextF(avg_label, graph_x + graph_w - 100, avg_y - 20, 16, (Color){255, 200, 50, 255});
+
+    // Free smoothed buffer
+    if (smoothed) free(smoothed);
 }
 
 static bool draw_button(int x, int y, int w, int h, const char *text, bool enabled) {
@@ -619,6 +628,12 @@ int main(int argc, char *argv[]) {
     char status_message[256] = "Select a file to view power data";
     char current_title[256] = "";
 
+    // Graph smoothing state
+    int smoothing_index = 0;  // 0=none, 1=5s, 2=15s, 3=30s, 4=1m, 5=2m, 6=5m
+    const int smoothing_seconds[] = {0, 5, 15, 30, 60, 120, 300};
+    const char *smoothing_labels[] = {"Off", "5s", "15s", "30s", "1m", "2m", "5m"};
+    const int smoothing_count = 7;
+
     // Map state
     TileCache tile_cache;
     tile_cache_init(&tile_cache);
@@ -678,7 +693,7 @@ int main(int argc, char *argv[]) {
         // Graph view switching with S/P/M keys (only when not editing text)
         if (edit_field == EDIT_NONE) {
             if (key == KEY_S) graph_view = GRAPH_VIEW_SUMMARY;
-            if (key == KEY_P) graph_view = GRAPH_VIEW_POWER;
+            if (key == KEY_G) graph_view = GRAPH_VIEW_POWER;
             if (key == KEY_M && power_data.has_gps_data) graph_view = GRAPH_VIEW_MAP;
         }
 
@@ -1155,7 +1170,7 @@ int main(int argc, char *argv[]) {
             }
             btn_x += 90;
 
-            if (draw_button(btn_x, tab_btn_y, 70, 20, "P: Power", true)) {
+            if (draw_button(btn_x, tab_btn_y, 70, 20, "G: Graph", true)) {
                 graph_view = GRAPH_VIEW_POWER;
             }
             if (graph_view == GRAPH_VIEW_POWER) {
@@ -1203,7 +1218,55 @@ int main(int argc, char *argv[]) {
                 // Draw attribution (shows "Map: Zwift" or OSM depending on source)
                 tile_map_draw_attribution(&map_view, graph_x + graph_w - 200, content_y + content_h - 18, 12);
             } else {
-                draw_power_graph(&power_data, graph_x, content_y, graph_w, content_h);
+                // Graph view - draw smoothing slider
+                int slider_y = content_y;
+                int slider_x = graph_x;
+                int slider_w = graph_w;
+                int slider_h = 25;
+
+                DrawTextF("Smoothing:", slider_x - 75, slider_y + 5, 14, LIGHTGRAY);
+
+                // Draw slider track
+                int track_y = slider_y + 10;
+                DrawRectangle(slider_x, track_y, slider_w, 4, (Color){60, 60, 70, 255});
+
+                // Draw discrete stops and labels
+                for (int i = 0; i < smoothing_count; i++) {
+                    float stop_ratio = (float)i / (smoothing_count - 1);
+                    int stop_x = slider_x + (int)(stop_ratio * slider_w);
+
+                    // Draw stop marker
+                    DrawRectangle(stop_x - 2, track_y - 2, 4, 8, (Color){80, 80, 90, 255});
+
+                    // Draw label
+                    int label_w = MeasureTextF(smoothing_labels[i], 12);
+                    DrawTextF(smoothing_labels[i], stop_x - label_w / 2, slider_y + 18, 12,
+                              i == smoothing_index ? WHITE : GRAY);
+                }
+
+                // Draw handle at current position
+                float handle_ratio = (float)smoothing_index / (smoothing_count - 1);
+                int handle_x = slider_x + (int)(handle_ratio * slider_w);
+                DrawCircle(handle_x, track_y + 2, 8, (Color){100, 150, 255, 255});
+                DrawCircle(handle_x, track_y + 2, 5, WHITE);
+
+                // Handle slider interaction
+                if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
+                    if (mouse.y >= slider_y && mouse.y <= slider_y + slider_h + 10 &&
+                        mouse.x >= slider_x - 10 && mouse.x <= slider_x + slider_w + 10) {
+                        float click_ratio = (mouse.x - slider_x) / (float)slider_w;
+                        if (click_ratio < 0) click_ratio = 0;
+                        if (click_ratio > 1) click_ratio = 1;
+                        // Snap to nearest stop
+                        smoothing_index = (int)(click_ratio * (smoothing_count - 1) + 0.5f);
+                    }
+                }
+
+                // Adjust content area for graph (below slider)
+                int graph_content_y = content_y + 35;
+                int graph_content_h = content_h - 35;
+
+                draw_power_graph(&power_data, graph_x, graph_content_y, graph_w, graph_content_h, smoothing_seconds[smoothing_index]);
             }
         } else {
             DrawRectangle(graph_x, graph_y, graph_w, graph_h, (Color){30, 30, 40, 255});
@@ -1224,7 +1287,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Status bar
-        DrawTextF("Up/Down: Navigate | Left/Right: Collapse/Expand | S/P/M: Summary/Power/Map | ESC: Quit", 10, GetScreenHeight() - 25, 14, GRAY);
+        DrawTextF("Up/Down: Navigate | Left/Right: Collapse/Expand | S/G/M: Summary/Graph/Map | ESC: Quit", 10, GetScreenHeight() - 25, 14, GRAY);
 
         EndDrawing();
     }

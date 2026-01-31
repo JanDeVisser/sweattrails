@@ -61,7 +61,7 @@ On startup, files are automatically organized into `activity/YYYY/MM/` based on 
 ### Controls
 
 - **1/2**: Switch between Local and Strava tabs
-- **S/P/M**: Switch between Summary, Power graph, and Map view
+- **S/G/M**: Switch between Summary, Graph, and Map view
 - **Up/Down** or **J/K**: Navigate tree/list
 - **Left/Right**: Collapse/expand year or month nodes
 - **Enter/Space**: Load selected file or toggle expand/collapse
@@ -130,9 +130,9 @@ Activities are stored in a platform-specific location:
 - Auto-saves edits to `.meta.json` sidecar files
 - User edits persist and override default metadata on reload
 
-### Power Graph
-- Color-coded curve (blue=low, green=medium, red=high intensity)
-- Filled area under curve
+### Graph View
+- Power curve with filled area
+- Smoothing slider (Off, 5s, 15s, 30s, 1m, 2m, 5m rolling average)
 - Grid lines with power (W) and time labels
 - Average power line
 - Stats display (min/max/avg, sample count)
@@ -163,5 +163,4 @@ Activities are stored in a platform-specific location:
 - Zoom/pan on graph
 - Heart rate/cadence graph overlays
 - Export to image
-- Smoothing/averaging options
 - Power zones visualization
