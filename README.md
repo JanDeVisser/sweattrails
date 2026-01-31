@@ -114,6 +114,8 @@ Activities are stored in a platform-specific location:
 - Year/month tree browser with expand/collapse
 - Parses FIT binary protocol (definition messages, data messages, compressed timestamps)
 - Extracts power, GPS coordinates, heart rate, cadence, and activity timestamps
+- Overlapping activities (within 10 minutes) are automatically grouped for comparison
+- Groups have editable titles/descriptions stored in separate sidecar files
 
 ### Strava Integration
 - OAuth2 authentication (opens browser, captures callback on localhost:8089)
@@ -131,11 +133,13 @@ Activities are stored in a platform-specific location:
 - User edits persist and override default metadata on reload
 
 ### Graph View
-- Power curve with filled area
+- Power curve display
 - Smoothing slider (Off, 5s, 15s, 30s, 1m, 2m, 5m rolling average)
 - Grid lines with power (W) and time labels
-- Average power line
+- Average power line (for single activities)
 - Stats display (min/max/avg, sample count)
+- Multi-graph comparison: select a group to overlay power curves from multiple files
+- Color-coded legend for comparing power meters or duplicate recordings
 
 ### GPS Map View
 - Displays activity route on OpenStreetMap tiles

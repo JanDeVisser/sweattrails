@@ -17,6 +17,7 @@ typedef struct TreeNode {
     char name[64];           // "2024", "January", "ride.fit"
     char display_title[128]; // Title for display in treeview
     char full_path[512];     // Full path for files
+    char meta_path[512];     // Path to group's .meta.json sidecar (for NODE_GROUP)
     time_t activity_time;    // For sorting
     bool expanded;
     struct TreeNode *children;

@@ -154,3 +154,93 @@ bool activity_meta_save(const char *activity_path, const ActivityMeta *meta) {
     fclose(f);
     return true;
 }
+
+void group_meta_path(const char *month_path, time_t timestamp, char *out, size_t out_size) {
+    snprintf(out, out_size, "%s/group_%ld.meta.json", month_path, (long)timestamp);
+}
+
+bool group_meta_load(const char *meta_path, GroupMeta *meta) {
+    memset(meta, 0, sizeof(GroupMeta));
+
+    FILE *f = fopen(meta_path, "r");
+    if (!f) return false;
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (size <= 0 || size > 65536) {
+        fclose(f);
+        return false;
+    }
+
+    char *json = malloc(size + 1);
+    if (!json) {
+        fclose(f);
+        return false;
+    }
+
+    size_t read = fread(json, 1, size, f);
+    json[read] = '\0';
+    fclose(f);
+
+    json_get_string_value(json, "title", meta->title, sizeof(meta->title));
+    json_get_string_value(json, "description", meta->description, sizeof(meta->description));
+    meta->title_edited = json_get_bool_value(json, "title_edited");
+    meta->description_edited = json_get_bool_value(json, "description_edited");
+
+    // Parse files array
+    const char *files_start = strstr(json, "\"files\"");
+    if (files_start) {
+        files_start = strchr(files_start, '[');
+        if (files_start) {
+            files_start++;
+            while (*files_start && meta->file_count < MAX_GROUP_FILES) {
+                while (*files_start && (*files_start == ' ' || *files_start == '\n' || *files_start == ','))
+                    files_start++;
+                if (*files_start == ']') break;
+                if (*files_start == '"') {
+                    files_start++;
+                    char *dest = meta->files[meta->file_count];
+                    int i = 0;
+                    while (*files_start && *files_start != '"' && i < 63) {
+                        dest[i++] = *files_start++;
+                    }
+                    dest[i] = '\0';
+                    if (*files_start == '"') files_start++;
+                    meta->file_count++;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    free(json);
+    return true;
+}
+
+bool group_meta_save(const char *meta_path, const GroupMeta *meta) {
+    FILE *f = fopen(meta_path, "w");
+    if (!f) return false;
+
+    char escaped_title[512];
+    char escaped_desc[4096];
+    json_escape_string(meta->title, escaped_title, sizeof(escaped_title));
+    json_escape_string(meta->description, escaped_desc, sizeof(escaped_desc));
+
+    fprintf(f, "{\n");
+    fprintf(f, "  \"title\": \"%s\",\n", escaped_title);
+    fprintf(f, "  \"description\": \"%s\",\n", escaped_desc);
+    fprintf(f, "  \"title_edited\": %s,\n", meta->title_edited ? "true" : "false");
+    fprintf(f, "  \"description_edited\": %s,\n", meta->description_edited ? "true" : "false");
+    fprintf(f, "  \"files\": [");
+    for (int i = 0; i < meta->file_count; i++) {
+        fprintf(f, "%s\"%s\"", i > 0 ? ", " : "", meta->files[i]);
+    }
+    fprintf(f, "]\n");
+    fprintf(f, "}\n");
+
+    fclose(f);
+    return true;
+}

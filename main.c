@@ -104,29 +104,40 @@ static int find_fit_files(FitFileEntry *files, int max_files) {
     return count;
 }
 
-static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int graph_w, int graph_h, int smoothing_seconds) {
-    if (data->count < 2) return;
+#define MAX_GRAPH_DATASETS 8
 
-    // Apply smoothing if requested
-    float *smoothed = NULL;
-    if (smoothing_seconds > 0) {
-        smoothed = malloc(data->count * sizeof(float));
-        if (smoothed) {
-            int half_window = smoothing_seconds / 2;
-            for (size_t i = 0; i < data->count; i++) {
-                size_t start = (i > (size_t)half_window) ? i - half_window : 0;
-                size_t end = (i + half_window < data->count) ? i + half_window : data->count - 1;
-                float sum = 0;
-                for (size_t j = start; j <= end; j++) sum += data->samples[j].power;
-                smoothed[i] = sum / (end - start + 1);
-            }
-        }
-    }
+// Colors for multiple datasets
+static const Color graph_colors[] = {
+    {50, 150, 255, 255},   // Blue
+    {255, 100, 100, 255},  // Red
+    {100, 200, 100, 255},  // Green
+    {255, 200, 50, 255},   // Yellow
+    {200, 100, 255, 255},  // Purple
+    {100, 255, 255, 255},  // Cyan
+    {255, 150, 100, 255},  // Orange
+    {200, 200, 200, 255},  // Gray
+};
+
+static void draw_power_graph_multi(FitPowerData **datasets, int num_datasets, int graph_x, int graph_y, int graph_w, int graph_h, int smoothing_seconds) {
+    if (num_datasets < 1 || !datasets[0] || datasets[0]->count < 2) return;
 
     DrawRectangle(graph_x, graph_y, graph_w, graph_h, (Color){30, 30, 40, 255});
 
-    float min_display = (data->min_power > 20) ? data->min_power - 20 : 0;
-    float max_display = data->max_power + 20;
+    // Calculate global min/max across all datasets
+    int global_min = datasets[0]->min_power;
+    int global_max = datasets[0]->max_power;
+    uint32_t global_duration = 0;
+
+    for (int d = 0; d < num_datasets; d++) {
+        if (!datasets[d] || datasets[d]->count < 2) continue;
+        if (datasets[d]->min_power < global_min) global_min = datasets[d]->min_power;
+        if (datasets[d]->max_power > global_max) global_max = datasets[d]->max_power;
+        uint32_t duration = datasets[d]->samples[datasets[d]->count - 1].timestamp - datasets[d]->samples[0].timestamp;
+        if (duration > global_duration) global_duration = duration;
+    }
+
+    float min_display = (global_min > 20) ? global_min - 20 : 0;
+    float max_display = global_max + 20;
     float display_range = max_display - min_display;
 
     // Horizontal grid lines
@@ -143,19 +154,15 @@ static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int g
         DrawTextF(label, graph_x - 55, y - 8, 16, LIGHTGRAY);
     }
 
-    // Vertical grid lines (time)
+    // Vertical grid lines (time) - use global duration
     int num_time_markers = 10;
-    uint32_t start_time = data->samples[0].timestamp;
-    uint32_t end_time = data->samples[data->count - 1].timestamp;
-    uint32_t duration = end_time - start_time;
-
     for (int i = 0; i <= num_time_markers; i++) {
         float x_ratio = (float)i / num_time_markers;
         int x = graph_x + (int)(x_ratio * graph_w);
 
         DrawLine(x, graph_y, x, graph_y + graph_h, (Color){60, 60, 70, 255});
 
-        uint32_t time_offset = (uint32_t)(x_ratio * duration);
+        uint32_t time_offset = (uint32_t)(x_ratio * global_duration);
         int minutes = time_offset / 60;
         int seconds = time_offset % 60;
 
@@ -164,57 +171,76 @@ static void draw_power_graph(FitPowerData *data, int graph_x, int graph_y, int g
         DrawTextF(label, x - 20, graph_y + graph_h + 10, 14, LIGHTGRAY);
     }
 
-    float x_scale = (float)graph_w / (data->count - 1);
+    // Draw each dataset
+    for (int d = 0; d < num_datasets; d++) {
+        FitPowerData *data = datasets[d];
+        if (!data || data->count < 2) continue;
 
-    // Filled area
-    for (size_t i = 0; i < data->count - 1; i++) {
-        float x1 = graph_x + i * x_scale;
-        float x2 = graph_x + (i + 1) * x_scale;
+        // Apply smoothing if requested
+        float *smoothed = NULL;
+        if (smoothing_seconds > 0) {
+            smoothed = malloc(data->count * sizeof(float));
+            if (smoothed) {
+                int half_window = smoothing_seconds / 2;
+                for (size_t i = 0; i < data->count; i++) {
+                    size_t start = (i > (size_t)half_window) ? i - half_window : 0;
+                    size_t end = (i + half_window < data->count) ? i + half_window : data->count - 1;
+                    float sum = 0;
+                    for (size_t j = start; j <= end; j++) sum += data->samples[j].power;
+                    smoothed[i] = sum / (end - start + 1);
+                }
+            }
+        }
 
-        float power1 = smoothed ? smoothed[i] : data->samples[i].power;
-        float power2 = smoothed ? smoothed[i + 1] : data->samples[i + 1].power;
+        // Scale x based on time offset from activity start, normalized to global duration
+        uint32_t data_start = data->samples[0].timestamp;
+        Color line_color = graph_colors[d % 8];
 
-        float y1_ratio = (max_display - power1) / display_range;
-        float y2_ratio = (max_display - power2) / display_range;
+        // Power line
+        for (size_t i = 0; i < data->count - 1; i++) {
+            uint32_t t1 = data->samples[i].timestamp - data_start;
+            uint32_t t2 = data->samples[i + 1].timestamp - data_start;
 
-        float y1 = graph_y + y1_ratio * graph_h;
-        float y2 = graph_y + y2_ratio * graph_h;
-        float y_bottom = graph_y + graph_h;
+            float x1 = graph_x + ((float)t1 / global_duration) * graph_w;
+            float x2 = graph_x + ((float)t2 / global_duration) * graph_w;
 
-        DrawTriangle((Vector2){x1, y1}, (Vector2){x1, y_bottom}, (Vector2){x2, y_bottom}, (Color){30, 100, 180, 80});
-        DrawTriangle((Vector2){x1, y1}, (Vector2){x2, y_bottom}, (Vector2){x2, y2}, (Color){30, 100, 180, 80});
+            float power1 = smoothed ? smoothed[i] : data->samples[i].power;
+            float power2 = smoothed ? smoothed[i + 1] : data->samples[i + 1].power;
+
+            float y1_ratio = (max_display - power1) / display_range;
+            float y2_ratio = (max_display - power2) / display_range;
+
+            float y1 = graph_y + y1_ratio * graph_h;
+            float y2 = graph_y + y2_ratio * graph_h;
+
+            DrawLineEx((Vector2){x1, y1}, (Vector2){x2, y2}, 2.0f, line_color);
+        }
+
+        if (smoothed) free(smoothed);
     }
 
-    // Power line
-    for (size_t i = 0; i < data->count - 1; i++) {
-        float x1 = graph_x + i * x_scale;
-        float x2 = graph_x + (i + 1) * x_scale;
+    // Draw legend for multiple datasets
+    if (num_datasets > 1) {
+        int legend_y = graph_y + 10;
+        for (int d = 0; d < num_datasets; d++) {
+            if (!datasets[d]) continue;
+            Color c = graph_colors[d % 8];
+            DrawRectangle(graph_x + 10, legend_y + d * 18, 12, 12, c);
+            char label[128];
+            snprintf(label, sizeof(label), "%s (%.0fW avg)", datasets[d]->title, datasets[d]->avg_power);
+            DrawTextF(label, graph_x + 28, legend_y + d * 18 - 1, 14, LIGHTGRAY);
+        }
+    } else {
+        // Single dataset - show average line
+        FitPowerData *data = datasets[0];
+        float avg_y_ratio = (max_display - data->avg_power) / display_range;
+        int avg_y = graph_y + (int)(avg_y_ratio * graph_h);
+        DrawLine(graph_x, avg_y, graph_x + graph_w, avg_y, (Color){255, 200, 50, 200});
 
-        float power1 = smoothed ? smoothed[i] : data->samples[i].power;
-        float power2 = smoothed ? smoothed[i + 1] : data->samples[i + 1].power;
-
-        float y1_ratio = (max_display - power1) / display_range;
-        float y2_ratio = (max_display - power2) / display_range;
-
-        float y1 = graph_y + y1_ratio * graph_h;
-        float y2 = graph_y + y2_ratio * graph_h;
-
-        Color line_color = (Color){50, 150, 255, 255};  // Consistent blue
-
-        DrawLineEx((Vector2){x1, y1}, (Vector2){x2, y2}, 2.0f, line_color);
+        char avg_label[64];
+        snprintf(avg_label, sizeof(avg_label), "Avg: %.0fW", data->avg_power);
+        DrawTextF(avg_label, graph_x + graph_w - 100, avg_y - 20, 16, (Color){255, 200, 50, 255});
     }
-
-    // Average line
-    float avg_y_ratio = (max_display - data->avg_power) / display_range;
-    int avg_y = graph_y + (int)(avg_y_ratio * graph_h);
-    DrawLine(graph_x, avg_y, graph_x + graph_w, avg_y, (Color){255, 200, 50, 200});
-
-    char avg_label[64];
-    snprintf(avg_label, sizeof(avg_label), "Avg: %.0fW", data->avg_power);
-    DrawTextF(avg_label, graph_x + graph_w - 100, avg_y - 20, 16, (Color){255, 200, 50, 255});
-
-    // Free smoothed buffer
-    if (smoothed) free(smoothed);
 }
 
 static bool draw_button(int x, int y, int w, int h, const char *text, bool enabled) {
@@ -628,6 +654,11 @@ int main(int argc, char *argv[]) {
     char status_message[256] = "Select a file to view power data";
     char current_title[256] = "";
 
+    // Group comparison state (for displaying multiple power graphs)
+    FitPowerData *group_datasets[MAX_GRAPH_DATASETS] = {0};
+    int group_dataset_count = 0;
+    bool group_selected = false;
+
     // Graph smoothing state
     int smoothing_index = 0;  // 0=none, 1=5s, 2=15s, 3=30s, 4=1m, 5=2m, 6=5m
     const int smoothing_seconds[] = {0, 5, 15, 30, 60, 120, 300};
@@ -641,6 +672,8 @@ int main(int argc, char *argv[]) {
 
     // Summary tab editing state
     ActivityMeta activity_meta = {0};
+    GroupMeta group_meta = {0};
+    char current_group_meta_path[512] = "";
     EditField edit_field = EDIT_NONE;
     int cursor_pos = 0;
     double blink_time = 0;
@@ -756,7 +789,19 @@ int main(int argc, char *argv[]) {
             if (node) {
                 if (node->type == NODE_FILE) {
                     // Load the file
+                    // Clear shared pointer before freeing to avoid double-free
+                    if (group_selected) power_data.samples = NULL;
                     fit_power_data_free(&power_data);
+                    // Free any group datasets
+                    for (int i = 0; i < group_dataset_count; i++) {
+                        if (group_datasets[i]) {
+                            fit_power_data_free(group_datasets[i]);
+                            free(group_datasets[i]);
+                            group_datasets[i] = NULL;
+                        }
+                    }
+                    group_dataset_count = 0;
+                    group_selected = false;
                     file_loaded = false;
                     graph_view = GRAPH_VIEW_SUMMARY;
                     edit_field = EDIT_NONE;
@@ -783,6 +828,80 @@ int main(int argc, char *argv[]) {
                         strncpy(original_description, power_data.description, sizeof(original_description) - 1);
                     } else {
                         snprintf(status_message, sizeof(status_message), "Failed to load: %s", node->name);
+                    }
+                } else if (node->type == NODE_GROUP) {
+                    // Load all files in the group for comparison
+                    // Clear power_data.samples first if it's shared with group_datasets
+                    if (group_selected) power_data.samples = NULL;
+                    fit_power_data_free(&power_data);
+                    for (int i = 0; i < group_dataset_count; i++) {
+                        if (group_datasets[i]) {
+                            fit_power_data_free(group_datasets[i]);
+                            free(group_datasets[i]);
+                            group_datasets[i] = NULL;
+                        }
+                    }
+                    group_dataset_count = 0;
+                    group_selected = true;
+                    file_loaded = false;
+                    graph_view = GRAPH_VIEW_POWER;  // Switch to graph view for comparison
+                    edit_field = EDIT_NONE;
+                    zwift_map_free(&map_view);
+                    map_view.zoom = 0;
+
+                    // Store group meta path and load metadata
+                    strncpy(current_group_meta_path, node->meta_path, sizeof(current_group_meta_path) - 1);
+                    memset(&group_meta, 0, sizeof(group_meta));
+                    bool has_group_meta = group_meta_load(node->meta_path, &group_meta);
+
+                    int loaded = 0;
+                    for (size_t i = 0; i < node->child_count && loaded < MAX_GRAPH_DATASETS; i++) {
+                        TreeNode *child = &node->children[i];
+                        if (child->type == NODE_FILE) {
+                            group_datasets[loaded] = malloc(sizeof(FitPowerData));
+                            if (group_datasets[loaded]) {
+                                memset(group_datasets[loaded], 0, sizeof(FitPowerData));
+                                if (load_activity_file(child->full_path, group_datasets[loaded])) {
+                                    // Load metadata if exists
+                                    ActivityMeta meta = {0};
+                                    if (activity_meta_load(child->full_path, &meta) && meta.title_edited && meta.title[0]) {
+                                        strncpy(group_datasets[loaded]->title, meta.title, sizeof(group_datasets[loaded]->title) - 1);
+                                    }
+                                    // Store filename in group_meta
+                                    if (loaded < MAX_GROUP_FILES) {
+                                        strncpy(group_meta.files[loaded], child->name, sizeof(group_meta.files[loaded]) - 1);
+                                    }
+                                    loaded++;
+                                } else {
+                                    free(group_datasets[loaded]);
+                                    group_datasets[loaded] = NULL;
+                                }
+                            }
+                        }
+                    }
+                    group_dataset_count = loaded;
+                    group_meta.file_count = loaded;
+
+                    if (loaded > 0) {
+                        // Copy first dataset to power_data for stats display
+                        memcpy(&power_data, group_datasets[0], sizeof(FitPowerData));
+                        // Don't free samples pointer since it's shared
+                        file_loaded = true;
+                        snprintf(status_message, sizeof(status_message), "Loaded %d activities for comparison", loaded);
+
+                        // Use group metadata title/description if available, else use first activity's
+                        if (has_group_meta && group_meta.title_edited && group_meta.title[0]) {
+                            strncpy(power_data.title, group_meta.title, sizeof(power_data.title) - 1);
+                        }
+                        if (has_group_meta && group_meta.description_edited && group_meta.description[0]) {
+                            strncpy(power_data.description, group_meta.description, sizeof(power_data.description) - 1);
+                        }
+
+                        strncpy(current_title, power_data.title, sizeof(current_title) - 1);
+                        strncpy(original_title, power_data.title, sizeof(original_title) - 1);
+                        strncpy(original_description, power_data.description, sizeof(original_description) - 1);
+                    } else {
+                        snprintf(status_message, sizeof(status_message), "Failed to load group activities");
                     }
                 } else {
                     // Toggle expand/collapse for year/month nodes
@@ -860,36 +979,6 @@ int main(int argc, char *argv[]) {
             // Actual save happens when edit_field changes from non-NONE to NONE
         }
 
-        // Check if editing just stopped - save if content changed
-        static EditField prev_edit_field = EDIT_NONE;
-        if (prev_edit_field != EDIT_NONE && edit_field == EDIT_NONE && file_loaded) {
-            bool title_changed = strcmp(power_data.title, original_title) != 0;
-            bool desc_changed = strcmp(power_data.description, original_description) != 0;
-
-            if (title_changed || desc_changed) {
-                // Update activity_meta and save
-                if (title_changed) {
-                    strncpy(activity_meta.title, power_data.title, sizeof(activity_meta.title) - 1);
-                    activity_meta.title_edited = true;
-                    strncpy(current_title, power_data.title, sizeof(current_title) - 1);
-                }
-                if (desc_changed) {
-                    strncpy(activity_meta.description, power_data.description, sizeof(activity_meta.description) - 1);
-                    activity_meta.description_edited = true;
-                }
-
-                // Save to sidecar file
-                if (activity_meta_save(power_data.source_file, &activity_meta)) {
-                    snprintf(status_message, sizeof(status_message), "Saved metadata");
-                }
-
-                // Update originals
-                strncpy(original_title, power_data.title, sizeof(original_title) - 1);
-                strncpy(original_description, power_data.description, sizeof(original_description) - 1);
-            }
-        }
-        prev_edit_field = edit_field;
-
         // Drawing
         BeginDrawing();
         ClearBackground((Color){20, 20, 25, 255});
@@ -941,9 +1030,65 @@ int main(int argc, char *argv[]) {
 
                 // Click to select and possibly load/toggle
                 if (hover && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                    // Save any pending edits before switching activities
+                    if (edit_field != EDIT_NONE && file_loaded) {
+                        bool title_changed = strcmp(power_data.title, original_title) != 0;
+                        bool desc_changed = strcmp(power_data.description, original_description) != 0;
+                        if (title_changed || desc_changed) {
+                            if (group_selected) {
+                                if (title_changed) {
+                                    strncpy(group_meta.title, power_data.title, sizeof(group_meta.title) - 1);
+                                    group_meta.title_edited = true;
+                                }
+                                if (desc_changed) {
+                                    strncpy(group_meta.description, power_data.description, sizeof(group_meta.description) - 1);
+                                    group_meta.description_edited = true;
+                                }
+                                if (current_group_meta_path[0]) {
+                                    group_meta_save(current_group_meta_path, &group_meta);
+                                    // Update tree node
+                                    TreeNode *gnode = activity_tree_get_visible(&activity_tree, (size_t)selected_tree);
+                                    if (gnode && gnode->type == NODE_GROUP && title_changed) {
+                                        snprintf(gnode->name, sizeof(gnode->name), "%s (+%zu)",
+                                                 power_data.title, gnode->child_count - 1);
+                                        strncpy(gnode->display_title, gnode->name, sizeof(gnode->display_title) - 1);
+                                    }
+                                }
+                            } else {
+                                if (title_changed) {
+                                    strncpy(activity_meta.title, power_data.title, sizeof(activity_meta.title) - 1);
+                                    activity_meta.title_edited = true;
+                                }
+                                if (desc_changed) {
+                                    strncpy(activity_meta.description, power_data.description, sizeof(activity_meta.description) - 1);
+                                    activity_meta.description_edited = true;
+                                }
+                                activity_meta_save(power_data.source_file, &activity_meta);
+                                // Update tree node
+                                TreeNode *fnode = activity_tree_get_visible(&activity_tree, (size_t)selected_tree);
+                                if (fnode && fnode->type == NODE_FILE && title_changed) {
+                                    strncpy(fnode->display_title, power_data.title, sizeof(fnode->display_title) - 1);
+                                }
+                            }
+                        }
+                        edit_field = EDIT_NONE;
+                    }
+
                     selected_tree = node_idx;
                     if (node->type == NODE_FILE) {
+                        // Clear shared pointer before freeing to avoid double-free
+                        if (group_selected) power_data.samples = NULL;
                         fit_power_data_free(&power_data);
+                        // Free any group datasets
+                        for (int gi = 0; gi < group_dataset_count; gi++) {
+                            if (group_datasets[gi]) {
+                                fit_power_data_free(group_datasets[gi]);
+                                free(group_datasets[gi]);
+                                group_datasets[gi] = NULL;
+                            }
+                        }
+                        group_dataset_count = 0;
+                        group_selected = false;
                         file_loaded = false;
                         graph_view = GRAPH_VIEW_SUMMARY;
                         edit_field = EDIT_NONE;
@@ -966,6 +1111,75 @@ int main(int argc, char *argv[]) {
                                     strncpy(power_data.description, activity_meta.description, sizeof(power_data.description) - 1);
                                 }
                             }
+                            strncpy(original_title, power_data.title, sizeof(original_title) - 1);
+                            strncpy(original_description, power_data.description, sizeof(original_description) - 1);
+                        }
+                    } else if (node->type == NODE_GROUP) {
+                        // Load all files in the group for comparison
+                        // Clear power_data.samples first if it's shared with group_datasets
+                        if (group_selected) power_data.samples = NULL;
+                        fit_power_data_free(&power_data);
+                        for (int gi = 0; gi < group_dataset_count; gi++) {
+                            if (group_datasets[gi]) {
+                                fit_power_data_free(group_datasets[gi]);
+                                free(group_datasets[gi]);
+                                group_datasets[gi] = NULL;
+                            }
+                        }
+                        group_dataset_count = 0;
+                        group_selected = true;
+                        file_loaded = false;
+                        graph_view = GRAPH_VIEW_POWER;  // Switch to graph view for comparison
+                        edit_field = EDIT_NONE;
+                        zwift_map_free(&map_view);
+                        map_view.zoom = 0;
+
+                        // Store group meta path and load metadata
+                        strncpy(current_group_meta_path, node->meta_path, sizeof(current_group_meta_path) - 1);
+                        memset(&group_meta, 0, sizeof(group_meta));
+                        bool has_group_meta = group_meta_load(node->meta_path, &group_meta);
+
+                        int loaded = 0;
+                        for (size_t ci = 0; ci < node->child_count && loaded < MAX_GRAPH_DATASETS; ci++) {
+                            TreeNode *child = &node->children[ci];
+                            if (child->type == NODE_FILE) {
+                                group_datasets[loaded] = malloc(sizeof(FitPowerData));
+                                if (group_datasets[loaded]) {
+                                    memset(group_datasets[loaded], 0, sizeof(FitPowerData));
+                                    if (load_activity_file(child->full_path, group_datasets[loaded])) {
+                                        ActivityMeta meta = {0};
+                                        if (activity_meta_load(child->full_path, &meta) && meta.title_edited && meta.title[0]) {
+                                            strncpy(group_datasets[loaded]->title, meta.title, sizeof(group_datasets[loaded]->title) - 1);
+                                        }
+                                        // Store filename in group_meta
+                                        if (loaded < MAX_GROUP_FILES) {
+                                            strncpy(group_meta.files[loaded], child->name, sizeof(group_meta.files[loaded]) - 1);
+                                        }
+                                        loaded++;
+                                    } else {
+                                        free(group_datasets[loaded]);
+                                        group_datasets[loaded] = NULL;
+                                    }
+                                }
+                            }
+                        }
+                        group_dataset_count = loaded;
+                        group_meta.file_count = loaded;
+
+                        if (loaded > 0) {
+                            memcpy(&power_data, group_datasets[0], sizeof(FitPowerData));
+                            file_loaded = true;
+                            snprintf(status_message, sizeof(status_message), "Loaded %d activities for comparison", loaded);
+
+                            // Use group metadata title/description if available
+                            if (has_group_meta && group_meta.title_edited && group_meta.title[0]) {
+                                strncpy(power_data.title, group_meta.title, sizeof(power_data.title) - 1);
+                            }
+                            if (has_group_meta && group_meta.description_edited && group_meta.description[0]) {
+                                strncpy(power_data.description, group_meta.description, sizeof(power_data.description) - 1);
+                            }
+
+                            strncpy(current_title, power_data.title, sizeof(current_title) - 1);
                             strncpy(original_title, power_data.title, sizeof(original_title) - 1);
                             strncpy(original_description, power_data.description, sizeof(original_description) - 1);
                         }
@@ -1287,7 +1501,14 @@ int main(int argc, char *argv[]) {
                 int graph_content_y = content_y + 35;
                 int graph_content_h = content_h - 35;
 
-                draw_power_graph(&power_data, graph_x, graph_content_y, graph_w, graph_content_h, smoothing_seconds[smoothing_index]);
+                if (group_selected && group_dataset_count > 0) {
+                    // Draw multiple datasets for group comparison
+                    draw_power_graph_multi(group_datasets, group_dataset_count, graph_x, graph_content_y, graph_w, graph_content_h, smoothing_seconds[smoothing_index]);
+                } else {
+                    // Draw single dataset
+                    FitPowerData *single_dataset[1] = {&power_data};
+                    draw_power_graph_multi(single_dataset, 1, graph_x, graph_content_y, graph_w, graph_content_h, smoothing_seconds[smoothing_index]);
+                }
             }
         } else {
             DrawRectangle(graph_x, graph_y, graph_w, graph_h, (Color){30, 30, 40, 255});
@@ -1311,13 +1532,87 @@ int main(int argc, char *argv[]) {
         DrawTextF("Up/Down: Navigate | Left/Right: Collapse/Expand | S/G/M: Summary/Graph/Map | ESC: Quit", 10, GetScreenHeight() - 25, 14, GRAY);
 
         EndDrawing();
+
+        // Check if editing just stopped - save if content changed
+        // This must be after drawing because edit_field is modified in draw_summary_tab
+        static EditField prev_edit_field = EDIT_NONE;
+        if (prev_edit_field != EDIT_NONE && edit_field == EDIT_NONE && file_loaded) {
+            bool title_changed = strcmp(power_data.title, original_title) != 0;
+            bool desc_changed = strcmp(power_data.description, original_description) != 0;
+
+            if (title_changed || desc_changed) {
+                if (group_selected) {
+                    // Update group_meta and save
+                    if (title_changed) {
+                        strncpy(group_meta.title, power_data.title, sizeof(group_meta.title) - 1);
+                        group_meta.title_edited = true;
+                        strncpy(current_title, power_data.title, sizeof(current_title) - 1);
+                    }
+                    if (desc_changed) {
+                        strncpy(group_meta.description, power_data.description, sizeof(group_meta.description) - 1);
+                        group_meta.description_edited = true;
+                    }
+
+                    // Save to group sidecar file
+                    if (current_group_meta_path[0] && group_meta_save(current_group_meta_path, &group_meta)) {
+                        snprintf(status_message, sizeof(status_message), "Saved group metadata");
+
+                        // Update tree node display title
+                        TreeNode *group_node = activity_tree_get_visible(&activity_tree, (size_t)selected_tree);
+                        if (group_node && group_node->type == NODE_GROUP && title_changed) {
+                            snprintf(group_node->name, sizeof(group_node->name), "%s (+%zu)",
+                                     power_data.title, group_node->child_count - 1);
+                            strncpy(group_node->display_title, group_node->name, sizeof(group_node->display_title) - 1);
+                        }
+                    } else {
+                        snprintf(status_message, sizeof(status_message), "Failed to save: %s", current_group_meta_path);
+                    }
+                } else {
+                    // Update activity_meta and save
+                    if (title_changed) {
+                        strncpy(activity_meta.title, power_data.title, sizeof(activity_meta.title) - 1);
+                        activity_meta.title_edited = true;
+                        strncpy(current_title, power_data.title, sizeof(current_title) - 1);
+                    }
+                    if (desc_changed) {
+                        strncpy(activity_meta.description, power_data.description, sizeof(activity_meta.description) - 1);
+                        activity_meta.description_edited = true;
+                    }
+
+                    // Save to sidecar file
+                    if (activity_meta_save(power_data.source_file, &activity_meta)) {
+                        snprintf(status_message, sizeof(status_message), "Saved metadata");
+
+                        // Update tree node display title
+                        TreeNode *file_node = activity_tree_get_visible(&activity_tree, (size_t)selected_tree);
+                        if (file_node && file_node->type == NODE_FILE && title_changed) {
+                            strncpy(file_node->display_title, power_data.title, sizeof(file_node->display_title) - 1);
+                        }
+                    }
+                }
+
+                // Update originals
+                strncpy(original_title, power_data.title, sizeof(original_title) - 1);
+                strncpy(original_description, power_data.description, sizeof(original_description) - 1);
+            }
+        }
+        prev_edit_field = edit_field;
     }
 
     // Cleanup
     zwift_map_free(&map_view);
     tile_cache_free(&tile_cache);
     UnloadFont(g_font);
+    // Clear shared pointer before freeing to avoid double-free
+    if (group_selected) power_data.samples = NULL;
     fit_power_data_free(&power_data);
+    // Free group datasets
+    for (int i = 0; i < group_dataset_count; i++) {
+        if (group_datasets[i]) {
+            fit_power_data_free(group_datasets[i]);
+            free(group_datasets[i]);
+        }
+    }
     strava_activity_list_free(&strava_activities);
     activity_tree_free(&activity_tree);
     free(fit_files);

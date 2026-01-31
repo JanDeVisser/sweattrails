@@ -364,9 +364,20 @@ bool activity_tree_scan(ActivityTree *tree, const char *data_dir) {
                     group_node->expanded = false;
                     group_node->activity_time = temp_files[group_indices[0]].activity_time;
 
-                    // Use first file's title as group name with count
+                    // Generate meta path for the group sidecar
+                    group_meta_path(month_path, group_node->activity_time,
+                                    group_node->meta_path, sizeof(group_node->meta_path));
+
+                    // Try to load group metadata
+                    GroupMeta gmeta = {0};
+                    bool has_meta = group_meta_load(group_node->meta_path, &gmeta);
+
+                    // Use metadata title if available, otherwise first file's title
+                    const char *title = (has_meta && gmeta.title_edited && gmeta.title[0])
+                        ? gmeta.title : temp_files[group_indices[0]].display_title;
+
                     snprintf(group_node->name, sizeof(group_node->name), "%s (+%zu)",
-                             temp_files[group_indices[0]].display_title, group_size - 1);
+                             title, group_size - 1);
                     strncpy(group_node->display_title, group_node->name, sizeof(group_node->display_title) - 1);
 
                     // Add files as children of the group
