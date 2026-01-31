@@ -1049,8 +1049,8 @@ int main(int argc, char *argv[]) {
                                     // Update tree node
                                     TreeNode *gnode = activity_tree_get_visible(&activity_tree, (size_t)selected_tree);
                                     if (gnode && gnode->type == NODE_GROUP && title_changed) {
-                                        snprintf(gnode->name, sizeof(gnode->name), "%s (+%zu)",
-                                                 power_data.title, gnode->child_count - 1);
+                                        snprintf(gnode->name, sizeof(gnode->name), "%s (%zu)",
+                                                 power_data.title, gnode->child_count);
                                         strncpy(gnode->display_title, gnode->name, sizeof(gnode->display_title) - 1);
                                     }
                                 }
@@ -1560,8 +1560,8 @@ int main(int argc, char *argv[]) {
                         // Update tree node display title
                         TreeNode *group_node = activity_tree_get_visible(&activity_tree, (size_t)selected_tree);
                         if (group_node && group_node->type == NODE_GROUP && title_changed) {
-                            snprintf(group_node->name, sizeof(group_node->name), "%s (+%zu)",
-                                     power_data.title, group_node->child_count - 1);
+                            snprintf(group_node->name, sizeof(group_node->name), "%s (%zu)",
+                                     power_data.title, group_node->child_count);
                             strncpy(group_node->display_title, group_node->name, sizeof(group_node->display_title) - 1);
                         }
                     } else {

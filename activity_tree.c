@@ -376,8 +376,8 @@ bool activity_tree_scan(ActivityTree *tree, const char *data_dir) {
                     const char *title = (has_meta && gmeta.title_edited && gmeta.title[0])
                         ? gmeta.title : temp_files[group_indices[0]].display_title;
 
-                    snprintf(group_node->name, sizeof(group_node->name), "%s (+%zu)",
-                             title, group_size - 1);
+                    snprintf(group_node->name, sizeof(group_node->name), "%s (%zu)",
+                             title, group_size);
                     strncpy(group_node->display_title, group_node->name, sizeof(group_node->display_title) - 1);
 
                     // Add files as children of the group
