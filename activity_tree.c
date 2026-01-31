@@ -253,16 +253,18 @@ bool activity_tree_scan(ActivityTree *tree, const char *data_dir) {
             month_node->activity_time = month_num;  // Store month number for sorting
             month_node->expanded = false;
 
-            // Scan files in this month
+            // Scan files in this month - first collect all files
             DIR *file_dir = opendir(month_path);
             if (!file_dir) {
                 year_node->child_count++;
                 continue;
             }
 
-            size_t file_capacity = 32;
-            month_node->children = malloc(file_capacity * sizeof(TreeNode));
-            if (!month_node->children) {
+            // Temporary array to collect all files before grouping
+            size_t temp_capacity = 32;
+            size_t temp_count = 0;
+            TreeNode *temp_files = malloc(temp_capacity * sizeof(TreeNode));
+            if (!temp_files) {
                 closedir(file_dir);
                 year_node->child_count++;
                 continue;
@@ -277,14 +279,14 @@ bool activity_tree_scan(ActivityTree *tree, const char *data_dir) {
                 if (is_meta) continue;  // Skip metadata sidecar files
                 if (!is_fit && !is_json) continue;
 
-                if (month_node->child_count >= file_capacity) {
-                    file_capacity *= 2;
-                    TreeNode *new_files = realloc(month_node->children, file_capacity * sizeof(TreeNode));
+                if (temp_count >= temp_capacity) {
+                    temp_capacity *= 2;
+                    TreeNode *new_files = realloc(temp_files, temp_capacity * sizeof(TreeNode));
                     if (!new_files) continue;
-                    month_node->children = new_files;
+                    temp_files = new_files;
                 }
 
-                TreeNode *file_node = &month_node->children[month_node->child_count];
+                TreeNode *file_node = &temp_files[temp_count];
                 memset(file_node, 0, sizeof(TreeNode));
                 file_node->type = NODE_FILE;
                 strncpy(file_node->name, file_entry->d_name, sizeof(file_node->name) - 1);
@@ -303,14 +305,84 @@ bool activity_tree_scan(ActivityTree *tree, const char *data_dir) {
                     }
                 }
 
-                month_node->child_count++;
+                temp_count++;
             }
             closedir(file_dir);
 
             // Sort files by activity time (newest first)
-            if (month_node->child_count > 1) {
-                qsort(month_node->children, month_node->child_count, sizeof(TreeNode), compare_files_desc);
+            if (temp_count > 1) {
+                qsort(temp_files, temp_count, sizeof(TreeNode), compare_files_desc);
             }
+
+            // Group overlapping activities (within 10 minutes = 600 seconds)
+            #define OVERLAP_THRESHOLD 600
+            bool *grouped = calloc(temp_count, sizeof(bool));
+            size_t child_capacity = temp_count;
+            month_node->children = malloc(child_capacity * sizeof(TreeNode));
+            if (!month_node->children || !grouped) {
+                free(temp_files);
+                free(grouped);
+                if (month_node->children) free(month_node->children);
+                month_node->children = NULL;
+                year_node->child_count++;
+                continue;
+            }
+
+            for (size_t i = 0; i < temp_count; i++) {
+                if (grouped[i]) continue;
+
+                // Find all files that overlap with this one
+                size_t group_indices[32];
+                size_t group_size = 0;
+                group_indices[group_size++] = i;
+                grouped[i] = true;
+
+                for (size_t j = i + 1; j < temp_count && group_size < 32; j++) {
+                    if (grouped[j]) continue;
+
+                    // Check if j overlaps with any file in the current group
+                    for (size_t k = 0; k < group_size; k++) {
+                        time_t t1 = temp_files[group_indices[k]].activity_time;
+                        time_t t2 = temp_files[j].activity_time;
+                        time_t diff = (t1 > t2) ? (t1 - t2) : (t2 - t1);
+                        if (diff <= OVERLAP_THRESHOLD) {
+                            group_indices[group_size++] = j;
+                            grouped[j] = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (group_size == 1) {
+                    // Single file, add directly to month
+                    month_node->children[month_node->child_count++] = temp_files[i];
+                } else {
+                    // Create a group node
+                    TreeNode *group_node = &month_node->children[month_node->child_count++];
+                    memset(group_node, 0, sizeof(TreeNode));
+                    group_node->type = NODE_GROUP;
+                    group_node->expanded = false;
+                    group_node->activity_time = temp_files[group_indices[0]].activity_time;
+
+                    // Use first file's title as group name with count
+                    snprintf(group_node->name, sizeof(group_node->name), "%s (+%zu)",
+                             temp_files[group_indices[0]].display_title, group_size - 1);
+                    strncpy(group_node->display_title, group_node->name, sizeof(group_node->display_title) - 1);
+
+                    // Add files as children of the group
+                    group_node->children = malloc(group_size * sizeof(TreeNode));
+                    if (group_node->children) {
+                        for (size_t g = 0; g < group_size; g++) {
+                            group_node->children[g] = temp_files[group_indices[g]];
+                        }
+                        group_node->child_count = group_size;
+                    }
+                }
+            }
+            #undef OVERLAP_THRESHOLD
+
+            free(grouped);
+            free(temp_files);
 
             year_node->child_count++;
         }
@@ -354,7 +426,13 @@ size_t activity_tree_visible_count(const ActivityTree *tree) {
                 TreeNode *month = &year->children[m];
 
                 if (month->expanded) {
-                    count += month->child_count;  // File nodes
+                    for (size_t c = 0; c < month->child_count; c++) {
+                        count++;  // File or Group node
+                        TreeNode *child = &month->children[c];
+                        if (child->type == NODE_GROUP && child->expanded) {
+                            count += child->child_count;  // Files in group
+                        }
+                    }
                 }
             }
         }
@@ -380,9 +458,17 @@ TreeNode *activity_tree_get_visible(ActivityTree *tree, size_t visible_index) {
                 current++;
 
                 if (month->expanded) {
-                    for (size_t f = 0; f < month->child_count; f++) {
-                        if (current == visible_index) return &month->children[f];
+                    for (size_t c = 0; c < month->child_count; c++) {
+                        TreeNode *child = &month->children[c];
+                        if (current == visible_index) return child;
                         current++;
+
+                        if (child->type == NODE_GROUP && child->expanded) {
+                            for (size_t f = 0; f < child->child_count; f++) {
+                                if (current == visible_index) return &child->children[f];
+                                current++;
+                            }
+                        }
                     }
                 }
             }
@@ -394,7 +480,7 @@ TreeNode *activity_tree_get_visible(ActivityTree *tree, size_t visible_index) {
 
 TreeNode *activity_tree_toggle(ActivityTree *tree, size_t visible_index) {
     TreeNode *node = activity_tree_get_visible(tree, visible_index);
-    if (node && (node->type == NODE_YEAR || node->type == NODE_MONTH)) {
+    if (node && (node->type == NODE_YEAR || node->type == NODE_MONTH || node->type == NODE_GROUP)) {
         node->expanded = !node->expanded;
     }
     return node;

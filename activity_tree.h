@@ -8,6 +8,7 @@
 typedef enum {
     NODE_YEAR,
     NODE_MONTH,
+    NODE_GROUP,  // Group of overlapping activities
     NODE_FILE
 } TreeNodeType;
 

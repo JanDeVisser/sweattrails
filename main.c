@@ -738,11 +738,11 @@ int main(int argc, char *argv[]) {
         if (current_tab == TAB_LOCAL && tree_visible > 0) {
             TreeNode *selected_node = activity_tree_get_visible(&activity_tree, (size_t)selected_tree);
             if (selected_node) {
-                if (key == KEY_LEFT && (selected_node->type == NODE_YEAR || selected_node->type == NODE_MONTH)) {
+                if (key == KEY_LEFT && (selected_node->type == NODE_YEAR || selected_node->type == NODE_MONTH || selected_node->type == NODE_GROUP)) {
                     if (selected_node->expanded) {
                         selected_node->expanded = false;
                     }
-                } else if (key == KEY_RIGHT && (selected_node->type == NODE_YEAR || selected_node->type == NODE_MONTH)) {
+                } else if (key == KEY_RIGHT && (selected_node->type == NODE_YEAR || selected_node->type == NODE_MONTH || selected_node->type == NODE_GROUP)) {
                     if (!selected_node->expanded) {
                         selected_node->expanded = true;
                     }
@@ -987,13 +987,34 @@ int main(int argc, char *argv[]) {
                     indent = 16;
                     snprintf(prefix, sizeof(prefix), "%s ", node->expanded ? "[-]" : "[+]");
                     text_color = (node_idx == selected_tree) ? WHITE : (Color){180, 200, 150, 255};
-                } else if (node->type == NODE_FILE) {
+                } else if (node->type == NODE_GROUP) {
                     indent = 32;
+                    snprintf(prefix, sizeof(prefix), "%s ", node->expanded ? "[-]" : "[+]");
+                    text_color = (node_idx == selected_tree) ? WHITE : (Color){255, 200, 150, 255};
+                } else if (node->type == NODE_FILE) {
+                    // Check if this file is inside a group (has siblings with same parent time)
+                    // Files directly under month get indent 32, files under group get indent 48
+                    indent = (node->full_path[0] != '\0') ? 32 : 32;  // Will be 48 if under group
+                }
+
+                // Detect if file is under a group by checking previous visible nodes
+                if (node->type == NODE_FILE) {
+                    // Look back to find parent - if it's a group, increase indent
+                    for (int look = node_idx - 1; look >= 0; look--) {
+                        TreeNode *parent = activity_tree_get_visible(&activity_tree, (size_t)look);
+                        if (parent && parent->type == NODE_GROUP && parent->expanded) {
+                            indent = 48;
+                            break;
+                        }
+                        if (parent && (parent->type == NODE_MONTH || parent->type == NODE_YEAR)) {
+                            break;
+                        }
+                    }
                 }
 
                 char display_name[50];
                 int max_chars = 40 - (indent / 8);
-                const char *text = (node->type == NODE_FILE) ? node->display_title : node->name;
+                const char *text = (node->type == NODE_FILE || node->type == NODE_GROUP) ? node->display_title : node->name;
                 snprintf(display_name, sizeof(display_name), "%s%.*s%s",
                          prefix, max_chars, text,
                          (int)strlen(text) > max_chars ? "..." : "");
