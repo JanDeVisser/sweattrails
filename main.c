@@ -760,6 +760,13 @@ int main(int argc, char *argv[]) {
 
     // Strava auto-sync on startup
     if (strava_config_loaded && strava_is_authenticated(&strava_config)) {
+        // Wait for window to settle after maximize
+        for (int i = 0; i < 10 && !WindowShouldClose(); i++) {
+            BeginDrawing();
+            ClearBackground((Color){25, 25, 35, 255});
+            EndDrawing();
+        }
+
         // Sync state
         StravaActivityList sync_list = {0};
         int sync_page = 1;
@@ -769,18 +776,19 @@ int main(int argc, char *argv[]) {
         bool sync_done = false;
         char sync_status[256] = "Checking Strava activities...";
 
+        // Cache screen dimensions for consistent modal positioning
+        int screen_w = GetScreenWidth();
+        int screen_h = GetScreenHeight();
+        int modal_w = 450;
+        int modal_h = 150;
+        int modal_x = (screen_w - modal_w) / 2;
+        int modal_y = (screen_h - modal_h) / 2;
+
         // Fetch and download loop
         while (!sync_done && !WindowShouldClose()) {
             // Draw progress modal
             BeginDrawing();
             ClearBackground((Color){25, 25, 35, 255});
-
-            int screen_w = GetScreenWidth();
-            int screen_h = GetScreenHeight();
-            int modal_w = 400;
-            int modal_h = 150;
-            int modal_x = (screen_w - modal_w) / 2;
-            int modal_y = (screen_h - modal_h) / 2;
 
             // Modal background
             DrawRectangle(modal_x - 2, modal_y - 2, modal_w + 4, modal_h + 4, (Color){80, 80, 100, 255});
@@ -897,13 +905,6 @@ int main(int argc, char *argv[]) {
         if (!WindowShouldClose()) {
             BeginDrawing();
             ClearBackground((Color){25, 25, 35, 255});
-
-            int screen_w = GetScreenWidth();
-            int screen_h = GetScreenHeight();
-            int modal_w = 400;
-            int modal_h = 150;
-            int modal_x = (screen_w - modal_w) / 2;
-            int modal_y = (screen_h - modal_h) / 2;
 
             DrawRectangle(modal_x - 2, modal_y - 2, modal_w + 4, modal_h + 4, (Color){80, 80, 100, 255});
             DrawRectangle(modal_x, modal_y, modal_w, modal_h, (Color){40, 40, 50, 255});
