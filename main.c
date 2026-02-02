@@ -746,7 +746,7 @@ int main(int argc, char *argv[]) {
 
     // Initialize raylib
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
-    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "FIT Power Viewer");
+    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Sweattrails");
     MaximizeWindow();
     SetTargetFPS(60);
 
@@ -1286,7 +1286,7 @@ int main(int argc, char *argv[]) {
         if (visible_files < 5) visible_files = 5;
 
         // Title
-        DrawTextF("FIT Power Viewer", 10, 10, 26, WHITE);
+        DrawTextF("Sweattrails", 10, 10, 26, WHITE);
 
         // Tabs
         int tab_y = 45;
