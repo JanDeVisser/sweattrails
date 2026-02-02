@@ -1,4 +1,4 @@
-# FIT Power Viewer
+# Sweattrails
 
 A C program using raylib that parses `.fit` files and displays power data in an interactive graph. Includes Strava integration for browsing activities.
 
@@ -42,14 +42,14 @@ make
 ## Usage
 
 ```bash
-./fitpower
+./sweattrails
 ```
 
 ### Adding Activities
 
 Drop `.fit` files into the inbox folder (or download from Strava):
-- **Linux**: `~/.local/share/fitpower/inbox/`
-- **macOS**: `~/Library/Application Support/fitpower/inbox/`
+- **Linux**: `~/.local/share/sweattrails/inbox/`
+- **macOS**: `~/Library/Application Support/sweattrails/inbox/`
 
 On startup, files are automatically organized into `activity/YYYY/MM/` based on the activity timestamp extracted from the FIT file.
 
@@ -74,9 +74,9 @@ On startup, files are automatically organized into `activity/YYYY/MM/` based on 
 
 Activities are stored in a platform-specific location:
 
-**Linux**: `~/.local/share/fitpower/`
+**Linux**: `~/.local/share/sweattrails/`
 ```
-~/.local/share/fitpower/
+~/.local/share/sweattrails/
 ├── inbox/              # Drop new .fit files here
 ├── activity/
 │   ├── 2024/
@@ -90,20 +90,20 @@ Activities are stored in a platform-specific location:
     └── {z}/{x}/{y}.png
 ```
 
-**macOS**: `~/Library/Application Support/fitpower/`
+**macOS**: `~/Library/Application Support/sweattrails/`
 
 ## Strava Setup
 
 1. Create a Strava API application at https://www.strava.com/settings/api
 2. Set "Authorization Callback Domain" to `localhost`
-3. Create config file `~/.config/fitpower/config`:
+3. Create config file `~/.config/sweattrails/config`:
    ```json
    {
      "client_id": "YOUR_CLIENT_ID",
      "client_secret": "YOUR_CLIENT_SECRET"
    }
    ```
-4. Run fitpower, switch to Strava tab (press `2`), click "Connect to Strava"
+4. Run sweattrails, switch to Strava tab (press `2`), click "Connect to Strava"
 5. Authorize in browser - activities will sync automatically on startup
 
 ## Features

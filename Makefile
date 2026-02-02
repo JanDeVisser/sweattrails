@@ -8,7 +8,7 @@ else
     LDFLAGS = $(shell pkg-config --libs raylib libcurl) -lm
 endif
 
-TARGET = fitpower
+TARGET = sweattrails
 SRCS = main.c fit_parser.c strava_api.c file_organizer.c activity_tree.c tile_map.c zwift_worlds.c activity_meta.c
 OBJS = $(SRCS:.c=.o)
 
