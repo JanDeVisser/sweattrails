@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 #include <curl/curl.h>
 
-#define CONFIG_PATH "/.config/fitpower/config"
+#define CONFIG_PATH "/.config/sweattrails/strava_config"
 #define STRAVA_AUTH_URL "https://www.strava.com/oauth/authorize"
 #define STRAVA_TOKEN_URL "https://www.strava.com/oauth/token"
 #define STRAVA_API_URL "https://www.strava.com/api/v3"

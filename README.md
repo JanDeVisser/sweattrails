@@ -96,7 +96,7 @@ Activities are stored in a platform-specific location:
 
 1. Create a Strava API application at https://www.strava.com/settings/api
 2. Set "Authorization Callback Domain" to `localhost`
-3. Create config file `~/.config/sweattrails/config`:
+3. Create config file `~/.config/sweattrails/strava_config`:
    ```json
    {
      "client_id": "YOUR_CLIENT_ID",
