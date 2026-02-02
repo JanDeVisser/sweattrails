@@ -104,7 +104,7 @@ Activities are stored in a platform-specific location:
    }
    ```
 4. Run fitpower, switch to Strava tab (press `2`), click "Connect to Strava"
-5. Authorize in browser, then click "Fetch Activities"
+5. Authorize in browser - activities will sync automatically on startup
 
 ## Features
 
@@ -119,6 +119,8 @@ Activities are stored in a platform-specific location:
 
 ### Strava Integration
 - OAuth2 authentication (opens browser, captures callback on localhost:8089)
+- **Automatic sync on startup**: Downloads new activities (up to 500 most recent)
+- Progress modal shows sync status with download/skip counts
 - Fetches activity list from Strava API
 - Shows activity details (date, type, distance, power indicator)
 - Download activities as JSON with full stream data (power, GPS, heartrate, cadence)
