@@ -106,6 +106,64 @@ static const char *get_sport_icon(const char *activity_type) {
     return "";
 }
 
+// Parse ISO 8601 timestamp (e.g., "2025-10-07T12:30:00Z") to time_t
+static time_t parse_iso_timestamp(const char *iso_str) {
+    if (!iso_str || strlen(iso_str) < 19) return 0;
+
+    struct tm tm = {0};
+    // Parse: YYYY-MM-DDTHH:MM:SS
+    if (sscanf(iso_str, "%d-%d-%dT%d:%d:%d",
+               &tm.tm_year, &tm.tm_mon, &tm.tm_mday,
+               &tm.tm_hour, &tm.tm_min, &tm.tm_sec) != 6) {
+        return 0;
+    }
+
+    tm.tm_year -= 1900;  // Years since 1900
+    tm.tm_mon -= 1;      // Months 0-11
+    tm.tm_isdst = -1;    // Let system determine DST
+
+    return mktime(&tm);
+}
+
+// Get activity timestamp from JSON file by parsing start_date field
+static time_t json_get_activity_timestamp(const char *filepath) {
+    FILE *f = fopen(filepath, "r");
+    if (!f) return 0;
+
+    // Read enough to find start_date (usually near the beginning)
+    char buf[2048];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+
+    // Look for "start_date": "..." or "start_date_local": "..."
+    const char *patterns[] = {"\"start_date_local\"", "\"start_date\"", "\"starts\"", NULL};
+
+    for (int p = 0; patterns[p]; p++) {
+        const char *pos = strstr(buf, patterns[p]);
+        if (!pos) continue;
+
+        pos = strchr(pos + strlen(patterns[p]), ':');
+        if (!pos) continue;
+
+        while (*pos && (*pos == ':' || *pos == ' ' || *pos == '\t' || *pos == '\n')) pos++;
+        if (*pos != '"') continue;
+        pos++;
+
+        char timestamp_str[64];
+        size_t i = 0;
+        while (*pos && *pos != '"' && i < sizeof(timestamp_str) - 1) {
+            timestamp_str[i++] = *pos++;
+        }
+        timestamp_str[i] = '\0';
+
+        time_t ts = parse_iso_timestamp(timestamp_str);
+        if (ts > 0) return ts;
+    }
+
+    return 0;
+}
+
 // Load display title for a file node
 // Priority: 1) .meta.json sidecar 2) JSON name field 3) filename without extension
 static void load_activity_title(TreeNode *node) {
@@ -297,7 +355,11 @@ bool activity_tree_scan(ActivityTree *tree, const char *data_dir) {
                 load_activity_title(file_node);
 
                 // Get activity timestamp for sorting
-                file_node->activity_time = fit_get_activity_timestamp(file_node->full_path);
+                if (is_json) {
+                    file_node->activity_time = json_get_activity_timestamp(file_node->full_path);
+                } else {
+                    file_node->activity_time = fit_get_activity_timestamp(file_node->full_path);
+                }
                 if (file_node->activity_time == 0) {
                     // Fallback to file modification time
                     if (stat(file_node->full_path, &st) == 0) {
