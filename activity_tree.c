@@ -340,16 +340,14 @@ bool activity_tree_scan(ActivityTree *tree, const char *data_dir) {
                 for (size_t j = i + 1; j < temp_count && group_size < 32; j++) {
                     if (grouped[j]) continue;
 
-                    // Check if j overlaps with any file in the current group
-                    for (size_t k = 0; k < group_size; k++) {
-                        time_t t1 = temp_files[group_indices[k]].activity_time;
-                        time_t t2 = temp_files[j].activity_time;
-                        time_t diff = (t1 > t2) ? (t1 - t2) : (t2 - t1);
-                        if (diff <= OVERLAP_THRESHOLD) {
-                            group_indices[group_size++] = j;
-                            grouped[j] = true;
-                            break;
-                        }
+                    // Check if j overlaps with the FIRST file in the group (not any file)
+                    // This prevents transitive chaining where A+B, B+C, C+D chains into one group
+                    time_t t1 = temp_files[i].activity_time;
+                    time_t t2 = temp_files[j].activity_time;
+                    time_t diff = (t1 > t2) ? (t1 - t2) : (t2 - t1);
+                    if (diff <= OVERLAP_THRESHOLD) {
+                        group_indices[group_size++] = j;
+                        grouped[j] = true;
                     }
                 }
 
