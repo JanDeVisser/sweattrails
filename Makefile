@@ -9,7 +9,7 @@ else
 endif
 
 TARGET = sweattrails
-SRCS = main.c fit_parser.c strava_api.c file_organizer.c activity_tree.c tile_map.c zwift_worlds.c activity_meta.c
+SRCS = main.c fit_parser.c strava_api.c wahoo_api.c file_organizer.c activity_tree.c tile_map.c zwift_worlds.c activity_meta.c
 OBJS = $(SRCS:.c=.o)
 
 all: $(TARGET)

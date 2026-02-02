@@ -7,6 +7,7 @@
 #include "raylib.h"
 #include "fit_parser.h"
 #include "strava_api.h"
+#include "wahoo_api.h"
 #include "file_organizer.h"
 #include "activity_tree.h"
 #include "tile_map.h"
@@ -17,6 +18,8 @@
 #define WINDOW_HEIGHT 700
 #define STRAVA_SYNC_PER_PAGE 50
 #define STRAVA_SYNC_MAX_PAGES 10  // Sync last 500 activities (10 pages x 50)
+#define WAHOO_SYNC_PER_PAGE 30
+#define WAHOO_SYNC_MAX_PAGES 10   // Sync last 300 workouts (10 pages x 30)
 #define GRAPH_MARGIN_LEFT 80
 #define GRAPH_MARGIN_RIGHT 40
 #define GRAPH_MARGIN_TOP 80
@@ -82,6 +85,49 @@ static bool load_activity_file(const char *path, FitPowerData *data) {
 static bool strava_activity_exists(const char *data_dir, int64_t activity_id) {
     char id_str[32];
     snprintf(id_str, sizeof(id_str), "%lld.json", (long long)activity_id);
+
+    // Scan all year directories
+    char activity_dir[512];
+    snprintf(activity_dir, sizeof(activity_dir), "%s/activity", data_dir);
+
+    DIR *year_dir = opendir(activity_dir);
+    if (!year_dir) return false;
+
+    struct dirent *year_entry;
+    while ((year_entry = readdir(year_dir)) != NULL) {
+        if (year_entry->d_name[0] == '.') continue;
+
+        char year_path[512];
+        snprintf(year_path, sizeof(year_path), "%s/%s", activity_dir, year_entry->d_name);
+
+        DIR *month_dir = opendir(year_path);
+        if (!month_dir) continue;
+
+        struct dirent *month_entry;
+        while ((month_entry = readdir(month_dir)) != NULL) {
+            if (month_entry->d_name[0] == '.') continue;
+
+            char file_path[512];
+            snprintf(file_path, sizeof(file_path), "%s/%s/%s", year_path, month_entry->d_name, id_str);
+
+            struct stat st;
+            if (stat(file_path, &st) == 0) {
+                closedir(month_dir);
+                closedir(year_dir);
+                return true;
+            }
+        }
+        closedir(month_dir);
+    }
+    closedir(year_dir);
+    return false;
+}
+
+// Check if a Wahoo workout is already downloaded locally
+// Searches activity/YYYY/MM/wahoo_<workout_id>.fit
+static bool wahoo_workout_exists(const char *data_dir, int64_t workout_id) {
+    char id_str[32];
+    snprintf(id_str, sizeof(id_str), "wahoo_%lld.fit", (long long)workout_id);
 
     // Scan all year directories
     char activity_dir[512];
@@ -744,6 +790,10 @@ int main(int argc, char *argv[]) {
     bool strava_loading = false;
     bool strava_downloading = false;
 
+    // Load Wahoo config
+    WahooConfig wahoo_config = {0};
+    bool wahoo_config_loaded = wahoo_load_config(&wahoo_config);
+
     // Initialize raylib
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Sweattrails");
@@ -928,6 +978,192 @@ int main(int argc, char *argv[]) {
 
         // Print sync summary
         printf("Strava sync complete: %d downloaded, %d skipped, %d total checked\n",
+               sync_downloaded, sync_skipped, sync_total_fetched);
+        fflush(stdout);
+
+        // Refresh activity tree if we downloaded anything
+        if (sync_downloaded > 0) {
+            activity_tree_free(&activity_tree);
+            activity_tree_init(&activity_tree);
+            activity_tree_scan(&activity_tree, g_data_dir);
+        }
+    }
+
+    // Wahoo auto-sync on startup
+    if (wahoo_config_loaded && wahoo_is_authenticated(&wahoo_config)) {
+        // Wait for window to settle if Strava sync didn't run
+        if (!strava_config_loaded || !strava_is_authenticated(&strava_config)) {
+            for (int i = 0; i < 10 && !WindowShouldClose(); i++) {
+                BeginDrawing();
+                ClearBackground((Color){25, 25, 35, 255});
+                EndDrawing();
+            }
+        }
+
+        // Sync state
+        int sync_page = 1;
+        int sync_total_fetched = 0;
+        int sync_downloaded = 0;
+        int sync_skipped = 0;
+        bool sync_done = false;
+        char sync_status[256] = "Checking Wahoo workouts...";
+
+        // Cache screen dimensions for consistent modal positioning
+        int screen_w = GetScreenWidth();
+        int screen_h = GetScreenHeight();
+        int modal_w = 450;
+        int modal_h = 150;
+        int modal_x = (screen_w - modal_w) / 2;
+        int modal_y = (screen_h - modal_h) / 2;
+
+        // Fetch and download loop
+        while (!sync_done && !WindowShouldClose()) {
+            // Draw progress modal
+            BeginDrawing();
+            ClearBackground((Color){25, 25, 35, 255});
+
+            // Modal background
+            DrawRectangle(modal_x - 2, modal_y - 2, modal_w + 4, modal_h + 4, (Color){80, 80, 100, 255});
+            DrawRectangle(modal_x, modal_y, modal_w, modal_h, (Color){40, 40, 50, 255});
+
+            // Title (Wahoo orange/yellow)
+            DrawTextF("Wahoo Sync", modal_x + 20, modal_y + 15, 20, (Color){255, 193, 7, 255});
+
+            // Status
+            DrawTextF(sync_status, modal_x + 20, modal_y + 50, 15, WHITE);
+
+            // Progress stats
+            char progress[128];
+            snprintf(progress, sizeof(progress), "Downloaded: %d  |  Skipped: %d  |  Total: %d",
+                     sync_downloaded, sync_skipped, sync_total_fetched);
+            DrawTextF(progress, modal_x + 20, modal_y + 75, 14, LIGHTGRAY);
+
+            // Progress bar
+            int bar_w = modal_w - 40;
+            int bar_h = 20;
+            int bar_x = modal_x + 20;
+            int bar_y = modal_y + 105;
+            DrawRectangle(bar_x, bar_y, bar_w, bar_h, (Color){30, 30, 40, 255});
+            if (sync_total_fetched > 0) {
+                int fill_w = (int)((float)(sync_downloaded + sync_skipped) / sync_total_fetched * bar_w);
+                DrawRectangle(bar_x, bar_y, fill_w, bar_h, (Color){255, 193, 7, 255});
+            }
+
+            EndDrawing();
+
+            // Fetch a batch of workouts
+            snprintf(sync_status, sizeof(sync_status), "Fetching page %d...", sync_page);
+
+            WahooWorkoutList page_list = {0};
+            if (!wahoo_fetch_workouts(&wahoo_config, &page_list, sync_page, WAHOO_SYNC_PER_PAGE)) {
+                sync_done = true;
+                continue;
+            }
+
+            if (page_list.count == 0) {
+                // No more workouts
+                wahoo_workout_list_free(&page_list);
+                sync_done = true;
+                continue;
+            }
+
+            // Process each workout in this batch
+            for (size_t i = 0; i < page_list.count; i++) {
+                WahooWorkout *workout = &page_list.workouts[i];
+                sync_total_fetched++;
+
+                // Check if already downloaded
+                if (wahoo_workout_exists(g_data_dir, workout->id)) {
+                    sync_skipped++;
+                    continue;
+                }
+
+                // Skip if no FIT file URL
+                if (!workout->fit_file_url[0]) {
+                    sync_skipped++;
+                    continue;
+                }
+
+                // Download this workout
+                snprintf(sync_status, sizeof(sync_status), "Downloading: %.40s...", workout->name);
+
+                // Draw progress update
+                BeginDrawing();
+                ClearBackground((Color){25, 25, 35, 255});
+                DrawRectangle(modal_x - 2, modal_y - 2, modal_w + 4, modal_h + 4, (Color){80, 80, 100, 255});
+                DrawRectangle(modal_x, modal_y, modal_w, modal_h, (Color){40, 40, 50, 255});
+                DrawTextF("Wahoo Sync", modal_x + 20, modal_y + 15, 20, (Color){255, 193, 7, 255});
+                DrawTextF(sync_status, modal_x + 20, modal_y + 50, 15, WHITE);
+                snprintf(progress, sizeof(progress), "Downloaded: %d  |  Skipped: %d  |  Total: %d",
+                         sync_downloaded, sync_skipped, sync_total_fetched);
+                DrawTextF(progress, modal_x + 20, modal_y + 75, 14, LIGHTGRAY);
+                DrawRectangle(bar_x, bar_y, bar_w, bar_h, (Color){30, 30, 40, 255});
+                int fill_w = (int)((float)(sync_downloaded + sync_skipped) / sync_total_fetched * bar_w);
+                DrawRectangle(bar_x, bar_y, fill_w, bar_h, (Color){255, 193, 7, 255});
+                EndDrawing();
+
+                // Parse year and month from starts timestamp (format: YYYY-MM-DDTHH:MM:SS.sssZ)
+                char year[5] = "";
+                char month[3] = "";
+                if (strlen(workout->starts) >= 10) {
+                    strncpy(year, workout->starts, 4);
+                    year[4] = '\0';
+                    strncpy(month, workout->starts + 5, 2);
+                    month[2] = '\0';
+                }
+
+                // Create output directory
+                char output_dir[512];
+                snprintf(output_dir, sizeof(output_dir), "%s/activity/%s/%s", g_data_dir, year, month);
+                create_directory_path(output_dir);
+
+                // Create output path
+                char output_path[512];
+                snprintf(output_path, sizeof(output_path), "%s/wahoo_%lld.fit", output_dir, (long long)workout->id);
+
+                if (wahoo_download_fit(&wahoo_config, workout->fit_file_url, output_path)) {
+                    sync_downloaded++;
+                }
+            }
+
+            size_t batch_count = page_list.count;
+            wahoo_workout_list_free(&page_list);
+
+            // Move to next page if we got a full batch and haven't hit the limit
+            if (batch_count == WAHOO_SYNC_PER_PAGE && sync_page < WAHOO_SYNC_MAX_PAGES) {
+                sync_page++;
+            } else {
+                sync_done = true;
+            }
+        }
+
+        // Show completion briefly
+        if (!WindowShouldClose()) {
+            BeginDrawing();
+            ClearBackground((Color){25, 25, 35, 255});
+
+            DrawRectangle(modal_x - 2, modal_y - 2, modal_w + 4, modal_h + 4, (Color){80, 80, 100, 255});
+            DrawRectangle(modal_x, modal_y, modal_w, modal_h, (Color){40, 40, 50, 255});
+            DrawTextF("Wahoo Sync Complete", modal_x + 20, modal_y + 15, 20, (Color){255, 193, 7, 255});
+
+            char final_status[128];
+            if (sync_downloaded > 0) {
+                snprintf(final_status, sizeof(final_status), "Downloaded %d new workouts", sync_downloaded);
+            } else {
+                snprintf(final_status, sizeof(final_status), "All workouts up to date");
+            }
+            DrawTextF(final_status, modal_x + 20, modal_y + 55, 16, WHITE);
+
+            char final_stats[128];
+            snprintf(final_stats, sizeof(final_stats), "Checked: %d  |  Skipped: %d", sync_total_fetched, sync_skipped);
+            DrawTextF(final_stats, modal_x + 20, modal_y + 85, 14, LIGHTGRAY);
+
+            DrawTextF("Starting...", modal_x + 20, modal_y + 115, 14, GRAY);
+            EndDrawing();
+        }
+
+        // Print sync summary
+        printf("Wahoo sync complete: %d downloaded, %d skipped, %d total checked\n",
                sync_downloaded, sync_skipped, sync_total_fetched);
         fflush(stdout);
 

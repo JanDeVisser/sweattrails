@@ -106,6 +106,20 @@ Activities are stored in a platform-specific location:
 4. Run sweattrails, switch to Strava tab (press `2`), click "Connect to Strava"
 5. Authorize in browser - activities will sync automatically on startup
 
+## Wahoo Setup
+
+1. Create a Wahoo API application at https://developers.wahooligan.com
+2. Set redirect URI to `http://localhost:8090/callback`
+3. Request `workouts_read` scope
+4. Create config file `~/.config/sweattrails/wahoo_config`:
+   ```json
+   {
+     "client_id": "YOUR_CLIENT_ID",
+     "client_secret": "YOUR_CLIENT_SECRET"
+   }
+   ```
+5. On first run, you'll be prompted to authorize - workouts sync automatically on startup
+
 ## Features
 
 ### Local Activities
@@ -125,6 +139,14 @@ Activities are stored in a platform-specific location:
 - Shows activity details (date, type, distance, power indicator)
 - Download activities as JSON with full stream data (power, GPS, heartrate, cadence)
 - Downloaded activities appear in the Local tab and can be viewed like FIT files
+- Tokens automatically refreshed and saved
+
+### Wahoo Integration
+- OAuth2 authentication (opens browser, captures callback on localhost:8090)
+- **Automatic sync on startup**: Downloads new workouts as FIT files (up to 300 most recent)
+- Progress modal shows sync status with download/skip counts
+- Downloads original FIT files from Wahoo CDN
+- Workouts organized by date in the Local tab
 - Tokens automatically refreshed and saved
 
 ### Summary Tab
