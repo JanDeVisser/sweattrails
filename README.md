@@ -6,8 +6,10 @@ A C program using raylib that parses `.fit` files and displays power data in an 
 
 - raylib
 - libcurl
+- openssl
 - clang
 - pkg-config
+- mkcert (optional, for Wahoo HTTPS callback)
 
 ### macOS
 
@@ -109,16 +111,52 @@ Activities are stored in a platform-specific location:
 ## Wahoo Setup
 
 1. Create a Wahoo API application at https://developers.wahooligan.com
-2. Set redirect URI to `http://localhost:8090/callback`
+2. Set redirect URI to `https://localhost:8090/callback` (HTTPS required)
 3. Request `workouts_read` scope
-4. Create config file `~/.config/sweattrails/wahoo_config`:
+4. Install mkcert and create localhost certificate:
+   ```bash
+   # Install mkcert (Fedora)
+   sudo dnf install mkcert
+   # Or on macOS
+   brew install mkcert
+
+   # Create local CA and localhost certificate
+   mkcert -install
+   mkdir -p ~/.config/sweattrails/certs
+   cd ~/.config/sweattrails/certs
+   mkcert localhost 127.0.0.1
+   ```
+5. Create config file `~/.config/sweattrails/wahoo_config`:
    ```json
    {
      "client_id": "YOUR_CLIENT_ID",
      "client_secret": "YOUR_CLIENT_SECRET"
    }
    ```
-5. On first run, you'll be prompted to authorize - workouts sync automatically on startup
+6. Run sweattrails, switch to Strava tab, click "Connect to Wahoo" - workouts sync automatically on startup
+
+## Zwift Setup
+
+Sweattrails can automatically import FIT files from Zwift's local Activities folder, including from a remote machine via SSH.
+
+### Local Zwift folder (same machine)
+
+No configuration needed - the app auto-detects `~/Documents/Zwift/Activities/`.
+
+### Remote Zwift folder (via SSH)
+
+1. Ensure SSH public key authentication is set up to the remote machine
+2. Create config file `~/.config/sweattrails/zwift_config`:
+   ```json
+   {
+     "source_folder": "/Users/username/Documents/Zwift/Activities",
+     "remote_host": "user@192.168.1.100",
+     "auto_sync": true
+   }
+   ```
+3. Activities sync automatically on startup
+
+Files are deduplicated by activity timestamp and file size, so re-running won't import duplicates.
 
 ## Features
 
@@ -142,12 +180,19 @@ Activities are stored in a platform-specific location:
 - Tokens automatically refreshed and saved
 
 ### Wahoo Integration
-- OAuth2 authentication (opens browser, captures callback on localhost:8090)
+- OAuth2 authentication with HTTPS callback (uses mkcert for trusted localhost certificate)
 - **Automatic sync on startup**: Downloads new workouts as FIT files (up to 300 most recent)
 - Progress modal shows sync status with download/skip counts
 - Downloads original FIT files from Wahoo CDN
 - Workouts organized by date in the Local tab
 - Tokens automatically refreshed and saved
+
+### Zwift Integration
+- **Automatic sync on startup**: Imports FIT files from Zwift's Activities folder
+- Supports local folder or remote machine via SSH/SCP
+- Efficient remote sync: single SSH call for directory listing, skips already-imported files
+- Deduplication by activity timestamp + file size
+- Files organized by date in the Local tab as `zwift_<timestamp>.fit`
 
 ### Summary Tab
 - Displays activity metadata: title, type, date, duration, distance, speed
@@ -182,6 +227,8 @@ Activities are stored in a platform-specific location:
 - `file_organizer.c/h` - Inbox processing and file organization
 - `activity_tree.c/h` - Year/month tree data structure
 - `strava_api.c/h` - Strava OAuth and API client
+- `wahoo_api.c/h` - Wahoo OAuth and API client
+- `zwift_sync.c/h` - Zwift local/remote folder sync via SSH/SCP
 - `tile_map.c/h` - OpenStreetMap tile fetching, caching, and map rendering
 - `zwift_worlds.c/h` - Zwift world detection and map image handling
 - `Makefile` - Build configuration (Linux and macOS)

@@ -7,13 +7,18 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <curl/curl.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
+#include <openssl/evp.h>
 
 #define WAHOO_CONFIG_PATH "/.config/sweattrails/wahoo_config"
 #define WAHOO_AUTH_URL "https://api.wahooligan.com/oauth/authorize"
 #define WAHOO_TOKEN_URL "https://api.wahooligan.com/oauth/token"
 #define WAHOO_API_URL "https://api.wahooligan.com/v1"
 #define CALLBACK_PORT 8090
-#define REDIRECT_URI "http://localhost:8090/callback"
+#define REDIRECT_URI "https://localhost:8090/callback"
 
 // Simple JSON parsing helpers (same pattern as strava_api.c)
 static const char *json_find_key(const char *json, const char *key) {
@@ -221,6 +226,44 @@ static bool parse_token_response(const char *json, WahooConfig *config) {
     return true;
 }
 
+// Create SSL context using mkcert-generated certificates
+static SSL_CTX *create_ssl_context_with_cert(void) {
+    SSL_CTX *ctx = SSL_CTX_new(TLS_server_method());
+    if (!ctx) {
+        fprintf(stderr, "Failed to create SSL context\n");
+        return NULL;
+    }
+
+    // Load mkcert certificate and key from ~/.config/sweattrails/certs/
+    const char *home = getenv("HOME");
+    if (!home) {
+        fprintf(stderr, "HOME not set\n");
+        SSL_CTX_free(ctx);
+        return NULL;
+    }
+
+    char cert_path[512], key_path[512];
+    snprintf(cert_path, sizeof(cert_path), "%s/.config/sweattrails/certs/localhost+1.pem", home);
+    snprintf(key_path, sizeof(key_path), "%s/.config/sweattrails/certs/localhost+1-key.pem", home);
+
+    if (SSL_CTX_use_certificate_file(ctx, cert_path, SSL_FILETYPE_PEM) <= 0) {
+        fprintf(stderr, "Failed to load certificate from %s\n", cert_path);
+        fprintf(stderr, "Run: mkcert -install && mkdir -p ~/.config/sweattrails/certs && cd ~/.config/sweattrails/certs && mkcert localhost 127.0.0.1\n");
+        ERR_print_errors_fp(stderr);
+        SSL_CTX_free(ctx);
+        return NULL;
+    }
+
+    if (SSL_CTX_use_PrivateKey_file(ctx, key_path, SSL_FILETYPE_PEM) <= 0) {
+        fprintf(stderr, "Failed to load private key from %s\n", key_path);
+        ERR_print_errors_fp(stderr);
+        SSL_CTX_free(ctx);
+        return NULL;
+    }
+
+    return ctx;
+}
+
 bool wahoo_authenticate(WahooConfig *config) {
     // Create authorization URL
     char auth_url[1024];
@@ -231,6 +274,16 @@ bool wahoo_authenticate(WahooConfig *config) {
     printf("Opening browser for Wahoo authorization...\n");
     printf("If browser doesn't open, visit:\n%s\n\n", auth_url);
     fflush(stdout);
+
+    // Initialize OpenSSL
+    SSL_library_init();
+    SSL_load_error_strings();
+
+    // Create SSL context with self-signed cert
+    SSL_CTX *ssl_ctx = create_ssl_context_with_cert();
+    if (!ssl_ctx) {
+        return false;
+    }
 
     // Open browser
     char cmd[1200];
@@ -245,6 +298,7 @@ bool wahoo_authenticate(WahooConfig *config) {
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
         perror("socket");
+        SSL_CTX_free(ssl_ctx);
         return false;
     }
 
@@ -259,16 +313,18 @@ bool wahoo_authenticate(WahooConfig *config) {
     if (bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("bind");
         close(server_fd);
+        SSL_CTX_free(ssl_ctx);
         return false;
     }
 
     if (listen(server_fd, 1) < 0) {
         perror("listen");
         close(server_fd);
+        SSL_CTX_free(ssl_ctx);
         return false;
     }
 
-    printf("Waiting for authorization callback on port %d...\n", CALLBACK_PORT);
+    printf("Waiting for authorization callback on port %d (HTTPS)...\n", CALLBACK_PORT);
     fflush(stdout);
 
     // Accept connection
@@ -276,12 +332,27 @@ bool wahoo_authenticate(WahooConfig *config) {
     if (client_fd < 0) {
         perror("accept");
         close(server_fd);
+        SSL_CTX_free(ssl_ctx);
         return false;
     }
 
-    // Read request
+    // Wrap with SSL
+    SSL *ssl = SSL_new(ssl_ctx);
+    SSL_set_fd(ssl, client_fd);
+
+    if (SSL_accept(ssl) <= 0) {
+        fprintf(stderr, "SSL handshake failed\n");
+        ERR_print_errors_fp(stderr);
+        SSL_free(ssl);
+        close(client_fd);
+        close(server_fd);
+        SSL_CTX_free(ssl_ctx);
+        return false;
+    }
+
+    // Read request over SSL
     char request[4096] = {0};
-    read(client_fd, request, sizeof(request) - 1);
+    SSL_read(ssl, request, sizeof(request) - 1);
 
     // Extract authorization code from URL
     char *code_start = strstr(request, "code=");
@@ -298,7 +369,7 @@ bool wahoo_authenticate(WahooConfig *config) {
         }
     }
 
-    // Send response to browser
+    // Send response to browser over SSL
     const char *response =
         "HTTP/1.1 200 OK\r\n"
         "Content-Type: text/html\r\n"
@@ -306,10 +377,13 @@ bool wahoo_authenticate(WahooConfig *config) {
         "\r\n"
         "<html><body><h1>Wahoo Authorization successful!</h1>"
         "<p>You can close this window and return to Sweattrails.</p></body></html>";
-    write(client_fd, response, strlen(response));
+    SSL_write(ssl, response, strlen(response));
 
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
     close(client_fd);
     close(server_fd);
+    SSL_CTX_free(ssl_ctx);
 
     if (!code[0]) {
         fprintf(stderr, "No authorization code received\n");
@@ -510,6 +584,12 @@ bool wahoo_fetch_workouts(WahooConfig *config, WahooWorkoutList *list, int page,
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
+        curl_buffer_free(&buf);
+        return false;
+    }
+
+    // Check for empty response
+    if (!buf.data || buf.size == 0) {
         curl_buffer_free(&buf);
         return false;
     }

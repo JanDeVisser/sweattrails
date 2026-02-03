@@ -1,15 +1,15 @@
 CC = clang
-CFLAGS = -Wall -Wextra -O2 $(shell pkg-config --cflags raylib libcurl)
+CFLAGS = -Wall -Wextra -O2 $(shell pkg-config --cflags raylib libcurl openssl)
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
-    LDFLAGS = $(shell pkg-config --libs raylib libcurl) -framework IOKit -framework Cocoa -framework OpenGL
+    LDFLAGS = $(shell pkg-config --libs raylib libcurl openssl) -framework IOKit -framework Cocoa -framework OpenGL
 else
-    LDFLAGS = $(shell pkg-config --libs raylib libcurl) -lm
+    LDFLAGS = $(shell pkg-config --libs raylib libcurl openssl) -lm
 endif
 
 TARGET = sweattrails
-SRCS = main.c fit_parser.c strava_api.c wahoo_api.c file_organizer.c activity_tree.c tile_map.c zwift_worlds.c activity_meta.c
+SRCS = main.c fit_parser.c strava_api.c wahoo_api.c file_organizer.c activity_tree.c tile_map.c zwift_worlds.c activity_meta.c zwift_sync.c
 OBJS = $(SRCS:.c=.o)
 
 all: $(TARGET)

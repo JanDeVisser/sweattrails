@@ -8,6 +8,7 @@
 #include "fit_parser.h"
 #include "strava_api.h"
 #include "wahoo_api.h"
+#include "zwift_sync.h"
 #include "file_organizer.h"
 #include "activity_tree.h"
 #include "tile_map.h"
@@ -1175,6 +1176,89 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // ========== Zwift Sync (Local or Remote) ==========
+    ZwiftConfig zwift_config;
+    if (zwift_load_config(&zwift_config) && zwift_config.auto_sync) {
+        // For remote sync, always try; for local, check if folder exists
+        bool should_sync = false;
+        if (zwift_config.remote_host[0]) {
+            should_sync = true;  // Remote sync - will handle errors internally
+        } else {
+            struct stat zwift_st;
+            should_sync = (stat(zwift_config.source_folder, &zwift_st) == 0 && S_ISDIR(zwift_st.st_mode));
+        }
+
+        if (should_sync) {
+            // Modal dimensions (same as other sync modals)
+            int zwift_screen_w = GetScreenWidth();
+            int zwift_screen_h = GetScreenHeight();
+            int zwift_modal_w = 450;
+            int zwift_modal_h = 140;
+            int zwift_modal_x = (zwift_screen_w - zwift_modal_w) / 2;
+            int zwift_modal_y = (zwift_screen_h - zwift_modal_h) / 2;
+
+            // Show sync modal with Zwift orange color
+            if (!WindowShouldClose()) {
+                BeginDrawing();
+                ClearBackground((Color){25, 25, 35, 255});
+
+                DrawRectangle(zwift_modal_x - 2, zwift_modal_y - 2, zwift_modal_w + 4, zwift_modal_h + 4, (Color){80, 80, 100, 255});
+                DrawRectangle(zwift_modal_x, zwift_modal_y, zwift_modal_w, zwift_modal_h, (Color){40, 40, 50, 255});
+                DrawTextF("Syncing Zwift Activities", zwift_modal_x + 20, zwift_modal_y + 15, 20, (Color){252, 102, 0, 255});
+
+                char zwift_scan_msg[256];
+                if (zwift_config.remote_host[0]) {
+                    snprintf(zwift_scan_msg, sizeof(zwift_scan_msg), "Connecting to %s...", zwift_config.remote_host);
+                } else {
+                    snprintf(zwift_scan_msg, sizeof(zwift_scan_msg), "Scanning local folder...");
+                }
+                DrawTextF(zwift_scan_msg, zwift_modal_x + 20, zwift_modal_y + 55, 16, WHITE);
+                EndDrawing();
+            }
+
+            // Perform sync
+            ZwiftSyncProgress zwift_progress;
+            int zwift_imported = zwift_sync_activities(&zwift_config, g_data_dir, &zwift_progress);
+
+            // Show completion briefly
+            if (!WindowShouldClose()) {
+                BeginDrawing();
+                ClearBackground((Color){25, 25, 35, 255});
+
+                DrawRectangle(zwift_modal_x - 2, zwift_modal_y - 2, zwift_modal_w + 4, zwift_modal_h + 4, (Color){80, 80, 100, 255});
+                DrawRectangle(zwift_modal_x, zwift_modal_y, zwift_modal_w, zwift_modal_h, (Color){40, 40, 50, 255});
+                DrawTextF("Zwift Sync Complete", zwift_modal_x + 20, zwift_modal_y + 15, 20, (Color){252, 102, 0, 255});
+
+                char zwift_status[128];
+                if (zwift_imported > 0) {
+                    snprintf(zwift_status, sizeof(zwift_status), "Imported %d new activities", zwift_imported);
+                } else {
+                    snprintf(zwift_status, sizeof(zwift_status), "All activities up to date");
+                }
+                DrawTextF(zwift_status, zwift_modal_x + 20, zwift_modal_y + 55, 16, WHITE);
+
+                char zwift_stats[128];
+                snprintf(zwift_stats, sizeof(zwift_stats), "Found: %d  |  Skipped: %d",
+                         zwift_progress.files_found, zwift_progress.files_skipped);
+                DrawTextF(zwift_stats, zwift_modal_x + 20, zwift_modal_y + 85, 14, LIGHTGRAY);
+
+                EndDrawing();
+            }
+
+            // Print sync summary
+            printf("Zwift sync complete: %d imported, %d skipped, %d total found\n",
+                   zwift_imported, zwift_progress.files_skipped, zwift_progress.files_found);
+            fflush(stdout);
+
+            // Refresh activity tree if we imported anything
+            if (zwift_imported > 0) {
+                activity_tree_free(&activity_tree);
+                activity_tree_init(&activity_tree);
+                activity_tree_scan(&activity_tree, g_data_dir);
+            }
+        }
+    }
+
     // State
     TabMode current_tab = TAB_LOCAL;
     GraphViewMode graph_view = GRAPH_VIEW_SUMMARY;
@@ -1786,6 +1870,8 @@ int main(int argc, char *argv[]) {
             }
 
         } else if (current_tab == TAB_STRAVA) {
+            int strava_section_end = list_y;  // Track where Strava section ends
+
             if (!strava_is_authenticated(&strava_config)) {
                 DrawTextF("Strava: Not connected", 10, list_y + 5, 15, (Color){252, 82, 0, 255});
 
@@ -1797,6 +1883,7 @@ int main(int argc, char *argv[]) {
                         snprintf(status_message, sizeof(status_message), "Strava authentication failed");
                     }
                 }
+                strava_section_end = list_y + 70;
             } else {
                 DrawTextF("Strava Activities:", 10, list_y + 5, 15, (Color){252, 82, 0, 255});
 
@@ -1903,7 +1990,29 @@ int main(int argc, char *argv[]) {
                     if (strava_scroll_offset + visible_files < (int)strava_activities.count) {
                         DrawTextF("v", 145, list_y + visible_files * 25 + 5, 15, GRAY);
                     }
+                    strava_section_end = list_y + visible_files * 25 + 30;
+                } else {
+                    strava_section_end = list_y + 60;
                 }
+            }
+
+            // Wahoo section (below Strava)
+            int wahoo_y = strava_section_end + 20;
+            DrawLine(10, wahoo_y - 10, 365, wahoo_y - 10, (Color){60, 60, 70, 255});
+
+            if (!wahoo_is_authenticated(&wahoo_config)) {
+                DrawTextF("Wahoo: Not connected", 10, wahoo_y, 15, (Color){255, 193, 7, 255});
+
+                if (draw_button(10, wahoo_y + 25, 355, 30, "Connect to Wahoo", wahoo_config_loaded)) {
+                    snprintf(status_message, sizeof(status_message), "Authenticating with Wahoo...");
+                    if (wahoo_authenticate(&wahoo_config)) {
+                        snprintf(status_message, sizeof(status_message), "Connected to Wahoo!");
+                    } else {
+                        snprintf(status_message, sizeof(status_message), "Wahoo authentication failed");
+                    }
+                }
+            } else {
+                DrawTextF("Wahoo: Connected", 10, wahoo_y, 15, (Color){255, 193, 7, 255});
             }
         }
 
