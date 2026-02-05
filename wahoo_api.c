@@ -268,7 +268,7 @@ bool wahoo_authenticate(WahooConfig *config) {
     // Create authorization URL
     char auth_url[1024];
     snprintf(auth_url, sizeof(auth_url),
-             "%s?client_id=%s&redirect_uri=%s&response_type=code&scope=workouts_read",
+             "%s?client_id=%s&redirect_uri=%s&response_type=code&scope=user_read%%20workouts_read",
              WAHOO_AUTH_URL, config->client_id, REDIRECT_URI);
 
     printf("Opening browser for Wahoo authorization...\n");
