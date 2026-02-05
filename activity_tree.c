@@ -203,6 +203,27 @@ static void load_activity_title(TreeNode *node) {
             strncpy(title, name, sizeof(title) - 1);
         }
     }
+    // 3. For Wahoo/Zwift FIT files, generate title from timestamp
+    else if (!is_json && (strncmp(node->name, "wahoo_", 6) == 0 || strncmp(node->name, "zwift_", 6) == 0)) {
+        time_t timestamp = 0;
+
+        if (strncmp(node->name, "zwift_", 6) == 0) {
+            // Zwift files: zwift_<timestamp>.fit - parse from filename
+            timestamp = (time_t)atoll(node->name + 6);
+        } else {
+            // Wahoo files: wahoo_<id>.fit - read from FIT file
+            timestamp = fit_get_activity_timestamp(node->full_path);
+        }
+
+        if (timestamp > 0) {
+            struct tm *tm = localtime(&timestamp);
+            if (tm) {
+                char date_str[64];
+                strftime(date_str, sizeof(date_str), "%b %d, %H:%M", tm);
+                snprintf(title, sizeof(title), "Ride - %s", date_str);
+            }
+        }
+    }
 
     // Get activity type for icon
     if (is_json && json_buf[0]) {
