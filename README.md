@@ -10,6 +10,7 @@ A C program using raylib that parses `.fit` files and displays power data in an 
 - clang
 - pkg-config
 - mkcert (optional, for Wahoo HTTPS callback)
+- python3 + `pip install garminconnect` (optional, for Garmin Connect sync)
 
 ### macOS
 
@@ -194,6 +195,14 @@ Files are deduplicated by activity timestamp and file size, so re-running won't 
 - Deduplication by activity timestamp + file size
 - Files organized by date in the Local tab as `zwift_<timestamp>.fit`
 
+### Garmin Connect Integration
+- Authenticates via `garminconnect` Python module (invoked as subprocess)
+- **Automatic sync on startup**: Downloads new activities as FIT files (up to 200 most recent)
+- Progress modal shows sync status with download/skip counts
+- Handles ZIP extraction from Garmin's ORIGINAL download format
+- Credentials passed via environment variables (not visible in process list)
+- Activities organized by date in the Local tab as `garmin_<id>.fit`
+
 ### Summary Tab
 - Displays activity metadata: title, type, date, duration, distance, speed
 - Shows power stats (avg/max), heart rate (avg/max), cadence (avg/max)
@@ -229,9 +238,29 @@ Files are deduplicated by activity timestamp and file size, so re-running won't 
 - `strava_api.c/h` - Strava OAuth and API client
 - `wahoo_api.c/h` - Wahoo OAuth and API client
 - `zwift_sync.c/h` - Zwift local/remote folder sync via SSH/SCP
+- `garmin_sync.c/h` - Garmin Connect sync via Python subprocess
+- `garmin_helper.py` - Python helper for Garmin Connect API (requires `pip install garminconnect`)
 - `tile_map.c/h` - OpenStreetMap tile fetching, caching, and map rendering
 - `zwift_worlds.c/h` - Zwift world detection and map image handling
 - `Makefile` - Build configuration (Linux and macOS)
+
+## Garmin Connect Setup
+
+1. Install the Python `garminconnect` module:
+   ```bash
+   pip install garminconnect
+   ```
+2. Create config file `~/.config/sweattrails/garmin_config`:
+   ```json
+   {
+     "email": "your@email.com",
+     "password": "your_garmin_password"
+   }
+   ```
+3. Run sweattrails, go to Settings tab, click "Connect to Garmin"
+4. Activities sync automatically on startup once authenticated
+
+**Note:** `python3` and the `garminconnect` pip package must be installed and available on your system. The app invokes `garmin_helper.py` as a subprocess — no C-level Python dependency is needed at compile time.
 
 ## Potential Improvements
 

@@ -9,6 +9,7 @@
 #include "strava_api.h"
 #include "wahoo_api.h"
 #include "zwift_sync.h"
+#include "garmin_sync.h"
 #include "file_organizer.h"
 #include "activity_tree.h"
 #include "tile_map.h"
@@ -21,6 +22,7 @@
 #define STRAVA_SYNC_MAX_PAGES 10  // Sync last 500 activities (10 pages x 50)
 #define WAHOO_SYNC_PER_PAGE 30
 #define WAHOO_SYNC_MAX_PAGES 10   // Sync last 300 workouts (10 pages x 30)
+#define GARMIN_SYNC_LIMIT 200
 #define GRAPH_MARGIN_LEFT 80
 #define GRAPH_MARGIN_RIGHT 40
 #define GRAPH_MARGIN_TOP 80
@@ -32,7 +34,7 @@ static char g_data_dir[512];
 
 typedef enum {
     TAB_LOCAL,
-    TAB_STRAVA
+    TAB_SETTINGS
 } TabMode;
 
 typedef enum {
@@ -129,6 +131,49 @@ static bool strava_activity_exists(const char *data_dir, int64_t activity_id) {
 static bool wahoo_workout_exists(const char *data_dir, int64_t workout_id) {
     char id_str[32];
     snprintf(id_str, sizeof(id_str), "wahoo_%lld.fit", (long long)workout_id);
+
+    // Scan all year directories
+    char activity_dir[512];
+    snprintf(activity_dir, sizeof(activity_dir), "%s/activity", data_dir);
+
+    DIR *year_dir = opendir(activity_dir);
+    if (!year_dir) return false;
+
+    struct dirent *year_entry;
+    while ((year_entry = readdir(year_dir)) != NULL) {
+        if (year_entry->d_name[0] == '.') continue;
+
+        char year_path[512];
+        snprintf(year_path, sizeof(year_path), "%s/%s", activity_dir, year_entry->d_name);
+
+        DIR *month_dir = opendir(year_path);
+        if (!month_dir) continue;
+
+        struct dirent *month_entry;
+        while ((month_entry = readdir(month_dir)) != NULL) {
+            if (month_entry->d_name[0] == '.') continue;
+
+            char file_path[512];
+            snprintf(file_path, sizeof(file_path), "%s/%s/%s", year_path, month_entry->d_name, id_str);
+
+            struct stat st;
+            if (stat(file_path, &st) == 0) {
+                closedir(month_dir);
+                closedir(year_dir);
+                return true;
+            }
+        }
+        closedir(month_dir);
+    }
+    closedir(year_dir);
+    return false;
+}
+
+// Check if a Garmin activity is already downloaded locally
+// Searches activity/YYYY/MM/garmin_<activity_id>.fit
+static bool garmin_activity_exists(const char *data_dir, int64_t activity_id) {
+    char id_str[32];
+    snprintf(id_str, sizeof(id_str), "garmin_%lld.fit", (long long)activity_id);
 
     // Scan all year directories
     char activity_dir[512];
@@ -786,14 +831,18 @@ int main(int argc, char *argv[]) {
     // Load Strava config
     StravaConfig strava_config = {0};
     bool strava_config_loaded = strava_load_config(&strava_config);
-    StravaActivityList strava_activities = {0};
-    bool strava_activities_loaded = false;
-    bool strava_loading = false;
-    bool strava_downloading = false;
 
     // Load Wahoo config
     WahooConfig wahoo_config = {0};
     bool wahoo_config_loaded = wahoo_load_config(&wahoo_config);
+
+    // Load Garmin config
+    GarminConfig garmin_config = {0};
+    bool garmin_config_loaded = garmin_load_config(&garmin_config);
+    bool garmin_authenticated = false;
+    if (garmin_config_loaded) {
+        garmin_authenticated = garmin_is_authenticated();
+    }
 
     // Initialize raylib
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
@@ -1259,13 +1308,158 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // ========== Garmin Connect Sync ==========
+    if (garmin_authenticated) {
+        // Wait for window to settle if no prior sync ran
+        if ((!strava_config_loaded || !strava_is_authenticated(&strava_config)) &&
+            (!wahoo_config_loaded || !wahoo_is_authenticated(&wahoo_config))) {
+            for (int i = 0; i < 10 && !WindowShouldClose(); i++) {
+                BeginDrawing();
+                ClearBackground((Color){25, 25, 35, 255});
+                EndDrawing();
+            }
+        }
+
+        // Sync state
+        int sync_total_fetched = 0;
+        int sync_downloaded = 0;
+        int sync_skipped = 0;
+        char sync_status[256] = "Checking Garmin activities...";
+
+        // Garmin blue theme color
+        Color garmin_color = (Color){0, 148, 218, 255};
+
+        // Cache screen dimensions
+        int screen_w = GetScreenWidth();
+        int screen_h = GetScreenHeight();
+        int modal_w = 450;
+        int modal_h = 150;
+        int modal_x = (screen_w - modal_w) / 2;
+        int modal_y = (screen_h - modal_h) / 2;
+
+        // Show initial modal
+        if (!WindowShouldClose()) {
+            BeginDrawing();
+            ClearBackground((Color){25, 25, 35, 255});
+            DrawRectangle(modal_x - 2, modal_y - 2, modal_w + 4, modal_h + 4, (Color){80, 80, 100, 255});
+            DrawRectangle(modal_x, modal_y, modal_w, modal_h, (Color){40, 40, 50, 255});
+            DrawTextF("Garmin Sync", modal_x + 20, modal_y + 15, 20, garmin_color);
+            DrawTextF(sync_status, modal_x + 20, modal_y + 50, 15, WHITE);
+            EndDrawing();
+        }
+
+        // Fetch activities
+        GarminActivityList garmin_list = {0};
+        if (garmin_fetch_activities(&garmin_list, GARMIN_SYNC_LIMIT)) {
+            sync_total_fetched = (int)garmin_list.count;
+
+            for (size_t i = 0; i < garmin_list.count && !WindowShouldClose(); i++) {
+                GarminActivity *act = &garmin_list.activities[i];
+
+                // Check if already downloaded
+                if (garmin_activity_exists(g_data_dir, act->id)) {
+                    sync_skipped++;
+                    continue;
+                }
+
+                // Download this activity
+                snprintf(sync_status, sizeof(sync_status), "Downloading: %.40s...", act->name);
+
+                // Draw progress update
+                BeginDrawing();
+                ClearBackground((Color){25, 25, 35, 255});
+                DrawRectangle(modal_x - 2, modal_y - 2, modal_w + 4, modal_h + 4, (Color){80, 80, 100, 255});
+                DrawRectangle(modal_x, modal_y, modal_w, modal_h, (Color){40, 40, 50, 255});
+                DrawTextF("Garmin Sync", modal_x + 20, modal_y + 15, 20, garmin_color);
+                DrawTextF(sync_status, modal_x + 20, modal_y + 50, 15, WHITE);
+                char progress[128];
+                snprintf(progress, sizeof(progress), "Downloaded: %d  |  Skipped: %d  |  Total: %d",
+                         sync_downloaded, sync_skipped, sync_total_fetched);
+                DrawTextF(progress, modal_x + 20, modal_y + 75, 14, LIGHTGRAY);
+
+                // Progress bar
+                int bar_w = modal_w - 40;
+                int bar_h = 20;
+                int bar_x = modal_x + 20;
+                int bar_y = modal_y + 105;
+                DrawRectangle(bar_x, bar_y, bar_w, bar_h, (Color){30, 30, 40, 255});
+                if (sync_total_fetched > 0) {
+                    int fill_w = (int)((float)(sync_downloaded + sync_skipped) / sync_total_fetched * bar_w);
+                    DrawRectangle(bar_x, bar_y, fill_w, bar_h, garmin_color);
+                }
+                EndDrawing();
+
+                // Parse year and month from start_time (format: "YYYY-MM-DD HH:MM:SS")
+                char year[5] = "";
+                char month[3] = "";
+                if (strlen(act->start_time) >= 10) {
+                    strncpy(year, act->start_time, 4);
+                    year[4] = '\0';
+                    strncpy(month, act->start_time + 5, 2);
+                    month[2] = '\0';
+                }
+
+                // Create output directory
+                char output_dir[512];
+                snprintf(output_dir, sizeof(output_dir), "%s/activity/%s/%s", g_data_dir, year, month);
+                create_directory_path(output_dir);
+
+                // Create output path
+                char output_path[512];
+                snprintf(output_path, sizeof(output_path), "%s/garmin_%lld.fit",
+                         output_dir, (long long)act->id);
+
+                if (garmin_download_fit(act->id, output_path)) {
+                    sync_downloaded++;
+                }
+            }
+
+            garmin_activity_list_free(&garmin_list);
+        }
+
+        // Show completion briefly
+        if (!WindowShouldClose()) {
+            BeginDrawing();
+            ClearBackground((Color){25, 25, 35, 255});
+
+            DrawRectangle(modal_x - 2, modal_y - 2, modal_w + 4, modal_h + 4, (Color){80, 80, 100, 255});
+            DrawRectangle(modal_x, modal_y, modal_w, modal_h, (Color){40, 40, 50, 255});
+            DrawTextF("Garmin Sync Complete", modal_x + 20, modal_y + 15, 20, garmin_color);
+
+            char final_status[128];
+            if (sync_downloaded > 0) {
+                snprintf(final_status, sizeof(final_status), "Downloaded %d new activities", sync_downloaded);
+            } else {
+                snprintf(final_status, sizeof(final_status), "All activities up to date");
+            }
+            DrawTextF(final_status, modal_x + 20, modal_y + 55, 16, WHITE);
+
+            char final_stats[128];
+            snprintf(final_stats, sizeof(final_stats), "Checked: %d  |  Skipped: %d", sync_total_fetched, sync_skipped);
+            DrawTextF(final_stats, modal_x + 20, modal_y + 85, 14, LIGHTGRAY);
+
+            DrawTextF("Starting...", modal_x + 20, modal_y + 115, 14, GRAY);
+            EndDrawing();
+        }
+
+        // Print sync summary
+        printf("Garmin sync complete: %d downloaded, %d skipped, %d total checked\n",
+               sync_downloaded, sync_skipped, sync_total_fetched);
+        fflush(stdout);
+
+        // Refresh activity tree if we downloaded anything
+        if (sync_downloaded > 0) {
+            activity_tree_free(&activity_tree);
+            activity_tree_init(&activity_tree);
+            activity_tree_scan(&activity_tree, g_data_dir);
+        }
+    }
+
     // State
     TabMode current_tab = TAB_LOCAL;
     GraphViewMode graph_view = GRAPH_VIEW_SUMMARY;
     int selected_tree = 0;
-    int selected_strava = 0;
     int tree_scroll_offset = 0;
-    int strava_scroll_offset = 0;
     int visible_files = 15;
     FitPowerData power_data = {0};
     bool file_loaded = false;
@@ -1339,7 +1533,7 @@ int main(int argc, char *argv[]) {
 
         // Tab switching with number keys
         if (key == KEY_ONE) current_tab = TAB_LOCAL;
-        if (key == KEY_TWO) current_tab = TAB_STRAVA;
+        if (key == KEY_TWO) current_tab = TAB_SETTINGS;
 
         // Graph view switching with S/P/M keys (only when not editing text)
         if (edit_field == EDIT_NONE) {
@@ -1354,9 +1548,9 @@ int main(int argc, char *argv[]) {
         // Update tree visible count (may change with expand/collapse)
         tree_visible = activity_tree_visible_count(&activity_tree);
 
-        int list_count = (current_tab == TAB_LOCAL) ? (int)tree_visible : (int)strava_activities.count;
-        int *selected = (current_tab == TAB_LOCAL) ? &selected_tree : &selected_strava;
-        int *scroll = (current_tab == TAB_LOCAL) ? &tree_scroll_offset : &strava_scroll_offset;
+        int list_count = (int)tree_visible;
+        int *selected = &selected_tree;
+        int *scroll = &tree_scroll_offset;
 
         // Navigation
         if (key == KEY_DOWN || key == KEY_J) {
@@ -1617,11 +1811,11 @@ int main(int argc, char *argv[]) {
             DrawRectangle(10, tab_y + 23, 90, 2, (Color){100, 150, 255, 255});
         }
 
-        if (draw_button(105, tab_y, 90, 25, "2: Strava", strava_config_loaded)) {
-            current_tab = TAB_STRAVA;
+        if (draw_button(105, tab_y, 110, 25, "2: Settings", true)) {
+            current_tab = TAB_SETTINGS;
         }
-        if (current_tab == TAB_STRAVA) {
-            DrawRectangle(105, tab_y + 23, 90, 2, (Color){252, 82, 0, 255});
+        if (current_tab == TAB_SETTINGS) {
+            DrawRectangle(105, tab_y + 23, 110, 2, (Color){100, 150, 255, 255});
         }
 
         // List panel
@@ -1869,13 +2063,14 @@ int main(int argc, char *argv[]) {
 #endif
             }
 
-        } else if (current_tab == TAB_STRAVA) {
-            int strava_section_end = list_y;  // Track where Strava section ends
+        } else if (current_tab == TAB_SETTINGS) {
+            int section_y = list_y + 10;
 
+            // Strava section
             if (!strava_is_authenticated(&strava_config)) {
-                DrawTextF("Strava: Not connected", 10, list_y + 5, 15, (Color){252, 82, 0, 255});
+                DrawTextF("Strava: Not connected", 10, section_y, 15, (Color){252, 82, 0, 255});
 
-                if (draw_button(10, list_y + 30, 355, 30, "Connect to Strava", true)) {
+                if (draw_button(10, section_y + 25, 355, 30, "Connect to Strava", strava_config_loaded)) {
                     snprintf(status_message, sizeof(status_message), "Authenticating with Strava...");
                     if (strava_authenticate(&strava_config)) {
                         snprintf(status_message, sizeof(status_message), "Connected to Strava!");
@@ -1883,127 +2078,27 @@ int main(int argc, char *argv[]) {
                         snprintf(status_message, sizeof(status_message), "Strava authentication failed");
                     }
                 }
-                strava_section_end = list_y + 70;
+                section_y += 65;
             } else {
-                DrawTextF("Strava Activities:", 10, list_y + 5, 15, (Color){252, 82, 0, 255});
-
-                // Fetch activities button
-                if (!strava_activities_loaded && !strava_loading) {
-                    if (draw_button(10, list_y + 25, 355, 25, "Fetch Activities", true)) {
-                        strava_loading = true;
-                        snprintf(status_message, sizeof(status_message), "Fetching activities from Strava...");
-                    }
+                DrawTextF("Strava: Connected", 10, section_y, 15, (Color){252, 82, 0, 255});
+                if (draw_button(220, section_y - 3, 100, 22, "Disconnect", true)) {
+                    memset(strava_config.access_token, 0, sizeof(strava_config.access_token));
+                    memset(strava_config.refresh_token, 0, sizeof(strava_config.refresh_token));
+                    strava_config.token_expires_at = 0;
+                    strava_save_config(&strava_config);
+                    snprintf(status_message, sizeof(status_message), "Disconnected from Strava");
                 }
-
-                // Actually fetch (done here to not block button drawing)
-                if (strava_loading) {
-                    EndDrawing();  // Need to end frame before blocking call
-                    if (strava_fetch_activities(&strava_config, &strava_activities, 1, 50)) {
-                        strava_activities_loaded = true;
-                        snprintf(status_message, sizeof(status_message), "Loaded %zu activities from Strava", strava_activities.count);
-                    } else {
-                        snprintf(status_message, sizeof(status_message), "Failed to fetch Strava activities");
-                    }
-                    strava_loading = false;
-                    continue;  // Restart frame
-                }
-
-                if (strava_activities_loaded) {
-                    // Download button next to header
-                    bool can_download = selected_strava >= 0 && selected_strava < (int)strava_activities.count && !strava_downloading;
-                    if (draw_button(200, list_y + 2, 90, 20, strava_downloading ? "..." : "Download", can_download)) {
-                        strava_downloading = true;
-                    }
-
-                    // Handle download in separate frame to avoid blocking
-                    if (strava_downloading) {
-                        EndDrawing();
-                        StravaActivity *act = &strava_activities.activities[selected_strava];
-
-                        // Parse year and month from start_date (format: YYYY-MM-DDTHH:MM:SSZ)
-                        char year[5] = "";
-                        char month[3] = "";
-                        if (strlen(act->start_date) >= 10) {
-                            strncpy(year, act->start_date, 4);
-                            year[4] = '\0';
-                            strncpy(month, act->start_date + 5, 2);
-                            month[2] = '\0';
-                        }
-
-                        // Create output directory
-                        char output_dir[512];
-                        snprintf(output_dir, sizeof(output_dir), "%s/activity/%s/%s", g_data_dir, year, month);
-                        create_directory_path(output_dir);
-
-                        // Create output path
-                        char output_path[512];
-                        snprintf(output_path, sizeof(output_path), "%s/%lld.json", output_dir, (long long)act->id);
-
-                        if (strava_download_activity(&strava_config, act->id, output_path)) {
-                            snprintf(status_message, sizeof(status_message), "Downloaded: %s", act->name);
-                            // Refresh activity tree
-                            activity_tree_scan(&activity_tree, g_data_dir);
-                        } else {
-                            snprintf(status_message, sizeof(status_message), "Download failed: %s", act->name);
-                        }
-                        strava_downloading = false;
-                        continue;  // Restart frame
-                    }
-
-                    for (int i = 0; i < visible_files && i + strava_scroll_offset < (int)strava_activities.count; i++) {
-                        int act_idx = i + strava_scroll_offset;
-                        int y = list_y + 25 + i * 25;
-
-                        StravaActivity *act = &strava_activities.activities[act_idx];
-
-                        bool hover = mouse.x >= 8 && mouse.x < 367 && mouse.y >= y - 2 && mouse.y < y + 20;
-
-                        if (act_idx == selected_strava) {
-                            DrawRectangle(8, y - 2, 359, 22, (Color){120, 60, 40, 255});
-                        } else if (hover) {
-                            DrawRectangle(8, y - 2, 359, 22, (Color){55, 45, 45, 255});
-                        }
-
-                        // Format: date + type + power indicator
-                        char display[50];
-                        char date_short[12] = "";
-                        if (strlen(act->start_date) >= 10) {
-                            strncpy(date_short, act->start_date, 10);
-                            date_short[10] = '\0';
-                        }
-
-                        const char *power_ind = act->has_power ? "*" : "";
-                        snprintf(display, sizeof(display), "%s %s%s", date_short, act->type, power_ind);
-
-                        if (hover && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-                            selected_strava = act_idx;
-                            snprintf(status_message, sizeof(status_message), "%s - %.1fkm, %dmin, %.0fW avg",
-                                     act->name, act->distance / 1000.0, act->moving_time / 60,
-                                     act->average_watts);
-                            strncpy(current_title, act->name, sizeof(current_title) - 1);
-                        }
-
-                        DrawTextF(display, 12, y, 15, act_idx == selected_strava ? WHITE : LIGHTGRAY);
-                    }
-
-                    if (strava_scroll_offset > 0) DrawTextF("^", 145, list_y + 8, 15, GRAY);
-                    if (strava_scroll_offset + visible_files < (int)strava_activities.count) {
-                        DrawTextF("v", 145, list_y + visible_files * 25 + 5, 15, GRAY);
-                    }
-                    strava_section_end = list_y + visible_files * 25 + 30;
-                } else {
-                    strava_section_end = list_y + 60;
-                }
+                section_y += 25;
             }
 
-            // Wahoo section (below Strava)
-            int wahoo_y = strava_section_end + 20;
-            DrawLine(10, wahoo_y - 10, 365, wahoo_y - 10, (Color){60, 60, 70, 255});
+            // Wahoo section
+            DrawLine(10, section_y + 5, 365, section_y + 5, (Color){60, 60, 70, 255});
+            section_y += 15;
 
             if (!wahoo_is_authenticated(&wahoo_config)) {
-                DrawTextF("Wahoo: Not connected", 10, wahoo_y, 15, (Color){255, 193, 7, 255});
+                DrawTextF("Wahoo: Not connected", 10, section_y, 15, (Color){255, 193, 7, 255});
 
-                if (draw_button(10, wahoo_y + 25, 355, 30, "Connect to Wahoo", wahoo_config_loaded)) {
+                if (draw_button(10, section_y + 25, 355, 30, "Connect to Wahoo", wahoo_config_loaded)) {
                     snprintf(status_message, sizeof(status_message), "Authenticating with Wahoo...");
                     if (wahoo_authenticate(&wahoo_config)) {
                         snprintf(status_message, sizeof(status_message), "Connected to Wahoo!");
@@ -2011,8 +2106,62 @@ int main(int argc, char *argv[]) {
                         snprintf(status_message, sizeof(status_message), "Wahoo authentication failed");
                     }
                 }
+                section_y += 65;
             } else {
-                DrawTextF("Wahoo: Connected", 10, wahoo_y, 15, (Color){255, 193, 7, 255});
+                DrawTextF("Wahoo: Connected", 10, section_y, 15, (Color){255, 193, 7, 255});
+                if (draw_button(220, section_y - 3, 100, 22, "Disconnect", true)) {
+                    memset(wahoo_config.access_token, 0, sizeof(wahoo_config.access_token));
+                    memset(wahoo_config.refresh_token, 0, sizeof(wahoo_config.refresh_token));
+                    wahoo_config.token_expires_at = 0;
+                    wahoo_save_config(&wahoo_config);
+                    snprintf(status_message, sizeof(status_message), "Disconnected from Wahoo");
+                }
+                section_y += 25;
+            }
+
+            // Garmin section
+            DrawLine(10, section_y + 5, 365, section_y + 5, (Color){60, 60, 70, 255});
+            section_y += 15;
+
+            if (!garmin_authenticated) {
+                DrawTextF("Garmin: Not connected", 10, section_y, 15, (Color){0, 148, 218, 255});
+
+                if (draw_button(10, section_y + 25, 355, 30, "Connect to Garmin", garmin_config_loaded)) {
+                    snprintf(status_message, sizeof(status_message), "Authenticating with Garmin...");
+                    if (garmin_authenticate(&garmin_config)) {
+                        garmin_authenticated = true;
+                        snprintf(status_message, sizeof(status_message), "Connected to Garmin!");
+                    } else {
+                        snprintf(status_message, sizeof(status_message), "Garmin authentication failed");
+                    }
+                }
+                section_y += 65;
+            } else {
+                DrawTextF("Garmin: Connected", 10, section_y, 15, (Color){0, 148, 218, 255});
+                if (draw_button(220, section_y - 3, 100, 22, "Disconnect", true)) {
+                    garmin_disconnect();
+                    garmin_authenticated = false;
+                    snprintf(status_message, sizeof(status_message), "Disconnected from Garmin");
+                }
+                section_y += 25;
+            }
+
+            // Tools section
+            DrawLine(10, section_y + 5, 365, section_y + 5, (Color){60, 60, 70, 255});
+            section_y += 15;
+
+            DrawTextF("Tools", 10, section_y, 15, LIGHTGRAY);
+            section_y += 25;
+
+            if (draw_button(10, section_y, 355, 30, "Match Activities", true)) {
+                printf("Match Activities button clicked\n");
+                fflush(stdout);
+                snprintf(status_message, sizeof(status_message), "Matching activities...");
+                activity_tree_scan(&activity_tree, g_data_dir);
+                tree_visible = activity_tree_visible_count(&activity_tree);
+                printf("Activity tree rescanned: %zu visible items\n", tree_visible);
+                fflush(stdout);
+                snprintf(status_message, sizeof(status_message), "Activity matching complete");
             }
         }
 
@@ -2219,8 +2368,8 @@ int main(int argc, char *argv[]) {
         } else {
             DrawRectangle(graph_x, graph_y, graph_w, graph_h, (Color){30, 30, 40, 255});
             const char *msg;
-            if (current_tab == TAB_STRAVA) {
-                msg = strava_activities_loaded ? "Select activity (* = has power)" : "Fetch activities to browse";
+            if (current_tab == TAB_SETTINGS) {
+                msg = "Settings";
             } else if (tree_visible > 0) {
                 msg = "Select an activity";
             } else {
@@ -2319,7 +2468,6 @@ int main(int argc, char *argv[]) {
             free(group_datasets[i]);
         }
     }
-    strava_activity_list_free(&strava_activities);
     activity_tree_free(&activity_tree);
     free(fit_files);
     CloseWindow();
