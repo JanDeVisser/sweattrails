@@ -654,6 +654,31 @@ static int draw_summary_tab(FitPowerData *data, ActivityMeta *meta, EditField *e
     DrawTextF(data->activity_type[0] ? data->activity_type : "-", value_x, current_y + 4, 15, WHITE);
     current_y += row_height;
 
+    // Source
+    {
+        const char *basename = data->source_file;
+        const char *slash = strrchr(data->source_file, '/');
+        if (slash) basename = slash + 1;
+        const char *source_label;
+        Color source_color;
+        size_t blen = strlen(basename);
+        if (blen > 5 && strcmp(basename + blen - 5, ".json") == 0) {
+            source_label = "Strava"; source_color = (Color){252, 82, 0, 255};
+        } else if (strncmp(basename, "wahoo_", 6) == 0) {
+            source_label = "Wahoo"; source_color = (Color){255, 193, 7, 255};
+        } else if (strncmp(basename, "zwift_", 6) == 0) {
+            source_label = "Zwift"; source_color = (Color){252, 102, 0, 255};
+        } else if (strncmp(basename, "garmin_", 7) == 0) {
+            source_label = "Garmin"; source_color = (Color){0, 148, 218, 255};
+        } else {
+            source_label = "Local"; source_color = (Color){150, 150, 150, 255};
+        }
+        DrawTextF("Source:", label_x, current_y + 4, 15, LIGHTGRAY);
+        DrawRectangle(value_x, current_y + 7, 6, 6, source_color);
+        DrawTextF(source_label, value_x + 12, current_y + 4, 15, source_color);
+        current_y += row_height;
+    }
+
     // Date
     DrawTextF("Date:", label_x, current_y + 4, 15, LIGHTGRAY);
     if (data->start_time > 0) {
