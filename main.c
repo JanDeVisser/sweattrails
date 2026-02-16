@@ -397,6 +397,24 @@ static bool draw_button(int x, int y, int w, int h, const char *text, bool enabl
     return clicked;
 }
 
+// Draw a single-frame busy modal (call between EndDrawing/BeginDrawing around blocking ops)
+static void draw_busy_modal(const char *title, const char *message, Color accent) {
+    int screen_w = GetScreenWidth();
+    int screen_h = GetScreenHeight();
+    int modal_w = 450;
+    int modal_h = 100;
+    int modal_x = (screen_w - modal_w) / 2;
+    int modal_y = (screen_h - modal_h) / 2;
+
+    BeginDrawing();
+    ClearBackground((Color){25, 25, 35, 255});
+    DrawRectangle(modal_x - 2, modal_y - 2, modal_w + 4, modal_h + 4, (Color){80, 80, 100, 255});
+    DrawRectangle(modal_x, modal_y, modal_w, modal_h, (Color){40, 40, 50, 255});
+    DrawTextF(title, modal_x + 20, modal_y + 15, 20, accent);
+    DrawTextF(message, modal_x + 20, modal_y + 50, 15, WHITE);
+    EndDrawing();
+}
+
 // Format seconds as HH:MM:SS or MM:SS
 static void format_duration(int seconds, char *out, size_t out_size) {
     int hours = seconds / 3600;
@@ -2096,22 +2114,27 @@ int main(int argc, char *argv[]) {
                 DrawTextF("Strava: Not connected", 10, section_y, 15, (Color){252, 82, 0, 255});
 
                 if (draw_button(10, section_y + 25, 355, 30, "Connect to Strava", strava_config_loaded)) {
-                    snprintf(status_message, sizeof(status_message), "Authenticating with Strava...");
+                    EndDrawing();
+                    draw_busy_modal("Strava", "Waiting for browser authentication...", (Color){252, 82, 0, 255});
                     if (strava_authenticate(&strava_config)) {
                         snprintf(status_message, sizeof(status_message), "Connected to Strava!");
                     } else {
                         snprintf(status_message, sizeof(status_message), "Strava authentication failed");
                     }
+                    BeginDrawing();
                 }
                 section_y += 65;
             } else {
                 DrawTextF("Strava: Connected", 10, section_y, 15, (Color){252, 82, 0, 255});
                 if (draw_button(220, section_y - 3, 100, 22, "Disconnect", true)) {
+                    EndDrawing();
+                    draw_busy_modal("Strava", "Disconnecting...", (Color){252, 82, 0, 255});
                     memset(strava_config.access_token, 0, sizeof(strava_config.access_token));
                     memset(strava_config.refresh_token, 0, sizeof(strava_config.refresh_token));
                     strava_config.token_expires_at = 0;
                     strava_save_config(&strava_config);
                     snprintf(status_message, sizeof(status_message), "Disconnected from Strava");
+                    BeginDrawing();
                 }
                 section_y += 25;
             }
@@ -2124,22 +2147,27 @@ int main(int argc, char *argv[]) {
                 DrawTextF("Wahoo: Not connected", 10, section_y, 15, (Color){255, 193, 7, 255});
 
                 if (draw_button(10, section_y + 25, 355, 30, "Connect to Wahoo", wahoo_config_loaded)) {
-                    snprintf(status_message, sizeof(status_message), "Authenticating with Wahoo...");
+                    EndDrawing();
+                    draw_busy_modal("Wahoo", "Waiting for browser authentication...", (Color){255, 193, 7, 255});
                     if (wahoo_authenticate(&wahoo_config)) {
                         snprintf(status_message, sizeof(status_message), "Connected to Wahoo!");
                     } else {
                         snprintf(status_message, sizeof(status_message), "Wahoo authentication failed");
                     }
+                    BeginDrawing();
                 }
                 section_y += 65;
             } else {
                 DrawTextF("Wahoo: Connected", 10, section_y, 15, (Color){255, 193, 7, 255});
                 if (draw_button(220, section_y - 3, 100, 22, "Disconnect", true)) {
+                    EndDrawing();
+                    draw_busy_modal("Wahoo", "Disconnecting...", (Color){255, 193, 7, 255});
                     memset(wahoo_config.access_token, 0, sizeof(wahoo_config.access_token));
                     memset(wahoo_config.refresh_token, 0, sizeof(wahoo_config.refresh_token));
                     wahoo_config.token_expires_at = 0;
                     wahoo_save_config(&wahoo_config);
                     snprintf(status_message, sizeof(status_message), "Disconnected from Wahoo");
+                    BeginDrawing();
                 }
                 section_y += 25;
             }
@@ -2152,21 +2180,26 @@ int main(int argc, char *argv[]) {
                 DrawTextF("Garmin: Not connected", 10, section_y, 15, (Color){0, 148, 218, 255});
 
                 if (draw_button(10, section_y + 25, 355, 30, "Connect to Garmin", garmin_config_loaded)) {
-                    snprintf(status_message, sizeof(status_message), "Authenticating with Garmin...");
+                    EndDrawing();
+                    draw_busy_modal("Garmin", "Authenticating...", (Color){0, 148, 218, 255});
                     if (garmin_authenticate(&garmin_config)) {
                         garmin_authenticated = true;
                         snprintf(status_message, sizeof(status_message), "Connected to Garmin!");
                     } else {
                         snprintf(status_message, sizeof(status_message), "Garmin authentication failed");
                     }
+                    BeginDrawing();
                 }
                 section_y += 65;
             } else {
                 DrawTextF("Garmin: Connected", 10, section_y, 15, (Color){0, 148, 218, 255});
                 if (draw_button(220, section_y - 3, 100, 22, "Disconnect", true)) {
+                    EndDrawing();
+                    draw_busy_modal("Garmin", "Disconnecting...", (Color){0, 148, 218, 255});
                     garmin_disconnect();
                     garmin_authenticated = false;
                     snprintf(status_message, sizeof(status_message), "Disconnected from Garmin");
+                    BeginDrawing();
                 }
                 section_y += 25;
             }
