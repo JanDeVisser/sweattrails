@@ -1,0 +1,33 @@
+/*
+ * Copyright (c) 2023, Jan de Visser <jan@finiandarcy.com>
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#ifndef __CONFIG_H__
+#define __CONFIG_H__
+
+#define SWEATTRAILS_NAME                          "@sweattrails_NAME@"
+#define SWEATTRAILS_VERSION_MAJOR                 "@sweattrails_VERSION_MAJOR@"
+#define SWEATTRAILS_VERSION_MINOR                 "@sweattrails_VERSION_MINOR@"
+#define SWEATTRAILS_VERSION                       "@sweattrails_VERSION_MAJOR@.@SWEATTRAILS_VERSION_MINOR@"
+#define SWEATTRAILS_DIR                           "@sweattrails_DIR@"
+#define SWEATTRAILS_DATADIR                       "@sweattrails_DATADIR@"
+#define SWEATTRAILS_SYSTEM                        "@CMAKE_SYSTEM_NAME@"
+
+#cmakedefine HAVE_DIRENT_D_NAMLEN              1
+#cmakedefine HAVE_C23_ATTRIBUTE_NORETURN       1
+#cmakedefine HAVE_LEGACY_ATTRIBUTE_NORETURN    1
+#cmakedefine HAVE_ATTRIBUTE_FORMAT             1
+
+#cmakedefine IS_APPLE                          1
+#cmakedefine IS_LINUX                          1
+#cmakedefine IS_WINDOWS                        1
+
+#ifdef HAVE_ATTRIBUTE_FORMAT
+#define format_args(fmt,args) __attribute__((format(printf,fmt,args)))
+#else
+#define format_args(...)
+#endif /* HAVE_ATTRIBUTE_FORMAT */
+
+#endif /* __CONFIG_H__ */

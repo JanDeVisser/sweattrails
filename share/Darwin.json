@@ -1,0 +1,8 @@
+{
+    "appearance": {
+        "font_directories": [
+            "/System/Library/Fonts",
+            "/System/Library/Fonts/Supplemental"
+        ]
+    }
+}

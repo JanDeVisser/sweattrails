@@ -1,0 +1,14 @@
+{
+    "appearance": {
+        "font_directories": [
+            "${HOME}/fonts",
+            "${HOME}/.fonts",
+            "${ARAGORN_DATADIR}/fonts"
+        ],
+        "font": "VictorMono-Regular.ttf",
+        "font_size": 20,
+        "line_height": 1.5,
+        "guides": [80,120],
+        "theme": "darcula"
+    }
+}
