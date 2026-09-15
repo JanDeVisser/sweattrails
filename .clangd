@@ -1,0 +1,20 @@
+CompileFlags:
+  Add:
+    [
+      --std=c++26,
+      -Wall,
+      -Wextra,
+      -Ibuild,
+      -Isrc/Lib/Base,
+      -Isrc/Lib/Lexer,
+      -Isrc/Lib/JSON,
+      -Isrc/Lib/Widget,
+      -Isrc/App,
+    ]
+
+Index:
+  Background: Build
+  StandardLibrary: No
+
+Hover:
+  ShowAKA: Yes

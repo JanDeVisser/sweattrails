@@ -94,37 +94,116 @@ configure_file(
 
 include_directories("${PROJECT_BINARY_DIR}" "${PROJECT_SOURCE_DIR}")
 
-include_directories(. src)
+include_directories(.)
+
+add_library(
+        Base
+        STATIC
+        src/Lib/Base/Date.cpp
+        src/Lib/Base/Defer.h
+        src/Lib/Base/Error.cpp
+        src/Lib/Base/Expected.h
+        src/Lib/Base/Format.h
+        src/Lib/Base/IO.cpp
+        src/Lib/Base/JSON.h
+        src/Lib/Base/JSON.cpp
+        src/Lib/Base/Logging.cpp
+        src/Lib/Base/Options.cpp
+        src/Lib/Base/Pipe.h
+        src/Lib/Base/Process.cpp
+        src/Lib/Base/StringUtil.cpp
+        src/Lib/Base/Token.cpp
+        src/Lib/Base/Utf8.cpp
+)
+
+target_include_directories(
+        Base
+        PRIVATE
+        src/Lib/Base
+)
+
+add_library(
+        Widget
+        STATIC
+        src/Lib/Widget/App.h
+        src/Lib/Widget/App.cpp
+        src/Lib/Widget/Layout.cpp
+        src/Lib/Widget/Modal.h
+        src/Lib/Widget/Widget.h
+        src/Lib/Widget/Widget.cpp
+)
+
+target_include_directories(
+        Widget
+        PRIVATE
+        src/Lib/Base
+        src/Lib/Widget
+        ${raylib_INCLUDE_DIRS}
+        ${FREETYPE_INCLUDE_DIRS}
+)
 
 add_executable(
         sweattrails
         MACOSX_BUNDLE
-        src/SweatTrails.cpp
-        src/App.cpp
-        src/Error.cpp
-        src/IO.cpp
-        src/JSON.cpp
-        src/Layout.cpp
-        src/Logging.cpp
-        src/Options.cpp
-        src/StringUtil.cpp
-        src/Token.cpp
-        src/Utf8.cpp
-        src/Widget.cpp
+        src/App/SweatTrails.h
+        src/App/SweatTrails.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.h
+        src/App/Map.cpp
+        src/App/Range.h
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/widget/Activity.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
 )
 
-target_include_directories(sweattrails PRIVATE ${raylib_INCLUDE_DIRS} ${FREETYPE_INCLUDE_DIRS})
+target_include_directories(
+        sweattrails
+        PRIVATE
+        src/App
+        src/Lib/Base
+        src/Lib/Widget
+        ${raylib_INCLUDE_DIRS}
+        ${FREETYPE_INCLUDE_DIRS}
+  )
 
 target_link_libraries(
         sweattrails
         PRIVATE
+        Base
+        Widget
         ${raylib_LIBRARIES}
         ${FREETYPE_LIBRARIES}
         ${ICONV}
         m
 )
 
-install(TARGETS sweattrails
+add_executable(
+        fitexplore
+        src/App/fit/Explore.cpp
+        src/App/fit/FIT.cpp
+)
+
+# target_include_directories(fitexplore PRIVATE ${raylib_INCLUDE_DIRS} ${FREETYPE_INCLUDE_DIRS})
+
+target_include_directories(
+        fitexplore
+        PRIVATE
+        src/App
+        src/Lib/Base
+  )
+
+target_link_libraries(
+        fitexplore
+        PRIVATE
+        Base
+        ${ICONV}
+        m
+)
+
+install(TARGETS Base Widget sweattrails fitexplore
         ARCHIVE DESTINATION lib
         RUNTIME DESTINATION bin
         LIBRARY DESTINATION lib
