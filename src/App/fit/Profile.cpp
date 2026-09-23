@@ -1,6 +1,8 @@
 #include <Coordinates.h>
+#include <cstdint>
 #include <fit/FIT.h>
 #include <fit/Profile.h>
+#include <string>
 
 namespace ST::FIT {
 
@@ -8,10 +10,10 @@ constexpr static TypeMetaData activity_meta {
     .mesg_num = mesg_num::activity,
     .num_fields = 4,
     .fields = {
-        { .num = 253, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(activity, timestamp) },
-        { .num = 0, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(activity, total_timer_time) },
-        { .num = 1, .optional = false, .base_type = FITBaseType::uint16, .fld_offset = offsetof(activity, num_sessions) },
-        { .num = 5, .units = MetaDataUnits::DateTime, .optional = true, .base_type = FITBaseType::sint32, .fld_offset = offsetof(activity, local_timestamp) },
+        { .name = "timestamp", .num = 253, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(activity, timestamp) },
+        { .name = "total timer time", .num = 0, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(activity, total_timer_time) },
+        { .name = "num_sessions", .num = 1, .optional = false, .base_type = FITBaseType::uint16, .fld_offset = offsetof(activity, num_sessions) },
+        { .name = "local timestamp", .num = 5, .units = MetaDataUnits::DateTime, .optional = true, .base_type = FITBaseType::sint32, .fld_offset = offsetof(activity, local_timestamp) },
     }
 };
 
@@ -27,21 +29,27 @@ std::expected<activity, FITError> make_from_rec(FITDataRecord const &rec)
         DateTime>(rec);
 }
 
+template<>
+std::ostream &format_record<mesg_num::activity>(std::ostream &out, FITDataRecord const &rec)
+{
+    return format_record_<activity_meta>(out, rec);
+}
+
 constexpr static TypeMetaData session_meta {
     .mesg_num = mesg_num::session,
     .num_fields = 11,
     .fields = {
-        { .num = 253, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(session, timestamp) },
-        { .num = 2, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(session, start_time) },
-        { .num = 5, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(session, sport) },
-        { .num = 6, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(session, sub_sport) },
-        { .num = 7, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_elapsed_time) },
-        { .num = 8, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_timer_time) },
-        { .num = 9, .scale = 100, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_distance) },
-        { .num = 11, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(session, total_calories) },
-        { .num = 25, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(session, first_lap_index) },
-        { .num = 26, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(session, num_laps) },
-        { .num = 59, .scale = 1000, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_moving_time) },
+        { .name = "timestamp", .num = 253, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(session, timestamp) },
+        { .name = "start time", .num = 2, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(session, start_time) },
+        { .name = "sport", .num = 5, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(session, sport) },
+        { .name = "sub sport", .num = 6, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(session, sub_sport) },
+        { .name = "total elapsed time", .num = 7, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_elapsed_time) },
+        { .name = "total timer time", .num = 8, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_timer_time) },
+        { .name = "total distance", .num = 9, .scale = 100, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_distance) },
+        { .name = "total calories", .num = 11, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(session, total_calories) },
+        { .name = "first lap index", .num = 25, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(session, first_lap_index) },
+        { .name = "num laps", .num = 26, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(session, num_laps) },
+        { .name = "total moving time", .num = 59, .scale = 1000, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_moving_time) },
     },
 };
 
@@ -64,20 +72,26 @@ std::expected<session, FITError> make_from_rec(FITDataRecord const &rec)
         f32>(rec);
 }
 
+template<>
+std::ostream &format_record<mesg_num::session>(std::ostream &out, FITDataRecord const &rec)
+{
+    return format_record_<session_meta>(out, rec);
+}
+
 constexpr static TypeMetaData lap_meta {
     .mesg_num = mesg_num::lap,
     .num_fields = 10,
     .fields = {
-        { .num = 254, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(lap, message_index) },
-        { .num = 253, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(lap, timestamp) },
-        { .num = 2, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(lap, start_time) },
-        { .num = 7, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_elapsed_time) },
-        { .num = 8, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_timer_time) },
-        { .num = 9, .scale = 100, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_distance) },
-        { .num = 11, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(lap, total_calories) },
-        { .num = 25, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(lap, sport) },
-        { .num = 39, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(lap, sub_sport) },
-        { .num = 52, .scale = 1000, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_moving_time) },
+        { .name = "message idx", .num = 254, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(lap, message_index) },
+        { .name = "timestamp", .num = 253, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(lap, timestamp) },
+        { .name = "start time", .num = 2, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(lap, start_time) },
+        { .name = "total elapsed time", .num = 7, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_elapsed_time) },
+        { .name = "total timer time", .num = 8, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_timer_time) },
+        { .name = "total distance", .num = 9, .scale = 100, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_distance) },
+        { .name = "total calories", .num = 11, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(lap, total_calories) },
+        { .name = "sport", .num = 25, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(lap, sport) },
+        { .name = "sub sport", .num = 39, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(lap, sub_sport) },
+        { .name = "total moving time", .num = 52, .scale = 1000, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_moving_time) },
     },
 };
 
@@ -99,25 +113,31 @@ std::expected<lap, FITError> make_from_rec(FITDataRecord const &rec)
         f32>(rec);
 }
 
+template<>
+std::ostream &format_record<mesg_num::lap>(std::ostream &out, FITDataRecord const &rec)
+{
+    return format_record_<lap_meta>(out, rec);
+}
+
 constexpr static TypeMetaData record_meta {
     .mesg_num = mesg_num::record,
     .num_fields = 15,
     .fields = {
-        { .num = 253, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(record, timestamp) },
-        { .num = 0, .units = MetaDataUnits::Lat, .optional = true, .base_type = FITBaseType::sint32, .fld_offset = offsetof(record, position) },
-        { .num = 1, .units = MetaDataUnits::Long, .optional = true, .base_type = FITBaseType::sint32, .fld_offset = offsetof(record, position) },
-        { .num = 2, .scale = 5, .offset = 500, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(record, altitude) },
-        { .num = 3, .optional = true, .base_type = FITBaseType::uint8, .fld_offset = offsetof(record, heart_rate) },
-        { .num = 4, .optional = true, .base_type = FITBaseType::uint8, .fld_offset = offsetof(record, cadence) },
-        { .num = 5, .scale = 100, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(record, distance) },
-        { .num = 6, .scale = 1000, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(record, speed) },
-        { .num = 7, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(record, power) },
-        { .num = 9, .optional = true, .base_type = FITBaseType::sint16, .fld_offset = offsetof(record, grade) },
-        { .num = 13, .optional = true, .base_type = FITBaseType::sint8, .fld_offset = offsetof(record, temperature) },
-        { .num = 30, .optional = true, .base_type = FITBaseType::uint8, .fld_offset = offsetof(record, left_right_balance) },
-        { .num = 33, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(record, calories) },
-        { .num = 73, .scale = 1000, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(record, speed) },
-        { .num = 78, .scale = 5, .offset = 500, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(record, altitude) },
+        { .name = "timestamp", .num = 253, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(record, timestamp) },
+        { .name = "position_lat", .num = 0, .units = MetaDataUnits::Lat, .optional = true, .base_type = FITBaseType::sint32, .fld_offset = offsetof(record, position) },
+        { .name = "position_lon", .num = 1, .units = MetaDataUnits::Long, .optional = true, .base_type = FITBaseType::sint32, .fld_offset = offsetof(record, position) },
+        { .name = "altitude", .num = 2, .scale = 5, .offset = 500, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(record, altitude) },
+        { .name = "heart rate", .num = 3, .optional = true, .base_type = FITBaseType::uint8, .fld_offset = offsetof(record, heart_rate) },
+        { .name = "cadence", .num = 4, .optional = true, .base_type = FITBaseType::uint8, .fld_offset = offsetof(record, cadence) },
+        { .name = "distance", .num = 5, .scale = 100, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(record, distance) },
+        { .name = "speed", .num = 6, .scale = 1000, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(record, speed) },
+        { .name = "power", .num = 7, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(record, power) },
+        { .name = "grade", .num = 9, .optional = true, .base_type = FITBaseType::sint16, .fld_offset = offsetof(record, grade) },
+        { .name = "temperature", .num = 13, .optional = true, .base_type = FITBaseType::sint8, .fld_offset = offsetof(record, temperature) },
+        { .name = "left/right balance", .num = 30, .optional = true, .base_type = FITBaseType::uint8, .fld_offset = offsetof(record, left_right_balance) },
+        { .name = "calories", .num = 33, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(record, calories) },
+        { .name = "speed enh", .num = 73, .scale = 1000, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(record, speed) },
+        { .name = "altitude enh", .num = 78, .scale = 5, .offset = 500, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(record, altitude) },
     },
 };
 
@@ -159,6 +179,42 @@ std::optional<FITError> on_load(FITDataRecord const &fitrec, record &rec)
         }
     }
     return { };
+}
+
+template<>
+std::ostream &format_record<mesg_num::record>(std::ostream &out, FITDataRecord const &rec)
+{
+    return format_record_<record_meta>(out, rec);
+}
+
+constexpr static TypeMetaData workout_meta {
+    .mesg_num = mesg_num::workout,
+    .num_fields = 4,
+    .fields = {
+        { .name = "message idx", .num = 254, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(workout, message_index) },
+        { .name = "sport", .num = 4, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(workout, sport) },
+        { .name = "sub sport", .num = 11, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(workout, sub_sport) },
+        { .name = "workout name", .num = 8, .optional = true, .base_type = FITBaseType::string, .fld_offset = offsetof(workout, wkt_name) },
+    },
+};
+
+template<>
+std::expected<workout, FITError> make_from_rec(FITDataRecord const &rec)
+{
+    auto ret = make_from_rec_<
+        workout,
+        workout_meta,
+        message_index,
+        sport,
+        sub_sport,
+        std::string>(rec);
+    return ret;
+}
+
+template<>
+std::ostream &format_record<mesg_num::workout>(std::ostream &out, FITDataRecord const &rec)
+{
+    return format_record_<workout_meta>(out, rec);
 }
 
 }

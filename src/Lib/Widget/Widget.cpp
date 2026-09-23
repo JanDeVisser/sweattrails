@@ -69,44 +69,6 @@ std::string modifier_string(KeyboardModifier modifier)
     return ret;
 }
 
-Task::Task(std::string name, pWidget const &owner, Handler handler)
-    : task(std::move(name))
-    , owner(owner)
-    , handler(std::move(handler))
-{
-}
-
-Task &Task::bind(KeyCombo combo)
-{
-    bindings.push_back(combo);
-    return *this;
-}
-
-PendingTask::PendingTask(Task const &task, JSONValue arguments)
-    : task(task)
-    , arguments(std::move(arguments))
-{
-    task.owner->bubble_up([this](auto const &w) -> bool {
-        if (auto app = std::dynamic_pointer_cast<App>(w)) {
-            current_focus = app->focus;
-            return true;
-        }
-        return false;
-    });
-}
-
-void PendingTask::execute() const
-{
-    task.handler(task.owner, arguments);
-    task.owner->bubble_up([this](auto const &w) -> bool {
-        if (auto app = std::dynamic_pointer_cast<App>(w)) {
-            app->focus = current_focus;
-            return true;
-        }
-        return false;
-    });
-}
-
 Widget::Widget(pWidget parent, SizePolicy policy, float policy_size)
     : policy(policy)
     , policy_size(policy_size)

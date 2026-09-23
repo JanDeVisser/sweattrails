@@ -32,7 +32,7 @@ void ActivityDataDisplay::draw()
         render_texture(10, y, sport_icon);
         auto sz = render_text(
             116, y,
-            TextFormat("%s - %s", value_to_string(activity->sport), activity->segment.start_time.format().c_str()),
+            TextFormat("%s - %s", FIT::tag(activity->sport), activity->segment.start_time.format().c_str()),
             FontSize::Small,
             RAYWHITE);
         sz = render_text(116, y + sz.y + 20, activity->title, FontSize::Large, RAYWHITE);
@@ -41,43 +41,50 @@ void ActivityDataDisplay::draw()
         char const *d;
         auto        moving = activity->segment.moving;
         if (moving.minutes == 0) {
-            d = TextFormat("Moving Time: %02d.%03d", moving.seconds, static_cast<int>(moving.fraction * 1000));
+            d = TextFormat("Moving Time:   %02d.%03d", moving.seconds, static_cast<int>(moving.fraction * 1000));
         } else if (moving.hours == 0) {
-            d = TextFormat("Moving Time: %02d:%02d", moving.minutes, moving.seconds);
+            d = TextFormat("Moving Time:   %02d:%02d", moving.minutes, moving.seconds);
         } else {
-            d = TextFormat("Moving Time: %d:%02d:%02d", moving.hours, moving.minutes, moving.seconds);
+            d = TextFormat("Moving Time:   %d:%02d:%02d", moving.hours, moving.minutes, moving.seconds);
         }
         sz = render_text(10, y, d, FontSize::Medium, RAYWHITE);
 
         auto elapsed = activity->segment.elapsed;
         if (elapsed.hours == 0) {
-            d = TextFormat("Elapsed Time: %02d:%02d.%03d", elapsed.minutes, elapsed.seconds, static_cast<int>(elapsed.fraction * 1000));
+            d = TextFormat("Elapsed Time:   %02d:%02d.%03d", elapsed.minutes, elapsed.seconds, static_cast<int>(elapsed.fraction * 1000));
         } else {
-            d = TextFormat("Elapsed Time: %d:%02d:%02d", elapsed.hours, elapsed.minutes, elapsed.seconds);
+            d = TextFormat("Elapsed Time:   %d:%02d:%02d", elapsed.hours, elapsed.minutes, elapsed.seconds);
         }
-        sz = render_text(viewport.width / 2 + 10, y, d, FontSize::Medium, RAYWHITE);
+        auto right_column = viewport.width / 2 + 10;
+        sz = render_text(right_column, y, d, FontSize::Medium, RAYWHITE);
         y += 6 * sz.y / 5;
 
         auto distance = activity->segment.distance / 1000.0;
         if (distance > 0) {
             if (distance < 1.0) {
-                d = TextFormat("Distance:    %3d m", static_cast<int>(activity->segment.distance));
+                d = TextFormat("Distance:      %3d m", static_cast<int>(activity->segment.distance));
             } else if (distance < 10.0) {
-                d = TextFormat("Distance:    %4.2f km", distance);
+                d = TextFormat("Distance:      %4.2f km", distance);
             } else if (distance < 20.0) {
-                d = TextFormat("Distance:    %5.2f km", distance);
+                d = TextFormat("Distance:      %5.2f km", distance);
             } else if (distance < 100.0) {
-                d = TextFormat("Distance:    %4.1f km", distance);
+                d = TextFormat("Distance:      %4.1f km", distance);
             } else {
-                d = TextFormat("Distance:    %3.0f km", distance);
+                d = TextFormat("Distance:      %3.0f km", distance);
             }
             sz = render_text(10, y, d, FontSize::Medium, RAYWHITE);
             y += 6 * sz.y / 5;
 
             Duration pace(activity->segment.moving.elapsed / distance);
-            d = TextFormat("Avg Pace:     %d:%02d min/km", pace.minutes, pace.seconds);
+            d = TextFormat("Avg Pace:      %d:%02d min/km", pace.minutes, pace.seconds);
             sz = render_text(10, y, d, FontSize::Medium, RAYWHITE);
             y += 6 * sz.y / 5;
+        }
+        if (activity->segment.computed_elevation_range.range) {
+            d = TextFormat("Min elevation: %d", static_cast<int>(activity->segment.computed_elevation_range.min()));
+            sz = render_text(10, y, d, FontSize::Medium, RAYWHITE);
+            d = TextFormat("Max elevation: %d", static_cast<int>(activity->segment.computed_elevation_range.max()));
+            sz = render_text(right_column, y, d, FontSize::Medium, RAYWHITE);
         }
     }
 }
@@ -234,20 +241,24 @@ void ActivityGraph::set_activity(Activity const &activity)
     float                prev_hr = 0.0;
     float                dt = static_cast<float>(width) / static_cast<float>(activity.records.size());
     std::optional<float> dalt_maybe { };
-    if (seg.computed_elevation_range.range) {
+    if (seg.computed_elevation_range) {
         dalt_maybe = static_cast<float>(height) / static_cast<float>(*seg.computed_elevation_range.diff());
+        std::println("dalt_maybe: {}", *dalt_maybe);
     }
     std::optional<float> dspeed_maybe { };
     if (seg.computed_speed_range.range) {
         dspeed_maybe = static_cast<float>(height) / static_cast<float>(*seg.computed_speed_range.diff());
+        std::println("dspeed_maybe: {}", *dspeed_maybe);
     }
     std::optional<float> dpower_maybe { };
     if (seg.computed_power_range.range) {
         dpower_maybe = static_cast<float>(height) / static_cast<float>(*seg.computed_power_range.diff());
+        std::println("dpower_maybe: {}", *dpower_maybe);
     }
     std::optional<float> dhr_maybe { };
     if (seg.computed_hr_range.range) {
         dhr_maybe = static_cast<float>(height) / static_cast<float>(*seg.computed_hr_range.diff());
+        std::println("dhr_maybe: {}", *dhr_maybe);
     }
     if (!dalt_maybe && !dspeed_maybe && !dpower_maybe && !dhr_maybe) {
         return;
@@ -275,7 +286,7 @@ void ActivityGraph::set_activity(Activity const &activity)
                 prev_speed = speed_y;
             }
             if (dhr_maybe && record.heart_rate) {
-                float hr_y = height - *record.heart_rate * *dhr_maybe;
+                float hr_y = height - (*record.heart_rate - seg.computed_hr_range.range->min) * *dhr_maybe;
                 ImageDrawLineV(
                     &image,
                     Vector2 { .x = prev_x, .y = std::ceilf(prev_hr) },

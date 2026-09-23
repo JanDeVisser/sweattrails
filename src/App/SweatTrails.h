@@ -7,6 +7,7 @@
 #pragma once
 
 #include "Format.h"
+#include "storage/Types.h"
 #include <string_view>
 #include <utility>
 #include <variant>
@@ -84,14 +85,14 @@ enum class NotificationType {
         Count,
 };
 
-template<>
-char const *value_to_string(NotificationType type);
-
 using Notification = Message<
     NotificationType,
     std::monostate,
     NOTIFICATIONTYPE(ENUMPAYLOAD)
         std::monostate>;
+
+template<>
+char const *value_to_string(NotificationType type);
 
 struct SweatTrails : public Main<Job, Notification> {
     static void job_find_current_folder(Job::Payload const &data);
@@ -138,7 +139,8 @@ struct SweatTrails : public Main<Job, Notification> {
 
     std::optional<std::string_view> message = { };
 
-    Storage storage;
+    Storage    storage;
+    ActivityID last_activity { };
 
     std::shared_ptr<WidgetStack> widget_stack { nullptr };
 

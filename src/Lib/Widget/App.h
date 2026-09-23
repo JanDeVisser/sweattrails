@@ -37,22 +37,24 @@ struct App : public Layout {
         }
     };
 
-    std::deque<std::string>   arguments;
-    int                       monitor { 0 };
-    Fonts                     fonts { };
-    std::string               font_path { };
-    FontSizes                 font_sizes = def_font_sizes;
-    pWidget                   focus { nullptr };
-    CharSizes                 char_sizes { };
-    std::string               last_key;
-    bool                      quit { false };
-    double                    time { 0.0 };
-    std::vector<pWidget>      modals { };
-    size_t                    frame_count { 0 };
-    std::vector<DrawFloating> floatings;
-    std::string               title_string { "Sweattrails" };
-    std::string               icon_file { "sweattrails.png" };
-    CharSizes                 cells;
+    std::deque<std::string>     arguments;
+    int                         monitor { 0 };
+    Fonts                       fonts { };
+    std::string                 font_path { };
+    FontSizes                   font_sizes = def_font_sizes;
+    pWidget                     focus { nullptr };
+    CharSizes                   char_sizes { };
+    std::string                 last_key;
+    bool                        quit { false };
+    double                      time { 0.0 };
+    std::vector<pWidget>        modals { };
+    size_t                      frame_count { 0 };
+    std::vector<DrawFloating>   floatings;
+    std::string                 title_string { "Sweattrails" };
+    std::string                 icon_file { "sweattrails.png" };
+    CharSizes                   cells;
+    static std::shared_ptr<App> s_app;
+    std::set<int>               m_pressed_keys;
 
     App();
     ~App();
@@ -134,10 +136,6 @@ struct App : public Layout {
         assert(s_app != nullptr);
         return s_app;
     }
-
-private:
-    static std::shared_ptr<App> s_app;
-    std::set<int>               m_pressed_keys;
 };
 
 enum AppStateItem {
@@ -175,7 +173,11 @@ struct Main : public App {
     JSONValue  settings;
     StringList font_dirs;
 
-    AppBus<Job, Notification> bus { };
+    using Bus = AppBus<Job, Notification>;
+    using J = Job;
+    using N = Notification;
+
+    Bus bus { };
 
     Main()
         : App()
@@ -196,6 +198,7 @@ struct Main : public App {
         }
         bus.handle_one();
         App::process_input();
+        bus.handle_keys(m_pressed_keys);
     }
 };
 

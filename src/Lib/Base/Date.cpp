@@ -2,17 +2,14 @@
  * Copyright (c) 2025, Jan de Visser <jan@finiandarcy.com>
  *
  * SPDX-License-Identifier: MIT
- *
- * C++ translation of zig/date.zig.
  */
 
 #include <array>
 #include <charconv>
 #include <format>
 
+#include <Date.h>
 #include <Expected.h>
-
-#include "Date.h"
 
 namespace ST {
 
@@ -157,7 +154,7 @@ bool DateTime::less_than(DateTime const &rhs) const
 std::string DateTime::format() const
 {
     return std::format(
-        "{} {} {}, {} {}:{}",
+        "{} {} {}, {:04} {}:{:02}",
         weekday_name(day_of_week),
         month_name(month),
         day_of_month,

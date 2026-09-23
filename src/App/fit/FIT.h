@@ -6,7 +6,9 @@
 #include <cstdint>
 #include <ctime>
 #include <expected>
+#include <format>
 #include <optional>
+#include <ostream>
 #include <print>
 #include <sstream>
 #include <string_view>
@@ -648,6 +650,83 @@ struct FITDataField {
     std::optional<Options> value;
 };
 
+}
+
+template<>
+struct std::formatter<ST::FIT::FITDataField> : std::formatter<std::string> {
+    template<class FmtContext>
+    FmtContext::iterator format(ST::FIT::FITDataField const &val, FmtContext &ctx) const
+    {
+        std::ostringstream out;
+        if (!val.value) {
+            out << "(empty)";
+        } else {
+            switch (val.type) {
+            case ST::FIT::FITBaseType::enum_:
+                out << static_cast<int>(val.value->enum_);
+                break;
+            case ST::FIT::FITBaseType::sint8:
+                out << static_cast<int>(val.value->sint8);
+                break;
+            case ST::FIT::FITBaseType::uint8:
+                out << static_cast<int>(val.value->uint8);
+                break;
+            case ST::FIT::FITBaseType::sint16:
+                out << val.value->sint16;
+                break;
+            case ST::FIT::FITBaseType::uint16:
+                out << val.value->uint16;
+                break;
+            case ST::FIT::FITBaseType::sint32:
+                out << val.value->sint32;
+                break;
+            case ST::FIT::FITBaseType::uint32:
+                out << val.value->uint32;
+                break;
+            case ST::FIT::FITBaseType::string:
+                out << val.value->string;
+                break;
+            case ST::FIT::FITBaseType::float32:
+                out << val.value->float32;
+                break;
+            case ST::FIT::FITBaseType::float64:
+                out << val.value->float64;
+                break;
+            case ST::FIT::FITBaseType::uint8z:
+                out << val.value->uint8z;
+                break;
+            case ST::FIT::FITBaseType::uint16z:
+                out << val.value->uint16z;
+                break;
+            case ST::FIT::FITBaseType::uint32z:
+                out << val.value->uint32z;
+                break;
+            case ST::FIT::FITBaseType::byte: {
+                out << ios::hex;
+                for (auto b : val.value->byte) {
+                    out << b << " ";
+                }
+                out << ios::dec;
+                out << val.value->byte;
+            } break;
+            case ST::FIT::FITBaseType::sint64:
+                out << val.value->sint64;
+                break;
+            case ST::FIT::FITBaseType::uint64:
+                out << val.value->uint64;
+                break;
+            case ST::FIT::FITBaseType::uint64z:
+                out << val.value->uint64z;
+                break;
+            }
+        }
+        out << " [" << tag(val.type) << ']';
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};
+
+namespace ST::FIT {
+
 enum class MetaDataUnits {
     None,
     Semicircles,
@@ -659,7 +738,7 @@ enum class MetaDataUnits {
 #define FITERROR(S)               \
     S(LargeHeaderSizeUnsupported) \
     S(HeaderMagicMissing)         \
-    S(UnkownDeveloperField)       \
+    S(UnknownDeveloperField)      \
     S(IOError)
 
 enum class FITError {
@@ -682,6 +761,7 @@ struct FITDataRecord {
 };
 
 struct FieldMetaData {
+    char const    name[32];
     u8            num = 0xFF;
     float32       scale = 1;
     float32       offset = 0;
@@ -731,6 +811,9 @@ std::expected<T, FITError> make_from_rec(FITDataRecord const &)
     std::unreachable();
 }
 
+template<mesg_num N>
+std::ostream &format_message(std::ostream &out, FITDataRecord const &rec);
+
 template<>
 std::expected<file_id, FITError> make_from_rec(FITDataRecord const &rec);
 template<>
@@ -754,16 +837,16 @@ struct FITFile {
     std::vector<field_description> developer_field;
     std::vector<FITDataRecord>     data_records;
     std::vector<std::string>       arrays;
-    std::string                    buffer;
-    std::string_view               data;
-    size_t                         total_read = 0;
-    size_t                         current = 0;
+    std::string const              buffer;
+    size_t                         offset { 0 };
+    size_t                         total_read { 0 };
+    size_t                         current { 0 };
     bool                           verbose { false };
 
-    FITFile();
+    FITFile(std::string_view const &buffer);
     ~FITFile();
 
-    std::expected<std::string_view, FITError>             read(std::string_view file_name);
+    static std::expected<FITFile, FITError>               read(std::string_view file_name);
     std::string_view                                      read_slice(size_t count);
     void                                                  skip(size_t count);
     std::expected<void, FITError>                         read_header();
@@ -809,6 +892,7 @@ struct FITFile {
         }
         if (header.header_size == 0) {
             if (auto err_maybe = read_header(); !err_maybe) {
+                std::println("Error reading file header");
                 return std::unexpected(err_maybe.error());
             }
         }
@@ -907,7 +991,8 @@ struct FITFile {
                             }
                         }
                         if (!found) {
-                            return std::unexpected(FITError::UnkownDeveloperField);
+                            std::println("Unknown developer field encountered");
+                            return std::unexpected(FITError::UnknownDeveloperField);
                         }
                         if (verbose)
                             std::println("  {}. developer {} field_num {} size {} type {}", i, fld.developer_data_index, fld.field_num, fld.size, tag(fld.base_type));
@@ -960,7 +1045,8 @@ struct FITFile {
                     },
                 },
                 record_header.header);
-            if (!read_record) {
+            if (!read_record.has_value()) {
+                std::println("read_record failed");
                 return std::unexpected(read_record.error());
             }
             if (read_record.value()) {
@@ -974,8 +1060,8 @@ struct FITFile {
     }
 };
 
-template<typename ObjType, typename FldType, FieldMetaData def>
-bool assign_value(ObjType &, FldType &fld, FITDataField const &val)
+template<typename FldType, FieldMetaData def>
+bool assign_value(FldType &fld, FITDataField const &val)
 {
     if (val.value) {
         if constexpr (def.units == MetaDataUnits::Semicircles) {
@@ -986,7 +1072,7 @@ bool assign_value(ObjType &, FldType &fld, FITDataField const &val)
             static_assert(def.base_type == FITBaseType::sint32);
             auto v = val.value->sint32;
             fld.lat = static_cast<f32>(v) * (180.0 / static_cast<f32>(1 << 31));
-        } else if constexpr (def.units == MetaDataUnits::Lat) { // Implies semicircles
+        } else if constexpr (def.units == MetaDataUnits::Long) { // Implies semicircles
             static_assert(def.base_type == FITBaseType::sint32);
             auto v = val.value->sint32;
             fld.lon = static_cast<f32>(v) * (180.0 / static_cast<f32>(1 << 31));
@@ -1010,28 +1096,34 @@ bool assign_value(ObjType &, FldType &fld, FITDataField const &val)
 #define S(Value, Type)                                                             \
     if constexpr (def.base_type == FITBaseType::Value) {                           \
         if constexpr (def.scale != 1.0 || def.offset != 0.0) {                     \
-            fld = static_cast<FldType>(val.value->Value) / def.scale - def.offset; \
+            fld = static_cast<FldType>(val.value->Value / def.scale - def.offset); \
         } else {                                                                   \
             fld = static_cast<FldType>(val.value->Value);                          \
         }                                                                          \
     }
             SIMPLE_FITBASETYPE(S)
 #undef S
+            if constexpr (def.base_type == FITBaseType::string) {
+                fld = static_cast<FldType>(val.value->string);
+            }
+            if constexpr (def.base_type == FITBaseType::byte) {
+                fld = static_cast<FldType>(val.value->byte);
+            }
         }
     }
     return true;
 }
 
-template<typename ObjType, typename FldType, FieldMetaData def>
-bool assign_optional(ObjType &obj, std::optional<FldType> &fld, FITDataField const &val)
+template<typename FldType, FieldMetaData def>
+bool assign_optional(std::optional<FldType> &fld, FITDataField const &val)
 {
     FldType f;
-    auto    ret = assign_value<ObjType, FldType, def>(obj, f, val);
+    auto    ret = assign_value<FldType, def>(f, val);
     fld = f;
     return ret;
 }
 
-template<typename ObjType, TypeMetaData meta, u8 num, typename FldType, typename... FldTypes>
+template<typename ObjType, TypeMetaData meta, u8 num, typename FldType>
 bool assign_field(ObjType &obj, FITDataRecord const &rec)
 {
     constexpr FieldMetaData const &def = meta.fields[num];
@@ -1041,9 +1133,7 @@ bool assign_field(ObjType &obj, FITDataRecord const &rec)
     if constexpr (def.optional) {
         std::optional<FldType> *fld = reinterpret_cast<std::optional<FldType> *>(reinterpret_cast<char *>(&obj) + def.fld_offset);
         if (val_maybe && val_maybe->value) {
-            assign_optional<ObjType, FldType, def>(obj, *fld, *val_maybe);
-        } else {
-            *fld = { };
+            assign_optional<FldType, def>(*fld, *val_maybe);
         }
     } else {
         if (!val_maybe) {
@@ -1055,7 +1145,7 @@ bool assign_field(ObjType &obj, FITDataRecord const &rec)
             return false;
         }
         FldType *fld = reinterpret_cast<FldType *>(reinterpret_cast<char *>(&obj) + def.fld_offset);
-        assign_value<ObjType, FldType, def>(obj, *fld, *val_maybe);
+        assign_value<FldType, def>(*fld, *val_maybe);
     }
     return true;
 }
@@ -1086,10 +1176,8 @@ std::expected<T, FITError> make_from_rec_(FITDataRecord const &rec)
 {
     assert(rec.mesg_num == meta.mesg_num);
     T ret;
-    for (size_t ix = 0; ix < meta.num_fields; ++ix) {
-        if (!assign_fields<T, meta, 0, FldTypes...>(ret, rec)) {
-            fatal("Error making FIT message");
-        }
+    if (!assign_fields<T, meta, 0, FldTypes...>(ret, rec)) {
+        fatal("Error making FIT message");
     }
     if (auto err = on_load<T>(rec, ret); err) {
         return std::unexpected(err.value());
@@ -1097,102 +1185,161 @@ std::expected<T, FITError> make_from_rec_(FITDataRecord const &rec)
     return ret;
 }
 
-} // namespace ST::FIT
+/* ----------------------------------------------------------------------- */
+
+template<TypeMetaData meta, u8 num>
+void format_field_value(std::ostream &out, FITDataField const &val)
+{
+    constexpr FieldMetaData const &def = meta.fields[num];
+    if constexpr (def.units == MetaDataUnits::Semicircles) {
+        static_assert(def.base_type == FITBaseType::sint32);
+        auto v = val.value->sint32;
+        out << std::format("{:7.3}º", static_cast<f32>(v) * (180.0 / static_cast<f32>(1 << 31)));
+    } else if constexpr (def.units == MetaDataUnits::Lat) { // Implies semicircles
+        static_assert(def.base_type == FITBaseType::sint32);
+        auto v = val.value->sint32;
+        out << std::format("{:7.3}º lat", static_cast<f32>(v) * (180.0 / static_cast<f32>(1 << 31)));
+    } else if constexpr (def.units == MetaDataUnits::Long) { // Implies semicircles
+        static_assert(def.base_type == FITBaseType::sint32);
+        auto v = val.value->sint32;
+        out << std::format("{:7.3}º long", static_cast<f32>(v) * (180.0 / static_cast<f32>(1 << 31)));
+    } else if constexpr (def.units == MetaDataUnits::DateTime) {
+        int32_t d;
+        switch (def.base_type) {
+#undef S
+#define S(Value, Type)        \
+    case FITBaseType::Value:  \
+        d = val.value->Value; \
+        break;
+            SIMPLE_FITBASETYPE(S)
+#undef S
+        default:
+            assert(false);
+            break;
+        }
+        out << std::format("{}", DateTime::from_timestamp(d + FIT_TIMESTAMP_OFFSET));
+    } else {
+        out << std::format("{}", val);
+    }
+}
+
+template<TypeMetaData meta, u8 num>
+std::ostream &format_field(std::ostream &out, FITDataRecord const &rec)
+{
+    constexpr FieldMetaData const &def = meta.fields[num];
+
+    auto const &local_def = rec.file.definitions[rec.definition];
+    auto const  val_maybe = rec.get_field(def.num);
+    auto const *name = def.name;
+    if constexpr (def.optional) {
+        if (val_maybe && val_maybe->value) {
+            out << std::format("  {}: ", name);
+            format_field_value<meta, num>(out, *val_maybe);
+            out << "\n";
+        }
+    } else {
+        if (!val_maybe) {
+            std::println("Required field `{}` not found\n", name, tag(static_cast<mesg_num>(local_def.global_msg_num)));
+            return out;
+        }
+        if (!val_maybe->value) {
+            out << std::format("Required field `{}` empty\n", name, tag(static_cast<mesg_num>(local_def.global_msg_num)));
+            return out;
+        }
+        out << std::format("  {}: ", name);
+        format_field_value<meta, num>(out, *val_maybe);
+        out << "\n";
+    }
+    return out;
+}
+
+template<TypeMetaData meta, u8 num>
+std::ostream &format_fields(std::ostream &out, FITDataRecord const &rec)
+{
+    if constexpr (num < meta.num_fields) {
+        format_field<meta, num>(out, rec);
+        return format_fields<meta, num + 1>(out, rec);
+    }
+    return out;
+}
+
+template<TypeMetaData meta>
+std::ostream &format_record_(std::ostream &out, FITDataRecord const &rec)
+{
+    assert(rec.mesg_num == meta.mesg_num);
+    format_fields<meta, 0>(out, rec);
+    return out;
+}
+
+template<mesg_num N>
+std::ostream &format_record(std::ostream &out, FITDataRecord const &rec)
+{
+    size_t ix = 0;
+    for (auto const &fld : rec.fields) {
+        out << "  " << ix << ": " << std::format("{}\n", fld);
+        ++ix;
+    }
+    return out;
+}
 
 template<>
-struct std::formatter<ST::FIT::FITDataField, char> {
-    bool with_type { false };
+std::ostream &format_record<mesg_num::file_id>(std::ostream &out, FITDataRecord const &rec);
+template<>
+std::ostream &format_record<mesg_num::developer_data_id>(std::ostream &out, FITDataRecord const &rec);
+template<>
+std::ostream &format_record<mesg_num::field_description>(std::ostream &out, FITDataRecord const &rec);
 
-    template<class ParseContext>
-    constexpr ParseContext::iterator parse(ParseContext &ctx)
-    {
-        auto it = ctx.begin();
-        if (it == ctx.end() || *it == '}')
-            return it;
+} // namespace ST:FIT
 
-        switch (*it) {
-        case 't':
-            with_type = true;
-            break;
-        default:
-            throw std::format_error("Invalid format args for FITDataField");
-        }
-        ++it;
-        if (it != ctx.end() && *it != '}') {
-            throw std::format_error("Invalid format args for FITDataField");
-        }
-        return it;
-    }
-
+template<>
+struct std::formatter<ST::FIT::FITDataRecord> : std::formatter<std::string> {
     template<class FmtContext>
-    FmtContext::iterator format(ST::FIT::FITDataField const &val, FmtContext &ctx) const
+    FmtContext::iterator format(ST::FIT::FITDataRecord const &rec, FmtContext &ctx) const
     {
         std::ostringstream out;
-        if (!val.value) {
-            out << "(empty)";
-        } else {
-            switch (val.type) {
-            case ST::FIT::FITBaseType::enum_:
-                out << static_cast<int>(val.value->enum_);
-                break;
-            case ST::FIT::FITBaseType::sint8:
-                out << val.value->sint8;
-                break;
-            case ST::FIT::FITBaseType::uint8:
-                out << static_cast<int>(val.value->uint8);
-                break;
-            case ST::FIT::FITBaseType::sint16:
-                out << val.value->sint16;
-                break;
-            case ST::FIT::FITBaseType::uint16:
-                out << val.value->uint16;
-                break;
-            case ST::FIT::FITBaseType::sint32:
-                out << val.value->sint32;
-                break;
-            case ST::FIT::FITBaseType::uint32:
-                out << val.value->uint32;
-                break;
-            case ST::FIT::FITBaseType::string:
-                out << val.value->string;
-                break;
-            case ST::FIT::FITBaseType::float32:
-                out << val.value->float32;
-                break;
-            case ST::FIT::FITBaseType::float64:
-                out << val.value->float64;
-                break;
-            case ST::FIT::FITBaseType::uint8z:
-                out << val.value->uint8z;
-                break;
-            case ST::FIT::FITBaseType::uint16z:
-                out << val.value->uint16z;
-                break;
-            case ST::FIT::FITBaseType::uint32z:
-                out << val.value->uint32z;
-                break;
-            case ST::FIT::FITBaseType::byte: {
-                out << ios::hex;
-                for (auto b : val.value->byte) {
-                    out << b << " ";
-                }
-                out << ios::dec;
-                out << val.value->byte;
-            } break;
-            case ST::FIT::FITBaseType::sint64:
-                out << val.value->sint64;
-                break;
-            case ST::FIT::FITBaseType::uint64:
-                out << val.value->uint64;
-                break;
-            case ST::FIT::FITBaseType::uint64z:
-                out << val.value->uint64z;
-                break;
-            }
+        out << "mesg_num: " << tag(rec.mesg_num) << "\n";
+        switch (rec.mesg_num) {
+#undef S
+#define S(M, V)                                        \
+    case ST::FIT::mesg_num::M:                         \
+        format_record<ST::FIT::mesg_num::M>(out, rec); \
+        break;
+            FIT_MESG_NUM(S)
+#undef S
         }
-        if (with_type) {
-            out << " [" << tag(val.type) << ']';
-        }
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};
+
+template<>
+struct std::formatter<ST::FIT::mesg_num> : std::formatter<std::string> {
+    template<class FmtContext>
+    FmtContext::iterator format(ST::FIT::mesg_num const &val, FmtContext &ctx) const
+    {
+        std::ostringstream out;
+        out << ST::FIT::tag(val);
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};
+
+template<>
+struct std::formatter<ST::FIT::file_type> : std::formatter<std::string> {
+    template<class FmtContext>
+    FmtContext::iterator format(ST::FIT::file_type const &val, FmtContext &ctx) const
+    {
+        std::ostringstream out;
+        out << ST::FIT::tag(val);
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};
+
+template<>
+struct std::formatter<ST::FIT::manufacturer> : std::formatter<std::string> {
+    template<class FmtContext>
+    FmtContext::iterator format(ST::FIT::manufacturer const &val, FmtContext &ctx) const
+    {
+        std::ostringstream out;
+        out << ST::FIT::tag(val);
         return std::ranges::copy(std::move(out).str(), ctx.out()).out;
     }
 };

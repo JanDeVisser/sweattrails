@@ -2,16 +2,6 @@
  * Copyright (c) 2025, Jan de Visser <jan@finiandarcy.com>
  *
  * SPDX-License-Identifier: MIT
- *
- * C++ translation of zig/storage/activity.zig.
- *
- * Extra assumptions on top of the ones listed in Types.h:
- *   - ST::Duration is constructible from a number of seconds
- *     (`Duration { 12.5f }` == `date.Duration.init(f32, 12.5)`).
- *   - Strava's `DetailedActivity` is available as ST::strava::Activity with
- *     optional `name` and `description` members, decodable from a JSONValue
- *     with `static Decoded<Activity> Activity::decode(JSONValue const &)`
- *     (the pattern used by `ST::decode<T>()` in src/JSON.h).
  */
 
 #include <algorithm>
@@ -24,7 +14,7 @@
 #include <JSON.h>
 #include <Logging.h>
 #include <StringUtil.h>
-
+#include <fit/FIT.h>
 #include <storage/Activity.h>
 #include <storage/Storage.h>
 
@@ -108,12 +98,20 @@ StorageResult<bool> Activity::load(LoadingDepth the_depth)
 StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
 {
     if (id.files.contains(ActivityFile::Fit)) {
-        FITFile    fit_file { };
         auto const file_name = (dir / std::format("{}.fit", id.name)).string();
-        if (auto res = fit_file.read(file_name); !res) {
-            return std::unexpected(StorageError { res.error() });
+        auto       fit_file_maybe = FITFile::read(file_name);
+        if (!fit_file_maybe.has_value()) {
+            std::println("Error reading fit file `{}`", file_name);
+            return std::unexpected(StorageError { fit_file_maybe.error() });
         }
-        if (!TRY_EVAL(load_fit_file(fit_file))) {
+        auto &fit_file = fit_file_maybe.value();
+        auto  try_load = load_fit_file(fit_file);
+        if (!try_load.has_value()) {
+            std::println("load_fit_file(`{}`) failed", file_name);
+            return std::unexpected(try_load.error());
+        }
+        if (!try_load.value()) {
+            std::println("load_fit_file(`{}`) returned false", file_name);
             return false;
         }
         // if (id.files.contains(ActivityFile::Strava)) {
@@ -129,9 +127,7 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
 StorageResult<bool> Activity::load_from_slice(std::string_view const &buffer)
 {
     assert(id.files.contains(ActivityFile::Fit));
-    FITFile fit_file { };
-    fit_file.buffer = std::string { buffer };
-    fit_file.data = fit_file.buffer;
+    FITFile fit_file { buffer };
     if (!TRY_EVAL(load_fit_file(fit_file))) {
         return false;
     }
@@ -214,6 +210,19 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
             segment.distance = *s->total_distance;
         }
     } break;
+    case mesg_num::workout: {
+        auto w = make_from_rec<workout>(rec);
+        if (!w) {
+            log_error("Error converting workout message to struct: {}", static_cast<int>(w.error()));
+            return true;
+        }
+        if (w->sport) {
+            sport = *w->sport;
+        }
+        if (w->wkt_name && !w->wkt_name.value().empty()) {
+            title = *w->wkt_name;
+        }
+    } break;
     case mesg_num::lap: {
         if (depth == LoadingDepth::Deep) {
             auto l = make_from_rec<ST::lap>(rec);
@@ -253,12 +262,14 @@ StorageResult<bool> Activity::load_fit_file(FITFile &fit_file)
     // zig's FITFile.openReader() reads the header as part of attaching the
     // reader; in C++ that is an explicit step.
     if (auto res = fit_file.read_header(); !res) {
+        std::println("load_fit_file: read_header failed");
         return std::unexpected(StorageError { res.error() });
     }
     if (title.empty()) {
         title = id.name;
     }
     if (auto res = fit_file.read_until([this](FITDataRecord const &rec) { return load_fit_file_filter(rec); }); !res) {
+        std::println("load_fit_file: read_until failed");
         return std::unexpected(StorageError { res.error() });
     }
     return segment.start_time.timestamp > 0;

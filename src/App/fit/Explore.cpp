@@ -1,10 +1,13 @@
+#include <cstdio>
+#include <format>
 
+#include <Date.h>
 #include <IO.h>
 #include <Logging.h>
 #include <Options.h>
 
-#include <cstdio>
 #include <fit/FIT.h>
+#include <fit/Profile.h>
 
 namespace ST {
 
@@ -17,14 +20,14 @@ int main(int argc, char const **argv)
         fprintf(stderr, "Usage: fitexplore <filename>\n");
         exit(1);
     }
-    FITFile fit_file;
-    auto    contents_maybe = fit_file.read(argv[arg_ix]);
-    if (!contents_maybe) {
-        fprintf(stderr, "Error parsing FIT file: %s\n", tag(contents_maybe.error()));
+    auto fit_file_maybe = FITFile::read(argv[arg_ix]);
+    if (!fit_file_maybe) {
+        fprintf(stderr, "Error parsing FIT file: %s\n", tag(fit_file_maybe.error()));
         exit(1);
     }
     printf("Read `%s`\n", argv[arg_ix]);
 
+    auto  &fit_file = fit_file_maybe.value();
     size_t ix = 0;
     while (true) {
         auto rec_maybe = (ix == 0) ? fit_file.first() : fit_file.next();
@@ -36,8 +39,8 @@ int main(int argc, char const **argv)
             printf("Read %zu messages\n", ix);
             break;
         }
-        auto rec = rec_maybe.value().value();
-        std::println("{}: mesg_num: {}", ix, tag(static_cast<mesg_num>(rec.mesg_number)));
+        auto const &rec = rec_maybe.value().value();
+        std::println("{}: {}", ix, rec);
         ++ix;
     }
     return 0;

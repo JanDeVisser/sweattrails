@@ -18,10 +18,12 @@
 #include <ctime>
 #include <expected>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 
 #include <Error.h>
+#include <Format.h>
 #include <Logging.h>
 
 namespace ST {
@@ -174,3 +176,26 @@ std::string_view month_name(DateTime::Month month);
 std::string_view weekday_name(DateTime::WeekDay day);
 
 }
+
+template<>
+struct std::formatter<ST::DateTime> : std::formatter<std::string> {
+    template<class FmtContext>
+    FmtContext::iterator format(ST::DateTime const &val, FmtContext &ctx) const
+    {
+        std::ostringstream out;
+        out << val.format();
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};
+
+template<>
+struct std::formatter<ST::Duration> : std::formatter<std::string> {
+    template<class FmtContext>
+    FmtContext::iterator format(ST::Duration const &val, FmtContext &ctx) const
+    {
+        std::ostringstream out;
+        out << std::format("{:02}:{:02}:{:02}.{:03}",
+            val.hours, val.minutes, val.seconds, static_cast<int>(val.fraction * 1000));
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};

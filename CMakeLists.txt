@@ -154,6 +154,7 @@ add_executable(
         src/App/fit/FIT.cpp
         src/App/fit/Profile.cpp
         src/App/widget/Activity.cpp
+        src/App/widget/ActivitySelector.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Storage.cpp
         src/App/storage/Types.cpp
@@ -184,6 +185,7 @@ add_executable(
         fitexplore
         src/App/fit/Explore.cpp
         src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
 )
 
 # target_include_directories(fitexplore PRIVATE ${raylib_INCLUDE_DIRS} ${FREETYPE_INCLUDE_DIRS})

@@ -138,8 +138,8 @@ void App::handle_keyboard(pWidget const &focus)
 
 void App::process_input()
 {
-    auto handle_keyboard = [this](pWidget const &f) {
-        KeyboardModifier modifier = modifier_current();
+    KeyboardModifier modifier = modifier_current();
+    auto             handle_keyboard = [this, &modifier](pWidget const &f) -> bool {
         for (int ch = GetCharPressed(); ch != 0; ch = GetCharPressed()) {
             for (auto w = f; w != nullptr; w = w->parent) {
                 if (w->character(ch)) {
@@ -162,20 +162,10 @@ void App::process_input()
         }
         for (auto const key : keys) {
             f->bubble_up([key, modifier](pWidget const &w) {
-                // for (auto const &[name, cmd] : w->tasks) {
-                //     for (auto const &binding : cmd.bindings) {
-                //         if (binding.key == key && binding.modifier == modifier) {
-                //             JSONValue key_combo = JSONValue::object();
-                //             set(key_combo, "key", key);
-                //             set(key_combo, "modifier", modifier);
-                //             w->submit(name, key_combo);
-                //             return true;
-                //         }
-                //     }
-                // }
                 return w->process_key(modifier, key);
             });
         }
+        return false;
     };
 
     if (!modals.empty()) {

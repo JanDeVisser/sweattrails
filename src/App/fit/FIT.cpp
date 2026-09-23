@@ -146,7 +146,8 @@ std::optional<FITDataField> FITDataRecord::get_field(u8 num) const
     return { };
 }
 
-FITFile::FITFile()
+FITFile::FITFile(std::string_view const &buffer)
+    : buffer(buffer)
 {
     memset(current_definitions, 0xFF, 16 * sizeof(size_t));
 }
@@ -155,20 +156,20 @@ FITFile::~FITFile()
 {
 }
 
-std::expected<std::string_view, FITError> FITFile::read(std::string_view file_name)
+std::expected<FITFile, FITError> FITFile::read(std::string_view file_name)
 {
     auto res = read_file_by_name(file_name);
     if (!res) {
         return std::unexpected(FITError::IOError);
     }
-    buffer = res.value();
-    data = buffer;
-    return data;
+    return FITFile { res.value() };
 }
 
 std::string_view FITFile::read_slice(size_t count)
 {
-    assert(count <= data.length());
+    assert(offset + count <= buffer.length());
+    std::string_view data { buffer };
+    data = data.substr(offset, count);
     // std::print("reading {} bytes from ", count);
     // for (auto ix = 0ul; ix < std::min(data.length(), 16ul); ++ix) {
     //     std::print("0x{:02x} ", data[ix]);
@@ -176,6 +177,7 @@ std::string_view FITFile::read_slice(size_t count)
     // std::println();
     auto ret = data.substr(0, count);
     data = data.substr(count);
+    offset += count;
     total_read += count;
     // std::println("read: {} total_read: {} remaining: {}", count, total_read, data.length());
     return ret;
@@ -183,8 +185,7 @@ std::string_view FITFile::read_slice(size_t count)
 
 void FITFile::skip(size_t count)
 {
-    count = std::max(count, data.length());
-    data = data.substr(count);
+    offset = std::min(offset + count, buffer.size());
 }
 
 std::expected<void, FITError> FITFile::read_header()
@@ -196,9 +197,11 @@ std::expected<void, FITError> FITFile::read_header()
     std::string_view header_data = read_slice(14);
     u8 const         header_size = header_data[0];
     if (header_size > 14) {
+        std::println("read_header: large header {}", header_size);
         return std::unexpected(FITError::LargeHeaderSizeUnsupported);
     }
     if (header_data.substr(8, 4) != ".FIT") {
+        std::println("read_header: header magic missing");
         return std::unexpected(FITError::HeaderMagicMissing);
     }
 
@@ -316,13 +319,14 @@ std::expected<FITDataField, FITError> FITFile::read_field(FITArchitecture arch, 
     case FITBaseType::string: {
         size_t strlen = size;
         for (size_t ix = 0; ix < size; ++ix) {
-            if (data[ix] == 0) {
+            if (buffer[offset + ix] == 0) {
                 strlen = ix;
                 break;
             }
         }
         if (strlen > 0) {
-            ret.value = (FITDataField::Options) { .string = read_slice(strlen) };
+            arrays.emplace_back(read_slice(strlen));
+            ret.value = (FITDataField::Options) { .string = arrays.back() };
         }
         if (strlen < size) {
             read_slice(size - strlen);
@@ -331,7 +335,7 @@ std::expected<FITDataField, FITError> FITFile::read_field(FITArchitecture arch, 
     case FITBaseType::byte: {
         size_t len = size;
         for (size_t ix = 0; ix < size; ++ix) {
-            if (static_cast<u8>(data[ix]) == 0xFF) {
+            if (static_cast<u8>(buffer[offset + ix]) == 0xFF) {
                 len = ix;
                 break;
             }
@@ -405,15 +409,16 @@ std::expected<FITDataRecord, FITError> FITFile::read_data_record(RecordHeader re
             data_fld.value = { .uint32 = data_fld.value->uint32 + def.current_timestamp };
             def.current_timestamp = data_fld.value->uint32;
         }
-        if (verbose)
-            std::println("  {}. {} {:t}", fld_num, def.fields[fld_num].field_num, data_fld);
+        if (verbose) {
+            std::println("  {}. {} {}", fld_num, def.fields[fld_num].field_num, data_fld);
+        }
         fields.emplace_back(data_fld);
     }
     for (size_t dev_fld_num = 0; dev_fld_num < def.num_developer_fields; ++dev_fld_num) {
         fields.emplace_back(TRY_EVAL(read_developer_field(def, dev_fld_num)));
         auto const &data_fld { fields.back() };
         if (verbose)
-            std::println("  {}. {} {:t}", dev_fld_num, def.developer_fields[dev_fld_num].field_num, data_fld);
+            std::println("  {}. {} {}", dev_fld_num, def.developer_fields[dev_fld_num].field_num, data_fld);
     }
     data_records.emplace_back((FITDataRecord) {
         .file = *this,
@@ -437,7 +442,7 @@ bool FITFile::fully_read()
 
 bool FITFile::exhausted()
 {
-    return fully_read() && data.empty();
+    return fully_read() && offset >= buffer.size();
 }
 
 std::optional<FITDataRecord> FITFile::current_record()
@@ -483,13 +488,13 @@ constexpr static TypeMetaData file_id_meta {
     .mesg_num = mesg_num::file_id,
     .num_fields = 7,
     .fields = {
-        { .num = 0, .optional = false, .base_type = FITBaseType::enum_, .fld_offset = offsetof(file_id, type) },
-        { .num = 1, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(file_id, manufacturer) },
-        { .num = 2, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(file_id, product) },
-        { .num = 3, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(file_id, serial_number) },
-        { .num = 4, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(file_id, time_created) },
-        { .num = 5, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(file_id, number) },
-        { .num = 8, .optional = true, .base_type = FITBaseType::string, .fld_offset = offsetof(file_id, product_name) },
+        { .name = "type", .num = 0, .optional = false, .base_type = FITBaseType::enum_, .fld_offset = offsetof(file_id, type) },
+        { .name = "manufacturer", .num = 1, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(file_id, manufacturer) },
+        { .name = "product", .num = 2, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(file_id, product) },
+        { .name = "serial number", .num = 3, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(file_id, serial_number) },
+        { .name = "time created", .num = 4, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(file_id, time_created) },
+        { .name = "number", .num = 5, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(file_id, number) },
+        { .name = "product name", .num = 8, .optional = true, .base_type = FITBaseType::string, .fld_offset = offsetof(file_id, product_name) },
     },
 };
 
@@ -508,15 +513,21 @@ std::expected<file_id, FITError> make_from_rec(FITDataRecord const &rec)
         std::string_view>(rec);
 }
 
+template<>
+std::ostream &format_record<mesg_num::file_id>(std::ostream &out, FITDataRecord const &rec)
+{
+    return format_record_<file_id_meta>(out, rec);
+}
+
 constexpr static TypeMetaData developer_data_id_meta {
     .mesg_num = mesg_num::developer_data_id,
     .num_fields = 5,
     .fields = {
-        { .num = 0, .optional = true, .base_type = FITBaseType::string, .fld_offset = offsetof(developer_data_id, developer_id) },
-        { .num = 1, .optional = true, .base_type = FITBaseType::string, .fld_offset = offsetof(developer_data_id, application_id) },
-        { .num = 2, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(developer_data_id, manufacturer_id) },
-        { .num = 3, .optional = false, .base_type = FITBaseType::uint8, .fld_offset = offsetof(developer_data_id, developer_data_index) },
-        { .num = 4, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(developer_data_id, application_version) },
+        { .name = "developer id", .num = 0, .optional = true, .base_type = FITBaseType::string, .fld_offset = offsetof(developer_data_id, developer_id) },
+        { .name = "application id", .num = 1, .optional = true, .base_type = FITBaseType::string, .fld_offset = offsetof(developer_data_id, application_id) },
+        { .name = "manufacturer id", .num = 2, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(developer_data_id, manufacturer_id) },
+        { .name = "developer data index", .num = 3, .optional = false, .base_type = FITBaseType::uint8, .fld_offset = offsetof(developer_data_id, developer_data_index) },
+        { .name = "application version", .num = 4, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(developer_data_id, application_version) },
     },
 };
 
@@ -533,33 +544,22 @@ std::expected<developer_data_id, FITError> make_from_rec(FITDataRecord const &re
         u32>(rec);
 }
 
-// u8                developer_data_index;
-// u8                field_definition_number;
-// u8                fit_base_type_id;
-// std::string_view  field_name = { };
-// std::string_view  units = { };
-// std::optional<u8> native_field_num = { };
-//
-// pub const Fields
-//     : FieldDefinition(field_description) =. {
-//         .developer_data_index =. { .num = 0 },
-//         .field_definition_number =. { .num = 1 },
-//         .fit_base_type_id =. { .num = 2 },
-//         .field_name =. { .num = 3 },
-//         .units =. { .num = 8 },
-//         .native_field_num =. { .num = 15 },
-//     };
+template<>
+std::ostream &format_record<mesg_num::developer_data_id>(std::ostream &out, FITDataRecord const &rec)
+{
+    return format_record_<developer_data_id_meta>(out, rec);
+}
 
 constexpr static TypeMetaData field_description_meta {
     .mesg_num = mesg_num::field_description,
     .num_fields = 6,
     .fields = {
-        { .num = 0, .optional = false, .base_type = FITBaseType::uint8, .fld_offset = offsetof(field_description, developer_data_index) },
-        { .num = 1, .optional = false, .base_type = FITBaseType::uint8, .fld_offset = offsetof(field_description, field_definition_number) },
-        { .num = 2, .optional = false, .base_type = FITBaseType::uint8, .fld_offset = offsetof(field_description, fit_base_type_id) },
-        { .num = 3, .optional = true, .base_type = FITBaseType::string, .fld_offset = offsetof(field_description, field_name) },
-        { .num = 8, .optional = true, .base_type = FITBaseType::string, .fld_offset = offsetof(field_description, units) },
-        { .num = 15, .optional = true, .base_type = FITBaseType::uint8, .fld_offset = offsetof(field_description, native_field_num) },
+        { .name = "developer data index", .num = 0, .optional = false, .base_type = FITBaseType::uint8, .fld_offset = offsetof(field_description, developer_data_index) },
+        { .name = "field definition number", .num = 1, .optional = false, .base_type = FITBaseType::uint8, .fld_offset = offsetof(field_description, field_definition_number) },
+        { .name = "FIT base type id", .num = 2, .optional = false, .base_type = FITBaseType::uint8, .fld_offset = offsetof(field_description, fit_base_type_id) },
+        { .name = "field name", .num = 3, .optional = true, .base_type = FITBaseType::string, .fld_offset = offsetof(field_description, field_name) },
+        { .name = "units", .num = 8, .optional = true, .base_type = FITBaseType::string, .fld_offset = offsetof(field_description, units) },
+        { .name = "native field number", .num = 15, .optional = true, .base_type = FITBaseType::uint8, .fld_offset = offsetof(field_description, native_field_num) },
     },
 };
 
@@ -575,6 +575,12 @@ std::expected<field_description, FITError> make_from_rec(FITDataRecord const &re
         std::string_view,
         std::string_view,
         u8>(rec);
+}
+
+template<>
+std::ostream &format_record<mesg_num::field_description>(std::ostream &out, FITDataRecord const &rec)
+{
+    return format_record_<field_description_meta>(out, rec);
 }
 
 }

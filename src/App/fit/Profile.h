@@ -15,8 +15,7 @@
 #include <Logging.h>
 #include <fit/FIT.h>
 
-namespace ST {
-namespace FIT {
+namespace ST::FIT {
 
 //
 // --------------------------------------------------------------------------
@@ -115,96 +114,99 @@ enum class sport {
     SPORT(ENUMVALUE_INT)
 };
 
+#define SUB_SPORT(S)               \
+    S(generic, 0)                  \
+    S(treadmill, 1)                \
+    S(street, 2)                   \
+    S(trail, 3)                    \
+    S(track, 4)                    \
+    S(spin, 5)                     \
+    S(indoor_cycling, 6)           \
+    S(road, 7)                     \
+    S(mountain, 8)                 \
+    S(downhill, 9)                 \
+    S(recumbent, 10)               \
+    S(cyclocross, 11)              \
+    S(hand_cycling, 12)            \
+    S(track_cycling, 13)           \
+    S(indoor_rowing, 14)           \
+    S(elliptical, 15)              \
+    S(stair_climbing, 16)          \
+    S(lap_swimming, 17)            \
+    S(open_water, 18)              \
+    S(flexibility_training, 19)    \
+    S(strength_training, 20)       \
+    S(warm_up, 21)                 \
+    S(match, 22)                   \
+    S(exercise, 23)                \
+    S(challenge, 24)               \
+    S(indoor_skiing, 25)           \
+    S(cardio_training, 26)         \
+    S(indoor_walking, 27)          \
+    S(e_bike_fitness, 28)          \
+    S(bmx, 29)                     \
+    S(casual_walking, 30)          \
+    S(speed_walking, 31)           \
+    S(bike_to_run_transition, 32)  \
+    S(run_to_bike_transition, 33)  \
+    S(swim_to_bike_transition, 34) \
+    S(atv, 35)                     \
+    S(motocross, 36)               \
+    S(backcountry, 37)             \
+    S(resort, 38)                  \
+    S(rc_drone, 39)                \
+    S(wingsuit, 40)                \
+    S(whitewater, 41)              \
+    S(skate_skiing, 42)            \
+    S(yoga, 43)                    \
+    S(pilates, 44)                 \
+    S(indoor_running, 45)          \
+    S(gravel_cycling, 46)          \
+    S(e_bike_mountain, 47)         \
+    S(commuting, 48)               \
+    S(mixed_surface, 49)           \
+    S(navigate, 50)                \
+    S(track_me, 51)                \
+    S(map, 52)                     \
+    S(single_gas_diving, 53)       \
+    S(multi_gas_diving, 54)        \
+    S(gauge_diving, 55)            \
+    S(apnea_diving, 56)            \
+    S(apnea_hunting, 57)           \
+    S(virtual_activity, 58)        \
+    S(obstacle, 59)                \
+    S(breathing, 62)               \
+    S(sail_race, 65)               \
+    S(ultra, 67)                   \
+    S(indoor_climbing, 68)         \
+    S(bouldering, 69)              \
+    S(hiit, 70)                    \
+    S(amrap, 73)                   \
+    S(emom, 74)                    \
+    S(tabata, 75)                  \
+    S(pickleball, 84)              \
+    S(padel, 85)                   \
+    S(indoor_wheelchair_walk, 86)  \
+    S(indoor_wheelchair_run, 87)   \
+    S(indoor_hand_cycling, 88)     \
+    S(squash, 94)                  \
+    S(badminton, 95)               \
+    S(racquetball, 96)             \
+    S(table_tennis, 97)            \
+    S(fly_canopy, 110)             \
+    S(fly_paraglide, 111)          \
+    S(fly_paramotor, 112)          \
+    S(fly_pressurized, 113)        \
+    S(fly_navigate, 114)           \
+    S(fly_timer, 115)              \
+    S(fly_altimeter, 116)          \
+    S(fly_wx, 117)                 \
+    S(fly_vfr, 118)                \
+    S(fly_ifr, 119)                \
+    S(all, 254)
+
 enum class sub_sport : u8 {
-    generic = 0,
-    treadmill = 1,
-    street = 2,
-    trail = 3,
-    track = 4,
-    spin = 5,
-    indoor_cycling = 6,
-    road = 7,
-    mountain = 8,
-    downhill = 9,
-    recumbent = 10,
-    cyclocross = 11,
-    hand_cycling = 12,
-    track_cycling = 13,
-    indoor_rowing = 14,
-    elliptical = 15,
-    stair_climbing = 16,
-    lap_swimming = 17,
-    open_water = 18,
-    flexibility_training = 19,
-    strength_training = 20,
-    warm_up = 21,
-    match = 22,
-    exercise = 23,
-    challenge = 24,
-    indoor_skiing = 25,
-    cardio_training = 26,
-    indoor_walking = 27,
-    e_bike_fitness = 28,
-    bmx = 29,
-    casual_walking = 30,
-    speed_walking = 31,
-    bike_to_run_transition = 32,
-    run_to_bike_transition = 33,
-    swim_to_bike_transition = 34,
-    atv = 35,
-    motocross = 36,
-    backcountry = 37,
-    resort = 38,
-    rc_drone = 39,
-    wingsuit = 40,
-    whitewater = 41,
-    skate_skiing = 42,
-    yoga = 43,
-    pilates = 44,
-    indoor_running = 45,
-    gravel_cycling = 46,
-    e_bike_mountain = 47,
-    commuting = 48,
-    mixed_surface = 49,
-    navigate = 50,
-    track_me = 51,
-    map = 52,
-    single_gas_diving = 53,
-    multi_gas_diving = 54,
-    gauge_diving = 55,
-    apnea_diving = 56,
-    apnea_hunting = 57,
-    virtual_activity = 58,
-    obstacle = 59,
-    breathing = 62,
-    sail_race = 65,
-    ultra = 67,
-    indoor_climbing = 68,
-    bouldering = 69,
-    hiit = 70,
-    amrap = 73,
-    emom = 74,
-    tabata = 75,
-    pickleball = 84,
-    padel = 85,
-    indoor_wheelchair_walk = 86,
-    indoor_wheelchair_run = 87,
-    indoor_hand_cycling = 88,
-    squash = 94,
-    badminton = 95,
-    racquetball = 96,
-    table_tennis = 97,
-    fly_canopy = 110,
-    fly_paraglide = 111,
-    fly_paramotor = 112,
-    fly_pressurized = 113,
-    fly_navigate = 114,
-    fly_timer = 115,
-    fly_altimeter = 116,
-    fly_wx = 117,
-    fly_vfr = 118,
-    fly_ifr = 119,
-    all = 254,
+    SUB_SPORT(ENUMVALUE_INT)
 };
 
 // ==========================================================================
@@ -262,6 +264,13 @@ struct activity {
     std::vector<session>    sessions;
 };
 
+struct workout {
+    std::optional<message_index> message_index = { };
+    std::optional<sport>         sport = { };
+    std::optional<sub_sport>     sub_sport = { };
+    std::optional<std::string>   wkt_name = { };
+};
+
 template<>
 std::optional<FITError> on_load(FITDataRecord const &fitrec, record &rec);
 
@@ -273,10 +282,21 @@ template<>
 std::expected<lap, FITError> make_from_rec(FITDataRecord const &rec);
 template<>
 std::expected<record, FITError> make_from_rec(FITDataRecord const &rec);
-}
+template<>
+std::expected<workout, FITError> make_from_rec(FITDataRecord const &rec);
 
 template<>
-inline char const *value_to_string(FIT::sport s)
+std::ostream &format_record<mesg_num::activity>(std::ostream &out, FITDataRecord const &rec);
+template<>
+std::ostream &format_record<mesg_num::session>(std::ostream &out, FITDataRecord const &rec);
+template<>
+std::ostream &format_record<mesg_num::lap>(std::ostream &out, FITDataRecord const &rec);
+template<>
+std::ostream &format_record<mesg_num::record>(std::ostream &out, FITDataRecord const &rec);
+template<>
+std::ostream &format_record<mesg_num::workout>(std::ostream &out, FITDataRecord const &rec);
+
+inline char const *tag(FIT::sport s)
 {
     switch (s) {
 #undef S
@@ -290,4 +310,40 @@ inline char const *value_to_string(FIT::sport s)
     }
 }
 
+inline char const *tag(FIT::sub_sport s)
+{
+    switch (s) {
+#undef S
+#define S(V, I)             \
+    case FIT::sub_sport::V: \
+        return #V;
+        SUB_SPORT(S)
+#undef S
+    default:
+        UNREACHABLE();
+    }
 }
+
+}
+
+template<>
+struct std::formatter<ST::FIT::sport> : std::formatter<std::string> {
+    template<class FmtContext>
+    FmtContext::iterator format(ST::FIT::sport const &val, FmtContext &ctx) const
+    {
+        std::ostringstream out;
+        out << ST::FIT::tag(val);
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};
+
+template<>
+struct std::formatter<ST::FIT::sub_sport> : std::formatter<std::string> {
+    template<class FmtContext>
+    FmtContext::iterator format(ST::FIT::sub_sport const &val, FmtContext &ctx) const
+    {
+        std::ostringstream out;
+        out << ST::FIT::tag(val);
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};

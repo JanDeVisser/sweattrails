@@ -1,7 +1,8 @@
 
 #pragma once
 
-#include <expected>
+#include <format>
+#include <sstream>
 #include <string>
 
 #include <Error.h>
@@ -37,3 +38,14 @@ struct Box {
 };
 
 }
+
+template<>
+struct std::formatter<ST::Coordinates> : std::formatter<std::string> {
+    template<class FmtContext>
+    FmtContext::iterator format(ST::Coordinates const &val, FmtContext &ctx) const
+    {
+        std::ostringstream out;
+        out << "(" << val.lat << "º, " << val.lon << "º)";
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};

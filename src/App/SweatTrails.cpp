@@ -4,6 +4,9 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include "Expected.h"
+#include "storage/Storage.h"
+#include "storage/Types.h"
 #include <pwd.h>
 #include <raylib.h>
 #include <sys/fcntl.h>
@@ -23,6 +26,7 @@
 #include <storage/Activity.h>
 #include <variant>
 #include <widget/Activity.h>
+#include <widget/ActivitySelector.h>
 
 namespace ST {
 
@@ -150,6 +154,20 @@ void cmd_quit(pSweatTrails const &sweattrails, JSONValue const &)
     query_box(sweattrails, prompt, are_you_sure, QueryOptionYesNo);
 }
 
+void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    auto activity_selected = [sweattrails](std::shared_ptr<ActivitySelector> const &selector, ActivityID const &id) -> void {
+        auto activity = MUST_EVAL(id.load(selector->storage, LoadingDepth::Deep));
+        sweattrails->show_activity(*activity);
+        selector->status = ModalStatus::Dismissed;
+    };
+    auto const &selector = Widget::make<ActivitySelector>(
+        activity_selected,
+        sweattrails->last_activity.month,
+        sweattrails->storage);
+    selector->show();
+}
+
 void cmd_message(pSweatTrails const &, JSONValue const &msg)
 {
     message_box(msg.to_string());
@@ -176,6 +194,8 @@ void SweatTrails::notif_activity(Notification::Payload const &data)
 
 void SweatTrails::show_activity(Activity const &activity)
 {
+    std::println("Showing activity {}", activity.id);
+    last_activity = activity.id;
     auto display = widget_stack->activate<ActivityDisplay>();
     assert(display != nullptr);
     display->set_activity(activity);
@@ -204,6 +224,8 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_Q, KModControl | KModShift });
     bus.add_task<SweatTrails>("st-quit", self(), cmd_quit)
         .bind(KeyCombo { KEY_Q, KModControl });
+    bus.add_task<SweatTrails>("st-list-month", self(), cmd_list_month)
+        .bind(KeyCombo { KEY_M, KModControl });
     bus.add_task<SweatTrails>("st-message", self(), cmd_message);
 
     bus.schedule(make_job<JobType::FindNewestActivity>(std::monostate { }));

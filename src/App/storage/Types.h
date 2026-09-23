@@ -33,7 +33,9 @@
 #include <concepts>
 #include <expected>
 #include <filesystem>
+#include <format>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -130,13 +132,7 @@ struct Month {
     {
     }
 
-    bool operator==(Month const &other) const
-    {
-        return year == other.year && month == other.month;
-    }
-
-    // Zig hands back an open std::Io.Dir (or null); here the directory is
-    // identified by its path, which removes the need to close it.
+    auto                                    operator<=>(Month const &) const = default;
     [[nodiscard]] std::optional<fs::path>   dir(Storage const &storage) const;
     [[nodiscard]] StorageResult<bool>       has_activities(Storage const &storage) const;
     [[nodiscard]] StorageResult<Activities> list(Storage &storage) const;
@@ -191,7 +187,7 @@ struct FileTypes {
         return static_cast<size_t>(std::popcount(bits));
     }
 
-    bool operator==(FileTypes const &) const = default;
+    auto operator<=>(FileTypes const &) const = default;
 };
 
 enum class LoadingDepth {
@@ -212,6 +208,8 @@ struct ActivityID {
         , files(the_files)
     {
     }
+
+    auto operator<=>(ActivityID const &) const = default;
 
     static ActivityID dummy(ActivityFile file_type)
     {
@@ -234,3 +232,14 @@ inline std::ostream &operator<<(std::ostream &os, ST::ActivityID const &activity
     os << activity.month << " " << activity.name;
     return os;
 }
+
+template<>
+struct std::formatter<ST::ActivityID> : public std::formatter<std::string> {
+    template<class FmtContext>
+    typename FmtContext::iterator format(ST::ActivityID const &value, FmtContext &ctx) const
+    {
+        std::ostringstream out;
+        out << value.month.year << "-" << ST::month_name(value.month.month) << " `" << value.name << "`";
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};

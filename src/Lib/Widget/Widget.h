@@ -39,6 +39,10 @@ KEYBOARDMODIFIERS(KEYBOARDMODIFIER)
 #undef KEYBOARDMODIFIER
 constexpr KeyboardModifier KModCount = 16;
 
+extern bool             is_modifier_down(KeyboardModifier modifier);
+extern std::string      modifier_string(KeyboardModifier modifiers);
+extern KeyboardModifier modifier_current();
+
 #define CONTAINERORIENTATIONS(S) \
     S(Horizontal)                \
     S(Vertical)
@@ -57,6 +61,9 @@ enum class SizePolicy {
     Calculated,
     Stretch,
 };
+
+extern char const *SizePolicy_name(SizePolicy policy);
+extern char const *ContainerOrientation_name(ContainerOrientation orientation);
 
 using rune = wchar_t;
 using rune_view = std::basic_string_view<rune>;
@@ -160,6 +167,8 @@ struct App;
 struct KeyCombo {
     int              key;
     KeyboardModifier modifier;
+
+    auto operator<=>(KeyCombo const &) const = default;
 };
 
 constexpr auto ZeroPadding = Rect<float> { 0.0 };
@@ -171,39 +180,6 @@ template<typename T>
 concept Application = std::derived_from<T, struct App>;
 
 void job_handler(void *bus);
-
-using Handler = std::function<void(pWidget const &, JSONValue const &)>;
-struct Task {
-    std::string           task;
-    pWidget               owner;
-    Handler               handler;
-    std::vector<KeyCombo> bindings { };
-
-    Task(std::string name, pWidget const &owner, Handler handler);
-    Task(Task const &) = default;
-    Task &bind(KeyCombo combo);
-
-    template<typename... Args>
-    Task &bind(KeyCombo combo, Args... args)
-    {
-        bindings.push_back(combo);
-        return bind(std::forward<Args>(args)...);
-    }
-
-    auto operator<=>(Task const &other) const
-    {
-        return task <=> other.task;
-    }
-};
-
-struct PendingTask {
-    Task      task;
-    pWidget   current_focus;
-    JSONValue arguments;
-
-    PendingTask(Task const &task, JSONValue arguments);
-    void execute() const;
-};
 
 template<typename C, typename... Payloads>
 struct Message {
@@ -229,6 +205,65 @@ struct Message {
 
 template<typename Job, typename Notification>
 struct AppBus {
+    struct Task {
+        using Handler = std::function<void(pWidget const &, JSONValue const &)>;
+        AppBus     &bus;
+        std::string task;
+        pWidget     owner;
+        Handler     handler;
+
+        Task(AppBus &bus, std::string name, pWidget const &owner, Handler handler)
+            : bus(bus)
+            , task(std::move(name))
+            , owner(owner)
+            , handler(std::move(handler))
+        {
+        }
+        Task(Task const &) = default;
+
+        Task &bind(KeyCombo const &combo, JSONValue const &arguments = JSONValue { })
+        {
+            return bus.bind(*this, combo, arguments);
+        }
+    };
+
+    struct Binding {
+        KeyCombo    combo;
+        std::string task;
+        JSONValue   arguments;
+    };
+
+    struct PendingTask {
+        Task      task;
+        pWidget   current_focus;
+        JSONValue arguments;
+
+        PendingTask(Task const &task, JSONValue arguments = JSONValue { })
+            : task(task)
+            , arguments(std::move(arguments))
+        {
+            task.owner->bubble_up([this](auto const &w) -> bool {
+                if (auto app = std::dynamic_pointer_cast<App>(w)) {
+                    current_focus = app->focus;
+                    return true;
+                }
+                return false;
+            });
+        }
+
+        void execute() const
+        {
+            task.handler(task.owner, arguments);
+            task.owner->bubble_up([this](auto const &w) -> bool {
+                if (auto app = std::dynamic_pointer_cast<App>(w)) {
+                    app->focus = current_focus;
+                    return true;
+                }
+                return false;
+            });
+        }
+    };
+
     using SyncMsg = std::variant<PendingTask, Notification>;
 
     std::deque<Job>             jobs { };
@@ -237,6 +272,7 @@ struct AppBus {
     std::mutex                  jobs_mutex { };
     std::condition_variable     cv { };
     std::map<std::string, Task> tasks;
+    std::vector<Binding>        bindings { };
     std::thread                 job_handler_thread;
 
     AppBus()
@@ -263,7 +299,7 @@ struct AppBus {
             // after the wait, we own the lock
             auto job = bus->jobs.front();
             bus->jobs.pop_front();
-            trace(AppBus, "Executing {}", job);
+            trace(AppBus, "Executing {}", typeid(job).name());
             job.execute();
 
             // manual unlocking is done before notifying, to avoid waking up
@@ -326,21 +362,37 @@ struct AppBus {
             message);
     }
 
-    Task &bind(std::string_view const &task, KeyCombo combo)
+    void handle_keys(std::set<int> pressed_keys)
+    {
+        KeyboardModifier modifier = modifier_current();
+        for (auto key : pressed_keys) {
+            for (auto const &[combo, task, arguments] : bindings) {
+                if (combo.key == key && combo.modifier == modifier) {
+                    submit(task, arguments);
+                    return;
+                }
+            }
+        }
+    }
+
+    Task &bind(std::string_view task, KeyCombo const &combo, JSONValue const &arguments = JSONValue { })
     {
         auto task_name = std::string { task };
         assert(tasks.contains(task_name));
         auto &t = tasks.at(task_name);
-        t.bind(combo);
-        return t;
+        return t.bind(combo, arguments);
     }
 
-    template<typename... Args>
-    Task &bind(std::string_view const &task, KeyCombo combo, Args... args)
+    Task &bind(Task &task, KeyCombo const &combo, JSONValue const &arguments = JSONValue { })
     {
-        auto &cmd = bind(task, combo);
-        cmd.bind(std::forward<Args>(args)...);
-        return cmd;
+        auto args = arguments;
+        if (args.is_null()) {
+            args = JSONValue::object();
+            set(args, "key", combo.key);
+            set(args, "modifier", combo.modifier);
+        }
+        bindings.emplace_back(combo, task.task, args);
+        return task;
     }
 
     template<typename C>
@@ -353,7 +405,7 @@ struct AppBus {
         };
 
         auto task_name = std::string { task };
-        tasks.try_emplace(task_name, task_name, owner, wrapper);
+        tasks.try_emplace(task_name, *this, task_name, owner, wrapper);
         return tasks.at(task_name);
     }
 };
@@ -801,12 +853,6 @@ struct Label : public Widget {
     void draw() override;
 };
 
-extern char const      *SizePolicy_name(SizePolicy policy);
-extern char const      *ContainerOrientation_name(ContainerOrientation orientation);
-extern bool             is_modifier_down(KeyboardModifier modifier);
-extern std::string      modifier_string(KeyboardModifier modifiers);
-extern KeyboardModifier modifier_current();
-
 template<>
 inline char const *value_to_string(ContainerOrientation orientation)
 {
@@ -824,7 +870,8 @@ inline char const *value_to_string(ContainerOrientation orientation)
 
 }
 
-inline std::ostream &operator<<(std::ostream &os, ST::ContainerOrientation value)
+inline std::ostream &
+operator<<(std::ostream &os, ST::ContainerOrientation value)
 {
     os << ST::value_to_string<ST::ContainerOrientation>(value);
     return os;
@@ -847,27 +894,6 @@ struct std::formatter<ST::ContainerOrientation, char> {
     {
         std::ostringstream out;
         out << ST::value_to_string<ST::ContainerOrientation>(value);
-        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
-    }
-};
-
-template<typename C, typename... Payloads>
-struct std::formatter<ST::Message<C, Payloads...>> {
-    template<class ParseContext>
-    constexpr ParseContext::iterator parse(ParseContext &ctx)
-    {
-        auto it = ctx.begin();
-        if (it != ctx.end() && *it != '}') {
-            throw std::format_error(std::format("Invalid format args for {}", typeid(ST::Message<C, Payloads...>).name()));
-        }
-        return it;
-    }
-
-    template<class FmtContext>
-    typename FmtContext::iterator format(ST::Message<C, Payloads...> message, FmtContext &ctx) const
-    {
-        std::ostringstream out;
-        out << "{ " << ST::value_to_string<C>(message.choice) << " }";
         return std::ranges::copy(std::move(out).str(), ctx.out()).out;
     }
 };

@@ -46,6 +46,11 @@ struct SmoothedRange {
 
     std::optional<RangeData> range { };
 
+    operator bool() const
+    {
+        return static_cast<bool>(range);
+    }
+
     static AccumType to_accum_type(T value)
     {
         return static_cast<AccumType>(value);
