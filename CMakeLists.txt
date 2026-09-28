@@ -47,6 +47,8 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug CACHE STRING "Debug" FORCE)
 endif()
 
+find_package(CURL)
+
 include(CheckCSourceCompiles)
 include(CheckCXXSourceCompiles)
 
@@ -177,6 +179,7 @@ target_link_libraries(
         Widget
         ${raylib_LIBRARIES}
         ${FREETYPE_LIBRARIES}
+        ${CURL_LIBRARIES}
         ${ICONV}
         m
 )
@@ -186,6 +189,7 @@ add_executable(
         src/App/fit/Explore.cpp
         src/App/fit/FIT.cpp
         src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
 )
 
 # target_include_directories(fitexplore PRIVATE ${raylib_INCLUDE_DIRS} ${FREETYPE_INCLUDE_DIRS})

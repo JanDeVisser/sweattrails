@@ -367,19 +367,22 @@ void ActivityMap::draw()
     DrawRectangleLines(viewport.x - 3, viewport.y - 3, viewport.width + 6, viewport.height + 6, RAYWHITE);
     render_texture(0, 0, texture, map.rectangle.x, map.rectangle.y, viewport.width, viewport.height, RAYWHITE);
     constexpr static float thick = 3.0f;
-    auto                  &p_prev = track[0];
+    auto                   p_prev = track[0];
     for (auto const &p : track) {
         if (!std::isnan(p.x) && !std::isnan(p.y) && (std::abs(p_prev.x - p.x) > 1 || std::abs(p_prev.y - p.y) > 1)) {
             DrawLineEx(p_prev, p, thick, RED);
             DrawCircleV(p, thick / 2, RED);
             p_prev = p;
         }
+        if (std::isnan(p_prev.x) && std::isnan(p_prev.y)) {
+            p_prev = p;
+        }
     }
     if (activity->segment) {
-        auto &p_prev = track[activity->segment->min];
+        auto p_prev = track[activity->segment->min];
         for (size_t i = activity->segment->min + 1; i < activity->segment->max; ++i) {
             auto const &p = track[i];
-            if (std::abs(p_prev.x - p.x) > 1 || std::abs(p_prev.y - p.y) > 1) {
+            if (!std::isnan(p.x) && !std::isnan(p.y) && (std::abs(p_prev.x - p.x) > 1 || std::abs(p_prev.y - p.y) > 1)) {
                 DrawLineEx(p_prev, p, thick, BLUE);
                 DrawCircleV(p, thick / 2, BLUE);
                 p_prev = p;
