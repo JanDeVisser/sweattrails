@@ -1067,15 +1067,15 @@ bool assign_value(FldType &fld, FITDataField const &val)
         if constexpr (def.units == MetaDataUnits::Semicircles) {
             static_assert(def.base_type == FITBaseType::sint32);
             auto v = val.value->sint32;
-            fld = static_cast<f32>(v) * (180.0 / static_cast<f32>(1 << 31));
+            fld = static_cast<f32>(v) * (180.0 / static_cast<f32>(1u << 31));
         } else if constexpr (def.units == MetaDataUnits::Lat) { // Implies semicircles
             static_assert(def.base_type == FITBaseType::sint32);
             auto v = val.value->sint32;
-            fld.lat = static_cast<f32>(v) * (180.0 / static_cast<f32>(1 << 31));
+            fld.lat = static_cast<f32>(v) * (180.0 / static_cast<f32>(1u << 31));
         } else if constexpr (def.units == MetaDataUnits::Long) { // Implies semicircles
             static_assert(def.base_type == FITBaseType::sint32);
             auto v = val.value->sint32;
-            fld.lon = static_cast<f32>(v) * (180.0 / static_cast<f32>(1 << 31));
+            fld.lon = static_cast<f32>(v) * (180.0 / static_cast<f32>(1u << 31));
         } else if constexpr (def.units == MetaDataUnits::DateTime) {
             int32_t d;
             switch (def.base_type) {
@@ -1118,7 +1118,10 @@ template<typename FldType, FieldMetaData def>
 bool assign_optional(std::optional<FldType> &fld, FITDataField const &val)
 {
     FldType f;
-    auto    ret = assign_value<FldType, def>(f, val);
+    if (fld) {
+        f = fld.value();
+    }
+    auto ret = assign_value<FldType, def>(f, val);
     fld = f;
     return ret;
 }

@@ -6,8 +6,10 @@
 
 #pragma once
 
+#include <concepts>
 #include <condition_variable>
 #include <deque>
+#include <format>
 #include <functional>
 #include <mutex>
 #include <sstream>
@@ -44,12 +46,12 @@ extern std::string      modifier_string(KeyboardModifier modifiers);
 extern KeyboardModifier modifier_current();
 
 #define CONTAINERORIENTATIONS(S) \
-    S(Horizontal)                \
-    S(Vertical)
+    S(Horizontal, 0)             \
+    S(Vertical, 1)
 
 enum class ContainerOrientation {
 #undef S
-#define S(o) o,
+#define S(O, V) O = V,
     CONTAINERORIENTATIONS(S)
 #undef S
 };
@@ -60,6 +62,7 @@ enum class SizePolicy {
     Characters,
     Calculated,
     Stretch,
+    Hide,
 };
 
 extern char const *SizePolicy_name(SizePolicy policy);
@@ -115,6 +118,7 @@ union Vec {
 using Position = Vec<size_t>;
 
 template<typename T>
+    requires std::convertible_to<T, int>
 union Rect {
     constexpr Rect(T c1, T c2, T c3, T c4)
         : left(c1)
@@ -153,7 +157,9 @@ union Rect {
     constexpr std::string
     to_string()
     {
-        return std::format("{:.1}x{:.1}@+{:.1},+{:.1}", width, height, x, y);
+        return std::format("{}x{}@+{},+{}",
+            static_cast<int>(width), static_cast<int>(height),
+            static_cast<int>(x), static_cast<int>(y));
     }
 
     constexpr static Rect<T> zero()
@@ -427,7 +433,7 @@ public:
     Rect<float> viewport { 0.0 };
     Rect<float> padding { ZeroPadding };
     Color       background { BLACK };
-    SizePolicy  policy { SizePolicy::Absolute };
+    SizePolicy  policy { SizePolicy::Stretch };
     float       policy_size { 0 };
     pWidget     parent { nullptr };
     pWidget     delegate { nullptr };
@@ -545,6 +551,21 @@ public:
     {
         Vector2 const pos { viewport.x + x, viewport.y + y };
         DrawTextureV(texture, pos, color);
+    }
+
+    template<typename Tx, typename Ty, typename Tx2, typename Ty2, typename Tw, typename Th>
+        requires(
+            std::convertible_to<Tx, float>
+            && std::convertible_to<Ty, float>
+            && std::convertible_to<Tx2, float>
+            && std::convertible_to<Ty2, float>
+            && std::convertible_to<Tw, float>
+            && std::convertible_to<Th, float>)
+    void render_texture(Tx at_x, Ty at_y, Texture2D texture, Tx2 from_x, Ty2 from_y, Tw width, Th height, Color color = RAYWHITE) const
+    {
+        Rectangle const src { .x = from_x, .y = from_y, .width = width, .height = height };
+        Vector2 const   dest { .x = viewport.x + at_x, .y = viewport.y + at_y };
+        DrawTextureRec(texture, src, dest, color);
     }
 
     template<typename Tx, typename Ty, typename Tw, typename Th>
@@ -671,8 +692,8 @@ struct Layout : public Widget {
     std::vector<pWidget> widgets { };
 
     Layout() = delete;
-    Layout(pWidget const &parent, ContainerOrientation orientation = ContainerOrientation::Vertical)
-        : Widget(parent)
+    Layout(pWidget const &parent, ContainerOrientation orientation = ContainerOrientation::Vertical, SizePolicy policy = SizePolicy::Stretch, float policy_size = 0.0)
+        : Widget(parent, policy, policy_size)
         , orientation(orientation)
     {
     }
@@ -768,8 +789,8 @@ struct WidgetStack : public Widget {
     std::vector<pWidget> widgets;
 
     WidgetStack() = delete;
-    WidgetStack(pWidget const &parent)
-        : Widget(parent, SizePolicy::Stretch, 0.0)
+    WidgetStack(pWidget const &parent, SizePolicy policy = SizePolicy::Stretch, float policy_size = 0.0)
+        : Widget(parent, policy, policy_size)
     {
     }
 
@@ -858,7 +879,7 @@ inline char const *value_to_string(ContainerOrientation orientation)
 {
     switch (orientation) {
 #undef S
-#define S(O)                          \
+#define S(O, V)                       \
     case ST::ContainerOrientation::O: \
         return #O;
         CONTAINERORIENTATIONS(S)
@@ -878,17 +899,7 @@ operator<<(std::ostream &os, ST::ContainerOrientation value)
 }
 
 template<>
-struct std::formatter<ST::ContainerOrientation, char> {
-    template<class ParseContext>
-    constexpr ParseContext::iterator parse(ParseContext &ctx)
-    {
-        auto it = ctx.begin();
-        if (it != ctx.end() && *it != '}') {
-            throw std::format_error(std::format("Invalid format args for {}", typeid(ST::ContainerOrientation).name()));
-        }
-        return it;
-    }
-
+struct std::formatter<ST::ContainerOrientation> : std::formatter<std::string> {
     template<class FmtContext>
     typename FmtContext::iterator format(ST::ContainerOrientation const &value, FmtContext &ctx) const
     {

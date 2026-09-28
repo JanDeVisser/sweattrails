@@ -24,6 +24,8 @@ char const *SizePolicy_name(SizePolicy policy)
         return "Calculated";
     case SizePolicy::Stretch:
         return "Stretch";
+    case SizePolicy::Hide:
+        return "Hide";
     default:
         UNREACHABLE();
     }

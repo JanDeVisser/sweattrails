@@ -2,28 +2,6 @@
  * Copyright (c) 2025, Jan de Visser <jan@finiandarcy.com>
  *
  * SPDX-License-Identifier: MIT
- *
- * C++ translation of zig/storage/types.zig.
- *
- * Assumptions about modules that have not been translated (yet):
- *
- *   <Date.h>   -> ST::DateTime  (date.date_time), with nested enums
- *                 DateTime::Month and DateTime::WeekDay, members
- *                 `timestamp`, `year`, `month`, ... and
- *                 `bool less_than(DateTime const &) const`,
- *                 `DateTime end(Duration const &) const`,
- *                 `std::string format() const`.
- *                 ST::Duration (date.Duration) with member `elapsed`.
- *   <Range.h>  -> ST::Range<T>, ST::SmoothedRange<T, N>,
- *                 ST::NormalizedRange<T, N> (range.zig).
- *   <Map.h>    -> ST::Coordinates, ST::Box (map.zig).
- *   <FIT.h>    -> already translated in src/FIT.h.
- *   profile    -> fit_profile.zig: ST::record, ST::session, ST::lap, ST::sport.
- *
- * The zig code threads allocators (arenas) through every type. The C++
- * translation drops them: strings are owned (std::string) and containers own
- * their elements, so `copy()`/`deinit()` disappear in favour of ordinary value
- * semantics.
  */
 
 #pragma once

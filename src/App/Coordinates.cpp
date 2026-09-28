@@ -1,3 +1,6 @@
+#include <cmath>
+#include <format>
+
 #include <Coordinates.h>
 
 namespace ST {
@@ -5,6 +8,11 @@ namespace ST {
 bool Coordinates::in_box(Box const &box) const
 {
     return box.has(*this);
+}
+
+std::string Coordinates::to_string() const
+{
+    return std::format("{:.2f}º{},{:.2f}º{}", std::abs(lat), (lat < 0) ? 'S' : 'N', std::abs(lon), (lon < 0) ? 'W' : 'E');
 }
 
 Box Box::with_margins(float32 margin) const
@@ -53,6 +61,11 @@ void Box::extend(Coordinates const &point)
         ne.lat = std::max(ne.lat, point.lat);
         ne.lon = std::max(ne.lon, point.lon);
     }
+}
+
+std::string Box::to_string() const
+{
+    return std::format("NE: {} SW: {}", ne.to_string(), sw.to_string());
 }
 
 }

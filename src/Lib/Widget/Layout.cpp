@@ -8,6 +8,7 @@
 #include <print>
 
 #include <App.h>
+#include <Widget.h>
 
 namespace ST {
 
@@ -15,9 +16,9 @@ char const *ContainerOrientation_name(ContainerOrientation orientation)
 {
     switch (orientation) {
 #undef S
-#define S(o)                      \
-    case ContainerOrientation::o: \
-        return #o;
+#define S(O, V)                   \
+    case ContainerOrientation::O: \
+        return #O;
         CONTAINERORIENTATIONS(S)
 #undef S
     default:
@@ -31,8 +32,8 @@ void Layout::resize()
     on_resize();
     float allocated = 0.0f;
     int   stretch_count = 0;
-    int   fixed_coord = (orientation == ContainerOrientation::Vertical) ? 0 : 1;
-    int   var_coord = 1 - fixed_coord;
+    int   var_coord = static_cast<int>(orientation);
+    int   fixed_coord = 1 - var_coord;
     float total = viewport.size.coords[var_coord];
     float fixed_size = viewport.size.coords[fixed_coord];
     float fixed_pos = viewport.position.coords[fixed_coord];
@@ -50,11 +51,13 @@ void Layout::resize()
         float sz = 0;
         trace(LAYOUT, "Component widget {} has policy {}", typeid(w).name(), SizePolicy_name(w->policy));
         switch (w->policy) {
+        case SizePolicy::Hide:
+            break;
         case SizePolicy::Absolute:
             sz = w->policy_size;
             break;
         case SizePolicy::Relative: {
-            sz = (total * w->policy_size) / 100.0f;
+            sz = total * w->policy_size;
         } break;
         case SizePolicy::Characters: {
             sz = ceilf(1.2 * w->policy_size * ((orientation == ContainerOrientation::Vertical) ? App::the()->char_size().y : App::the()->char_size().x));
@@ -67,9 +70,8 @@ void Layout::resize()
             stretch_count++;
         } break;
         }
-        assert(sz != 0);
-        w->viewport.size.coords[var_coord] = sz - w->padding.coords[var_coord] - w->padding.coords[var_coord + 2];
         if (sz > 0) {
+            w->viewport.size.coords[var_coord] = sz - w->padding.coords[var_coord] - w->padding.coords[var_coord + 2];
             allocated += sz;
             trace(LAYOUT, "Allocating {}, now allocated {}", sz, allocated);
         }
@@ -88,10 +90,12 @@ void Layout::resize()
     }
 
     for (auto &w : widgets) {
-        w->viewport.position.coords[var_coord] = var_offset + w->padding.coords[var_coord];
-        var_offset += w->viewport.size.coords[var_coord] + w->padding.coords[var_coord] + w->padding.coords[var_coord + 2];
-        trace(LAYOUT, "Resizing {} to {}", typeid(w).name(), w->viewport.to_string());
-        w->resize();
+        if (w->policy != SizePolicy::Hide) {
+            w->viewport.position.coords[var_coord] = var_offset + w->padding.coords[var_coord];
+            var_offset += w->viewport.size.coords[var_coord] + w->padding.coords[var_coord] + w->padding.coords[var_coord + 2];
+            trace(LAYOUT, "Resizing {} to {}", typeid(w).name(), w->viewport.to_string());
+            w->resize();
+        }
     }
     after_resize();
 }
@@ -100,7 +104,7 @@ void Layout::draw()
 {
     on_draw();
     for (auto &w : widgets) {
-        if (w->viewport.width > 0.0f && w->viewport.height > 0.0f) {
+        if (w->policy != SizePolicy::Hide && w->viewport.width > 0.0f && w->viewport.height > 0.0f) {
             DrawRectangle(w->viewport.x - w->padding.left, w->viewport.y - w->padding.top,
                 w->viewport.width + w->padding.left + w->padding.right,
                 w->viewport.height + w->padding.top + w->padding.bottom,
@@ -115,7 +119,7 @@ void Layout::process_input()
 {
     on_process_input();
     for (auto &w : widgets) {
-        if (w->viewport.width > 0.0f && w->viewport.height > 0.0f) {
+        if (w->policy != SizePolicy::Hide && w->viewport.width > 0.0f && w->viewport.height > 0.0f) {
             w->process_input();
         }
     }
@@ -138,7 +142,6 @@ void Layout::dump()
         auto &obj = *w;
         std::println("{:{}s}+-> {:} {:}", "", dump_indent, typeid(obj).name(), w->viewport.to_string());
     };
-    std::string_view s;
     traverse(dump_fnc);
 }
 

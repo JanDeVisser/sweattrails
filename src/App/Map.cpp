@@ -2,27 +2,24 @@
  * Copyright (c) 2025, Jan de Visser <jan@finiandarcy.com>
  *
  * SPDX-License-Identifier: MIT
- *
- * C++ translation of zig/map.zig.
- *
- * zig fetches tiles with std.http.Client. There is no HTTP client in the C++
- * code base, so Tile::get_tile shells out to curl (via ST::Process) and lets it
- * write the PNG straight into the tile cache. Swap that out once there is a
- * real client.
  */
 
-#include "Coordinates.h"
 #include <cassert>
 #include <cmath>
+#include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <format>
-#include <numbers>
 #include <system_error>
 
+#include <curl/curl.h>
+
+#include <Error.h>
 #include <IO.h>
 #include <Logging.h>
 #include <Process.h>
 
+#include <Coordinates.h>
 #include <Map.h>
 #include <storage/Storage.h>
 
@@ -32,7 +29,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr float32 PI = std::numbers::pi_v<float32>;
+// constexpr float32 PI = std::numbers::pi_v<float32>;
 
 float32 degrees_to_radians(float32 degrees)
 {
@@ -89,6 +86,56 @@ std::expected<std::string, LibCError> Tile::get_cached_tile(Storage const &stora
     return read_file_by_name(file_name);
 }
 
+static size_t write_cb(char *ptr, size_t size, size_t nmemb, void *stream)
+{
+    try {
+        ((std::ofstream *) stream)->write(ptr, size * nmemb);
+        return size * nmemb;
+    } catch (std::ios_base::failure const &e) {
+        std::cerr << "Failure downloading using libcurl: " << e.what() << '\n';
+        return 0;
+    }
+}
+
+std::expected<void, std::variant<CURLcode, LibCError>> download(std::string url, fs::path dest)
+{
+    static CURL *curl = nullptr;
+
+    if (curl == nullptr) {
+        CURLcode result = curl_global_init(CURL_GLOBAL_ALL);
+        if (result != CURLE_OK) {
+            return std::unexpected(result);
+        }
+
+        curl = curl_easy_init();
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_CA_CACHE_TIMEOUT, 604800L);
+    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "sweattrails/1.0");
+
+    /* open the file */
+    auto file = std::ofstream(dest, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!file) {
+        return std::unexpected(LibCError { });
+    }
+
+    /* write the page body to this file handle */
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &file);
+
+    /* Perform the request, result gets the return code */
+    auto result = curl_easy_perform(curl);
+    /* Check for errors */
+    if (result != CURLE_OK) {
+        std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(result) << "\n";
+        return std::unexpected(result);
+    }
+    return { };
+}
+
 std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) const
 {
     if (auto cached = get_cached_tile(storage); cached) {
@@ -102,52 +149,91 @@ std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) con
     if (ec) {
         return std::unexpected(LibCError { ec.message() });
     }
-    auto const tile_file = (tile_dir / std::format("{}.png", y)).string();
+    auto const tile_file = tile_dir / std::format("{}.png", y);
 
-    Process<> curl { "curl", "-s", "-f", "-A", "sweattrails/1.0", url };
-    curl.stdout_file = tile_file;
-    auto const exit_code = TRY_EVAL(curl.execute());
-    if (exit_code != 0) {
+    auto const exit_code = download(url, tile_file);
+    if (!exit_code.has_value()) {
         fs::remove(tile_file, ec);
-        return std::unexpected(LibCError { std::format("Error fetching tile `{}`: curl exited with {}", url, exit_code) });
+        return std::unexpected(
+            std::visit(
+                overloaded {
+                    [&url](CURLcode c) -> LibCError {
+                        return LibCError { std::format("Error fetching tile `{}`: curl error: {} ({})", url, curl_easy_strerror(c), static_cast<int>(c)) };
+                    },
+                    [](LibCError c) -> LibCError {
+                        return c;
+                    },
+                },
+                exit_code.error()));
     }
     trace(Map, "fetched tile {}", url);
     return get_cached_tile(storage);
 }
 
-std::expected<Map, LibCError> Map::init(Storage const &storage, Box const &b, u8 width, u8 height)
+std::string Tile::to_string() const
 {
-    assert(width > 0 && width <= 8);
-    assert(height > 0 && height <= 4);
-    u16 const  columns = 2 * width + 1;
-    u16 const  rows = 2 * height + 1;
-    u8 const   min_dim = std::min(width, height);
+    return std::format("zoom {}/x: {} y: {}/box: `{}`", zoom, x, y, box());
+}
+
+/**
+ * Initializes a Map to display by calculating coordinates and downloading
+ * OSM tiles.
+ *
+ * @param storage Reference to the application storage context
+ * @param b Bounding box in real world map coordinates of the map to be
+ * displayed.
+ * @param width Width in pixels of the Map image area
+ * @param height Height in pixels of the Map image area
+ */
+std::expected<Map, LibCError> Map::init(Storage const &storage, Box const &b, u16 width, u16 height)
+{
     auto const mid = b.center();
-    for (auto zoom = static_cast<u8>(16 - min_dim - 1); zoom > 0; --zoom) {
+    trace(Map, "middle of the box is `{}`", mid);
+    for (u8 zoom = 16; zoom > 0; --zoom) {
         auto const mid_tile = Tile::for_coordinates(mid, zoom);
         auto const tile_box = mid_tile.box();
-        if (tile_box.width() <= b.width() * 1.1f || tile_box.height() <= b.height() * 1.1f) {
+        if ((256 * (b.width() * 1.1f) / tile_box.width() > width) || (256 * (b.height() * 1.1f) / tile_box.height() > height)) {
+            trace(Map, "Mid tile `{}` does not fit", mid_tile);
             continue;
         }
-        auto const map_zoom = static_cast<u8>(zoom + min_dim - 1);
-        auto const t = Tile::for_coordinates(mid, map_zoom);
-        Map        ret {
-                   .zoom = map_zoom,
-                   .x = t.x - width,
-                   .y = t.y - height,
-                   .width = width,
-                   .height = height,
-                   .columns = columns,
-                   .rows = rows,
-                   .num_tiles = static_cast<u16>(columns * rows),
-                   .tiles = { },
+
+        trace(Map, "Mid tile `{}` DOES fit", mid_tile);
+
+        auto const n = tile_count(zoom);
+        auto const fx = (mid.lon + 180.0f) / 360.0f * n;
+        auto const fy = (1.0f - std::asinh(std::tan(degrees_to_radians(mid.lat))) / PI) / 2.0f * n;
+        auto const left = fx - width / 512.0f; // in tile units
+        auto const top = fy - height / 512.0f;
+        u32 const  x0 = static_cast<u32>(std::floor(left));
+        u32 const  y0 = static_cast<u32>(std::floor(top));
+        u16 const  columns = static_cast<u16>(std::ceil(fx + width / 512.0f) - x0);
+        u16 const  rows = static_cast<u16>(std::ceil(fy + height / 512.0f) - y0);
+
+        Rectangle rect {
+            .x = (left - x0) * 256.0f,
+            .y = (top - y0) * 256.0f,
+            .width = static_cast<float>(width),
+            .height = static_cast<float>(height),
+        };
+        trace(Map, "Rectangle {}x{}@{},{}", rect.width, rect.height, rect.x, rect.y);
+        Map ret {
+            .zoom = zoom,
+            .x = x0,
+            .y = y0,
+            .width = width,
+            .height = height,
+            .columns = columns,
+            .rows = rows,
+            .rectangle = rect,
+            .num_tiles = static_cast<u16>(columns * rows),
+            .tiles = { },
         };
         ret.tiles.reserve(ret.num_tiles);
         for (u32 i = 0; i < ret.num_tiles; ++i) {
             Tile const tile_ix {
-                .x = ret.x + i % columns,
-                .y = ret.y + i / columns,
-                .zoom = map_zoom,
+                .x = ret.x + (i % columns),
+                .y = ret.y + (i / columns),
+                .zoom = zoom,
             };
             ret.tiles.emplace_back(TRY_EVAL(tile_ix.get_tile(storage)));
         }
@@ -158,37 +244,23 @@ std::expected<Map, LibCError> Map::init(Storage const &storage, Box const &b, u8
 
 Tile Map::tile(size_t ix) const
 {
+    // trace(Map, "tile({})", ix);
     assert(ix < num_tiles);
     return tile_xy(static_cast<u32>(ix % columns), static_cast<u32>(ix / columns));
 }
 
 Tile Map::tile_xy(u32 tile_x, u32 tile_y) const
 {
+    // trace(Map, "tile_xy({}, {})", tile_x, tile_y);
     assert(tile_x < columns && tile_y < rows);
     return Tile { .x = x + tile_x, .y = y + tile_y, .zoom = zoom };
 }
 
-Box Map::box() const
-{
-    return sub_box(0, 0, rows - 1u, columns - 1u);
-}
-
-Box Map::sub_box(u32 nw_x, u32 nw_y, u32 height, u32 width) const
-{
-    assert(nw_x < columns - 1u);
-    assert(nw_y < rows - 1u);
-    assert(width < columns);
-    assert(height < rows);
-    assert(nw_x + width < columns && nw_y + height < rows);
-    auto const t_sw = tile_xy(nw_x, nw_y + height);
-    auto const t_ne = tile_xy(nw_x + width, nw_y);
-    return Box { .sw = t_sw.box().sw, .ne = t_ne.box().ne };
-}
-
 Coordinates Map::coordinates(float32 map_x, float32 map_y) const
 {
-    assert(map_x >= 0 && map_x <= static_cast<float32>(columns));
-    assert(map_y >= 0 && map_y <= static_cast<float32>(rows));
+    // trace(Map, "coordinates({}, {})", map_x, map_y);
+    assert(map_x >= 0 && map_x <= static_cast<float32>(columns * 256));
+    assert(map_y >= 0 && map_y <= static_cast<float32>(rows * 256));
     auto const t = tile_xy(static_cast<u32>(std::trunc(map_x)), static_cast<u32>(std::trunc(map_y)));
     auto const b = t.box();
     return Coordinates {
@@ -196,5 +268,4 @@ Coordinates Map::coordinates(float32 map_x, float32 map_y) const
         .lon = b.sw.lon + (map_x - std::trunc(map_x)) * (b.ne.lon - b.sw.lon),
     };
 }
-
 }
