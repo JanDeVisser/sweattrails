@@ -9,6 +9,7 @@
 #include <format>
 #include <system_error>
 
+#include <Logging.h>
 #include <StringUtil.h>
 
 #include <storage/Activity.h>
@@ -50,6 +51,9 @@ StorageResult<bool> Month::has_activities(Storage const &storage) const
             auto const     &entry = *it;
             std::error_code entry_ec { };
             if (!entry.is_regular_file(entry_ec)) {
+                if (entry_ec) {
+                    warning(Storage, "Skipping `{}`: {}", entry.path().string(), LibCError { entry_ec }.to_string());
+                }
                 continue;
             }
             auto const ext = entry.path().extension().string();

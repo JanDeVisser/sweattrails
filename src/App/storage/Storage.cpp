@@ -67,6 +67,9 @@ Error<StorageError> Storage::rescan()
         auto const     &entry = *it;
         std::error_code entry_ec { };
         if (!entry.is_directory(entry_ec)) {
+            if (entry_ec) {
+                warning(Storage, "Skipping `{}`: {}", entry.path().string(), LibCError { entry_ec }.to_string());
+            }
             continue;
         }
         auto const name = entry.path().filename().string();
