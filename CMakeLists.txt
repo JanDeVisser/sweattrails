@@ -210,6 +210,35 @@ target_link_libraries(
         m
 )
 
+enable_testing()
+
+# A test program in test/, run by CTest. See test/README.md.
+function(sweattrails_test name)
+    add_executable(${name} ${ARGN})
+    target_include_directories(
+            ${name}
+            PRIVATE
+            test
+            src/Lib/Base
+            src/Lib/Widget
+            ${raylib_INCLUDE_DIRS}
+            ${FREETYPE_INCLUDE_DIRS}
+    )
+    target_link_libraries(
+            ${name}
+            PRIVATE
+            Widget
+            Base
+            ${raylib_LIBRARIES}
+            ${FREETYPE_LIBRARIES}
+            ${ICONV}
+            m
+    )
+    add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+sweattrails_test(listbox_test test/ListBoxTest.cpp)
+
 install(TARGETS Base Widget sweattrails fitexplore
         ARCHIVE DESTINATION lib
         RUNTIME DESTINATION bin
