@@ -5,16 +5,35 @@ This defines the file that describes what the transparent overlay video from
 where, in which font, size and color, plus static labels, graphs, and the GPS
 track with an optional OpenStreetMap underlay.
 
+The format below describes the full design. Not all of it is needed for a
+first version; [Version 1 scope](#version-1-scope) lists what is in and what
+is deferred. Deferred features are also marked *(deferred)* where they are
+described.
+
 ## Format: JSON
 
 We use JSON rather than XML:
 
-- `src/Lib/Base/JSON.h` already parses JSON and has the `decode<T>()`
-  machinery, so the layout can be decoded straight into structs.
-- `share/settings.json` and the themes are already JSON, and colors use the
-  same `#rrggbb[aa]` notation as the themes.
+- `src/Lib/Base/JSON.h` already parses JSON, and `share/settings.json` is
+  JSON too.
 - Layouts are small and hand-edited. Comments would be nice, though, so the
   parser could accept `//` comments in layout files. (Open question.)
+
+`decode<T>()` doesn't decode structs generically: it calls a hand-written
+`T::decode(JSONValue const &)` (see `Strava::Config::decode` for an example).
+The layout format has many properties that take more than one shape (`x` is a
+number or `"50%"`, `style` is a string or an array, `resolution` is a preset
+or an object, ...), and the style cascade has to merge JSON objects before
+anything is decoded. So loading a layout is:
+
+1. Parse the file.
+2. For each element, merge `defaults`, its named styles, and its own
+   properties into one JSON object (later wins, objects merge recursively).
+3. Decode the merged object with a hand-written decoder per element type.
+
+Expect several hundred lines for the decoders. Colors are `#rrggbb` or
+`#rrggbbaa`. There's no color parser in the code yet (theme colors are read but
+never parsed), so one has to be written.
 
 ## Two files: layout and render job
 
@@ -43,10 +62,20 @@ and at which size, is not. So there are two files:
 - **`resolution`**: a preset (`720p`, `1080p`, `1440p`, `4k`, each with a
   `-portrait` variant such as `1080p-portrait`) or an explicit
   `{ "width": 1920, "height": 1080 }`.
-- **`fps`**: the frame rate, as a number or an exact rational such as
+- **`fps`**: the frame rate, as an integer or an exact rational such as
   `"30000/1001"`. It should match the Final Cut project.
-- **`range`**: the part of the activity to render, as elapsed time from the
-  start of the activity. Leave it out to render the whole activity.
+- **`range`**: the part of the activity to render. Leave it out to render the
+  whole activity. `from` and `to` are either:
+  - elapsed **wall-clock** time since the activity start, as `h:mm:ss`
+    (`"1:12:00"`). Pauses count, because the footage runs on the wall clock
+    too.
+  - a local time of day with an `@` prefix (`"@09:44:00"`). That's what the
+    user reads off the camera's file info.
+- **`codec`**: `prores4444` (default) or `hevc-alpha` *(deferred)*.
+
+Frame `n` shows the activity at `range.from + n / fps`. Compute this with
+integer math on the rational frame rate (`n * 1001 / 30000` seconds), not by
+adding up floating-point frame durations, which drifts over long renders.
 
 There's no video in the render job. Lining the overlay up with the footage is
 done by hand in Final Cut (see [video-overlay.md](video-overlay.md)).
@@ -62,7 +91,7 @@ done by hand in Final Cut (see [video-overlay.md](video-overlay.md)).
     "font": "Inter-Bold.ttf",
     "size": 48,
     "color": "#ffffff",
-    "shadow": { "color": "#00000080", "offset": [2, 2], "blur": 4 }
+    "shadow": { "color": "#00000080", "offset": [2, 2] }
   },
   "styles": {
     "label": { "size": 22, "color": "#ffffffb0", "font": "Inter-Regular.ttf" },
@@ -75,15 +104,27 @@ done by hand in Final Cut (see [video-overlay.md](video-overlay.md)).
 
 - **`design_size`**: the size the coordinates were designed for. If the
   render job's resolution differs (for example 4K or portrait), every position
-  and size
-  is scaled by `min(out_w / design_w, out_h / design_h)`, so one layout works
-  for 1080p and 4K. The scaling might be done per axis instead. (Open
-  question.)
+  and size is scaled by `min(out_w / design_w, out_h / design_h)`, so one
+  layout works for 1080p and 4K.
 - **`units`**: `metric` or `imperial`. Sets the default unit of each field (see
   below). Individual elements can override it.
 - **`defaults`** and **`styles`**: style properties that cascade. An element
   takes `defaults`, then each style named in its `"style"` (a string or an
   array, applied in order), then its own properties.
+- **Fonts**: the examples use Inter, which isn't shipped yet (`share/fonts`
+  only has VictorMono). Built-in layouts may only use fonts that are shipped
+  in `share/fonts`, so Inter (SIL Open Font License) needs to be added, or the
+  examples changed.
+
+### Strokes and fills
+
+The same two shapes are used everywhere a line or an area is drawn:
+
+- A **stroke** is `{ "color": "#rrggbbaa", "width": 3 }`.
+- A **fill** is a color string.
+
+So `graph.line`, `profile.done.line`, `map.track.done` and `border` are all
+strokes; `graph.fill` and `profile.done.fill` are fills.
 
 ### Positioning
 
@@ -102,8 +143,6 @@ Every element has a box:
   `bottom-right`. This keeps a bottom-right element in place when the aspect
   ratio changes.
 - Elements are drawn in array order, so later elements are drawn on top.
-- A `group` element positions its `children` relative to its own box. This
-  covers the common case of a panel holding a label and a value.
 
 ### Visibility over time
 
@@ -115,8 +154,11 @@ Any element can have:
 ```
 
 `from` and `to` are seconds from the start of the rendered range, so a title
-card can show for the first few seconds. An element can also have `"when": "lap_change"` to show for a few
-seconds after each new lap. (Possible later addition.)
+card can show for the first few seconds. `fade` is the fade-in and fade-out
+time in seconds.
+
+*(Deferred)* `"when": "lap_change"` shows an element for a few seconds after
+each new lap.
 
 ## Element types
 
@@ -130,8 +172,9 @@ seconds after each new lap. (Possible later addition.)
   "at": { "x": 40, "y": 100 } }
 ```
 
-`{field}` placeholders are filled in on every frame. The format after `:`
-follows `std::format` syntax. `align` can be `left`, `center` or `right`.
+`{field}` placeholders are filled in on every frame. `align` can be `left`,
+`center` or `right`. See [Templates and formatting](#templates-and-formatting)
+for the placeholder syntax.
 
 ### `value`: one data field, formatted
 
@@ -146,8 +189,8 @@ next to it.
   "at": { "x": 40, "y": -40, "anchor": "bottom-left" } }
 ```
 
-- `missing` is what to show when the field isn't in the record (for example
-  no power meter). `"hide"` hides the element instead.
+- `missing` is what to show when the field has no value (for example no power
+  meter). `"hide"` hides the element instead.
 - `color_by` changes the color based on the value, for example heart rate or
   power zones:
 
@@ -155,20 +198,28 @@ next to it.
   "color_by": { "zones": "hr", "colors": ["#8ecae6", "#90be6d", "#f9c74f", "#f8961e", "#f94144"] }
   ```
 
+  Zones need an athlete profile, which doesn't exist yet (see
+  [Code prerequisites](#code-prerequisites)). Until then `color_by` takes
+  explicit thresholds: `{ "thresholds": [[0, "#8ecae6"], [130, "#90be6d"], ...] }`.
+
 ### `gauge`: bar or arc
 
 ```json
 { "type": "gauge", "field": "power", "shape": "arc",
-  "min": 0, "max": "ftp*1.5",
-  "track_color": "#ffffff30", "fill_color": "#ffb703", "thickness": 14,
+  "min": 0, "max": { "of": "ftp", "factor": 1.5 },
+  "track": "#ffffff30", "fill": "#ffb703", "thickness": 14,
   "at": { "x": -40, "y": -40, "anchor": "bottom-right" },
   "size": { "width": 200, "height": 200 } }
 ```
 
-`shape` is `bar` (horizontal), `vbar` or `arc`. `min` and `max` are numbers,
-`"auto"` (the field's range over the activity, from `Segment`'s
-`computed_*_range`), or simple expressions on athlete settings such as `ftp`
-and `max_hr`.
+- `shape` is `bar` (horizontal), `vbar` or `arc`.
+- `min` and `max` are one of:
+  - a number.
+  - `"auto"`: the field's range over the activity. Only fields that have a
+    computed range in `Segment` support this: `speed`, `power`, `cadence`,
+    `heart_rate` and `altitude`.
+  - *(deferred)* `{ "of": "ftp" | "max_hr", "factor": 1.5 }`, which needs the
+    athlete profile.
 
 ### `graph`: any field over time or distance
 
@@ -198,11 +249,9 @@ still to come can be styled differently, the same way the map track is.
 { "type": "profile",
   "at": { "x": "50%", "y": -40, "anchor": "bottom" },
   "size": { "width": 900, "height": 140 },
-  "range": "all",
-  "done":      { "line": "#ffb703", "fill": "#ffb70360" },
-  "remaining": { "line": "#ffffff",  "fill": "#ffffff30" },
-  "line_width": 3,
-  "color_by_grade": null,
+  "extent": "all",
+  "done":      { "line": { "color": "#ffb703", "width": 3 }, "fill": "#ffb70360" },
+  "remaining": { "line": { "color": "#ffffff", "width": 3 }, "fill": "#ffffff30" },
   "marker": { "shape": "dot", "color": "#ffffff", "radius": 8,
               "outline": "#ffb703", "drop_line": true },
   "marker_label": { "text": "{altitude:.0f} {altitude.unit} · {grade:+.1f}%",
@@ -212,61 +261,61 @@ still to come can be styled differently, the same way the map track is.
   "laps": { "color": "#ffffff60", "width": 1 } }
 ```
 
-- **`range`**: which part of the ride the x axis covers.
+- **`extent`**: which part of the ride the x axis covers. (Called `extent`
+  rather than `range` so it isn't confused with the render job's time range.)
   - `"all"` (default): the whole activity. The marker moves from left to
-    right over the course of the video.
+    right over the course of the render.
+  - `{ "from": 12.5, "to": 31.0 }`: a fixed section in km (mi for imperial),
+    for a render that only covers one climb.
   - `"lap"`: the current lap. The profile changes at each new lap, which
     works well for rides split into climbs.
-  - `{ "behind": 2, "ahead": 5 }`: a window in km (mi for imperial) around
-    the current position, which scrolls past a fixed marker. It shows what's
+  - *(deferred)* `{ "behind": 2, "ahead": 5 }`: a window in km around the
+    current position, which scrolls past a fixed marker. It shows what's
     coming up on long rides, where a whole-ride profile is too compressed to
     read.
-  - `{ "from": 12.5, "to": 31.0 }`: a fixed section in km, for a video that
-    only covers one climb.
-- **`done` and `remaining`**: line and fill colors before and after the
-  current position. Leave out `remaining` to use `done` for the whole profile.
-- **`color_by_grade`**: when set, the fill is colored by gradient instead of
-  `done`/`remaining`, as in climb profiles. The bands are steepness
-  thresholds in %, each with a color:
+- **`done` and `remaining`**: line and fill before and after the current
+  position. Leave out `remaining` to use `done` for the whole profile.
+- *(deferred)* **`color_by_grade`**: fills the area under the profile by
+  gradient instead of with `done.fill`/`remaining.fill`, as in climb profiles.
+  The bands are steepness thresholds in %, each with a color:
 
   ```json
   "color_by_grade": { "bands": [[0, "#90be6d"], [4, "#f9c74f"], [7, "#f8961e"], [10, "#f94144"]],
-                      "segment": 0.5 }
+                      "segment": 0.5, "remaining_alpha": 0.4 }
   ```
 
-  `segment` is the length in km over which the grade is averaged for coloring.
-  The per-record `grade` is too noisy to use directly. With `color_by_grade`,
-  `done` and `remaining` only control the line, and the remaining part of the
-  fill is dimmed instead.
+  The grade is averaged over `segment` km. `done.line` and `remaining.line`
+  still draw the outline. The fill after the current position is drawn with
+  its alpha multiplied by `remaining_alpha`.
 - **`marker`**: the current position. `drop_line` draws a thin vertical line
   from the marker down to the baseline.
 - **`marker_label`**: a `text` template drawn next to the marker that moves
   with it. It flips to the left side of the marker near the right edge, so it
   doesn't get cut off.
 - **`scale`**: the elevation range on the y axis. `"auto"` uses the minimum
-  and maximum of the elevation inside `range`. `min_span` (in m, ft for
+  and maximum of the elevation inside `extent`. `min_span` (in m, ft for
   imperial) keeps a flat ride from being stretched until 5 m of rolling road
   looks like the Alps.
 - **`axis_labels`**: `min_max` writes the lowest and highest elevation at the
   left edge. `distance` adds distance ticks along the bottom.
-- **`laps`**: thin vertical lines at lap boundaries. Leave it out for none.
+- **`laps`**: a stroke for thin vertical lines at lap boundaries. Leave it out
+  for none.
 
 Data and rendering:
 
 - The elevation comes from `record.altitude`, with `record.distance` on the
   x axis. Records without a distance (for example indoor rides) can't be
   placed on a profile, and the element is hidden when the activity has none.
-- The raw altitude is smoothed (default over 5 records) before drawing,
-  because barometric and especially GPS altitude are jagged. `"smooth"`
-  overrides it.
+- Altitude is smoothed with a centered average over `smooth` seconds (default
+  10) before drawing, because barometric and especially GPS altitude are
+  jagged. Centered rather than trailing, because the whole shape is known in
+  advance and a trailing average would shift the hills.
 - The marker position is interpolated between records, like every other
   field (see [Sampling and smoothing](#sampling-and-smoothing)), so it glides
   instead of jumping once a second.
-- For `range: "all"` and fixed ranges, the profile shape doesn't change while
-  the video plays. Build the polyline (or a texture) once and on each frame
-  only split it at the current position and draw the marker. Scrolling
-  windows need the polyline rebuilt per frame, but that's a few hundred
-  points at most.
+- For fixed extents the profile shape doesn't change during the render. Build
+  the polyline once and on each frame only split it at the current position
+  and draw the marker.
 
 ### `map`: GPS track, position, optional OSM underlay
 
@@ -276,13 +325,14 @@ Data and rendering:
   "size": { "width": 420, "height": 420 },
   "clip": "circle",
   "border": { "color": "#ffffff", "width": 4 },
-  "view": { "mode": "follow", "zoom": 15, "rotate": "heading" },
+  "view": "follow",
+  "zoom": 15,
   "tiles": {
     "source": "osm",
     "opacity": 0.8,
-    "filter": "grayscale",
-    "attribution": "auto"
+    "filter": "grayscale"
   },
+  "attribution": { "style": "label", "size": 14 },
   "track": {
     "done":      { "color": "#ffb703", "width": 6 },
     "remaining": { "color": "#ffffff80", "width": 4 },
@@ -292,22 +342,29 @@ Data and rendering:
               "outline": "#ffb703" } }
 ```
 
-- **`view.mode`**:
+- **`view`**:
   - `fit`: the whole track fits in the box and doesn't move, and only the
     marker moves. This is what `Map::init(storage, box, w, h)` already does.
   - `follow`: the map is centered on the current position at a fixed `zoom`.
-  - `rotate: "heading"`: the map turns so the direction of travel points up.
-    This is optional and much more work (see below).
-- **`clip`**: `rect`, `rounded` (uses `radius`) or `circle`.
+- *(deferred)* **`rotate`**: `"north"` (default) or `"heading"`, which turns the
+  map so the direction of travel points up.
+- **`clip`**: `rect`, `rounded` (with a `radius` property) or `circle`.
 - **`tiles`**: leave the key out or use `null` to show only the track with no
-  underlay. `source` is `osm` (the current
-  `https://tile.openstreetmap.org/{z}/{x}/{y}.png`) or a custom URL template.
-  `filter` is `none`, `grayscale`, `dark` (inverted grayscale) or a tint color,
-  to keep the map from competing with the footage.
+  underlay. `source` is `osm` (`https://tile.openstreetmap.org/{z}/{x}/{y}.png`).
+  *(Deferred)* custom URL templates. `filter` is `none`, `grayscale`, `dark`
+  (inverted grayscale) or a tint color, to keep the map from competing with
+  the footage.
 - **`attribution`**: OSM's license requires "© OpenStreetMap contributors"
-  wherever its tiles are shown, including in videos. `"auto"` draws it small
-  inside the map box. It can be moved, but it shouldn't be possible to turn it
-  off for the OSM source.
+  wherever its tiles are shown, including in videos. It's always drawn when
+  OSM tiles are shown and can't be turned off; the property only styles it.
+  It's placed just below the map box, right-aligned, so a circular clip can't
+  cut it off. *(Not verified: whether OSM's attribution guidelines would also
+  allow a credit at the end of the video instead. Drawing it next to the map is
+  the safe choice.)*
+- **`zoom` at other resolutions**: when design scaling makes the map box
+  bigger (factor 2 at 4K), drawing zoom-15 tiles at twice their size looks
+  blurry. Instead, fetch tiles at `zoom + round(log2(scale))`, so the map shows
+  the same area at full sharpness.
 
 ### `image`: logos and icons
 
@@ -331,88 +388,222 @@ Paths are relative to the layout file, then to `share/overlays/`.
   ] }
 ```
 
+- The group draws its own `background` (with `radius`) once, then its
+  children.
+- Children are positioned inside the group's box minus `padding`. A child's
+  `anchor` and negative coordinates refer to that inner box, not the canvas.
+- Children inherit only text properties from the group: `font`, `size`,
+  `color` and `shadow`. Box properties (`background`, `radius`, `padding`,
+  `border`) are not inherited, so the panel isn't drawn again behind every
+  child.
+
 ## Fields
 
 These map onto `FIT::record`, `Lap` and `Segment`. Every field `f` also has
-`f.unit` (the unit string for templates). Numeric fields also have `f.avg`
-and `f.max`, computed from the start of the activity up to now, and
-`f.lap_avg`, computed over the current lap.
+`f.unit` (the unit string for templates).
 
-| Field         | Source                         | Metric unit | Imperial unit |
-|---------------|--------------------------------|-------------|---------------|
-| `speed`       | `record.speed`                 | km/h        | mph           |
-| `pace`        | derived from `speed`           | min/km      | min/mi        |
-| `heart_rate`  | `record.heart_rate`            | bpm         | bpm           |
-| `power`       | `record.power`                 | W           | W             |
-| `power_wkg`   | `power` / athlete weight       | W/kg        | W/kg          |
-| `cadence`     | `record.cadence`               | rpm / spm   | rpm / spm     |
-| `altitude`    | `record.altitude`              | m           | ft            |
-| `grade`       | `record.grade`                 | %           | %             |
-| `distance`    | `record.distance`              | km          | mi            |
-| `temperature` | `record.temperature`           | °C          | °F            |
-| `lr_balance`  | `record.left_right_balance`    | %           | %             |
-| `elapsed`     | timestamp − activity start     | h:mm:ss     | h:mm:ss       |
-| `time_of_day` | `record.timestamp` (local)     | HH:MM       | HH:MM         |
-| `lap`         | index of the current `Lap`     |             |               |
-| `title`       | `Activity.title`               |             |               |
-| `date`        | `Segment.start_time`           |             |               |
+| Field         | Source                                    | Metric unit | Imperial unit |
+|---------------|-------------------------------------------|-------------|---------------|
+| `speed`       | `record.speed`                            | km/h        | mph           |
+| `pace`        | derived from `speed`                      | min/km      | min/mi        |
+| `heart_rate`  | `record.heart_rate`                       | bpm         | bpm           |
+| `power`       | `record.power`                            | W           | W             |
+| `cadence`     | `record.cadence` (see below)              | rpm / spm   | rpm / spm     |
+| `altitude`    | `record.altitude`                         | m           | ft            |
+| `grade`       | derived from altitude and distance        | %           | %             |
+| `distance`    | `record.distance`                         | km          | mi            |
+| `temperature` | `record.temperature`                      | °C          | °F            |
+| `lr_balance`  | `record.left_right_balance` (see below)   | %           | %             |
+| `elapsed`     | wall-clock time since activity start      | h:mm:ss     | h:mm:ss       |
+| `time_of_day` | `record.timestamp` + `Activity.utc_offset`| HH:MM       | HH:MM         |
+| `lap`         | current lap, 1-based                      |             |               |
+| `title`       | `Activity.title`                          |             |               |
+| `date`        | `Segment.start_time`                      |             |               |
+
+*(Deferred)*: `power_wkg` (needs athlete weight), and `f.avg`, `f.max` and
+`f.lap_avg` for numeric fields (average and maximum from the start up to now,
+and average over the current lap; these need prefix sums over the records).
 
 `unit` on an element is `"auto"` (from `units`) or an explicit unit such as
 `"m/s"`.
+
+Notes per field:
+
+- **`pace`**: missing when the speed is below 1 km/h. Otherwise slow walking
+  or standing still shows absurd values like 600:00 min/km.
+- **`cadence`**: for cycling, rpm as recorded. For running, FIT records strides
+  per minute of one foot, so steps per minute is `2 × cadence`.
+  (`fractional_cadence` isn't parsed and is ignored.)
+- **`grade`**: computed as the change in smoothed altitude over the change in
+  distance across a 100 m window. `record.grade` is not used: most devices
+  don't record it, and the ones that do are noisy.
+- **`lr_balance`**: the raw value is a bitfield. Bit `0x80` set means the
+  value is the right leg's share, bits `0x7F` are the percentage. Display it
+  as left/right, e.g. `48/52`. The raw value `0xFF` means invalid.
+- **`time_of_day`**: FIT timestamps are UTC. `Activity.utc_offset` (local time
+  minus UTC, from the FIT activity message) converts them to the local time
+  where the activity happened. If the file has no local timestamp, fall back
+  to the system time zone.
+
+### Templates and formatting
+
+- Placeholders are `{field}`, `{field:spec}` and `{field.unit}`. A small
+  template parser splits the text and formats each placeholder separately;
+  the text can't go to `std::vformat` as is, because `.unit` isn't
+  `std::format` syntax.
+- Numeric fields are always passed to the formatter as `double`, whatever their
+  type in `record`. (`std::format("{:.1f}", u8)` throws.) So `{heart_rate}`
+  prints `142` and `{heart_rate:.0f}` does the same thing; the default spec
+  for each field is the precision a human expects (integer for heart rate and
+  power, one decimal for speed and distance).
+- Durations (`elapsed`) take `hms` (`1:05:09`, default) or `ms` (`65:09`).
+- `time_of_day` takes `hm` (`09:44`, default) or `hms` (`09:44:10`).
+- `date` takes `std::chrono` style specs (`{date:%d %b %Y}`).
 
 ### Sampling and smoothing
 
 Records usually arrive at 1 Hz and the video runs at 30 or 60 fps, so a value
 that changes once a second looks jumpy.
 
-- Every element can set `"smooth": 3`, a trailing average over that many
-  seconds. The default comes from the field: 3 s for power and none for
-  distance.
+- When an activity is loaded, `Segment::analyze` already overwrites speed,
+  power, cadence and heart rate in the records with a 3-sample moving average.
+  So the overlay's own smoothing defaults to none for those fields. Elements
+  can set `"smooth": <seconds>` for more, as a trailing average.
 - Numeric fields and the map marker are **interpolated** linearly between the
   two records around the current frame time. Displayed integers (heart rate,
   power) are rounded after the interpolation. `"interpolate": false` turns
   this off.
-- Gaps (auto-pause, signal loss): if the nearest records are more than
-  `max_gap` seconds apart (default 5), the field counts as missing.
+
+### Pauses and missing data
+
+If the two records around the current frame are more than `max_gap` seconds
+apart (default 5), the activity was paused (auto-pause, or the user stopped
+the timer) or lost its signal. During a gap:
+
+| Fields                                             | Shown as            |
+|----------------------------------------------------|---------------------|
+| `speed`, `power`, `cadence`                        | 0                   |
+| `pace`                                             | missing             |
+| `heart_rate`, `temperature`, `lr_balance`          | missing             |
+| `distance`, `altitude`, `grade`, map position      | held at last value  |
+| `elapsed`, `time_of_day`                           | keep running        |
+| `lap`                                              | held                |
+
+A field that the activity doesn't have at all (no power meter, an indoor ride
+without GPS) is missing for the whole render. A `map` with no positions and a
+`profile` with no distances are hidden.
 
 ## Rendering notes
 
 - **Fonts** are resolved through `appearance.font_directories` from
   `settings.json`. Each distinct (font, scaled size) pair is loaded once with
-  `LoadFontEx` at the exact pixel size. Scaling a small font up blurs it.
-- **Shadow/outline**: draw the text again with an offset, or blur it in a
-  shader. On top of arbitrary footage, text without a shadow or outline is hard
-  to read, which is why `defaults` includes a shadow.
-- **Map tiles in `follow` mode**: render the tiles for the whole track into one
-  large off-screen texture once, at the chosen zoom, and on each frame draw
-  the visible rectangle of it with `DrawTexturePro`. That turns per-frame tile
-  handling into one blit. A ride at zoom 15 can still need a few hundred tiles,
-  so:
-  - Go through the existing tile cache (`Tile::get_tile`).
-  - Respect the [OSM tile usage policy](https://operations.osmfoundation.org/policies/tiles/):
-    send a valid User-Agent, no bulk prefetching beyond what's needed, and
-    throttle downloads. For heavy use, allow a custom tile server or a
-    commercial provider via the `source` URL template.
-- **Rotation** (`rotate: "heading"`): draw the map texture rotated around the
-  marker inside the clip region. Use a scissor rectangle for `rect`, or a
-  stencil/shader mask for `circle`. Smooth the heading heavily, because GPS
-  heading jitters at low speed.
+  `LoadFontEx` at the exact pixel size, because scaling a small font up blurs
+  it. Load only ASCII plus the characters the layout actually uses (`·`, `°`,
+  `±` and so on). `App::set_fonts` loads 992 code points, which makes a huge
+  glyph atlas at 128 px (64 px scaled for 4K).
+- **Shadow/outline**: draw the text again with a hard offset in the shadow
+  color. On top of arbitrary footage, text without a shadow or outline is hard
+  to read, which is why `defaults` includes a shadow. *(Deferred)* blurred
+  shadows, which need a two-pass blur shader and an extra render texture.
+- **Alpha blending**: see [video-overlay.md](video-overlay.md#alpha). Every
+  element is drawn with the overlay's custom blend mode.
+- **Circle and rounded clipping**: raylib has no stencil API. Draw the map
+  into its own `RenderTexture2D` the size of the map box, then draw that
+  texture onto the overlay with a small fragment shader that discards pixels
+  outside the circle or rounded rectangle. The same approach later handles
+  rotation. `rect` can use `BeginScissorMode`.
+- **Map tiles**: don't stitch all tiles in the track's bounding box into one
+  texture. A 100 km point-to-point ride at zoom 15 has a bounding box of
+  roughly 100 × 100 tiles: far beyond the maximum texture size (often 16384
+  px), and downloading them all would be bulk downloading under OSM's policy.
+  Instead:
+  - Fetch only the tiles along the track: every tile the track passes through,
+    plus enough neighbors to fill the map box around any point on the track.
+  - Keep each tile as its own texture, and each frame draw the few tiles in
+    view (3 × 3 to 5 × 5).
+  - In `fit` mode, there's one fixed set of tiles, as `Map::init` already
+    computes.
+- **OSM tile usage policy**
+  ([policy](https://operations.osmfoundation.org/policies/tiles/)):
+  - Send a User-Agent that identifies the app and a way to contact us (e.g.
+    `SweatTrails/1.0 (+https://github.com/...)`). The current
+    `sweattrails/1.0` lacks the contact part.
+  - Respect the HTTP caching headers. The tile cache currently never expires,
+    and the policy asks for at least 7 days of caching. That's satisfied, but
+    tiles also never get refreshed.
+  - Throttle downloads to a couple of parallel requests.
 - **Preview**: the same renderer should draw into the activity screen with a
   time scrubber, so layouts can be adjusted without encoding a video. Hot
   reload when the layout file changes would make editing layouts by hand
   bearable.
 
+## Code prerequisites
+
+Fixed while writing this spec:
+
+- `Activity::analyze()`, which splits the records into laps, was never called,
+  so laps had no records. It's now called after loading. Its lap splitting was
+  also broken for more than two laps and has been rewritten.
+- Lap and session end times were computed as start + moving time, which is too
+  early when there were pauses. They now use the message's timestamp, which
+  FIT defines as the end time.
+- `record.grade` was read without its scale of 100.
+- `share/settings.json` used `${ARAGORN_DATADIR}`, but the code replaces
+  `${sweattrails_DATADIR}`, so `share/fonts` was never found. Subdirectories
+  of font directories were also added as the parent directory again.
+- `Activity.utc_offset` now stores the local time offset from the FIT
+  activity message.
+
+Still to do:
+
+- A color parser for `#rrggbb[aa]`.
+- The layout decoders (see [Format: JSON](#format-json)).
+- Ship the fonts the built-in layouts use.
+- Tile code: pass the URL template in instead of hard-coding the OSM URL in
+  `Tile::get_tile`, and key the cache by source. Otherwise a custom tile
+  server's tiles mix with OSM's in `tiles_dir/z/x/y.png`. Also fix the
+  User-Agent, and turn off `CURLOPT_VERBOSE` in `download()`.
+- *(Deferred features only)* an athlete profile with FTP, max HR, weight and
+  zones, replacing the `JANS_FTP` constant.
+
+## Version 1 scope
+
+In:
+
+- Render job with `resolution`, `fps`, `range` (both elapsed and time of
+  day), `output`, `codec: prores4444`.
+- Layout: `design_size`, `units`, `defaults`, `styles`, positioning,
+  `visible`/`fade`.
+- Elements: `text`, `value` (with `color_by` thresholds), `gauge` (number and
+  `"auto"` limits), `graph`, `profile` (`extent` `all`, fixed and `lap`),
+  `map` (`fit` and `follow`, all clip shapes, OSM tiles with filters), `image`,
+  `group`.
+- All fields in the table, with interpolation, the pause rules, and templates.
+- Hard-offset shadows.
+
+Deferred:
+
+- HEVC with alpha.
+- `rotate: "heading"` for maps.
+- Custom tile sources.
+- `color_by_grade` and scrolling `extent` windows for profiles.
+- `when: lap_change`.
+- Athlete profile: zones, gauge limits relative to FTP or max HR,
+  `power_wkg`.
+- `f.avg`, `f.max`, `f.lap_avg`.
+- Blurred shadows.
+
+Even version 1 is a few thousand lines: decoders, the element renderers,
+fields and interpolation, and tile handling. Only the encoding loop itself is
+small (see [video-overlay.md](video-overlay.md)).
+
 ## Open questions
 
 1. Comments in layout JSON (`//`)? Or JSON5?
-2. Scale uniformly, or per axis, when the output size differs from
-   `design_size`?
-3. Should portrait renders (9:16) need their own layout, or should anchors
+2. Should portrait renders (9:16) need their own layout, or should anchors
    handle them? Anchors probably cover most cases, but a map plus a profile
    along the bottom will be cramped.
-4. Athlete settings (FTP, max HR, weight, zones): `JANS_FTP` is currently a
-   constant. Zone and gauge expressions need a real athlete profile.
-5. Should the layout name the units, or should that be an app setting that
+3. Should the layout name the units, or should that be an app setting that
    layouts inherit?
-6. Should there be a graphical layout editor, or is editing JSON by hand with
+4. Should there be a graphical layout editor, or is editing JSON by hand with
    a live preview enough for now?
