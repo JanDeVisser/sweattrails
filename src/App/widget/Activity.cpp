@@ -403,6 +403,9 @@ void ActivityMap::draw()
     }
 }
 
+// TODO: The map is built for the viewport set_activity() sees, and isn't
+// rebuilt when the viewport changes. For example, an activity opened while
+// the status line shows keeps a smaller map after the status line hides.
 void ActivityMap::resize()
 {
 }
