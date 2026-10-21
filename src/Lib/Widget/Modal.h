@@ -111,13 +111,24 @@ struct ListBox : public Modal {
         resize();
     }
 
+    // The entries on display: the matches while there is a search, else all
+    // of them. `selection` and `top_line` index this list.
+    [[nodiscard]] ListBoxEntries const &shown() const
+    {
+        return (Config.search && !search.empty()) ? matches : entries;
+    }
+
+    // The selected entry. Only call this when there is one, as in submit().
+    [[nodiscard]] ListBoxEntry const &selected() const
+    {
+        return shown()[static_cast<size_t>(selection)];
+    }
+
     void draw_entries(size_t y_offset)
     {
         auto const &cell = App::the()->cells[static_cast<size_t>(FontSize::Medium)];
         size_t      maxlen = (viewport.width - 28) / (cell.x * textsize);
-        // Bind the reference to the list to draw: assigning to it would copy
-        // the matches over the entries.
-        auto const &entries_to_draw = (Config.search && !search.empty()) ? matches : entries;
+        auto const &entries_to_draw = shown();
         for (size_t ix = top_line; ix < top_line + lines && ix < entries_to_draw.size(); ++ix) {
             auto const &e = entries_to_draw[ix];
             auto        text_color = RAYWHITE; // Theme::the().fg();
@@ -192,12 +203,7 @@ struct ListBox : public Modal {
         if (status == ModalStatus::Dormant) {
             return false;
         }
-        size_t sz = entries.size();
-        if constexpr (Config.search) {
-            if (!search.empty()) {
-                sz = matches.size();
-            }
-        }
+        size_t sz = shown().size();
 
         auto handle = [sz, this, key, modifier]() -> bool {
             if (modifier != KModNone) {
@@ -482,8 +488,7 @@ void query_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
 
         void submit() override
         {
-            auto selected = entries[selection].payload;
-            submit_fnc(target, selected);
+            submit_fnc(target, selected().payload);
         }
     };
     auto const &qbox = Widget::make<QueryBox>(target, prompt, fnc, options);

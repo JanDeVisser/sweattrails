@@ -30,7 +30,7 @@ void ActivitySelector::populate()
 
 void ActivitySelector::submit()
 {
-    submit_fnc(std::dynamic_pointer_cast<ActivitySelector>(self()), entries[selection].payload);
+    submit_fnc(std::dynamic_pointer_cast<ActivitySelector>(self()), selected().payload);
 }
 
 bool ActivitySelector::process_key(KeyboardModifier modifier, int key)
