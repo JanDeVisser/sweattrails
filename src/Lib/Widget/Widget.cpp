@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <algorithm>
+
 #include <raylib.h>
 
 #include <JSON.h>
@@ -260,12 +262,14 @@ Label::Label(pWidget const &parent, std::string_view const &text, Color color)
 
 void Label::draw()
 {
-    // The FontSize overload of render_text() falls back to another size if
-    // this one isn't loaded.
+    // The FontSize overload of render_text() falls back to the medium font
+    // if this size isn't loaded, so centre the text for the font it draws
+    // with. A negative y would make render_text() measure from the bottom.
     if (!text.empty()) {
+        auto const drawn = App::the()->font(size) ? size : FontSize::Medium;
         render_text(
             PADDING,
-            (viewport.height - App::the()->char_size(size).y) / 2,
+            std::max(0.0f, (viewport.height - App::the()->char_size(drawn).y) / 2),
             text, size, color);
     }
 }
