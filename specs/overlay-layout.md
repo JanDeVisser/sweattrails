@@ -18,39 +18,44 @@ We use JSON rather than XML:
 
 ## Two files: layout and render job
 
-What the overlay looks like is reusable, but which video and activity go
-together is not. So there are two files:
+What the overlay looks like is reusable, but which activity it's rendered for,
+and at which size, is not. So there are two files:
 
 - **Layout** (`*.overlay.json`): a template. "Speed in the bottom left, heart
   rate next to it, map in the top right." It has no references to a specific
-  video or activity. Built-in layouts live in `share/overlays/`.
-- **Render job**: the video, the activity, the time offset between them, and
-  which layout to use. The app can build this in the UI and doesn't
-  necessarily need to save it, but a file makes command-line and batch
-  rendering possible:
+  activity, and no output size. Built-in layouts live in `share/overlays/`.
+- **Render job**: the activity, the layout, and the output settings. The app
+  can build this in the UI and doesn't necessarily need to save it, but a file
+  makes command-line and batch rendering possible:
 
 ```json
 {
   "layout": "cycling-basic",
-  "video": "~/Movies/ride.mov",
   "activity": "2025-06-14-0832",
-  "offset": 754.2,
-  "range": { "from": 0, "to": "end" },
+  "resolution": "1080p",
+  "fps": "30000/1001",
+  "range": { "from": "1:12:00", "to": "1:20:30" },
   "output": "~/Movies/ride.overlay.mov",
   "codec": "prores4444"
 }
 ```
 
-`offset` is the activity time in seconds at video frame 0. It starts as the
-value computed from `com.apple.quicktime.creationdate` and the user adjusts it
-by hand.
+- **`resolution`**: a preset (`720p`, `1080p`, `1440p`, `4k`, each with a
+  `-portrait` variant such as `1080p-portrait`) or an explicit
+  `{ "width": 1920, "height": 1080 }`.
+- **`fps`**: the frame rate, as a number or an exact rational such as
+  `"30000/1001"`. It should match the Final Cut project.
+- **`range`**: the part of the activity to render, as elapsed time from the
+  start of the activity. Leave it out to render the whole activity.
+
+There's no video in the render job. Lining the overlay up with the footage is
+done by hand in Final Cut (see [video-overlay.md](video-overlay.md)).
 
 ## Layout structure
 
 ```json
 {
   "version": 1,
-  "canvas": { "width": "source", "height": "source", "fps": "source" },
   "design_size": { "width": 1920, "height": 1080 },
   "units": "metric",
   "defaults": {
@@ -68,10 +73,9 @@ by hand.
 }
 ```
 
-- **`canvas`**: the output size and frame rate. `"source"` means "match the
-  video", which should nearly always be the right value.
-- **`design_size`**: the size the coordinates were designed for. If the output
-  size differs (for example a 4K or portrait source), every position and size
+- **`design_size`**: the size the coordinates were designed for. If the
+  render job's resolution differs (for example 4K or portrait), every position
+  and size
   is scaled by `min(out_w / design_w, out_h / design_h)`, so one layout works
   for 1080p and 4K. The scaling might be done per axis instead. (Open
   question.)
@@ -110,8 +114,8 @@ Any element can have:
 "fade": 0.5
 ```
 
-`from` and `to` are video seconds, so a title card can show for the first few
-seconds. An element can also have `"when": "lap_change"` to show for a few
+`from` and `to` are seconds from the start of the rendered range, so a title
+card can show for the first few seconds. An element can also have `"when": "lap_change"` to show for a few
 seconds after each new lap. (Possible later addition.)
 
 ## Element types
@@ -166,22 +170,103 @@ next to it.
 `computed_*_range`), or simple expressions on athlete settings such as `ftp`
 and `max_hr`.
 
-### `graph`: profile with a cursor
+### `graph`: any field over time or distance
 
 ```json
-{ "type": "graph", "field": "altitude", "x_axis": "distance",
-  "window": "all",
-  "line": { "color": "#ffffff", "width": 3 },
-  "fill": "#ffffff30",
-  "cursor": { "color": "#ffb703", "radius": 8 },
-  "at": { "x": "50%", "y": -40, "anchor": "bottom" },
-  "size": { "width": 900, "height": 120 } }
+{ "type": "graph", "field": "heart_rate", "x_axis": "time",
+  "window": 60,
+  "line": { "color": "#f94144", "width": 3 },
+  "fill": "#f9414430",
+  "cursor": { "color": "#ffffff", "radius": 6 },
+  "at": { "x": 40, "y": -200, "anchor": "bottom-left" },
+  "size": { "width": 400, "height": 100 } }
 ```
 
 - `x_axis` is `distance` or `time`.
-- `window: "all"` shows the whole activity with a cursor at the current
-  position, which is the classic elevation profile. `window: 60` shows a
-  rolling 60-second trace, which suits heart rate or power.
+- `window: 60` shows a rolling 60-second trace ending at the current moment,
+  which suits heart rate or power. `window: "all"` shows the whole activity
+  with a cursor at the current position.
+- For elevation, use the more specific `profile` element below.
+
+### `profile`: elevation profile with the current position
+
+Shows the elevation of the whole ride (or a section of it) against distance,
+with a marker at the current position. The part already ridden and the part
+still to come can be styled differently, the same way the map track is.
+
+```json
+{ "type": "profile",
+  "at": { "x": "50%", "y": -40, "anchor": "bottom" },
+  "size": { "width": 900, "height": 140 },
+  "range": "all",
+  "done":      { "line": "#ffb703", "fill": "#ffb70360" },
+  "remaining": { "line": "#ffffff",  "fill": "#ffffff30" },
+  "line_width": 3,
+  "color_by_grade": null,
+  "marker": { "shape": "dot", "color": "#ffffff", "radius": 8,
+              "outline": "#ffb703", "drop_line": true },
+  "marker_label": { "text": "{altitude:.0f} {altitude.unit} · {grade:+.1f}%",
+                    "style": "label" },
+  "scale": { "min": "auto", "max": "auto", "min_span": 100 },
+  "axis_labels": { "min_max": true, "distance": false, "style": "label" },
+  "laps": { "color": "#ffffff60", "width": 1 } }
+```
+
+- **`range`**: which part of the ride the x axis covers.
+  - `"all"` (default): the whole activity. The marker moves from left to
+    right over the course of the video.
+  - `"lap"`: the current lap. The profile changes at each new lap, which
+    works well for rides split into climbs.
+  - `{ "behind": 2, "ahead": 5 }`: a window in km (mi for imperial) around
+    the current position, which scrolls past a fixed marker. It shows what's
+    coming up on long rides, where a whole-ride profile is too compressed to
+    read.
+  - `{ "from": 12.5, "to": 31.0 }`: a fixed section in km, for a video that
+    only covers one climb.
+- **`done` and `remaining`**: line and fill colors before and after the
+  current position. Leave out `remaining` to use `done` for the whole profile.
+- **`color_by_grade`**: when set, the fill is colored by gradient instead of
+  `done`/`remaining`, as in climb profiles. The bands are steepness
+  thresholds in %, each with a color:
+
+  ```json
+  "color_by_grade": { "bands": [[0, "#90be6d"], [4, "#f9c74f"], [7, "#f8961e"], [10, "#f94144"]],
+                      "segment": 0.5 }
+  ```
+
+  `segment` is the length in km over which the grade is averaged for coloring.
+  The per-record `grade` is too noisy to use directly. With `color_by_grade`,
+  `done` and `remaining` only control the line, and the remaining part of the
+  fill is dimmed instead.
+- **`marker`**: the current position. `drop_line` draws a thin vertical line
+  from the marker down to the baseline.
+- **`marker_label`**: a `text` template drawn next to the marker that moves
+  with it. It flips to the left side of the marker near the right edge, so it
+  doesn't get cut off.
+- **`scale`**: the elevation range on the y axis. `"auto"` uses the minimum
+  and maximum of the elevation inside `range`. `min_span` (in m, ft for
+  imperial) keeps a flat ride from being stretched until 5 m of rolling road
+  looks like the Alps.
+- **`axis_labels`**: `min_max` writes the lowest and highest elevation at the
+  left edge. `distance` adds distance ticks along the bottom.
+- **`laps`**: thin vertical lines at lap boundaries. Leave it out for none.
+
+Data and rendering:
+
+- The elevation comes from `record.altitude`, with `record.distance` on the
+  x axis. Records without a distance (for example indoor rides) can't be
+  placed on a profile, and the element is hidden when the activity has none.
+- The raw altitude is smoothed (default over 5 records) before drawing,
+  because barometric and especially GPS altitude are jagged. `"smooth"`
+  overrides it.
+- The marker position is interpolated between records, like every other
+  field (see [Sampling and smoothing](#sampling-and-smoothing)), so it glides
+  instead of jumping once a second.
+- For `range: "all"` and fixed ranges, the profile shape doesn't change while
+  the video plays. Build the polyline (or a texture) once and on each frame
+  only split it at the current position and draw the marker. Scrolling
+  windows need the polyline rebuilt per frame, but that's a few hundred
+  points at most.
 
 ### `map`: GPS track, position, optional OSM underlay
 
@@ -322,7 +407,7 @@ that changes once a second looks jumpy.
 1. Comments in layout JSON (`//`)? Or JSON5?
 2. Scale uniformly, or per axis, when the output size differs from
    `design_size`?
-3. Should portrait videos (9:16) need their own layout, or should anchors
+3. Should portrait renders (9:16) need their own layout, or should anchors
    handle them? Anchors probably cover most cases, but a map plus a profile
    along the bottom will be cramped.
 4. Athlete settings (FTP, max HR, weight, zones): `JANS_FTP` is currently a
