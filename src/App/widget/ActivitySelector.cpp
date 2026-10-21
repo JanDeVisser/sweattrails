@@ -37,19 +37,25 @@ void ActivitySelector::submit()
 
 bool ActivitySelector::process_key(KeyboardModifier modifier, int key)
 {
-    if (key == KEY_LEFT) {
-        auto m = static_cast<DateTime::Month>(static_cast<int>(month.month) - 1);
-        auto y = (m != DateTime::Month::December) ? month.year : month.year - 1;
-        month = Month { y, m };
-        populate();
-        return true;
-    }
-    if (key == KEY_RIGHT) {
-        auto m = static_cast<DateTime::Month>(static_cast<int>(month.month) + 1);
-        auto y = (m != DateTime::Month::January) ? month.year : month.year + 1;
-        month = Month { y, m };
-        populate();
-        return true;
+    // Left and Right go to the previous and next month. refresh() sorts the
+    // new month's entries, fits the box to its prompt, and starts at the top.
+    if (status == ModalStatus::Active && modifier == KModNone) {
+        if (key == KEY_LEFT) {
+            auto m = static_cast<DateTime::Month>(static_cast<int>(month.month) - 1);
+            auto y = (m != DateTime::Month::December) ? month.year : month.year - 1;
+            month = Month { y, m };
+            populate();
+            refresh();
+            return true;
+        }
+        if (key == KEY_RIGHT) {
+            auto m = static_cast<DateTime::Month>(static_cast<int>(month.month) + 1);
+            auto y = (m != DateTime::Month::January) ? month.year : month.year + 1;
+            month = Month { y, m };
+            populate();
+            refresh();
+            return true;
+        }
     }
     return ListBox::process_key(modifier, key);
 }

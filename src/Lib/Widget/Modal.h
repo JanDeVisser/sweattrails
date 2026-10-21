@@ -200,6 +200,8 @@ struct ListBox : public Modal {
             viewport.x = (screen.width - m.x) / 2;
         }
         viewport.height = 19 + cell.y + lines * (cell.y + 2);
+        // The number of lines may have changed.
+        scroll_to_selection();
     }
 
     bool character(int ch) override
@@ -325,12 +327,12 @@ struct ListBox : public Modal {
 
     void refresh()
     {
+        search = { };
         sort();
         filter();
-        resize();
         selection = 0;
         top_line = 0;
-        search = { };
+        resize();
         status = ModalStatus::Active;
     }
 
