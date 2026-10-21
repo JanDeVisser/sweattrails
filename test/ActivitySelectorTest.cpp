@@ -14,12 +14,12 @@
 #include <optional>
 #include <string>
 
-#include <TestApp.h>
-
 #include <Modal.h>
 
 #include <storage/Storage.h>
 #include <widget/ActivitySelector.h>
+
+#include <TestApp.h>
 
 using namespace ST;
 

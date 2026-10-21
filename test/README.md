@@ -57,4 +57,9 @@ to set it up and press keys.
 Add a `.cpp` here, and add it to `CMakeLists.txt` with
 `sweattrails_test(<name> <file>)`, next to `listbox_test`. Tests link Base
 and Widget and see their headers and `test/`. A test of app code (`src/App`)
-also needs that code's sources in its executable, as `fitexplore` does.
+also needs that code's sources in its executable, and `src/App` as an include
+directory: see `activity_selector_test`, which tests `ActivitySelector`.
+
+To check that a new test catches the bug it's for, put the old code back for
+a moment, e.g. `git show <commit>^:<file> > <file>`, and see the test fail.
+Restore the file with `git checkout <file>` afterwards.

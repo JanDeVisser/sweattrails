@@ -12,9 +12,9 @@
 #include <string>
 #include <vector>
 
-#include <TestApp.h>
-
 #include <Modal.h>
+
+#include <TestApp.h>
 
 using namespace ST;
 
