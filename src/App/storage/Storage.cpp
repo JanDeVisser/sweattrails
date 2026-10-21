@@ -99,7 +99,12 @@ Error<StorageError> Storage::rescan()
                 (*year.months)[month] = false;
             }
         }
-        years.emplace_back(year);
+        // find_newest() and find_current_folder() expect every year to have
+        // months. A year directory without any, e.g. because they're all
+        // unreadable, has nothing to show anyway.
+        if (year.months) {
+            years.emplace_back(year);
+        }
     }
     if (ec) {
         return std::unexpected(StorageError { LibCError { ec } });
