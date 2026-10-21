@@ -233,10 +233,16 @@ void ActivityGraph::resize()
 
 void ActivityGraph::process_input()
 {
+    // There's no activity until the first one is loaded, which can take a
+    // while if the inbox is processed first.
+    if (!activity || activity->activity.records.empty()) {
+        return;
+    }
     if (mouse_in()) {
-        auto const width = this->viewport.width - 20;
-        float      dt = static_cast<float>(width) / static_cast<float>(activity->activity.records.size());
-        size_t     t = static_cast<size_t>(std::truncf((GetMouseX() - viewport.x) / dt));
+        auto const   width = this->viewport.width - 20;
+        auto const   num_records = activity->activity.records.size();
+        float        dt = static_cast<float>(width) / static_cast<float>(num_records);
+        size_t const t = std::min(static_cast<size_t>(std::truncf((GetMouseX() - viewport.x) / dt)), num_records - 1);
         if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
             if (!dragging) {
                 activity->clear_segment();
