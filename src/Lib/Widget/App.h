@@ -59,6 +59,7 @@ struct App : public Layout {
     CharSizes                   cells;
     static std::shared_ptr<App> s_app;
     std::set<int>               m_pressed_keys;
+    std::set<int>               m_new_keys; // Pressed this frame
 
     explicit App(std::string_view const &app_name);
     ~App();
@@ -206,7 +207,9 @@ struct Main : public App {
         }
         bus.handle_one();
         App::process_input();
-        bus.handle_keys(m_pressed_keys);
+        // Only the keys pressed this frame: a binding runs once per press,
+        // not on every frame its keys are held down.
+        bus.handle_keys(m_new_keys);
     }
 };
 

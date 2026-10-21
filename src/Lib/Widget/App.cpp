@@ -136,6 +136,7 @@ void App::handle_keyboard(pWidget const &focus)
 
 void App::process_input()
 {
+    m_new_keys.clear();
     KeyboardModifier modifier = modifier_current();
     auto             handle_keyboard = [this, &modifier](pWidget const &f) -> bool {
         for (int ch = GetCharPressed(); ch != 0; ch = GetCharPressed()) {
@@ -157,6 +158,7 @@ void App::process_input()
         for (int key = GetKeyPressed(); key != 0; key = GetKeyPressed()) {
             keys.emplace_back(key);
             m_pressed_keys.insert(key);
+            m_new_keys.insert(key);
         }
         for (auto const key : keys) {
             f->bubble_up([key, modifier](pWidget const &w) {
