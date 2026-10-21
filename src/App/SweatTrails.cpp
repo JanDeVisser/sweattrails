@@ -246,6 +246,7 @@ void SweatTrails::initialize()
     // A status line at the bottom of the window, hidden while it's empty.
     status = add_widget<Label>("");
     status->policy = SizePolicy::Hide;
+    status->background = DARKGRAY;
 
     bus.add_task<SweatTrails>("st-force-quit", self(), cmd_force_quit)
         .bind(KeyCombo { KEY_Q, KModControl | KModShift });

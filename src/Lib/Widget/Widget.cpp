@@ -260,14 +260,13 @@ Label::Label(pWidget const &parent, std::string_view const &text, Color color)
 
 void Label::draw()
 {
-    auto app = App::the();
-    auto ix = static_cast<size_t>(size);
+    // The FontSize overload of render_text() falls back to another size if
+    // this one isn't loaded.
     if (!text.empty()) {
         render_text(
-            app->padding.x,
-            (app->char_sizes[ix].y - app->font_sizes[ix]) / 2,
-            text, app->fonts[ix].value(),
-            color);
+            PADDING,
+            (viewport.height - App::the()->char_size(size).y) / 2,
+            text, size, color);
     }
 }
 }
