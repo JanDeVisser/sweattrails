@@ -40,10 +40,15 @@ struct LibCError {
     }
 
     // std::filesystem reports errno values in the generic or system category.
-    // Errors from other categories become ECUSTOM with their message.
+    // Errors from other categories become ECUSTOM with their message, and so
+    // do errno values LibCError doesn't know.
     explicit LibCError(std::error_code const &ec) noexcept
         : LibCError((ec.category() == std::generic_category() || ec.category() == std::system_category()) ? ec.value() : ECUSTOM)
     {
+        if (code == "UNKNOWN") {
+            err_no = ECUSTOM;
+            code = "ECUSTOM";
+        }
         if (err_no == ECUSTOM) {
             description = ec.message();
         }

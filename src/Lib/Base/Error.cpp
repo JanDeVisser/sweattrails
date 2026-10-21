@@ -274,6 +274,7 @@ LibCError::LibCError(int err) noexcept
     case ECUSTOM:
         code = "ECUSTOM";
         description = "Custom error message";
+        break;
     default:
         code = "UNKNOWN";
         description = "Unknown error";
