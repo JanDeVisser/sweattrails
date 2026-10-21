@@ -116,12 +116,9 @@ struct ListBox : public Modal {
     {
         auto const &cell = App::the()->cells[static_cast<size_t>(FontSize::Medium)];
         size_t      maxlen = (viewport.width - 28) / (cell.x * textsize);
-        auto       &entries_to_draw = entries;
-        if constexpr (Config.search) {
-            if (!search.empty()) {
-                entries_to_draw = matches;
-            }
-        }
+        // Bind the reference to the list to draw: assigning to it would copy
+        // the matches over the entries.
+        auto const &entries_to_draw = (Config.search && !search.empty()) ? matches : entries;
         for (size_t ix = top_line; ix < top_line + lines && ix < entries_to_draw.size(); ++ix) {
             auto const &e = entries_to_draw[ix];
             auto        text_color = RAYWHITE; // Theme::the().fg();
@@ -129,13 +126,16 @@ struct ListBox : public Modal {
                 draw_rectangle(8, y_offset - 1, -8, cell.y * textsize + 1, RAYWHITE /*Theme::the().selection_bg()*/);
                 text_color = DARKGRAY; // Theme::the().selection_fg();
             }
-            std::string_view sv { e.text };
+            // Keep the text in a string: a string_view of the temporaries
+            // below would dangle.
+            std::string text { e.text };
             if constexpr (!std::is_same<ToString, std::nullptr_t>::value) {
                 assert(to_string_fnc != nullptr);
-                sv = to_string_fnc(e.text, e.payload);
+                text = to_string_fnc(e.text, e.payload);
             } else if constexpr (std::is_convertible<Payload, std::string>()) {
-                sv = std::string { e.payload };
+                text = std::string { e.payload };
             }
+            std::string_view sv { text };
             if (sv.length() > maxlen) {
                 sv = sv.substr(0, maxlen);
             }
@@ -254,8 +254,10 @@ struct ListBox : public Modal {
             }
             case KEY_BACKSPACE: {
                 if constexpr (Config.search) {
-                    search.erase(search.length() - 1, 1);
-                    filter();
+                    if (!search.empty()) {
+                        search.pop_back();
+                        filter();
+                    }
                     return true;
                 }
                 return false;
