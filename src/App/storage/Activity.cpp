@@ -127,17 +127,17 @@ StorageResult<bool> Activity::load_fit_file_by_name(fs::path const &file)
     auto const file_name = file.string();
     auto       fit_file_maybe = FITFile::read(file_name);
     if (!fit_file_maybe.has_value()) {
-        std::println("Error reading fit file `{}`", file_name);
+        trace(Storage, "Error reading fit file `{}`", file_name);
         return std::unexpected(StorageError { fit_file_maybe.error() });
     }
     auto &fit_file = fit_file_maybe.value();
     auto  try_load = load_fit_file(fit_file);
     if (!try_load.has_value()) {
-        std::println("load_fit_file(`{}`) failed", file_name);
+        trace(Storage, "load_fit_file(`{}`) failed", file_name);
         return std::unexpected(try_load.error());
     }
     if (!try_load.value()) {
-        std::println("load_fit_file(`{}`) returned false", file_name);
+        trace(Storage, "load_fit_file(`{}`) returned false", file_name);
         return false;
     }
     return true;
@@ -272,14 +272,14 @@ StorageResult<bool> Activity::load_fit_file(FITFile &fit_file)
     // zig's FITFile.openReader() reads the header as part of attaching the
     // reader; in C++ that is an explicit step.
     if (auto res = fit_file.read_header(); !res) {
-        std::println("load_fit_file: read_header failed");
+        trace(Storage, "load_fit_file: read_header failed");
         return std::unexpected(StorageError { res.error() });
     }
     if (title.empty()) {
         title = id.name;
     }
     if (auto res = fit_file.read_until([this](FITDataRecord const &rec) { return load_fit_file_filter(rec); }); !res) {
-        std::println("load_fit_file: read_until failed");
+        trace(Storage, "load_fit_file: read_until failed");
         return std::unexpected(StorageError { res.error() });
     }
     return segment.start_time.timestamp > 0;

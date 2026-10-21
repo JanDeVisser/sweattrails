@@ -272,10 +272,10 @@ StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view
 
 // Moves inbox file `file_name` to `<dest_dir>/<dest_stem>.fit`. The webhook
 // that collects the FIT files writes a JSON sidecar, `<stem>.json`, next to
-// each one, which goes along with its FIT file. Existing files are never overwritten: if the
-// destination already has a sidecar, for example because its FIT file was
-// deleted to import it again, that one is kept and the new one stays in the
-// inbox.
+// each one, which goes along with its FIT file. Existing files are never
+// overwritten: if the destination already has a sidecar, for example because
+// its FIT file was deleted to import it again, that one is kept and the new
+// one stays in the inbox.
 Error<StorageError> Storage::move_with_sidecar(std::string_view const &file_name, fs::path const &dest_dir, std::string_view const &dest_stem) const
 {
     auto const stem = fs::path { file_name }.stem().string();
@@ -301,12 +301,19 @@ Error<StorageError> Storage::move_with_sidecar(std::string_view const &file_name
     if (auto const taken = path_exists(sidecar_dest); !taken || *taken) {
         if (path_exists(sidecar).value_or(true)) {
             warning(Storage, "Leaving sidecar `{}` in the inbox: {}", sidecar.string(),
-                taken ? std::format("`{}` already exists", sidecar_dest.string()) : taken.error().to_string());
+                taken ? std::format("`{}` already exists", sidecar_dest.string())
+                      : std::format("could not check `{}`: {}", sidecar_dest.string(), taken.error().to_string()));
         }
         return { };
     }
     fs::rename(sidecar, sidecar_dest, ec);
-    if (ec && ec != std::errc::no_such_file_or_directory) {
+    if (ec == std::errc::no_such_file_or_directory) {
+        // The webhook names sidecars `.json`. On a case-sensitive filesystem,
+        // a `.JSON` put there by hand isn't found, so say so.
+        if (auto const upper = inbox_dir / std::format("{}.JSON", stem); path_exists(upper).value_or(false)) {
+            warning(Storage, "Leaving sidecar `{}` in the inbox: sidecars must be named `.json`", upper.string());
+        }
+    } else if (ec) {
         warning(Storage, "Could not move sidecar `{}` to `{}`: {}", sidecar.string(), dest_dir.string(), LibCError { ec }.to_string());
     }
     return { };
