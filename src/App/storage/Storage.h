@@ -44,6 +44,12 @@ struct Storage {
     // Called with the name of each inbox file before it's processed.
     using InboxProgress = std::function<void(std::string_view const &file_name)>;
 
+    enum class InboxOutcome {
+        Organized, // Moved into the activity store.
+        Duplicate, // The store already has an activity with this start time.
+        Skipped,   // Not an activity; left in the inbox.
+    };
+
     fs::path data_dir { };
     fs::path inbox_dir { };
     fs::path activity_dir { };
@@ -63,7 +69,8 @@ struct Storage {
     StorageResult<Activities>                set_current_folder(Month const &month);
     StorageResult<std::optional<Activity>>   load_activity(ActivityID const &id);
     StorageResult<u32>                       process_inbox(InboxProgress const &on_file = { });
-    Error<StorageError>                      organize_fit_file(std::string_view const &file_name);
+    StorageResult<InboxOutcome>              organize_fit_file(std::string_view const &file_name);
+    Error<StorageError>                      move_with_sidecar(std::string_view const &stem, fs::path const &dest_dir, std::string_view const &dest_stem) const;
 };
 
 }

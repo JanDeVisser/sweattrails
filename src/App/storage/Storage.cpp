@@ -173,11 +173,14 @@ StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
         if (on_file) {
             on_file(file_name);
         }
-        if (auto res = organize_fit_file(file_name); !res) {
+        auto res = organize_fit_file(file_name);
+        if (!res) {
             warning(Storage, "Error organizing inbox file {}: {}", file_name, res.error().to_string());
             continue;
         }
-        processed += 1;
+        if (*res == InboxOutcome::Organized) {
+            processed += 1;
+        }
     }
     if (processed > 0) {
         TRY(rescan());
@@ -185,7 +188,7 @@ StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
     return processed;
 }
 
-Error<StorageError> Storage::organize_fit_file(std::string_view const &file_name)
+StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view const &file_name)
 {
     auto const stem = fs::path { file_name }.stem().string();
     Activity   activity {
@@ -198,34 +201,46 @@ Error<StorageError> Storage::organize_fit_file(std::string_view const &file_name
     };
 
     activity.depth = LoadingDepth::Shallow;
-    if (TRY_EVAL(activity.load_from_dir(inbox_dir))) {
-        assert(activity.segment.start_time.timestamp > 0);
-        auto const dest_dir_name = std::format(
-            "{:04}/{:02}",
-            static_cast<u16>(activity.segment.start_time.year),
-            static_cast<u8>(activity.segment.start_time.month) + 1);
-        auto const dest_dir = TRY_EVAL(ensure_directory(activity_dir / dest_dir_name));
-        auto const dest_stem = std::format("{}", activity.segment.start_time.timestamp);
-        auto const dest = dest_dir / (dest_stem + ".fit");
-        if (fs::exists(dest)) {
-            // renamePreserve: never clobber an existing file
-            info(Storage, "File `{}` already exists at `{}`", file_name, dest_dir_name);
-            return { };
+    if (!TRY_EVAL(activity.load_from_dir(inbox_dir))) {
+        return InboxOutcome::Skipped;
+    }
+    assert(activity.segment.start_time.timestamp > 0);
+    auto const dest_dir_name = std::format(
+        "{:04}/{:02}",
+        static_cast<u16>(activity.segment.start_time.year),
+        static_cast<u8>(activity.segment.start_time.month) + 1);
+    auto const dest_dir = TRY_EVAL(ensure_directory(activity_dir / dest_dir_name));
+    auto const dest_stem = std::format("{}", activity.segment.start_time.timestamp);
+    if (fs::exists(dest_dir / (dest_stem + ".fit"))) {
+        // renamePreserve: never clobber an existing file. Set the duplicate
+        // aside so it isn't processed again on every start.
+        info(Storage, "File `{}` already exists at `{}`; moving it to `duplicates`", file_name, dest_dir_name);
+        auto const duplicates_dir = TRY_EVAL(ensure_directory(inbox_dir / "duplicates"));
+        TRY(move_with_sidecar(stem, duplicates_dir, stem));
+        return InboxOutcome::Duplicate;
+    }
+    TRY(move_with_sidecar(stem, dest_dir, dest_stem));
+    return InboxOutcome::Organized;
+}
+
+// Moves inbox file `<stem>.fit` to `<dest_dir>/<dest_stem>.fit`. The webhook
+// that collects the FIT files writes a JSON sidecar next to each one, which
+// goes along with its FIT file. Existing files are never overwritten.
+Error<StorageError> Storage::move_with_sidecar(std::string_view const &stem, fs::path const &dest_dir, std::string_view const &dest_stem) const
+{
+    for (auto const *ext : { ".fit", ".json" }) {
+        auto const from = inbox_dir / std::format("{}{}", stem, ext);
+        auto const to = dest_dir / std::format("{}{}", dest_stem, ext);
+        if (!fs::exists(from)) {
+            continue;
+        }
+        if (fs::exists(to)) {
+            return std::unexpected(StorageError { LibCError { std::format("`{}` already exists", to.string()) } });
         }
         std::error_code ec { };
-        fs::rename(inbox_dir / file_name, dest, ec);
+        fs::rename(from, to, ec);
         if (ec) {
-            return std::unexpected(StorageError { LibCError { ec.message() } });
-        }
-
-        // The webhook that collects the FIT files writes a JSON sidecar next
-        // to each one. It goes along with its FIT file.
-        auto const sidecar = inbox_dir / (stem + ".json");
-        if (fs::exists(sidecar)) {
-            fs::rename(sidecar, dest_dir / (dest_stem + ".json"), ec);
-            if (ec) {
-                return std::unexpected(StorageError { LibCError { ec.message() } });
-            }
+            return std::unexpected(StorageError { LibCError { ec } });
         }
     }
     return { };
