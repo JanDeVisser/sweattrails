@@ -13,10 +13,10 @@
 
 #include <JSON.h>
 
-#include "Club.h"
-#include "Enums.h"
-#include "Gear.h"
-#include "StravaJson.h"
+#include <storage/strava/Club.h>
+#include <storage/strava/Enums.h>
+#include <storage/strava/Gear.h>
+#include <storage/strava/StravaJson.h>
 
 namespace ST::strava {
 

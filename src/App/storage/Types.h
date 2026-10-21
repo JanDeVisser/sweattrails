@@ -19,15 +19,15 @@
 #include <variant>
 #include <vector>
 
+#include <Date.h>
 #include <Error.h>
 #include <Expected.h>
-#include <JSON.h>
-#include <fit/FIT.h>
-
-#include <Date.h>
 #include <Format.h>
+#include <JSON.h>
+
 #include <Map.h>
 #include <Range.h>
+#include <fit/FIT.h>
 
 namespace ST {
 

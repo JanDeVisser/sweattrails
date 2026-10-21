@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <log.h>
 #include <string.h>
 
 #include <Integer.h>
-#include <log.h>
 
 OptionalInteger integer_coerce_to_unsigned(Integer i, IntegerType type)
 {

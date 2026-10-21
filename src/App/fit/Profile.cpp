@@ -1,8 +1,9 @@
-#include <Coordinates.h>
 #include <cstdint>
+#include <string>
+
+#include <Coordinates.h>
 #include <fit/FIT.h>
 #include <fit/Profile.h>
-#include <string>
 
 namespace ST::FIT {
 

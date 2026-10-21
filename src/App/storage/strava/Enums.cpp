@@ -9,7 +9,7 @@
 #include <array>
 #include <utility>
 
-#include "Enums.h"
+#include <storage/strava/Enums.h>
 
 namespace ST {
 namespace strava {

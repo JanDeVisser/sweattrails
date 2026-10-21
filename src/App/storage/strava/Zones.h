@@ -12,8 +12,8 @@
 
 #include <JSON.h>
 
-#include "Enums.h"
-#include "StravaJson.h"
+#include <storage/strava/Enums.h>
+#include <storage/strava/StravaJson.h>
 
 namespace ST::strava {
 

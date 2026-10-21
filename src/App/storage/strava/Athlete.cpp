@@ -6,7 +6,7 @@
  * C++ translation of zig/connect/strava/athlete.zig.
  */
 
-#include "Athlete.h"
+#include <storage/strava/Athlete.h>
 
 namespace ST::strava {
 

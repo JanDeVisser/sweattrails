@@ -7,10 +7,11 @@
 #pragma once
 
 #include <cerrno>
-#include <fcntl.h>
 #include <optional>
 #include <string>
 #include <string_view>
+
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 

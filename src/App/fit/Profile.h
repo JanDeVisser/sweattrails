@@ -9,10 +9,11 @@
 
 #include <optional>
 
-#include <Coordinates.h>
 #include <Date.h>
 #include <Format.h>
 #include <Logging.h>
+
+#include <Coordinates.h>
 #include <fit/FIT.h>
 
 namespace ST::FIT {

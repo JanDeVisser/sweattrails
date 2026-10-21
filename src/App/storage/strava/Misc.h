@@ -20,10 +20,10 @@
 
 #include <JSON.h>
 
-#include "Athlete.h"
-#include "Common.h"
-#include "Segment.h"
-#include "StravaJson.h"
+#include <storage/strava/Athlete.h>
+#include <storage/strava/Common.h>
+#include <storage/strava/Segment.h>
+#include <storage/strava/StravaJson.h>
 
 namespace ST::strava {
 

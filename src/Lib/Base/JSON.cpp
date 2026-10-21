@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <expected>
+
 #include <IO.h>
 #include <JSON.h>
 #include <Lexer.h>
-#include <expected>
 
 namespace ST {
 

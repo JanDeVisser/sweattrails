@@ -11,16 +11,18 @@
 
 #pragma once
 
-#include "raylib.h"
 #include <expected>
 #include <string>
 
-#include <Coordinates.h>
+#include <raylib.h>
+
 #include <Error.h>
 #include <Expected.h>
 #include <Logging.h>
 
-// #include "Date.h" // for the integer aliases
+#include <Coordinates.h>
+
+// #include <Date.h> // for the integer aliases
 
 namespace ST {
 

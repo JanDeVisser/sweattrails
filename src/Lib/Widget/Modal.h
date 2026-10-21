@@ -6,11 +6,13 @@
 
 #pragma once
 
-#include "raylib.h"
 #include <cmath>
 
-#include <SweatTrails.h>
+#include <raylib.h>
+
 #include <Widget.h>
+
+#include <SweatTrails.h>
 
 namespace ST {
 

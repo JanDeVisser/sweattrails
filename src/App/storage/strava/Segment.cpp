@@ -6,7 +6,7 @@
  * C++ translation of zig/connect/strava/segment.zig.
  */
 
-#include "Segment.h"
+#include <storage/strava/Segment.h>
 
 namespace ST::strava {
 

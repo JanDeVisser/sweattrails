@@ -6,7 +6,7 @@
  * C++ translation of zig/connect/strava/common.zig.
  */
 
-#include "Common.h"
+#include <storage/strava/Common.h>
 
 namespace ST::strava {
 

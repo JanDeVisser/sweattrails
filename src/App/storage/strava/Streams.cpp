@@ -6,7 +6,7 @@
  * C++ translation of zig/connect/strava/streams.zig.
  */
 
-#include "Streams.h"
+#include <storage/strava/Streams.h>
 
 namespace ST::strava {
 

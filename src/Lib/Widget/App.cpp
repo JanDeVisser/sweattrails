@@ -6,11 +6,12 @@
 
 #include <raylib.h>
 
-#include <App.h>
 #include <IO.h>
 #include <JSON.h>
 #include <Logging.h>
 #include <Options.h>
+
+#include <App.h>
 #include <Widget.h>
 
 namespace ST {

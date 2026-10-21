@@ -1,5 +1,7 @@
-#include "Date.h"
 #include <memory>
+
+#include <Date.h>
+
 #include <storage/Storage.h>
 #include <widget/ActivitySelector.h>
 

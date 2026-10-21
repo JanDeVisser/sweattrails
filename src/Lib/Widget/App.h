@@ -9,10 +9,12 @@
 #include <array>
 #include <filesystem>
 #include <memory>
+
 #include <raylib.h>
 
 #include <IO.h>
 #include <Options.h>
+
 #include <Widget.h>
 
 namespace ST {

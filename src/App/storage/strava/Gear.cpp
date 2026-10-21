@@ -6,7 +6,7 @@
  * C++ translation of zig/connect/strava/gear.zig.
  */
 
-#include "Gear.h"
+#include <storage/strava/Gear.h>
 
 namespace ST::strava {
 

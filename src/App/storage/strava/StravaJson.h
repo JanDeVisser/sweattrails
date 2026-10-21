@@ -39,11 +39,10 @@
 #include <utility>
 #include <vector>
 
+#include <Date.h>
 #include <Expected.h>
 #include <IO.h>
 #include <JSON.h>
-
-#include <Date.h>
 
 namespace ST {
 

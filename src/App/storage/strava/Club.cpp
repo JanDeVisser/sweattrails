@@ -6,7 +6,7 @@
  * C++ translation of zig/connect/strava/club.zig.
  */
 
-#include "Club.h"
+#include <storage/strava/Club.h>
 
 namespace ST::strava {
 

@@ -12,7 +12,7 @@
 
 #include <JSON.h>
 
-#include "StravaJson.h"
+#include <storage/strava/StravaJson.h>
 
 namespace ST::strava {
 

@@ -4,9 +4,11 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "raylib.h"
-#include <App.h>
+#include <raylib.h>
+
 #include <JSON.h>
+
+#include <App.h>
 #include <Widget.h>
 
 namespace ST {

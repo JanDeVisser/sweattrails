@@ -14,6 +14,7 @@
 #include <JSON.h>
 #include <Logging.h>
 #include <StringUtil.h>
+
 #include <fit/FIT.h>
 #include <storage/Activity.h>
 #include <storage/Storage.h>

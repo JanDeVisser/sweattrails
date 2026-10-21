@@ -10,9 +10,10 @@
 #include <functional>
 #include <string>
 #include <string_view>
+#include <thread>
+
 #include <sys/fcntl.h>
 #include <sys/poll.h>
-#include <thread>
 #include <unistd.h>
 
 #include <Defer.h>

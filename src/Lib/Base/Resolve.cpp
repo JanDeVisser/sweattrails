@@ -4,12 +4,13 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include <dlfcn.h>
 #include <mutex>
 
-#include "Logging.h"
-#include "Resolve.h"
-#include "StringUtil.h"
+#include <dlfcn.h>
+
+#include <Logging.h>
+#include <Resolve.h>
+#include <StringUtil.h>
 
 namespace Obelix {
 

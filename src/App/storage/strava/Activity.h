@@ -23,12 +23,12 @@
 
 #include <JSON.h>
 
-#include "Common.h"
-#include "Enums.h"
-#include "Gear.h"
-#include "Segment.h"
-#include "StravaJson.h"
-#include "Streams.h"
+#include <storage/strava/Common.h>
+#include <storage/strava/Enums.h>
+#include <storage/strava/Gear.h>
+#include <storage/strava/Segment.h>
+#include <storage/strava/StravaJson.h>
+#include <storage/strava/Streams.h>
 
 namespace ST::strava {
 

@@ -6,7 +6,7 @@
  * C++ translation of zig/connect/strava/zones.zig.
  */
 
-#include "Zones.h"
+#include <storage/strava/Zones.h>
 
 namespace ST::strava {
 

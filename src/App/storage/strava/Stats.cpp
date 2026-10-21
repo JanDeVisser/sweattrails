@@ -6,7 +6,7 @@
  * C++ translation of zig/connect/strava/stats.zig.
  */
 
-#include "Stats.h"
+#include <storage/strava/Stats.h>
 
 namespace ST::strava {
 

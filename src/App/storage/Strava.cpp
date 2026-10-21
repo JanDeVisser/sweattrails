@@ -22,7 +22,7 @@
 #include <Process.h>
 #include <StringUtil.h>
 
-#include "Strava.h"
+#include <storage/Strava.h>
 
 namespace ST {
 

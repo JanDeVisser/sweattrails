@@ -1,10 +1,14 @@
 #pragma once
 
-#include "raylib.h"
-#include <Logging.h>
-#include <Widget.h>
 #include <memory>
 #include <ranges>
+
+#include <raylib.h>
+
+#include <Logging.h>
+
+#include <Widget.h>
+
 #include <storage/Activity.h>
 
 namespace ST {

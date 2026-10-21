@@ -13,9 +13,9 @@
 #include <mutex>
 #include <set>
 #include <string>
-#include <sys/signal.h>
 
 #include <config.h>
+#include <sys/signal.h>
 
 #define ENUMVALUE(V) V,
 #define ENUMVALUE2(V, Dummy) V,

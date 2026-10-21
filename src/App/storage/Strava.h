@@ -36,11 +36,11 @@
 #include <string_view>
 #include <variant>
 
+#include <Date.h>
 #include <Error.h>
 #include <Expected.h>
 #include <JSON.h>
 
-#include <Date.h>
 #include <storage/strava/Activity.h>
 
 namespace ST {

@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "Error.h"
 #include <cerrno>
 #include <cstddef>
 #include <expected>
+
+#include <config.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -18,8 +19,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-#include <config.h>
-
+#include <Error.h>
 #include <Expected.h>
 #include <IO.h>
 

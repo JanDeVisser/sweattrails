@@ -1,11 +1,14 @@
 #include <cmath>
 #include <memory>
 #include <ranges>
+
 #include <raylib.h>
 
 #include <Format.h>
-#include <SweatTrails.h>
+
 #include <Widget.h>
+
+#include <SweatTrails.h>
 #include <storage/Activity.h>
 #include <widget/Activity.h>
 

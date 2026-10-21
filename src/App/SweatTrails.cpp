@@ -4,26 +4,27 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "Expected.h"
-#include "storage/Storage.h"
-#include "storage/Types.h"
 #include <chrono>
+#include <variant>
+
+#include <config.h>
 #include <raylib.h>
 #include <unistd.h>
 
-#include <config.h>
-
-#include <App.h>
+#include <Expected.h>
 #include <IO.h>
 #include <JSON.h>
 #include <Logging.h>
-#include <Modal.h>
 #include <Options.h>
-#include <SweatTrails.h>
+
+#include <App.h>
+#include <Modal.h>
 #include <Widget.h>
 
+#include <SweatTrails.h>
 #include <storage/Activity.h>
-#include <variant>
+#include <storage/Storage.h>
+#include <storage/Types.h>
 #include <widget/Activity.h>
 #include <widget/ActivitySelector.h>
 

@@ -14,14 +14,14 @@
 #include <string>
 #include <vector>
 
-#include <fit/FIT.h>
-#include <fit/Profile.h>
-
 #include <Date.h>
 #include <Format.h>
 #include <JSON.h>
+
 #include <Map.h>
 #include <Range.h>
+#include <fit/FIT.h>
+#include <fit/Profile.h>
 #include <storage/Types.h>
 
 namespace ST {

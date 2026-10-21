@@ -6,17 +6,18 @@
 
 #pragma once
 
-#include "Format.h"
-#include "storage/Types.h"
 #include <string_view>
 #include <utility>
 #include <variant>
 
-#include <App.h>
+#include <Format.h>
 #include <JSON.h>
+
+#include <App.h>
 
 #include <storage/Activity.h>
 #include <storage/Storage.h>
+#include <storage/Types.h>
 #include <widget/Activity.h>
 
 namespace ST {

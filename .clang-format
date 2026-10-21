@@ -10,11 +10,40 @@ BreakConstructorInitializers: BeforeComma
 IndentPPDirectives: None
 BreakBeforeBraces: Custom
 BraceWrapping:
-    AfterFunction: true
+  AfterFunction: true
 NamespaceIndentation: None
 QualifierAlignment: Right
 PointerAlignment: Right
 SpaceAfterCStyleCast: true
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+# Base and Widget headers are included by their bare name (<Error.h>,
+# <Widget.h>), so unlike in cathode the groups can't all go by directory.
+# Lower case names are the standard library and system and third party
+# headers; capitalised ones are Base, except for those listed for Widget and
+# the app. A new top-level header in src/Lib/Widget or src/App has to be
+# added to its list.
+IncludeCategories:
+  - Regex: "^<[a-z0-9_]+>$"
+    Priority: 1 # standard C++ headers
+    CaseSensitive: true
+  - Regex: "^<([a-z0-9_]+/)*[a-z0-9_]+\\.h>$"
+    Priority: 2 # system and third party headers, and config.h
+    CaseSensitive: true
+  - Regex: "^<(App|Modal|Widget)\\.h>$"
+    Priority: 4 # src/Lib/Widget
+    CaseSensitive: true
+  - Regex: "^<((Coordinates|Map|Range|SweatTrails)\\.h|(fit|storage|widget)/.*)>$"
+    Priority: 5 # src/App
+    CaseSensitive: true
+  - Regex: "^<[A-Z][A-Za-z0-9_]*\\.h>$"
+    Priority: 3 # src/Lib/Base
+    CaseSensitive: true
+  - Regex: ".*"
+    Priority: 6
+    CaseSensitive: true
+
+IncludeIsMainRegex: "$^"
 
 ---
 Language: Json
