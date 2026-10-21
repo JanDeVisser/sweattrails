@@ -41,7 +41,7 @@ struct Modal : public Widget {
         : Widget(App::the())
         , prompt(prompt)
     {
-        background = DARKGRAY; // colour_to_color(SweatTrails::the()->theme.editor.bg);
+        background = DARKGRAY; // TODO: Take this from a theme, once there is one.
     }
 
     virtual void dismiss()
@@ -96,7 +96,6 @@ struct ListBox : public Modal {
     int            lines { 0 };
     int            top_line { 0 };
     int            selection { -1 };
-    ModalStatus    status { ModalStatus::Dormant };
     ToString       to_string_fnc { nullptr };
 
     explicit ListBox(std::string_view const &prompt, ToString to_string = nullptr)
