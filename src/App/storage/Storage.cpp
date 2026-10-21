@@ -155,16 +155,21 @@ StorageResult<std::optional<Activity>> Storage::load_activity(ActivityID const &
 
 StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
 {
-    u32             processed { 0 };
-    std::error_code ec { };
+    // Collect the file names first: organizing a file moves it out of the
+    // inbox, and it's unspecified whether a directory_iterator sees that.
+    std::vector<std::string> file_names { };
+    std::error_code          ec { };
     for (auto const &entry : fs::directory_iterator { inbox_dir, ec }) {
-        if (!entry.is_regular_file()) {
-            continue;
+        if (entry.is_regular_file() && eql_ignore_case(entry.path().extension().string(), ".fit")) {
+            file_names.emplace_back(entry.path().filename().string());
         }
-        if (!eql_ignore_case(entry.path().extension().string(), ".fit")) {
-            continue;
-        }
-        auto const file_name = entry.path().filename().string();
+    }
+    if (ec) {
+        return std::unexpected(StorageError { LibCError { ec } });
+    }
+
+    u32 processed { 0 };
+    for (auto const &file_name : file_names) {
         if (on_file) {
             on_file(file_name);
         }
@@ -173,9 +178,6 @@ StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
             continue;
         }
         processed += 1;
-    }
-    if (ec) {
-        return std::unexpected(StorageError { LibCError { ec.message() } });
     }
     if (processed > 0) {
         TRY(rescan());
