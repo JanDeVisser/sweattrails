@@ -92,6 +92,9 @@ struct Activity {
         return lhs.segment.start_time.less_than(rhs.segment.start_time);
     }
 
+    // TODO: subspan() doesn't check bounds, so a Lap that is out of date with
+    // `records` reads out of bounds. Consider asserting that
+    // first_record <= end_record <= records.size().
     [[nodiscard]] std::span<record const> lap_records(Lap const &lap) const
     {
         return std::span { records }.subspan(lap.first_record, lap.end_record - lap.first_record);

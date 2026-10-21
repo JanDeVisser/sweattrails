@@ -170,6 +170,10 @@ StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
 {
     // Collect the file names first: organizing a file moves it out of the
     // inbox, and it's unspecified whether a directory_iterator sees that.
+    //
+    // TODO: If the webhook writes a sidecar after its FIT file, and this runs
+    // in between, the FIT file is moved without it and the sidecar stays in
+    // the inbox, which is never looked at for .json files.
     // This runs on the job thread, where an exception would end the app, so
     // use the std::filesystem overloads that don't throw.
     std::vector<std::string> file_names { };
@@ -194,6 +198,9 @@ StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
         }
         auto res = organize_fit_file(file_name);
         if (!res) {
+            // TODO: Files that can't be read, and Skipped ones that aren't
+            // activities, stay in the inbox and are tried, and logged, again
+            // on every start. Move them to e.g. inbox/rejected.
             warning(Storage, "Error organizing inbox file {}: {}", file_name, res.error().to_string());
             continue;
         }
@@ -255,6 +262,10 @@ StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view
 // destinations are checked before anything is moved.
 Error<StorageError> Storage::move_with_sidecar(std::string_view const &stem, fs::path const &dest_dir, std::string_view const &dest_stem) const
 {
+    // TODO: Checking and then renaming isn't atomic: a file created in
+    // between (by the webhook, say) is overwritten. renamex_np(RENAME_EXCL)
+    // on macOS and renameat2(RENAME_NOREPLACE) on Linux would make "never
+    // overwrite" atomic.
     if (TRY_EVAL(stem_taken(dest_dir, dest_stem))) {
         return std::unexpected(StorageError { LibCError { "`{}` already exists in `{}`", dest_stem, dest_dir.string() } });
     }
