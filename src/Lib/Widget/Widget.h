@@ -347,6 +347,23 @@ struct AppBus {
         messages.emplace_back(notification);
     }
 
+    // Like notify(), but replaces a queued notification of the same kind, if
+    // there is one. For notifications where only the latest one matters,
+    // such as progress updates: the UI handles one message per frame, and
+    // sending them faster than that would delay the messages behind them.
+    void notify_latest(Notification const &notification)
+    {
+        trace(AppBus, "Latest notification: {}::{}", typeid(this).name(), typeid(notification).name());
+        auto lg = std::lock_guard(messages_mutex);
+        for (auto &message : messages) {
+            if (auto *queued = std::get_if<Notification>(&message); queued != nullptr && queued->choice == notification.choice) {
+                *queued = notification;
+                return;
+            }
+        }
+        messages.emplace_back(notification);
+    }
+
     void handle_one()
     {
         // Check for messages under the lock too: the job thread adds them.

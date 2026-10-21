@@ -152,6 +152,12 @@ struct SweatTrails : public Main<Job, Notification> {
         bus.notify(make_notification<Type>(data));
     }
 
+    template<NotificationType Type>
+    void notify_latest(auto data)
+    {
+        bus.notify_latest(make_notification<Type>(data));
+    }
+
     std::optional<std::string_view> message = { };
 
     Storage    storage;

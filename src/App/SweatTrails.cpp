@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include <chrono>
 #include <variant>
 
 #include <config.h>
@@ -96,23 +95,15 @@ void SweatTrails::job_find_newest_activity(Job::Payload const &)
 
 void SweatTrails::job_process_inbox(Job::Payload const &)
 {
-    // The UI handles one notification per frame, and files are processed
-    // faster than that. Only send an update every 100ms, so that they don't
-    // queue up, and delay the notifications behind them.
-    using Clock = std::chrono::steady_clock;
-    std::optional<Clock::time_point> last_update { };
-    auto const                       on_file = [&last_update](std::string_view const &file_name, size_t index, size_t count) {
+    // Files are processed faster than the UI handles notifications, so each
+    // update replaces the previous one if the UI hasn't got to it yet.
+    auto const on_file = [](std::string_view const &file_name, size_t index, size_t count) {
         trace(ST, "Processing inbox file {}", file_name);
-        auto const now = Clock::now();
-        if (last_update && now - *last_update < std::chrono::milliseconds { 100 }) {
-            return;
-        }
-        last_update = now;
-        SweatTrails::the()->notify<NotificationType::ImportingFile>(
+        SweatTrails::the()->notify_latest<NotificationType::ImportingFile>(
             ImportingFile { std::string { file_name }, index, count });
     };
     auto res = SweatTrails::the()->storage.process_inbox(on_file);
-    SweatTrails::the()->notify<NotificationType::ImportingFile>(ImportingFile { });
+    SweatTrails::the()->notify_latest<NotificationType::ImportingFile>(ImportingFile { });
     if (!res) {
         SweatTrails::the()->notify<NotificationType::Message>(
             std::format("Error processing inbox: {}", res.error().to_string()));
