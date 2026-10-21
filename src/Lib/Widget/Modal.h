@@ -10,9 +10,8 @@
 
 #include <raylib.h>
 
+#include <App.h>
 #include <Widget.h>
-
-#include <SweatTrails.h>
 
 namespace ST {
 
@@ -55,13 +54,13 @@ struct Modal : public Widget {
 
     void make_visible()
     {
-        SweatTrails::the()->push_modal(self());
+        App::the()->push_modal(self());
         status = ModalStatus::Active;
     }
 
     void hide()
     {
-        SweatTrails::the()->pop_modal();
+        App::the()->pop_modal();
         status = ModalStatus::Dormant;
     }
 };
@@ -115,7 +114,7 @@ struct ListBox : public Modal {
 
     void draw_entries(size_t y_offset)
     {
-        auto const &cell = SweatTrails::the()->cells[static_cast<size_t>(FontSize::Medium)];
+        auto const &cell = App::the()->cells[static_cast<size_t>(FontSize::Medium)];
         size_t      maxlen = (viewport.width - 28) / (cell.x * textsize);
         auto       &entries_to_draw = entries;
         if constexpr (Config.search) {
@@ -153,14 +152,14 @@ struct ListBox : public Modal {
         draw_outline(2ul, 2ul, -2.0f, -2.0f, fg);
         render_text(8, 8, prompt, FontSize::Medium, fg);
         render_text(-8, 8, search, FontSize::Medium, fg);
-        draw_line(2, SweatTrails::the()->cell().y + 10, -2, SweatTrails::the()->cell().y + 10, fg);
-        draw_entries(SweatTrails::the()->cell().y + 14);
+        draw_line(2, App::the()->cell().y + 10, -2, App::the()->cell().y + 10, fg);
+        draw_entries(App::the()->cell().y + 14);
     }
 
     void resize() override
     {
-        auto const &screen = SweatTrails::the()->viewport;
-        auto const &cell = SweatTrails::the()->cell();
+        auto const &screen = App::the()->viewport;
+        auto const &cell = App::the()->cell();
         viewport.x = screen.width / 4;
         viewport.y = screen.height / 4;
         viewport.width = screen.width / 2;
@@ -169,7 +168,7 @@ struct ListBox : public Modal {
         if constexpr (Config.shrink && !Config.search) {
             lines = clamp(lines, 0, entries.size());
         }
-        auto    f = SweatTrails::the()->font();
+        auto    f = App::the()->font();
         Vector2 m = MeasureTextEx(*f, prompt.c_str(), f->baseSize, 2);
         if (m.x > viewport.width - 16) {
             viewport.width = m.x + 16;
@@ -268,7 +267,7 @@ struct ListBox : public Modal {
 
         bool ret = handle();
         if (status != ModalStatus::Active) {
-            SweatTrails::the()->pop_modal();
+            App::the()->pop_modal();
         }
         return ret;
     }
@@ -429,10 +428,10 @@ void input_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
 
         void resize() override
         {
-            viewport.x = SweatTrails::the()->viewport.width / 4;
-            viewport.y = SweatTrails::the()->viewport.height / 4;
-            viewport.width = SweatTrails::the()->viewport.width / 2;
-            viewport.height = 21 + 2 * SweatTrails::the()->cell().y;
+            viewport.x = App::the()->viewport.width / 4;
+            viewport.y = App::the()->viewport.height / 4;
+            viewport.width = App::the()->viewport.width / 2;
+            viewport.height = 21 + 2 * App::the()->cell().y;
         }
 
         void draw() override
@@ -440,11 +439,11 @@ void input_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
             draw_rectangle(0.0, 0.0, 0.0, 0.0, BLACK);
             draw_outline(2, 2, -2.0, -2.0, RAYWHITE);
             render_text(8, 8, prompt, FontSize::Medium, RAYWHITE);
-            draw_line(2, SweatTrails::the()->cell().y + 10, -2, SweatTrails::the()->cell().y + 10, RAYWHITE);
-            render_text(10, SweatTrails::the()->cell().y + 14, text, FontSize::Medium, RAYWHITE);
+            draw_line(2, App::the()->cell().y + 10, -2, App::the()->cell().y + 10, RAYWHITE);
+            render_text(10, App::the()->cell().y + 14, text, FontSize::Medium, RAYWHITE);
             double t = GetTime();
             if ((t - floor(t)) < 0.5) {
-                draw_rectangle(10 + cursor * SweatTrails::the()->cell().x, SweatTrails::the()->cell().y + 12, 2, SweatTrails::the()->cell().y + 2, RAYWHITE);
+                draw_rectangle(10 + cursor * App::the()->cell().x, App::the()->cell().y + 12, 2, App::the()->cell().y + 2, RAYWHITE);
             }
         }
     };
