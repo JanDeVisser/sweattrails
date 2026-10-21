@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 
 #include <raylib.h>
@@ -124,15 +125,29 @@ struct ListBox : public Modal {
         return shown()[static_cast<size_t>(selection)];
     }
 
+    // The number of entries on display, as an int like selection and
+    // top_line, so that the arithmetic on them can't wrap around.
+    [[nodiscard]] int shown_count() const
+    {
+        return static_cast<int>(shown().size());
+    }
+
+    // Scrolls just far enough to have the selection on screen.
+    void scroll_to_selection()
+    {
+        auto const page = std::max(1, lines);
+        top_line = std::clamp(top_line, std::max(0, selection - page + 1), std::max(0, selection));
+    }
+
     void draw_entries(size_t y_offset)
     {
         auto const &cell = App::the()->cells[static_cast<size_t>(FontSize::Medium)];
         size_t      maxlen = (viewport.width - 28) / (cell.x * textsize);
         auto const &entries_to_draw = shown();
-        for (size_t ix = top_line; ix < top_line + lines && ix < entries_to_draw.size(); ++ix) {
-            auto const &e = entries_to_draw[ix];
+        for (int ix = top_line; ix < top_line + lines && ix < shown_count(); ++ix) {
+            auto const &e = entries_to_draw[static_cast<size_t>(ix)];
             auto        text_color = RAYWHITE; // Theme::the().fg();
-            if (ix == static_cast<size_t>(selection)) {
+            if (ix == selection) {
                 draw_rectangle(8, y_offset - 1, -8, cell.y * textsize + 1, RAYWHITE /*Theme::the().selection_bg()*/);
                 text_color = DARKGRAY; // Theme::the().selection_fg();
             }
@@ -203,9 +218,9 @@ struct ListBox : public Modal {
         if (status == ModalStatus::Dormant) {
             return false;
         }
-        size_t sz = shown().size();
+        auto const count = shown_count();
 
-        auto handle = [sz, this, key, modifier]() -> bool {
+        auto handle = [count, this, key, modifier]() -> bool {
             if (modifier != KModNone) {
                 return false;
             }
@@ -217,43 +232,39 @@ struct ListBox : public Modal {
             }
             case KEY_ENTER:
             case KEY_KP_ENTER: {
-                if (selection >= 0 && selection < sz) {
+                if (selection >= 0 && selection < count) {
                     status = ModalStatus::Submitted;
                     submit();
                 }
                 return true;
             }
             case KEY_UP: {
-                if (selection > 0 && selection < sz) {
+                if (selection > 0) {
                     --selection;
-                    while (selection < top_line) {
-                        --top_line;
-                    }
+                    scroll_to_selection();
                 }
                 return true;
             }
             case KEY_DOWN: {
-                if (selection < sz - 1) {
+                if (selection + 1 < count) {
                     ++selection;
-                    while (selection > top_line + lines - 1) {
-                        ++top_line;
-                    }
+                    scroll_to_selection();
                 }
                 return true;
             }
             case KEY_PAGE_UP: {
-                if (selection >= lines) {
-                    selection -= lines;
-                    if (top_line > lines) {
-                        top_line -= lines;
-                    }
+                if (count > 0) {
+                    selection = std::max(0, selection - lines);
+                    top_line = std::max(0, top_line - lines);
+                    scroll_to_selection();
                 }
                 return true;
             }
             case KEY_PAGE_DOWN: {
-                if (selection < sz - lines - 1) {
-                    selection += lines;
-                    top_line += lines;
+                if (count > 0) {
+                    selection = std::min(count - 1, selection + lines);
+                    top_line = std::min(top_line + lines, std::max(0, count - lines));
+                    scroll_to_selection();
                 }
                 return true;
             }
@@ -290,6 +301,10 @@ struct ListBox : public Modal {
     {
         matches.clear();
         if constexpr (Config.search) {
+            // The list on display changes, so start at its top. Also when the
+            // search is cleared: the selection indexed the matches.
+            selection = 0;
+            top_line = 0;
             if (search.empty()) {
                 return;
             }
@@ -305,7 +320,6 @@ struct ListBox : public Modal {
                     matches.push_back(e);
                 }
             }
-            selection = 0;
         }
     }
 
