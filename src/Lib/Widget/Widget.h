@@ -349,12 +349,12 @@ struct AppBus {
 
     void handle_one()
     {
-        if (messages.empty()) {
-            return;
-        }
-        trace(AppBus, "handle_one()");
+        // Check for messages under the lock too: the job thread adds them.
         auto message = ({
             auto lg = std::lock_guard(messages_mutex);
+            if (messages.empty()) {
+                return;
+            }
             trace(AppBus, "handle_one() getting message");
             SyncMsg message = messages.front();
             messages.pop_front();
