@@ -438,7 +438,7 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
 
     image = GenImageColor(map.columns * 256, map.rows * 256, BLANK);
     for (auto ix = 0; ix < map.num_tiles; ++ix) {
-        ImageDraw(
+        ImageDrawImagePro(
             &image,
             images[ix],
             Rectangle {
@@ -453,6 +453,8 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
                 .width = 256,
                 .height = 256,
             },
+            Vector2 { 0, 0 },
+            0.0f,
             WHITE);
         UnloadImage(images[ix]);
     }
