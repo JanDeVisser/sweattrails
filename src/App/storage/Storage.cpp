@@ -83,7 +83,14 @@ Error<StorageError> Storage::rescan()
         }
         Year year { .year = year_num, .months = { } };
         for (size_t month = 0; month < 12; ++month) {
-            if (TRY_EVAL(Month(year_num, static_cast<DateTime::Month>(month)).has_activities(*this))) {
+            // A month directory that can't be read is skipped, rather than
+            // failing the whole rescan.
+            Month const month_id { year_num, static_cast<DateTime::Month>(month) };
+            auto const  has_activities = month_id.has_activities(*this);
+            if (!has_activities) {
+                warning(Storage, "Skipping `{}`: {}", month_id.dir_name(), has_activities.error().to_string());
+            }
+            if (has_activities.value_or(false)) {
                 if (!year.months) {
                     year.months = std::array<bool, 12> { };
                 }

@@ -37,7 +37,12 @@ std::optional<fs::path> Month::dir(Storage const &storage) const
     auto            ret = storage.activity_dir / dir_name();
     std::error_code ec { };
     if (!fs::is_directory(ret, ec)) {
-        // error.FileNotFound => null
+        // error.FileNotFound => null. Other errors, e.g. a year directory
+        // that can't be searched, also mean there's nothing to list, but are
+        // worth a warning.
+        if (ec && ec != std::errc::no_such_file_or_directory) {
+            warning(Storage, "Skipping `{}`: {}", ret.string(), LibCError { ec }.to_string());
+        }
         return { };
     }
     return ret;
