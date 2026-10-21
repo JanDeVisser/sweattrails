@@ -121,7 +121,7 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
         //     }
         // }
     }
-    segment.analyze(records, true);
+    TRY(analyze());
     return true;
 }
 
@@ -132,7 +132,7 @@ StorageResult<bool> Activity::load_from_slice(std::string_view const &buffer)
     if (!TRY_EVAL(load_fit_file(fit_file))) {
         return false;
     }
-    segment.analyze(records, true);
+    TRY(analyze());
     return true;
 }
 
@@ -140,41 +140,21 @@ Error<StorageError> Activity::analyze()
 {
     segment.analyze(records, true);
 
-    struct RecordRange {
-        std::optional<size_t> min { };
-        std::optional<size_t> max { };
+    // Laps are contiguous and in chronological order, so a lap runs from its
+    // own start time up to the start time of the next lap. Everything from the
+    // start of the last lap onwards belongs to the last lap.
+    auto const first_at_or_after = [this](DateTime const &t) {
+        return std::ranges::lower_bound(records, t.timestamp, { }, [](record const &rec) { return rec.timestamp.timestamp; });
     };
-
-    // The zig version builds an empty list and then iterates over it, so the
-    // loops below never ran. Sizing the list to the number of laps is what was
-    // intended; note that the ranges are assigned in lap order.
-    std::vector<RecordRange> ranges { };
-    ranges.resize(laps.size());
-    for (size_t recnum = 0; recnum < records.size(); ++recnum) {
-        auto const &rec = records[recnum];
-        for (size_t lap = 0; lap < ranges.size(); ++lap) {
-            auto &r = ranges[lap];
-            if (r.max) {
-                goto next_record;
-            }
-            if (!r.min && laps[lap].segment.start_time.less_than(rec.timestamp)) {
-                r.min = recnum;
-            } else if (r.min && laps[lap].segment.end_time.less_than(rec.timestamp)) {
-                r.max = recnum;
-                laps[lap].records = std::span { records }.subspan(*r.min, *r.max - *r.min);
-                laps[lap].segment.analyze(laps[lap].records, false);
-            }
+    for (size_t ix = 0; ix < laps.size(); ++ix) {
+        auto      &lap = laps[ix];
+        auto const begin = first_at_or_after(lap.segment.start_time);
+        auto       end = (ix + 1 < laps.size()) ? first_at_or_after(laps[ix + 1].segment.start_time) : records.end();
+        if (end < begin) {
+            end = begin;
         }
-    next_record:;
-    }
-    for (size_t lap = 0; lap < ranges.size(); ++lap) {
-        auto const &r = ranges[lap];
-        if (r.max) {
-            continue;
-        }
-        assert(r.min.has_value());
-        laps[lap].records = std::span { records }.subspan(*r.min);
-        laps[lap].segment.analyze(laps[lap].records, false);
+        lap.records = std::span { begin, end };
+        lap.segment.analyze(lap.records, false);
     }
     return { };
 }
@@ -194,6 +174,16 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
         number = f->number.value_or(0);
         serial = f->serial_number.value_or(0);
     } break;
+    case mesg_num::activity: {
+        auto a = make_from_rec<ST::activity>(rec);
+        if (!a) {
+            log_error("Error converting activity message to struct: {}", static_cast<int>(a.error()));
+            return true;
+        }
+        if (a->local_timestamp) {
+            utc_offset = static_cast<i32>(static_cast<i64>(a->local_timestamp->timestamp) - static_cast<i64>(a->timestamp.timestamp));
+        }
+    } break;
     case mesg_num::session: {
         auto s = make_from_rec<session>(rec);
         if (!s) {
@@ -203,7 +193,7 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
         segment.start_time = s->start_time;
         segment.moving = Duration { s->total_timer_time };
         segment.elapsed = Duration { s->total_elapsed_time };
-        segment.end_time = segment.start_time.end(segment.moving);
+        segment.end_time = s->timestamp;
         if (s->sport) {
             sport = *s->sport;
         }
@@ -235,7 +225,7 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
             lap.segment.start_time = l->start_time;
             lap.segment.moving = Duration { l->total_timer_time };
             lap.segment.elapsed = Duration { l->total_elapsed_time };
-            lap.segment.end_time = lap.segment.start_time.end(lap.segment.moving);
+            lap.segment.end_time = l->timestamp;
             if (l->total_distance) {
                 lap.segment.distance = *l->total_distance;
             }

@@ -132,7 +132,7 @@ constexpr static TypeMetaData record_meta {
         { .name = "distance", .num = 5, .scale = 100, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(record, distance) },
         { .name = "speed", .num = 6, .scale = 1000, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(record, speed) },
         { .name = "power", .num = 7, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(record, power) },
-        { .name = "grade", .num = 9, .optional = true, .base_type = FITBaseType::sint16, .fld_offset = offsetof(record, grade) },
+        { .name = "grade", .num = 9, .scale = 100, .optional = true, .base_type = FITBaseType::sint16, .fld_offset = offsetof(record, grade) },
         { .name = "temperature", .num = 13, .optional = true, .base_type = FITBaseType::sint8, .fld_offset = offsetof(record, temperature) },
         { .name = "left/right balance", .num = 30, .optional = true, .base_type = FITBaseType::uint8, .fld_offset = offsetof(record, left_right_balance) },
         { .name = "calories", .num = 33, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(record, calories) },

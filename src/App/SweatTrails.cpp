@@ -299,7 +299,7 @@ StringList SweatTrails::get_font_dirs()
                 font_dirs.push_back(d);
                 for (auto const &dir_entry : fs::recursive_directory_iterator(d)) {
                     if (dir_entry.is_directory()) {
-                        font_dirs.push_back(d);
+                        font_dirs.push_back(dir_entry.path().string());
                     }
                 }
             }

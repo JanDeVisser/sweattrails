@@ -3,7 +3,7 @@
         "font_directories": [
             "${HOME}/fonts",
             "${HOME}/.fonts",
-            "${ARAGORN_DATADIR}/fonts"
+            "${sweattrails_DATADIR}/fonts"
         ],
         "font": "VictorMono-Regular.ttf",
         "font_size": 20,

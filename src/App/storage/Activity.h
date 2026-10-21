@@ -72,6 +72,9 @@ struct Activity {
     std::string         title { };
     std::string         notes { };
     Segment             segment { };
+    // Local time minus UTC in seconds, from the FIT activity message. Empty
+    // if the file doesn't record the local time.
+    std::optional<i32>  utc_offset { };
     std::vector<record> records { };
     std::vector<Lap>    laps { };
 
