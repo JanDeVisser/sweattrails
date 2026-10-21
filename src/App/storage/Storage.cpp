@@ -207,9 +207,10 @@ StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
     }
 
     u32 processed { 0 };
-    for (auto const &file_name : file_names) {
+    for (size_t ix = 0; ix < file_names.size(); ++ix) {
+        auto const &file_name = file_names[ix];
         if (on_file) {
-            on_file(file_name);
+            on_file(file_name, ix, file_names.size());
         }
         // TODO: Files that can't be read, and Skipped ones that aren't
         // activities, stay in the inbox and are tried, and logged, again on

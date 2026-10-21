@@ -41,8 +41,9 @@ struct Storage {
     using ActivityID = ST::ActivityID;
     using Activity = ST::Activity;
     using Activities = ST::Activities;
-    // Called with the name of each inbox file before it's processed.
-    using InboxProgress = std::function<void(std::string_view const &file_name)>;
+    // Called with the name of each inbox file before it's processed, its index
+    // and the number of files.
+    using InboxProgress = std::function<void(std::string_view const &file_name, size_t index, size_t count)>;
 
     enum class InboxOutcome {
         Organized, // Moved into the activity store.

@@ -76,10 +76,19 @@ using Job = Message<
     JOBTYPE(ENUMPAYLOAD)
         std::monostate>;
 
+// Sent by the inbox job for each file it processes, and with an empty
+// file_name when it's done.
+struct ImportingFile {
+    std::string file_name { };
+    size_t      index { 0 };
+    size_t      count { 0 };
+};
+
 #define NOTIFICATIONTYPE(S)     \
     S(Message, std::string)     \
     S(ActivityList, Activities) \
-    S(Activity, Activity)
+    S(Activity, Activity)       \
+    S(ImportingFile, ImportingFile)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -121,6 +130,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_message(Notification::Payload const &data);
     static void notif_activity_list(Notification::Payload const &data);
     static void notif_activity(Notification::Payload const &data);
+    static void notif_importing_file(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -131,6 +141,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_message,
                 notif_activity_list,
                 notif_activity,
+                notif_importing_file,
             });
     }
 
@@ -146,6 +157,7 @@ struct SweatTrails : public Main<Job, Notification> {
     ActivityID last_activity { };
 
     std::shared_ptr<WidgetStack> widget_stack { nullptr };
+    std::shared_ptr<Label>       status { nullptr };
 
     SweatTrails();
     static pSweatTrails the();
@@ -160,6 +172,7 @@ struct SweatTrails : public Main<Job, Notification> {
     StringList get_font_dirs();
     void       terminate();
     void       set_message(std::string_view const &text);
+    void       set_status(std::string_view const &text);
     void       show_activity(Activity const &activity);
 };
 

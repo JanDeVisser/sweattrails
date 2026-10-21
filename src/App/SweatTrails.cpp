@@ -7,6 +7,7 @@
 #include "Expected.h"
 #include "storage/Storage.h"
 #include "storage/Types.h"
+#include <chrono>
 #include <raylib.h>
 #include <unistd.h>
 
@@ -94,11 +95,23 @@ void SweatTrails::job_find_newest_activity(Job::Payload const &)
 
 void SweatTrails::job_process_inbox(Job::Payload const &)
 {
-    auto const on_file = [](std::string_view const &file_name) {
-        // TODO: Notify the UI with the name of the file being processed.
+    // The UI handles one notification per frame, and files are processed
+    // faster than that. Only send an update every 100ms, so that they don't
+    // queue up, and delay the notifications behind them.
+    using Clock = std::chrono::steady_clock;
+    std::optional<Clock::time_point> last_update { };
+    auto const                       on_file = [&last_update](std::string_view const &file_name, size_t index, size_t count) {
         trace(ST, "Processing inbox file {}", file_name);
+        auto const now = Clock::now();
+        if (last_update && now - *last_update < std::chrono::milliseconds { 100 }) {
+            return;
+        }
+        last_update = now;
+        SweatTrails::the()->notify<NotificationType::ImportingFile>(
+            ImportingFile { std::string { file_name }, index, count });
     };
     auto res = SweatTrails::the()->storage.process_inbox(on_file);
+    SweatTrails::the()->notify<NotificationType::ImportingFile>(ImportingFile { });
     if (!res) {
         SweatTrails::the()->notify<NotificationType::Message>(
             std::format("Error processing inbox: {}", res.error().to_string()));
@@ -203,6 +216,14 @@ void SweatTrails::notif_activity(Notification::Payload const &data)
     SweatTrails::the()->show_activity(std::get<Activity>(data));
 }
 
+void SweatTrails::notif_importing_file(Notification::Payload const &data)
+{
+    auto const &file = std::get<ImportingFile>(data);
+    SweatTrails::the()->set_status(file.file_name.empty()
+            ? std::string { }
+            : std::format("Importing {} of {}: {}", file.index + 1, file.count, file.file_name));
+}
+
 void SweatTrails::show_activity(Activity const &activity)
 {
     std::println("Showing activity {}", activity.id);
@@ -230,6 +251,9 @@ void SweatTrails::initialize()
 
     widget_stack = add_widget<WidgetStack>();
     widget_stack->add_widget<ActivityDisplay>();
+    // A status line at the bottom of the window, hidden while it's empty.
+    status = add_widget<Label>("");
+    status->policy = SizePolicy::Hide;
 
     bus.add_task<SweatTrails>("st-force-quit", self(), cmd_force_quit)
         .bind(KeyCombo { KEY_Q, KModControl | KModShift });
@@ -378,6 +402,17 @@ void SweatTrails::load_font()
 void SweatTrails::set_message(std::string_view const &text)
 {
     notify<NotificationType::Message>(std::string { text });
+}
+
+// Must be called on the UI thread; jobs send a notification instead.
+void SweatTrails::set_status(std::string_view const &text)
+{
+    status->text = text;
+    auto const policy = text.empty() ? SizePolicy::Hide : SizePolicy::Characters;
+    if (status->policy != policy) {
+        status->policy = policy;
+        resize();
+    }
 }
 
 }
