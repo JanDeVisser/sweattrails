@@ -11,7 +11,7 @@
 #define SWEATTRAILS_ID                            "@sweattrails_ID@"
 #define SWEATTRAILS_VERSION_MAJOR                 "@sweattrails_VERSION_MAJOR@"
 #define SWEATTRAILS_VERSION_MINOR                 "@sweattrails_VERSION_MINOR@"
-#define SWEATTRAILS_VERSION                       "@sweattrails_VERSION_MAJOR@.@SWEATTRAILS_VERSION_MINOR@"
+#define SWEATTRAILS_VERSION                       "@sweattrails_VERSION_MAJOR@.@sweattrails_VERSION_MINOR@"
 #define SWEATTRAILS_DIR                           "@sweattrails_DIR@"
 #define SWEATTRAILS_DATADIR                       "@sweattrails_DATADIR@"
 #define SWEATTRAILS_SYSTEM                        "@CMAKE_SYSTEM_NAME@"
