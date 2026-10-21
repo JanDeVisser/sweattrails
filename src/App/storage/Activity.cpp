@@ -153,8 +153,9 @@ Error<StorageError> Activity::analyze()
         if (end < begin) {
             end = begin;
         }
-        lap.records = std::span { begin, end };
-        lap.segment.analyze(lap.records, false);
+        lap.first_record = static_cast<size_t>(begin - records.begin());
+        lap.end_record = static_cast<size_t>(end - records.begin());
+        lap.segment.analyze(std::span { begin, end }, false);
     }
     return { };
 }

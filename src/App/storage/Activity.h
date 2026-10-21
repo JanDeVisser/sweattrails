@@ -54,12 +54,14 @@ struct Segment {
 };
 
 struct Lap {
-    // Points into Activity::records; only valid as long as that vector is not
-    // resized (same aliasing contract as the zig slices).
-    std::span<record> records { };
-    std::string       title { };
-    std::string       notes { };
-    Segment           segment { };
+    // The lap's records are Activity::records[first_record, end_record). These
+    // are indices rather than a span, so that they stay valid when the
+    // Activity is copied or moved.
+    size_t      first_record { 0 };
+    size_t      end_record { 0 };
+    std::string title { };
+    std::string notes { };
+    Segment     segment { };
 };
 
 struct Activity {
@@ -88,6 +90,11 @@ struct Activity {
     static bool less_than(Activity const &lhs, Activity const &rhs)
     {
         return lhs.segment.start_time.less_than(rhs.segment.start_time);
+    }
+
+    [[nodiscard]] std::span<record const> lap_records(Lap const &lap) const
+    {
+        return std::span { records }.subspan(lap.first_record, lap.end_record - lap.first_record);
     }
 
     StorageResult<bool> load(LoadingDepth depth);
