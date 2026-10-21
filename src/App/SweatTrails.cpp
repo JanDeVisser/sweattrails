@@ -173,7 +173,8 @@ void cmd_quit(pSweatTrails const &sweattrails, JSONValue const &)
 void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
 {
     if (!sweattrails->modals.empty()) {
-        // Pressing Ctrl-M with the list already open shouldn't open another.
+        // Not while any modal is open, as in cmd_quit. In particular, Ctrl-M
+        // with the list already open shouldn't open another.
         return;
     }
     auto activity_selected = [sweattrails](std::shared_ptr<ActivitySelector> const &selector, ActivityID const &id) -> void {

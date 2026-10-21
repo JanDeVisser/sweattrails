@@ -6,13 +6,16 @@
  * Tests that ActivitySelector, the month's activity list (Ctrl-M), submits
  * the activity that is selected, also while searching. The selector reads
  * the month from storage when it's made; the storage here points at a
- * directory that doesn't exist, so the month is empty, and the test adds the
- * entries itself.
+ * directory that doesn't exist, unique to this run, so the month is empty,
+ * and the test adds the entries itself.
  */
 
 #include <filesystem>
+#include <format>
 #include <optional>
 #include <string>
+
+#include <unistd.h>
 
 #include <Modal.h>
 
@@ -33,7 +36,8 @@ struct Fixture {
 
     explicit Fixture(std::vector<std::string> const &names)
     {
-        storage.activity_dir = std::filesystem::temp_directory_path() / "sweattrails-test-no-such-dir";
+        storage.activity_dir = std::filesystem::temp_directory_path() / std::format("sweattrails-test-{}-no-such-dir", getpid());
+        CHECK(!std::filesystem::exists(storage.activity_dir));
         selector = std::make_shared<ActivitySelector>(
             [this](std::shared_ptr<ActivitySelector> const &, ActivityID const &id) {
                 submitted = id;
