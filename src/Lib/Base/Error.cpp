@@ -276,8 +276,10 @@ LibCError::LibCError(int err) noexcept
         description = "Custom error message";
         break;
     default:
+        // An errno value missing from ERRORCODES, e.g. one added to a newer
+        // libc. Keep the value, and get its message from the libc.
         code = "UNKNOWN";
-        description = "Unknown error";
+        description = std::generic_category().message(err);
         break;
     }
 }

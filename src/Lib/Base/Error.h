@@ -16,12 +16,8 @@
 namespace ST {
 
 struct LibCError {
-#ifdef IS_APPLE
-    static constexpr int ECUSTOM = EQFULL + 1;
-#endif
-#ifdef IS_LINUX
-    static constexpr int ECUSTOM = EHWPOISON + 1;
-#endif
+    // Outside the errno range: new errno values get added to the end of it.
+    static constexpr int ECUSTOM = 0x10000;
 
     int              err_no = { 0 };
     std::string_view code = { "Unknown" };
@@ -40,15 +36,10 @@ struct LibCError {
     }
 
     // std::filesystem reports errno values in the generic or system category.
-    // Errors from other categories become ECUSTOM with their message, and so
-    // do errno values LibCError doesn't know.
+    // Errors from other categories become ECUSTOM with their message.
     explicit LibCError(std::error_code const &ec) noexcept
         : LibCError((ec.category() == std::generic_category() || ec.category() == std::system_category()) ? ec.value() : ECUSTOM)
     {
-        if (code == "UNKNOWN") {
-            err_no = ECUSTOM;
-            code = "ECUSTOM";
-        }
         if (err_no == ECUSTOM) {
             description = ec.message();
         }
