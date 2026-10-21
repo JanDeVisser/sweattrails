@@ -739,6 +739,7 @@ enum class MetaDataUnits {
     S(LargeHeaderSizeUnsupported) \
     S(HeaderMagicMissing)         \
     S(UnknownDeveloperField)      \
+    S(RequiredFieldMissing)       \
     S(IOError)
 
 enum class FITError {
@@ -1180,7 +1181,7 @@ std::expected<T, FITError> make_from_rec_(FITDataRecord const &rec)
     assert(rec.mesg_num == meta.mesg_num);
     T ret;
     if (!assign_fields<T, meta, 0, FldTypes...>(ret, rec)) {
-        fatal("Error making FIT message");
+        return std::unexpected(FITError::RequiredFieldMissing);
     }
     if (auto err = on_load<T>(rec, ret); err) {
         return std::unexpected(err.value());

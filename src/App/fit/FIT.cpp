@@ -185,7 +185,9 @@ std::string_view FITFile::read_slice(size_t count)
 
 void FITFile::skip(size_t count)
 {
-    offset = std::min(offset + count, buffer.size());
+    auto const new_offset = std::min(offset + count, buffer.size());
+    total_read += new_offset - offset;
+    offset = new_offset;
 }
 
 std::expected<void, FITError> FITFile::read_header()
@@ -222,9 +224,44 @@ std::expected<void, FITError> FITFile::read_header()
     return { };
 }
 
+namespace {
+
+// Size in bytes of one value of a numeric base type. Strings and byte arrays
+// have no fixed size; their size comes from the field definition.
+std::optional<size_t> value_size(FITBaseType base_type)
+{
+    switch (base_type) {
+#undef S
+#define S(Value, Type)       \
+    case FITBaseType::Value: \
+        return sizeof(Type);
+        SIMPLE_FITBASETYPE(S)
+#undef S
+    default:
+        return { };
+    }
+}
+
+}
+
 std::expected<FITDataField, FITError> FITFile::read_field(FITArchitecture arch, FITBaseType base_type, size_t size)
 {
     FITDataField ret = { .type = base_type, .value = std::optional<FITDataField::Options> { } };
+
+    // A numeric field can hold an array of values, in which case its size is a
+    // multiple of the size of its base type. Only the first value is kept, but
+    // the whole field has to be consumed, or every record after it is read
+    // from the wrong offset. A field smaller than one value is invalid and is
+    // skipped.
+    if (auto const sz = value_size(base_type); sz && size != *sz) {
+        if (size < *sz) {
+            skip(size);
+            return ret;
+        }
+        auto first = TRY_EVAL(read_field(arch, base_type, *sz));
+        skip(size - *sz);
+        return first;
+    }
     switch (base_type) {
     case FITBaseType::enum_: {
         auto v = read_value<u8>(arch);
