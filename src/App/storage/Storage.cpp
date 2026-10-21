@@ -19,6 +19,7 @@
 #include <string_view>
 #include <system_error>
 
+#include <IO.h>
 #include <Logging.h>
 #include <StringUtil.h>
 #include <SweatTrails.h>
@@ -52,15 +53,7 @@ bool eql_ignore_case(std::string_view const &lhs, std::string_view const &rhs)
 
 StorageResult<Storage> Storage::init()
 {
-    char const *home_env = getenv("HOME");
-    fs::path    home { (home_env != nullptr) ? home_env : "." };
-    fs::path    data_dir_name {
-#ifdef IS_APPLE
-        home / "Library" / "Application Support" / "sweattrails"
-#else
-        home / ".local" / "share" / "sweattrails"
-#endif
-    };
+    auto const data_dir_name = user_data_dir("sweattrails");
 
     std::error_code ec { };
     if (!fs::is_directory(data_dir_name)) {

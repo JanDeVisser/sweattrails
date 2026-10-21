@@ -11,11 +11,14 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include <pwd.h>
 #include <sys/fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
+
+#include <config.h>
 
 #include <Expected.h>
 #include <IO.h>
@@ -320,6 +323,59 @@ std::expected<struct sockaddr_in, LibCError> tcpip_address_resolve(std::string_v
     }
     freeaddrinfo(res0);
     return std::unexpected(LibCError("Could not resolve address '{:}' to an IP address", address));
+}
+
+namespace {
+
+std::filesystem::path home_dir()
+{
+    if (char const *home = getenv("HOME"); home != nullptr && *home != 0) {
+        return home;
+    }
+    if (passwd const *pw = getpwuid(getuid()); pw != nullptr) {
+        return pw->pw_dir;
+    }
+    return ".";
+}
+
+#ifndef IS_APPLE
+std::filesystem::path xdg_dir(char const *env_var, std::filesystem::path const &fallback)
+{
+    // The XDG spec says relative paths in these variables are to be ignored.
+    if (char const *dir = getenv(env_var); dir != nullptr && *dir == '/') {
+        return dir;
+    }
+    return home_dir() / fallback;
+}
+#endif
+
+}
+
+std::filesystem::path user_config_dir(std::string_view const &app)
+{
+#ifdef IS_APPLE
+    return home_dir() / "Library" / "Application Support" / app;
+#else
+    return xdg_dir("XDG_CONFIG_HOME", ".config") / app;
+#endif
+}
+
+std::filesystem::path user_data_dir(std::string_view const &app)
+{
+#ifdef IS_APPLE
+    return home_dir() / "Library" / "Application Support" / app;
+#else
+    return xdg_dir("XDG_DATA_HOME", std::filesystem::path { ".local" } / "share") / app;
+#endif
+}
+
+std::filesystem::path user_state_dir(std::string_view const &app)
+{
+#ifdef IS_APPLE
+    return home_dir() / "Library" / "Application Support" / app;
+#else
+    return xdg_dir("XDG_STATE_HOME", std::filesystem::path { ".local" } / "state") / app;
+#endif
 }
 
 }

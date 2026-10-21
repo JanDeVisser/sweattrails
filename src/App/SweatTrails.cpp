@@ -16,6 +16,7 @@
 #include <config.h>
 
 #include <App.h>
+#include <IO.h>
 #include <JSON.h>
 #include <Logging.h>
 #include <Modal.h>
@@ -102,8 +103,7 @@ pSweatTrails SweatTrails::the()
 SweatTrails::SweatTrails()
     : Main<Job, Notification>()
 {
-    passwd *pw = getpwuid(getuid());
-    user_config_dir = fs::path { pw->pw_dir } / ".sweattrails";
+    user_config_dir = ST::user_config_dir("sweattrails");
     system_config_dir = fs::path { SWEATTRAILS_DATADIR };
 }
 
@@ -240,7 +240,6 @@ EError SweatTrails::read_settings()
     settings["appearance"] = JSONValue::object();
 
     auto merge_settings = [this](fs::path const &dir, std::string const &file = "settings.json") -> EError {
-        create_directory(dir);
         auto settings_file = dir / file;
         // std::println("--> {}", settings_file.string());
         if (exists(settings_file)) {

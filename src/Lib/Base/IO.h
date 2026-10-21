@@ -8,6 +8,7 @@
 
 #include "Error.h"
 #include <expected>
+#include <filesystem>
 #include <fstream>
 #include <netinet/in.h>
 #include <string>
@@ -98,5 +99,14 @@ std::expected<ssize_t, LibCError> write_file_by_name(std::string_view const &fil
 {
     return write_file_by_name(file_name, std::basic_string_view<T> { contents });
 }
+
+// Per-user directories for application `app`, following the platform's
+// conventions. On macOS all three are ~/Library/Application Support/<app>.
+// Elsewhere they are the XDG base directories: $XDG_CONFIG_HOME (default
+// ~/.config), $XDG_DATA_HOME (~/.local/share) and $XDG_STATE_HOME
+// (~/.local/state), each followed by <app>. The directories are not created.
+std::filesystem::path user_config_dir(std::string_view const &app);
+std::filesystem::path user_data_dir(std::string_view const &app);
+std::filesystem::path user_state_dir(std::string_view const &app);
 
 }

@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include <pwd.h>
 #include <raylib.h>
 #include <sys/fcntl.h>
 #include <sys/stat.h>
@@ -12,6 +11,7 @@
 #include <unistd.h>
 
 #include <App.h>
+#include <IO.h>
 #include <JSON.h>
 #include <Logging.h>
 #include <Options.h>
@@ -200,18 +200,20 @@ void App::pop_modal()
 //     set_font(font_path, font_sizes[static_cast<size_t>(size)] + increment, size);
 // }
 
+namespace {
+
+fs::path state_file_name()
+{
+    return user_state_dir("sweattrails") / "state";
+}
+
+}
+
 void AppState::read()
 {
-    struct passwd *pw = getpwuid(getuid());
-    struct stat    sb;
-    char const    *datadir = TextFormat("%s/.sweattrails", pw->pw_dir);
-    if (stat(datadir, &sb) != 0) {
-        mkdir(datadir, 700);
-    }
-
-    char const *state_fname = TextFormat("%s/.sweattrails/state", pw->pw_dir);
-    if (stat(state_fname, &sb) == 0) {
-        int state_fd = open(state_fname, O_RDONLY);
+    auto const state_fname = state_file_name();
+    if (exists(state_fname)) {
+        int state_fd = open(state_fname.c_str(), O_RDONLY);
         ::read(state_fd, this, sizeof(AppState));
         close(state_fd);
     } else {
@@ -221,9 +223,10 @@ void AppState::read()
 
 void AppState::write()
 {
-    struct passwd *pw = getpwuid(getuid());
-    char const    *state_fname = TextFormat("%s/.sweattrails/state", pw->pw_dir);
-    int            state_fd = open(state_fname, O_RDWR | O_CREAT | O_TRUNC, 0600);
+    auto const      state_fname = state_file_name();
+    std::error_code ec { };
+    fs::create_directories(state_fname.parent_path(), ec);
+    int state_fd = open(state_fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0600);
     ::write(state_fd, this, sizeof(AppState));
     close(state_fd);
 }
