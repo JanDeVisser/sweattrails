@@ -52,8 +52,10 @@ Error<StorageError> Storage::rescan()
     trace(Storage, "rescan()");
     years.clear();
     std::error_code ec { };
-    for (auto const &entry : fs::directory_iterator { activity_dir, ec }) {
-        if (!entry.is_directory()) {
+    for (fs::directory_iterator it { activity_dir, ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
+        auto const     &entry = *it;
+        std::error_code entry_ec { };
+        if (!entry.is_directory(entry_ec)) {
             continue;
         }
         auto const name = entry.path().filename().string();
@@ -79,7 +81,7 @@ Error<StorageError> Storage::rescan()
         years.emplace_back(year);
     }
     if (ec) {
-        return std::unexpected(StorageError { LibCError { ec.message() } });
+        return std::unexpected(StorageError { LibCError { ec } });
     }
     std::stable_sort(years.begin(), years.end(), Year::less_than);
     return { };
@@ -157,11 +159,17 @@ StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
 {
     // Collect the file names first: organizing a file moves it out of the
     // inbox, and it's unspecified whether a directory_iterator sees that.
+    // This runs on the job thread, where an exception would end the app, so
+    // use the std::filesystem overloads that don't throw.
     std::vector<std::string> file_names { };
     std::error_code          ec { };
-    for (auto const &entry : fs::directory_iterator { inbox_dir, ec }) {
-        if (entry.is_regular_file() && eql_ignore_case(entry.path().extension().string(), ".fit")) {
-            file_names.emplace_back(entry.path().filename().string());
+    for (fs::directory_iterator it { inbox_dir, ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
+        std::error_code entry_ec { };
+        if (it->is_regular_file(entry_ec) && eql_ignore_case(it->path().extension().string(), ".fit")) {
+            file_names.emplace_back(it->path().filename().string());
+        }
+        if (entry_ec) {
+            warning(Storage, "Skipping inbox entry `{}`: {}", it->path().string(), LibCError { entry_ec }.to_string());
         }
     }
     if (ec) {
@@ -211,7 +219,7 @@ StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view
         static_cast<u8>(activity.segment.start_time.month) + 1);
     auto const dest_dir = TRY_EVAL(ensure_directory(activity_dir / dest_dir_name));
     auto const dest_stem = std::format("{}", activity.segment.start_time.timestamp);
-    if (fs::exists(dest_dir / (dest_stem + ".fit"))) {
+    if (TRY_EVAL(path_exists(dest_dir / (dest_stem + ".fit")))) {
         // renamePreserve: never clobber an existing file. Set the duplicate
         // aside so it isn't processed again on every start.
         info(Storage, "File `{}` already exists at `{}`; moving it to `duplicates`", file_name, dest_dir_name);
@@ -231,10 +239,10 @@ Error<StorageError> Storage::move_with_sidecar(std::string_view const &stem, fs:
     for (auto const *ext : { ".fit", ".json" }) {
         auto const from = inbox_dir / std::format("{}{}", stem, ext);
         auto const to = dest_dir / std::format("{}{}", dest_stem, ext);
-        if (!fs::exists(from)) {
+        if (!TRY_EVAL(path_exists(from))) {
             continue;
         }
-        if (fs::exists(to)) {
+        if (TRY_EVAL(path_exists(to))) {
             return std::unexpected(StorageError { LibCError { std::format("`{}` already exists", to.string()) } });
         }
         std::error_code ec { };

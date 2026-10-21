@@ -336,6 +336,16 @@ std::filesystem::path home_dir()
     return ".";
 }
 
+std::expected<bool, LibCError> path_exists(std::filesystem::path const &path)
+{
+    std::error_code ec { };
+    auto const      ret = std::filesystem::exists(path, ec);
+    if (ec) {
+        return std::unexpected(LibCError { ec });
+    }
+    return ret;
+}
+
 std::expected<std::filesystem::path, LibCError> ensure_directory(std::filesystem::path const &dir)
 {
     std::error_code ec { };

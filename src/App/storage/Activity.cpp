@@ -291,8 +291,10 @@ Error<StorageError> Activities::list()
 {
     if (auto d = id.dir(*storage); d) {
         std::error_code ec { };
-        for (auto const &entry : fs::directory_iterator { *d, ec }) {
-            if (!entry.is_regular_file()) {
+        for (fs::directory_iterator it { *d, ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
+            auto const     &entry = *it;
+            std::error_code entry_ec { };
+            if (!entry.is_regular_file(entry_ec)) {
                 continue;
             }
             auto const ext = entry.path().extension().string();
@@ -318,7 +320,7 @@ Error<StorageError> Activities::list()
             activities.emplace_back(*storage, ActivityID { id, stem, file_types });
         }
         if (ec) {
-            return std::unexpected(StorageError { LibCError { ec.message() } });
+            return std::unexpected(StorageError { LibCError { ec } });
         }
         for (auto ix = activities.size(); ix > 0;) {
             --ix;

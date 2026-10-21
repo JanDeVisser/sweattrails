@@ -104,6 +104,9 @@ std::expected<ssize_t, LibCError> write_file_by_name(std::string_view const &fil
 // isn't set.
 std::filesystem::path home_dir();
 
+// std::filesystem::exists(), returning errors instead of throwing them.
+std::expected<bool, LibCError> path_exists(std::filesystem::path const &path);
+
 // Creates `dir`, and any missing parent directories, if it doesn't exist yet.
 std::expected<std::filesystem::path, LibCError> ensure_directory(std::filesystem::path const &dir);
 

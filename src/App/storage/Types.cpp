@@ -46,8 +46,10 @@ StorageResult<bool> Month::has_activities(Storage const &storage) const
 {
     if (auto d = dir(storage); d) {
         std::error_code ec { };
-        for (auto const &entry : fs::directory_iterator { *d, ec }) {
-            if (!entry.is_regular_file()) {
+        for (fs::directory_iterator it { *d, ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
+            auto const     &entry = *it;
+            std::error_code entry_ec { };
+            if (!entry.is_regular_file(entry_ec)) {
                 continue;
             }
             auto const ext = entry.path().extension().string();
@@ -60,7 +62,7 @@ StorageResult<bool> Month::has_activities(Storage const &storage) const
             }
         }
         if (ec) {
-            return std::unexpected(StorageError { LibCError { ec.message() } });
+            return std::unexpected(StorageError { LibCError { ec } });
         }
     }
     return false;
