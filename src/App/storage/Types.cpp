@@ -62,7 +62,8 @@ StorageResult<bool> Month::has_activities(Storage const &storage) const
                 continue;
             }
             auto const ext = entry.path().extension().string();
-            if (eql_ignore_case(ext, ".fit")) {
+            // Like Activities::list(), only count `.fit` in lower case.
+            if (ext == ".fit") {
                 return true;
             } else if (eql_ignore_case(ext, ".strava")) {
                 return true;

@@ -320,8 +320,13 @@ Error<StorageError> Activities::list()
             }
             auto const ext = entry.path().extension().string();
             FileTypes  file_types { };
-            if (eql_ignore_case(ext, ".fit")) {
+            // The inbox stores FIT files as `<ts>.fit`, and load() opens
+            // `<name>.fit`, which on a case-sensitive filesystem doesn't find
+            // e.g. a `.FIT` file copied in by hand.
+            if (ext == ".fit") {
                 file_types.insert(ActivityFile::Fit);
+            } else if (eql_ignore_case(ext, ".fit")) {
+                warning(Storage, "Skipping `{}`: activity files must be named `.fit`", entry.path().string());
                 // } else if (eql_ignore_case(ext, ".strava")) {
                 //     file_types.insert(ActivityFile::Strava);
                 // } else if (eql_ignore_case(ext, ".sweattrails")) {
@@ -343,9 +348,15 @@ Error<StorageError> Activities::list()
         if (ec) {
             return std::unexpected(StorageError { LibCError { ec } });
         }
+        // An activity that fails to load is left out, rather than failing the
+        // whole month.
         for (auto ix = activities.size(); ix > 0;) {
             --ix;
-            if (!TRY_EVAL(activities[ix].load(LoadingDepth::Shallow))) {
+            auto const loaded = activities[ix].load(LoadingDepth::Shallow);
+            if (!loaded) {
+                warning(Storage, "Skipping activity `{}`: {}", activities[ix].id.name, loaded.error().to_string());
+            }
+            if (!loaded.value_or(false)) {
                 // swapRemove
                 activities[ix] = std::move(activities.back());
                 activities.pop_back();
