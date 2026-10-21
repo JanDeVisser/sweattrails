@@ -447,8 +447,11 @@ std::expected<FITDataRecord, FITError> FITFile::read_data_record(RecordHeader re
     for (size_t fld_num = 0; fld_num < def.num_fields; ++fld_num) {
         auto data_fld = TRY_EVAL(read_field(def, fld_num));
         if (def.fields[fld_num].field_num == FIT_FIELD_TIMESTAMP) {
-            assert(data_fld.type == FITBaseType::uint32 && data_fld.value);
-            last_timestamp = data_fld.value->uint32;
+            // An invalid timestamp (0xFFFFFFFF) has no value, and doesn't
+            // change the base for compressed timestamps.
+            if (data_fld.type == FITBaseType::uint32 && data_fld.value) {
+                last_timestamp = data_fld.value->uint32;
+            }
         }
         if (verbose) {
             std::println("  {}. {} {}", fld_num, def.fields[fld_num].field_num, data_fld);
