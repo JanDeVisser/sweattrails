@@ -617,7 +617,6 @@ struct LocalDefinition {
     u8              num_developer_fields = 0;
     DeveloperField  developer_fields[256];
     size_t          record_size = 0;
-    u32             current_timestamp = 0;
 
     bool operator==(LocalDefinition const &other)
     {
@@ -757,6 +756,9 @@ struct FITDataRecord {
     mesg_num                  mesg_num;
     u16                       mesg_number;
     std::vector<FITDataField> fields;
+    // Set for records with a compressed timestamp header, which have no
+    // timestamp field. get_field(FIT_FIELD_TIMESTAMP) returns it.
+    std::optional<u32> compressed_timestamp { };
 
     std::optional<FITDataField> get_field(u8 num) const;
 };
@@ -842,6 +844,7 @@ struct FITFile {
     size_t                         offset { 0 };
     size_t                         total_read { 0 };
     size_t                         current { 0 };
+    u32                            last_timestamp { 0 };
     bool                           verbose { false };
 
     FITFile(std::string_view const &buffer);
@@ -948,7 +951,6 @@ struct FITFile {
                     .num_developer_fields = 0,
                     .developer_fields = { },
                     .record_size = 0,
-                    .current_timestamp = 0,
                 };
                 if (verbose) {
                     std::println("Definition: local_mesg_num {} global_mesg_num {} {} arch {}",

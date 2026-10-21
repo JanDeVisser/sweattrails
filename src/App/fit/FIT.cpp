@@ -143,6 +143,9 @@ std::optional<FITDataField> FITDataRecord::get_field(u8 num) const
             return fields[local_def.num_fields + ix];
         }
     }
+    if (num == FIT_FIELD_TIMESTAMP && compressed_timestamp) {
+        return FITDataField { .type = FITBaseType::uint32, .value = FITDataField::Options { .uint32 = *compressed_timestamp } };
+    }
     return { };
 }
 
@@ -406,7 +409,8 @@ std::expected<FITDataField, FITError> FITFile::read_developer_field(LocalDefinit
 
 std::expected<FITDataRecord, FITError> FITFile::read_data_record(RecordHeader record_header)
 {
-    size_t def_ix = std::visit(
+    std::optional<u32> compressed_timestamp { };
+    size_t             def_ix = std::visit(
         overloaded {
             [this](u8 const &data_header) -> size_t {
                 if (verbose) {
@@ -417,19 +421,20 @@ std::expected<FITDataRecord, FITError> FITFile::read_data_record(RecordHeader re
                 }
                 return current_definitions[data_header];
             },
-            [this](RecordHeader::CompressedTimestamp const &ts_header) -> size_t {
+            [this, &compressed_timestamp](RecordHeader::CompressedTimestamp const &ts_header) -> size_t {
                 if (verbose) {
                     std::println("compressed timestamp message {} -> {} {}",
                         ts_header.local_message_type,
                         definitions[current_definitions[ts_header.local_message_type]].global_msg_num,
                         tag(static_cast<mesg_num>(definitions[current_definitions[ts_header.local_message_type]].global_msg_num)));
                 }
-                auto  ret = current_definitions[ts_header.local_message_type];
-                auto &def = definitions[ret];
-                def.current_timestamp = ((def.current_timestamp & 0x1F) >= ts_header.time_offset)
-                    ? (def.current_timestamp & 0xFFFFFFE0) + ts_header.time_offset
-                    : (def.current_timestamp & 0xFFFFFFE0) + ts_header.time_offset + 0x20;
-                return ret;
+                // The header holds the low 5 bits of the timestamp. It rolls over
+                // when they are smaller than those of the last timestamp.
+                last_timestamp = (ts_header.time_offset >= (last_timestamp & 0x1F))
+                    ? (last_timestamp & 0xFFFFFFE0) + ts_header.time_offset
+                    : (last_timestamp & 0xFFFFFFE0) + ts_header.time_offset + 0x20;
+                compressed_timestamp = last_timestamp;
+                return current_definitions[ts_header.local_message_type];
             },
             [](auto const &) -> size_t {
                 std::unreachable();
@@ -443,8 +448,7 @@ std::expected<FITDataRecord, FITError> FITFile::read_data_record(RecordHeader re
         auto data_fld = TRY_EVAL(read_field(def, fld_num));
         if (def.fields[fld_num].field_num == FIT_FIELD_TIMESTAMP) {
             assert(data_fld.type == FITBaseType::uint32 && data_fld.value);
-            data_fld.value = { .uint32 = data_fld.value->uint32 + def.current_timestamp };
-            def.current_timestamp = data_fld.value->uint32;
+            last_timestamp = data_fld.value->uint32;
         }
         if (verbose) {
             std::println("  {}. {} {}", fld_num, def.fields[fld_num].field_num, data_fld);
@@ -463,6 +467,7 @@ std::expected<FITDataRecord, FITError> FITFile::read_data_record(RecordHeader re
         .mesg_num = (def.global_msg_num < 0xFF00) ? static_cast<mesg_num>(def.global_msg_num) : mesg_num::vendor,
         .mesg_number = def.global_msg_num,
         .fields = std::move(fields),
+        .compressed_timestamp = compressed_timestamp,
     });
     return data_records.back();
 }
