@@ -48,7 +48,7 @@ struct Duration {
     explicit Duration(T the_elapsed)
     {
         if constexpr (std::floating_point<T>) {
-            assert(the_elapsed > 0);
+            assert(the_elapsed >= 0);
             fraction = static_cast<float32>(the_elapsed - std::trunc(the_elapsed));
             elapsed = static_cast<u32>(std::trunc(the_elapsed));
         } else {
@@ -56,7 +56,7 @@ struct Duration {
                 assert(the_elapsed < 0xFFFFFFFF);
             }
             if constexpr (std::is_signed_v<T>) {
-                assert(the_elapsed > 0);
+                assert(the_elapsed >= 0);
             }
             elapsed = static_cast<u32>(the_elapsed);
         }
