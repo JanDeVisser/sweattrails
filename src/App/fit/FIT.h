@@ -1347,3 +1347,14 @@ struct std::formatter<ST::FIT::manufacturer> : std::formatter<std::string> {
         return std::ranges::copy(std::move(out).str(), ctx.out()).out;
     }
 };
+
+template<>
+struct std::formatter<ST::FIT::FITError> : std::formatter<std::string> {
+    template<class FmtContext>
+    FmtContext::iterator format(ST::FIT::FITError const &val, FmtContext &ctx) const
+    {
+        std::ostringstream out;
+        out << ST::FIT::tag(val);
+        return std::ranges::copy(std::move(out).str(), ctx.out()).out;
+    }
+};

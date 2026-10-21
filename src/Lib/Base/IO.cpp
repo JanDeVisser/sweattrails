@@ -325,8 +325,6 @@ std::expected<struct sockaddr_in, LibCError> tcpip_address_resolve(std::string_v
     return std::unexpected(LibCError("Could not resolve address '{:}' to an IP address", address));
 }
 
-namespace {
-
 std::filesystem::path home_dir()
 {
     if (char const *home = getenv("HOME"); home != nullptr && *home != 0) {
@@ -337,6 +335,20 @@ std::filesystem::path home_dir()
     }
     return ".";
 }
+
+std::expected<std::filesystem::path, LibCError> ensure_directory(std::filesystem::path const &dir)
+{
+    std::error_code ec { };
+    if (!std::filesystem::is_directory(dir, ec)) {
+        std::filesystem::create_directories(dir, ec);
+        if (ec) {
+            return std::unexpected(LibCError { ec });
+        }
+    }
+    return dir;
+}
+
+namespace {
 
 #ifndef IS_APPLE
 std::filesystem::path xdg_dir(char const *env_var, std::filesystem::path const &fallback)

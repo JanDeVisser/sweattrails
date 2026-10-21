@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <format>
 #include <string>
+#include <system_error>
 
 #include <StringUtil.h>
 
@@ -36,6 +37,16 @@ struct LibCError {
         : LibCError(ECUSTOM)
     {
         this->description = description;
+    }
+
+    // std::filesystem reports errno values in the generic or system category.
+    // Errors from other categories become ECUSTOM with their message.
+    explicit LibCError(std::error_code const &ec) noexcept
+        : LibCError((ec.category() == std::generic_category() || ec.category() == std::system_category()) ? ec.value() : ECUSTOM)
+    {
+        if (err_no == ECUSTOM) {
+            description = ec.message();
+        }
     }
 
     template<typename... Args>

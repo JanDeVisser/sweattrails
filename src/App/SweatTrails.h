@@ -57,7 +57,7 @@ using EError = Error<STError>;
 using pSweatTrails = std::shared_ptr<struct SweatTrails>;
 #define MESSAGE(N, T, VALUES) using N = Message < T, std::monostate,
 
-#define JOBTYPE(S)                       \
+#define JOBTYPE(S)                        \
     S(FindCurrentFolder, std::monostate)  \
     S(FindNewestActivity, std::monostate) \
     S(ProcessInbox, std::monostate)

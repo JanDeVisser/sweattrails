@@ -165,7 +165,7 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
     case mesg_num::file_id: {
         auto f = make_from_rec<file_id>(rec);
         if (!f) {
-            log_error("Error converting file_id message to struct: {}", static_cast<int>(f.error()));
+            warning(Storage, "Error converting file_id message to struct: {}", f.error());
             return true;
         }
         if (f->type != file_type::activity) {
@@ -177,7 +177,7 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
     case mesg_num::activity: {
         auto a = make_from_rec<ST::activity>(rec);
         if (!a) {
-            log_error("Error converting activity message to struct: {}", static_cast<int>(a.error()));
+            warning(Storage, "Error converting activity message to struct: {}", a.error());
             return true;
         }
         if (a->local_timestamp) {
@@ -187,7 +187,7 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
     case mesg_num::session: {
         auto s = make_from_rec<session>(rec);
         if (!s) {
-            log_error("Error converting session message to struct: {}", static_cast<int>(s.error()));
+            warning(Storage, "Error converting session message to struct: {}", s.error());
             return true;
         }
         segment.start_time = s->start_time;
@@ -204,7 +204,7 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
     case mesg_num::workout: {
         auto w = make_from_rec<workout>(rec);
         if (!w) {
-            log_error("Error converting workout message to struct: {}", static_cast<int>(w.error()));
+            warning(Storage, "Error converting workout message to struct: {}", w.error());
             return true;
         }
         if (w->sport) {
@@ -218,7 +218,7 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
         if (depth == LoadingDepth::Deep) {
             auto l = make_from_rec<ST::lap>(rec);
             if (!l) {
-                log_error("Error converting lap message to struct: {}", static_cast<int>(l.error()));
+                warning(Storage, "Error converting lap message to struct: {}", l.error());
                 return true;
             }
             Lap lap { };
@@ -236,7 +236,7 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
         if (depth == LoadingDepth::Deep) {
             auto r = make_from_rec<ST::record>(rec);
             if (!r) {
-                log_error("Error converting record message to struct: {}", static_cast<int>(r.error()));
+                warning(Storage, "Error converting record message to struct: {}", r.error());
                 return true;
             }
             records.emplace_back(*r);

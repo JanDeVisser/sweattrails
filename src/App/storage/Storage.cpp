@@ -6,9 +6,8 @@
  * C++ translation of zig/storage.zig.
  *
  * The zig code notifies the UI with typed states (`app.notify(.{ .OrganizingInbox
- * = name })`). There is no equivalent yet in the C++ app, so the translation
- * uses SweatTrails::set_message(); replace that with a real notification
- * mechanism when one exists.
+ * = name })`). Here process_inbox() takes a callback instead, so that storage
+ * doesn't depend on the app.
  */
 
 #include <algorithm>
@@ -22,7 +21,6 @@
 #include <IO.h>
 #include <Logging.h>
 #include <StringUtil.h>
-#include <SweatTrails.h>
 
 #include <storage/Activity.h>
 #include <storage/Storage.h>
@@ -31,19 +29,6 @@ namespace ST {
 
 namespace {
 
-StorageResult<fs::path> create_dir_path_open(fs::path const &parent, std::string_view const &sub_path)
-{
-    auto            ret = parent / sub_path;
-    std::error_code ec { };
-    if (!fs::is_directory(ret)) {
-        fs::create_directories(ret, ec);
-        if (ec) {
-            return std::unexpected(StorageError { LibCError { ec.message() } });
-        }
-    }
-    return ret;
-}
-
 bool eql_ignore_case(std::string_view const &lhs, std::string_view const &rhs)
 {
     return to_lower(lhs) == to_lower(rhs);
@@ -51,24 +36,14 @@ bool eql_ignore_case(std::string_view const &lhs, std::string_view const &rhs)
 
 }
 
-StorageResult<Storage> Storage::init()
+StorageResult<Storage> Storage::init(std::string_view const &app_name)
 {
-    auto const data_dir_name = user_data_dir("sweattrails");
-
-    std::error_code ec { };
-    if (!fs::is_directory(data_dir_name)) {
-        fs::create_directories(data_dir_name, ec);
-        if (ec) {
-            return std::unexpected(StorageError { LibCError { ec.message() } });
-        }
-    }
-    info(Storage, "Opened data_dir `{}`", data_dir_name.string());
-
     Storage ret { };
-    ret.data_dir = data_dir_name;
-    ret.inbox_dir = TRY_EVAL(create_dir_path_open(data_dir_name, "inbox"));
-    ret.activity_dir = TRY_EVAL(create_dir_path_open(data_dir_name, "activity"));
-    ret.tiles_dir = TRY_EVAL(create_dir_path_open(data_dir_name, "tiles"));
+    ret.data_dir = TRY_EVAL(ensure_directory(user_data_dir(app_name)));
+    info(Storage, "Opened data_dir `{}`", ret.data_dir.string());
+    ret.inbox_dir = TRY_EVAL(ensure_directory(ret.data_dir / "inbox"));
+    ret.activity_dir = TRY_EVAL(ensure_directory(ret.data_dir / "activity"));
+    ret.tiles_dir = TRY_EVAL(ensure_directory(ret.data_dir / "tiles"));
     return ret;
 }
 
@@ -194,7 +169,7 @@ StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
             on_file(file_name);
         }
         if (auto res = organize_fit_file(file_name); !res) {
-            log_error("Error organizing inbox file {}: {}", file_name, res.error().to_string());
+            warning(Storage, "Error organizing inbox file {}: {}", file_name, res.error().to_string());
             continue;
         }
         processed += 1;
@@ -227,7 +202,7 @@ Error<StorageError> Storage::organize_fit_file(std::string_view const &file_name
             "{:04}/{:02}",
             static_cast<u16>(activity.segment.start_time.year),
             static_cast<u8>(activity.segment.start_time.month) + 1);
-        auto const dest_dir = TRY_EVAL(create_dir_path_open(activity_dir, dest_dir_name));
+        auto const dest_dir = TRY_EVAL(ensure_directory(activity_dir / dest_dir_name));
         auto const dest_stem = std::format("{}", activity.segment.start_time.timestamp);
         auto const dest = dest_dir / (dest_stem + ".fit");
         if (fs::exists(dest)) {

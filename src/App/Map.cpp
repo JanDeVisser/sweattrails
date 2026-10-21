@@ -143,16 +143,12 @@ std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) con
     }
     auto const url = std::format("https://tile.openstreetmap.org/{}/{}/{}.png", zoom, x, y);
 
-    std::error_code ec { };
-    auto const      tile_dir = storage.tiles_dir / std::format("{}/{}", zoom, x);
-    fs::create_directories(tile_dir, ec);
-    if (ec) {
-        return std::unexpected(LibCError { ec.message() });
-    }
+    auto const tile_dir = TRY_EVAL(ensure_directory(storage.tiles_dir / std::format("{}/{}", zoom, x)));
     auto const tile_file = tile_dir / std::format("{}.png", y);
 
     auto const exit_code = download(url, tile_file);
     if (!exit_code.has_value()) {
+        std::error_code ec { };
         fs::remove(tile_file, ec);
         return std::unexpected(
             std::visit(

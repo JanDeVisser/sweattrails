@@ -31,8 +31,6 @@ namespace ST {
 
 namespace fs = std::filesystem;
 
-struct SweatTrails;
-
 struct Storage {
     using Index = ST::Index;
     using Month = ST::Month;
@@ -43,6 +41,8 @@ struct Storage {
     using ActivityID = ST::ActivityID;
     using Activity = ST::Activity;
     using Activities = ST::Activities;
+    // Called with the name of each inbox file before it's processed.
+    using InboxProgress = std::function<void(std::string_view const &file_name)>;
 
     fs::path data_dir { };
     fs::path inbox_dir { };
@@ -53,7 +53,7 @@ struct Storage {
     std::vector<Year>    years { };
     std::optional<Index> current { };
 
-    static StorageResult<Storage> init();
+    static StorageResult<Storage> init(std::string_view const &app_name);
 
     Error<StorageError>                      rescan();
     std::optional<Year>                      find_year(size_t year) const;
@@ -62,9 +62,6 @@ struct Storage {
     StorageResult<std::optional<Activity>>   find_newest();
     StorageResult<Activities>                set_current_folder(Month const &month);
     StorageResult<std::optional<Activity>>   load_activity(ActivityID const &id);
-    // Called with the name of each inbox file before it's processed.
-    using InboxProgress = std::function<void(std::string_view const &file_name)>;
-
     StorageResult<u32>                       process_inbox(InboxProgress const &on_file = { });
     Error<StorageError>                      organize_fit_file(std::string_view const &file_name);
 };

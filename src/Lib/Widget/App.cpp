@@ -5,10 +5,6 @@
  */
 
 #include <raylib.h>
-#include <sys/fcntl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include <App.h>
 #include <IO.h>
@@ -88,8 +84,9 @@ void App::on_resize()
     }
 }
 
-App::App()
+App::App(std::string_view const &app_name)
     : Layout(nullptr)
+    , app_name(app_name)
 {
 }
 
@@ -200,35 +197,33 @@ void App::pop_modal()
 //     set_font(font_path, font_sizes[static_cast<size_t>(size)] + increment, size);
 // }
 
-namespace {
-
-fs::path state_file_name()
-{
-    return user_state_dir("sweattrails") / "state";
-}
-
-}
-
 void AppState::read()
 {
-    auto const state_fname = state_file_name();
-    if (exists(state_fname)) {
-        int state_fd = open(state_fname.c_str(), O_RDONLY);
-        ::read(state_fd, this, sizeof(AppState));
-        close(state_fd);
-    } else {
+    if (!exists(file)) {
         write();
+        return;
     }
+    auto contents = read_file_by_name(file.string());
+    if (!contents) {
+        warning(App, "Could not read app state from `{}`: {}", file.string(), contents.error().to_string());
+        return;
+    }
+    if (contents->size() != sizeof(state)) {
+        warning(App, "App state file `{}` has size {}, expected {}", file.string(), contents->size(), sizeof(state));
+        return;
+    }
+    memcpy(&state, contents->data(), sizeof(state));
 }
 
 void AppState::write()
 {
-    auto const      state_fname = state_file_name();
-    std::error_code ec { };
-    fs::create_directories(state_fname.parent_path(), ec);
-    int state_fd = open(state_fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0600);
-    ::write(state_fd, this, sizeof(AppState));
-    close(state_fd);
+    if (auto res = ensure_directory(file.parent_path()); !res) {
+        warning(App, "Could not create directory for app state: {}", res.error().to_string());
+        return;
+    }
+    if (auto res = write_file_by_name(file.string(), std::string_view { reinterpret_cast<char const *>(&state), sizeof(state) }); !res) {
+        warning(App, "Could not write app state to `{}`: {}", file.string(), res.error().to_string());
+    }
 }
 
 }

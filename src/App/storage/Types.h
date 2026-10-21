@@ -67,7 +67,7 @@ struct StorageError {
             overloaded {
                 [](LibCError const &e) { return e.to_string(); },
                 [](JSONError const &e) { return e.to_string(); },
-                [](FITError const &e) { return std::format("FIT error {}", static_cast<int>(e)); },
+                [](FITError const &e) { return std::format("FIT error {}", e); },
             },
             error);
     }

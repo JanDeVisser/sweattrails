@@ -7,10 +7,7 @@
 #include "Expected.h"
 #include "storage/Storage.h"
 #include "storage/Types.h"
-#include <pwd.h>
 #include <raylib.h>
-#include <sys/fcntl.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
 #include <config.h>
@@ -99,7 +96,7 @@ void SweatTrails::job_process_inbox(Job::Payload const &)
 {
     auto const on_file = [](std::string_view const &file_name) {
         // TODO: Notify the UI with the name of the file being processed.
-        trace(Storage, "Processing inbox file {}", file_name);
+        trace(ST, "Processing inbox file {}", file_name);
     };
     auto res = SweatTrails::the()->storage.process_inbox(on_file);
     if (!res) {
@@ -107,7 +104,7 @@ void SweatTrails::job_process_inbox(Job::Payload const &)
             std::format("Error processing inbox: {}", res.error().to_string()));
         return;
     }
-    info(Storage, "Processed {} inbox files", res.value());
+    info(ST, "Processed {} inbox files", res.value());
 }
 
 pSweatTrails SweatTrails::the()
@@ -116,9 +113,8 @@ pSweatTrails SweatTrails::the()
 }
 
 SweatTrails::SweatTrails()
-    : Main<Job, Notification>()
+    : Main<Job, Notification>(SWEATTRAILS_ID)
 {
-    user_config_dir = ST::user_config_dir("sweattrails");
     system_config_dir = fs::path { SWEATTRAILS_DATADIR };
 }
 
@@ -230,7 +226,7 @@ void SweatTrails::initialize()
             arguments.pop_front();
         }
     }
-    storage = MUST_EVAL(Storage::init());
+    storage = MUST_EVAL(Storage::init(app_name));
 
     widget_stack = add_widget<WidgetStack>();
     widget_stack->add_widget<ActivityDisplay>();
@@ -304,10 +300,10 @@ StringList SweatTrails::get_font_dirs()
         auto &appearance = settings["appearance"];
         auto &directories = appearance["font_directories"];
 
-        struct passwd *pw = getpwuid(getuid());
-        auto           append_dir = [pw, this](std::string_view const &dir) -> void {
+        auto const home = home_dir().string();
+        auto const append_dir = [&home, this](std::string_view const &dir) -> void {
             std::string d { dir };
-            replace_all(d, "${HOME}", pw->pw_dir);
+            replace_all(d, "${HOME}", home);
             replace_all(d, "${sweattrails_DATADIR}", SWEATTRAILS_DATADIR);
             if (std::find(font_dirs.begin(), font_dirs.end(), d) == font_dirs.end()) {
                 if (!fs::is_directory(d)) {

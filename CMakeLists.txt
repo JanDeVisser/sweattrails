@@ -27,6 +27,7 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
 set(CMAKE_INSTALL_PREFIX ${PROJECT_BINARY_DIR} CACHE PATH "..." FORCE)
 
 set(sweattrails_NAME SweatTrails)
+set(sweattrails_ID sweattrails)
 set(sweattrails_VERSION_MAJOR 1)
 set(sweattrails_VERSION_MINOR 0)
 set(sweattrails_DIR ${CMAKE_INSTALL_PREFIX})

@@ -73,7 +73,7 @@ inline std::expected<std::wstring, LibCError> read_file_by_name(std::string_view
 template<typename T = char>
 std::expected<ssize_t, LibCError> write_file_by_name(std::string_view const &file_name, std::basic_string_view<T> const &contents)
 {
-    std::basic_fstream<T> os(std::string { file_name });
+    std::basic_ofstream<T> os(std::string { file_name });
     if (!os) {
         return std::unexpected(LibCError());
     }
@@ -99,6 +99,13 @@ std::expected<ssize_t, LibCError> write_file_by_name(std::string_view const &fil
 {
     return write_file_by_name(file_name, std::basic_string_view<T> { contents });
 }
+
+// The user's home directory: $HOME, or the password database entry if HOME
+// isn't set.
+std::filesystem::path home_dir();
+
+// Creates `dir`, and any missing parent directories, if it doesn't exist yet.
+std::expected<std::filesystem::path, LibCError> ensure_directory(std::filesystem::path const &dir);
 
 // Per-user directories for application `app`, following the platform's
 // conventions. On macOS all three are ~/Library/Application Support/<app>.

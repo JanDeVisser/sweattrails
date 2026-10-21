@@ -11,6 +11,7 @@
 #include <memory>
 #include <raylib.h>
 
+#include <IO.h>
 #include <Options.h>
 #include <Widget.h>
 
@@ -37,6 +38,7 @@ struct App : public Layout {
         }
     };
 
+    std::string                 app_name; // Names the per-user directories
     std::deque<std::string>     arguments;
     int                         monitor { 0 };
     Fonts                       fonts { };
@@ -56,7 +58,7 @@ struct App : public Layout {
     static std::shared_ptr<App> s_app;
     std::set<int>               m_pressed_keys;
 
-    App();
+    explicit App(std::string_view const &app_name);
     ~App();
 
     virtual void        on_start() { };
@@ -144,9 +146,11 @@ enum AppStateItem {
 };
 
 struct AppState {
-    int state[ASCount] = { 0 };
+    fs::path file;
+    int      state[ASCount] = { 0 };
 
-    AppState()
+    explicit AppState(std::string_view const &app_name)
+        : file(user_state_dir(app_name) / "state")
     {
         memset(&state, 0, sizeof(state));
     }
@@ -167,9 +171,9 @@ struct AppState {
 
 template<typename Job, typename Notification>
 struct Main : public App {
-    AppState   app_state { };
+    AppState   app_state;
     fs::path   system_config_dir { };
-    fs::path   user_config_dir { };
+    fs::path   user_config_dir;
     JSONValue  settings;
     StringList font_dirs;
 
@@ -179,8 +183,10 @@ struct Main : public App {
 
     Bus bus { };
 
-    Main()
-        : App()
+    explicit Main(std::string_view const &app_name)
+        : App(app_name)
+        , app_state(app_name)
+        , user_config_dir(ST::user_config_dir(app_name))
     {
         app_state.read();
         monitor = app_state.monitor();
