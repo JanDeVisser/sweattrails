@@ -56,6 +56,12 @@ struct Storage {
     fs::path tiles_dir { };
     // std::optional<Strava> strava { };
     // std::optional<Rungap> rungap { };
+
+    // Threading: the paths above don't change after init(), and can be used
+    // from any thread. `years` (and `current`) are rebuilt by rescan(), so
+    // they and every member function that calls rescan() must only be used
+    // from jobs, which run one at a time on the AppBus job thread. There is
+    // no locking.
     std::vector<Year>    years { };
     std::optional<Index> current { };
 
