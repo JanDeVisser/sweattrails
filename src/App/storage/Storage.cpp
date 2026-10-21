@@ -34,6 +34,17 @@ bool eql_ignore_case(std::string_view const &lhs, std::string_view const &rhs)
     return to_lower(lhs) == to_lower(rhs);
 }
 
+// Whether `<dir>/<stem>.fit`, or its sidecar `<dir>/<stem>.json`, exists.
+std::expected<bool, LibCError> stem_taken(fs::path const &dir, std::string_view const &stem)
+{
+    for (auto const *ext : { ".fit", ".json" }) {
+        if (TRY_EVAL(path_exists(dir / std::format("{}{}", stem, ext)))) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }
 
 StorageResult<Storage> Storage::init(std::string_view const &app_name)
@@ -219,12 +230,19 @@ StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view
         static_cast<u8>(activity.segment.start_time.month) + 1);
     auto const dest_dir = TRY_EVAL(ensure_directory(activity_dir / dest_dir_name));
     auto const dest_stem = std::format("{}", activity.segment.start_time.timestamp);
-    if (TRY_EVAL(path_exists(dest_dir / (dest_stem + ".fit")))) {
+    // A sidecar without its FIT file counts as a duplicate too, so that
+    // move_with_sidecar() finds both destinations free.
+    if (TRY_EVAL(stem_taken(dest_dir, dest_stem))) {
         // renamePreserve: never clobber an existing file. Set the duplicate
-        // aside so it isn't processed again on every start.
-        info(Storage, "File `{}` already exists at `{}`; moving it to `duplicates`", file_name, dest_dir_name);
+        // aside so it isn't processed again on every start. The same file can
+        // arrive more than once, so number the copies.
         auto const duplicates_dir = TRY_EVAL(ensure_directory(inbox_dir / "duplicates"));
-        TRY(move_with_sidecar(stem, duplicates_dir, stem));
+        auto       duplicate_stem = stem;
+        for (auto n = 1; TRY_EVAL(stem_taken(duplicates_dir, duplicate_stem)); ++n) {
+            duplicate_stem = std::format("{}-{}", stem, n);
+        }
+        info(Storage, "File `{}` already exists at `{}`; moving it to `duplicates/{}.fit`", file_name, dest_dir_name, duplicate_stem);
+        TRY(move_with_sidecar(stem, duplicates_dir, duplicate_stem));
         return InboxOutcome::Duplicate;
     }
     TRY(move_with_sidecar(stem, dest_dir, dest_stem));
@@ -233,23 +251,25 @@ StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view
 
 // Moves inbox file `<stem>.fit` to `<dest_dir>/<dest_stem>.fit`. The webhook
 // that collects the FIT files writes a JSON sidecar next to each one, which
-// goes along with its FIT file. Existing files are never overwritten.
+// goes along with its FIT file. Existing files are never overwritten: both
+// destinations are checked before anything is moved.
 Error<StorageError> Storage::move_with_sidecar(std::string_view const &stem, fs::path const &dest_dir, std::string_view const &dest_stem) const
 {
-    for (auto const *ext : { ".fit", ".json" }) {
-        auto const from = inbox_dir / std::format("{}{}", stem, ext);
-        auto const to = dest_dir / std::format("{}{}", dest_stem, ext);
-        if (!TRY_EVAL(path_exists(from))) {
-            continue;
-        }
-        if (TRY_EVAL(path_exists(to))) {
-            return std::unexpected(StorageError { LibCError { std::format("`{}` already exists", to.string()) } });
-        }
-        std::error_code ec { };
-        fs::rename(from, to, ec);
-        if (ec) {
-            return std::unexpected(StorageError { LibCError { ec } });
-        }
+    if (TRY_EVAL(stem_taken(dest_dir, dest_stem))) {
+        return std::unexpected(StorageError { LibCError { "`{}` already exists in `{}`", dest_stem, dest_dir.string() } });
+    }
+    std::error_code ec { };
+    fs::rename(inbox_dir / std::format("{}.fit", stem), dest_dir / std::format("{}.fit", dest_stem), ec);
+    if (ec) {
+        return std::unexpected(StorageError { LibCError { ec } });
+    }
+
+    // The FIT file has moved, so the activity is stored whatever happens to
+    // the sidecar. Failing to move it is only worth a warning.
+    auto const sidecar = inbox_dir / std::format("{}.json", stem);
+    fs::rename(sidecar, dest_dir / std::format("{}.json", dest_stem), ec);
+    if (ec && ec != std::errc::no_such_file_or_directory) {
+        warning(Storage, "Could not move sidecar `{}` to `{}`: {}", sidecar.string(), dest_dir.string(), LibCError { ec }.to_string());
     }
     return { };
 }
