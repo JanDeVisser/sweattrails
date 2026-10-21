@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <concepts>
 #include <condition_variable>
 #include <deque>
@@ -351,16 +352,24 @@ struct AppBus {
     // there is one. For notifications where only the latest one matters,
     // such as progress updates: the UI handles one message per frame, and
     // sending them faster than that would delay the messages behind them.
+    //
+    // Only send a kind of notification this way if every notification of
+    // that kind can be dropped for a newer one, and send all of them this
+    // way: mixed with notify(), more than one can be queued, and replacing
+    // the newest one still leaves the older ones to be handled after it.
     void notify_latest(Notification const &notification)
     {
-        trace(AppBus, "Latest notification: {}::{}", typeid(this).name(), typeid(notification).name());
         auto lg = std::lock_guard(messages_mutex);
-        for (auto &message : messages) {
-            if (auto *queued = std::get_if<Notification>(&message); queued != nullptr && queued->choice == notification.choice) {
-                *queued = notification;
-                return;
-            }
+        auto queued = std::find_if(messages.rbegin(), messages.rend(), [&notification](SyncMsg const &message) {
+            auto const *n = std::get_if<Notification>(&message);
+            return n != nullptr && n->choice == notification.choice;
+        });
+        if (queued != messages.rend()) {
+            trace(AppBus, "Latest notification {}: replacing a queued one", static_cast<int>(notification.choice));
+            *queued = notification;
+            return;
         }
+        trace(AppBus, "Latest notification {}: queueing", static_cast<int>(notification.choice));
         messages.emplace_back(notification);
     }
 
