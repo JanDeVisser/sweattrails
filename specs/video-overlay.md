@@ -1,67 +1,95 @@
-# Video Overlay: Reading MOV Files and Superimposing Activity Data
+# Video Overlay: Transparent Activity Data Overlay for MOV Files
 
-Goal: take a video (e.g. an iPhone or GoPro `.mov` recorded during a ride or
-run) and superimpose a layer with activity data such as speed, heart rate, or
-the map.
+Goal: given a video recorded during a ride or run (e.g. an iPhone or GoPro
+`.mov`), produce a second video containing only the activity data (speed,
+heart rate, the map, etc.) on a transparent background. The user imports both
+into Final Cut Pro (or DaVinci Resolve, Premiere, ...), stacks the overlay on
+top of the footage, and does the compositing, trimming, audio and color work
+there.
 
-How hard this is depends on whether we export a new video or play the video
-live inside the app. Both options assume FFmpeg does the heavy lifting.
+SweatTrails never decodes or re-encodes the footage itself. It only reads the
+source video's metadata and renders the overlay.
 
-## Option 1: Export a video with the overlay burned in (easy)
+What the overlay contains (fields, positions, fonts, map) is defined in
+[overlay-layout.md](overlay-layout.md). This document covers producing the
+`.mov` file.
 
-Let FFmpeg handle the video. SweatTrails only draws the overlay.
+## Rendering the overlay
 
-- Draw the overlay with raylib into a `RenderTexture2D` with a transparent
-  background.
-- Send each frame to an `ffmpeg` child process, either by writing PNGs or by
-  piping raw RGBA to its stdin:
+- Read the source video's metadata with `ffprobe` (see
+  [Matching the source](#matching-the-source)).
+- For each output frame, compute the activity time for that frame (see
+  [Synchronizing video and activity data](#synchronizing-video-and-activity-data)),
+  then draw the layout with raylib into a `RenderTexture2D` cleared to `BLANK`
+  (fully transparent).
+- Read the frame back with `LoadImageFromTexture()` and pipe the raw RGBA to
+  an `ffmpeg` child process, which encodes it as ProRes 4444 with alpha:
 
   ```sh
-  ffmpeg -i ride.mov \
-         -f rawvideo -pix_fmt rgba -s 1920x1080 -r 30 -i - \
-         -filter_complex "[0:v][1:v]overlay" -c:a copy out.mp4
+  ffmpeg -f rawvideo -pix_fmt rgba -s 1920x1080 -r 30 -i - \
+         -vf vflip \
+         -c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le \
+         overlay.mov
   ```
 
-- Estimated size: about 100–200 lines of code. No codec handling, and audio is
-  copied through unchanged.
+  `vflip` is needed because raylib render textures are stored upside down.
 
-## Option 2: Play the MOV in the app with a live overlay (moderate)
+Rendering runs off-screen and doesn't have to keep up with real time, so the
+render loop simply produces frames as fast as it can.
 
-Decode the video ourselves and draw it as a raylib texture under the UI.
+Estimated size: about 100–200 lines of code, not counting the layout renderer.
+There's no decoding and no audio handling.
 
-- **Decode with libavformat/libavcodec:** open the MOV, find the video stream,
-  decode the frames, and convert them to RGBA with `libswscale`. Call
-  `UpdateTexture()` each frame and draw the overlay on top with ordinary raylib
-  calls.
-- **macOS-only alternative:** `AVAssetReader` from AVFoundation in a small
-  Objective-C++ file. Hardware decoding comes for free, but it doesn't work on
-  other platforms.
+## Codec
 
-Estimated size: about 300–500 lines for a basic version. The decoding loop is
-boilerplate. The real work is in these details:
+- **ProRes 4444** (default) is the standard intermediate codec with alpha,
+  and every NLE imports it. Files are big, up to a couple of GB per minute at
+  1080p.
+- **HEVC with alpha** (macOS only) gives much smaller files and Final Cut
+  supports it:
 
-- **A/V sync and frame timing:** use the frame PTS, not the render loop's frame
-  rate.
-- **Audio:** feed decoded samples into a raylib `AudioStream`, or skip audio.
-- **iPhone quirks:** HEVC, 10-bit/HDR, and rotation metadata. A portrait video
-  shows up sideways unless the display matrix is applied.
-- **Performance:** decoding 4K HEVC in software is slow. Use VideoToolbox
-  hardware decoding through `av_hwdevice_ctx_create`.
-- **Seeking:** seek to a keyframe, then decode forward to the target frame.
+  ```sh
+  -c:v hevc_videotoolbox -alpha_quality 0.75 -tag:v hvc1
+  ```
+
+The render job's `codec` field (`prores4444` or `hevc-alpha`) picks one.
+
+## Matching the source
+
+The overlay must line up with the footage frame for frame and must not be
+scaled in the editor. So the overlay copies these from the source:
+
+- **Resolution:** use the *displayed* dimensions. iPhone portrait videos are
+  stored landscape with a rotation in the display matrix, so swap width and
+  height when the rotation is ±90°.
+- **Frame rate:** use the exact rational rate (e.g. `30000/1001`, not `29.97`),
+  otherwise the overlay drifts on long clips.
+- **Duration:** the overlay covers the whole clip by default. The render job's
+  `range` can limit it.
+- **Timecode:** copy the source's start timecode (`-timecode HH:MM:SS:FF`), if
+  it has one, so the editor can line the two clips up automatically.
+
+`canvas: "source"` in the layout refers to these values.
+
+## Alpha
+
+raylib produces straight (unpremultiplied) alpha. If edges look dark or
+fringed in the editor, set the clip's alpha handling to "Straight" (in Final
+Cut: Info inspector → Alpha Handling).
 
 ## Synchronizing video and activity data
 
-The video's timeline has to be aligned with the activity's timestamps.
+The video's timeline has to be aligned with the activity's timestamps. The
+render job's `offset` is the activity time, in seconds, at video frame 0.
 
 - iPhone MOVs include `com.apple.quicktime.creationdate`, which FFmpeg exposes
-  in the format metadata. That gives an offset from the start of the activity.
-  A manual nudge to correct the offset is probably still needed.
-- GoPro files carry GPS and sensor telemetry (GPMF) in a separate stream, so
-  that data is already in sync with the video.
+  in the format metadata. That gives the initial offset from the start of the
+  activity. A manual nudge to correct the offset is probably still needed.
+- GoPro files carry GPS and sensor telemetry (GPMF) in a separate stream,
+  already in sync with the video. Matching that GPS track against the
+  activity's track could compute the offset automatically. (Possible later
+  addition.)
 
-## Recommendation
-
-If the goal is to share rides as videos, start with option 1; it's an
-afternoon's work. Option 2 is only worth it for scrubbing through the video
-inside the activity screen. The overlay drawing code from option 1 carries over
-to option 2.
+To make the manual nudge practical, the app should preview the overlay over a
+still frame from the video (extracted with
+`ffmpeg -ss <t> -frames:v 1`) while the user adjusts the offset.
