@@ -99,20 +99,7 @@ StorageResult<bool> Activity::load(LoadingDepth the_depth)
 StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
 {
     if (id.files.contains(ActivityFile::Fit)) {
-        auto const file_name = (dir / std::format("{}.fit", id.name)).string();
-        auto       fit_file_maybe = FITFile::read(file_name);
-        if (!fit_file_maybe.has_value()) {
-            std::println("Error reading fit file `{}`", file_name);
-            return std::unexpected(StorageError { fit_file_maybe.error() });
-        }
-        auto &fit_file = fit_file_maybe.value();
-        auto  try_load = load_fit_file(fit_file);
-        if (!try_load.has_value()) {
-            std::println("load_fit_file(`{}`) failed", file_name);
-            return std::unexpected(try_load.error());
-        }
-        if (!try_load.value()) {
-            std::println("load_fit_file(`{}`) returned false", file_name);
+        if (!TRY_EVAL(load_fit_file_by_name(dir / std::format("{}.fit", id.name)))) {
             return false;
         }
         // if (id.files.contains(ActivityFile::Strava)) {
@@ -122,6 +109,37 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
         // }
     }
     TRY(analyze());
+    return true;
+}
+
+StorageResult<bool> Activity::load_from_file(fs::path const &file)
+{
+    assert(id.files.contains(ActivityFile::Fit));
+    if (!TRY_EVAL(load_fit_file_by_name(file))) {
+        return false;
+    }
+    TRY(analyze());
+    return true;
+}
+
+StorageResult<bool> Activity::load_fit_file_by_name(fs::path const &file)
+{
+    auto const file_name = file.string();
+    auto       fit_file_maybe = FITFile::read(file_name);
+    if (!fit_file_maybe.has_value()) {
+        std::println("Error reading fit file `{}`", file_name);
+        return std::unexpected(StorageError { fit_file_maybe.error() });
+    }
+    auto &fit_file = fit_file_maybe.value();
+    auto  try_load = load_fit_file(fit_file);
+    if (!try_load.has_value()) {
+        std::println("load_fit_file(`{}`) failed", file_name);
+        return std::unexpected(try_load.error());
+    }
+    if (!try_load.value()) {
+        std::println("load_fit_file(`{}`) returned false", file_name);
+        return false;
+    }
     return true;
 }
 

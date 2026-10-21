@@ -76,7 +76,7 @@ struct Storage {
     StorageResult<std::optional<Activity>>   load_activity(ActivityID const &id);
     StorageResult<u32>                       process_inbox(InboxProgress const &on_file = { });
     StorageResult<InboxOutcome>              organize_fit_file(std::string_view const &file_name);
-    Error<StorageError>                      move_with_sidecar(std::string_view const &stem, fs::path const &dest_dir, std::string_view const &dest_stem) const;
+    Error<StorageError>                      move_with_sidecar(std::string_view const &file_name, fs::path const &dest_dir, std::string_view const &dest_stem) const;
 };
 
 }

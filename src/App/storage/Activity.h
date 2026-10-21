@@ -102,12 +102,15 @@ struct Activity {
 
     StorageResult<bool> load(LoadingDepth depth);
     StorageResult<bool> load_from_dir(fs::path const &dir);
+    // Loads `file`, whatever its name, rather than `<id.name>.fit`.
+    StorageResult<bool> load_from_file(fs::path const &file);
     StorageResult<bool> load_from_slice(std::string_view const &buffer);
 
 private:
     Error<StorageError> analyze();
     bool                load_fit_file_filter(FITDataRecord const &rec);
     StorageResult<bool> load_fit_file(FITFile &fit_file);
+    StorageResult<bool> load_fit_file_by_name(fs::path const &file);
     // StorageResult<bool> load_strava_file(fs::path const &dir);
 };
 

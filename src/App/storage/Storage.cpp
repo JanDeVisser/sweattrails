@@ -227,7 +227,8 @@ StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view
     };
 
     activity.depth = LoadingDepth::Shallow;
-    if (!TRY_EVAL(activity.load_from_dir(inbox_dir))) {
+    // Load the file by its own name: process_inbox() also accepts e.g. `.FIT`.
+    if (!TRY_EVAL(activity.load_from_file(inbox_dir / file_name))) {
         return InboxOutcome::Skipped;
     }
     assert(activity.segment.start_time.timestamp > 0);
@@ -247,21 +248,22 @@ StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view
             duplicate_stem = std::format("{}-{}", stem, n);
         }
         info(Storage, "File `{}` already exists at `{}`; moving it to `duplicates/{}.fit`", file_name, dest_dir_name, duplicate_stem);
-        TRY(move_with_sidecar(stem, duplicates_dir, duplicate_stem));
+        TRY(move_with_sidecar(file_name, duplicates_dir, duplicate_stem));
         return InboxOutcome::Duplicate;
     }
-    TRY(move_with_sidecar(stem, dest_dir, dest_stem));
+    TRY(move_with_sidecar(file_name, dest_dir, dest_stem));
     return InboxOutcome::Organized;
 }
 
-// Moves inbox file `<stem>.fit` to `<dest_dir>/<dest_stem>.fit`. The webhook
-// that collects the FIT files writes a JSON sidecar next to each one, which
-// goes along with its FIT file. Existing files are never overwritten: if the
+// Moves inbox file `file_name` to `<dest_dir>/<dest_stem>.fit`. The webhook
+// that collects the FIT files writes a JSON sidecar, `<stem>.json`, next to
+// each one, which goes along with its FIT file. Existing files are never overwritten: if the
 // destination already has a sidecar, for example because its FIT file was
 // deleted to import it again, that one is kept and the new one stays in the
 // inbox.
-Error<StorageError> Storage::move_with_sidecar(std::string_view const &stem, fs::path const &dest_dir, std::string_view const &dest_stem) const
+Error<StorageError> Storage::move_with_sidecar(std::string_view const &file_name, fs::path const &dest_dir, std::string_view const &dest_stem) const
 {
+    auto const stem = fs::path { file_name }.stem().string();
     // TODO: Checking and then renaming isn't atomic: a file created in
     // between (by the webhook, say) is overwritten. renamex_np(RENAME_EXCL)
     // on macOS and renameat2(RENAME_NOREPLACE) on Linux would make "never
@@ -271,7 +273,7 @@ Error<StorageError> Storage::move_with_sidecar(std::string_view const &stem, fs:
         return std::unexpected(StorageError { LibCError { "`{}` already exists", dest.string() } });
     }
     std::error_code ec { };
-    fs::rename(inbox_dir / std::format("{}.fit", stem), dest, ec);
+    fs::rename(inbox_dir / file_name, dest, ec);
     if (ec) {
         return std::unexpected(StorageError { LibCError { ec } });
     }
