@@ -199,12 +199,12 @@ void App::pop_modal()
 
 void AppState::read()
 {
-    auto const exists = path_exists(file);
-    if (!exists) {
-        warning(App, "Could not check app state file `{}`: {}", file.string(), exists.error().to_string());
+    auto const exists_maybe = path_exists(file);
+    if (!exists_maybe) {
+        warning(App, "Could not check app state file `{}`: {}", file.string(), exists_maybe.error().to_string());
         return;
     }
-    if (!*exists) {
+    if (!*exists_maybe) {
         write();
         return;
     }

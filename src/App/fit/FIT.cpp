@@ -139,8 +139,9 @@ std::optional<FITDataField> FITDataRecord::get_field(u8 num) const
         }
     }
     // TODO: Developer field numbers are a separate namespace from the native
-    // ones, so a developer field numbered e.g. 253 is returned as the
-    // timestamp. Look developer fields up separately.
+    // ones. If a record has no native timestamp, a developer field numbered
+    // 253 is returned as its timestamp, even over a compressed timestamp.
+    // Look developer fields up separately.
     for (auto ix = 0; ix < local_def.num_developer_fields; ++ix) {
         if (local_def.developer_fields[ix].field_num == num) {
             return fields[local_def.num_fields + ix];

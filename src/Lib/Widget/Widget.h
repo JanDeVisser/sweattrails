@@ -356,9 +356,9 @@ struct AppBus {
                 return;
             }
             trace(AppBus, "handle_one() getting message");
-            SyncMsg message = messages.front();
+            SyncMsg front = messages.front();
             messages.pop_front();
-            message;
+            front;
         });
         trace(AppBus, "handle_one() executing message");
         std::visit(

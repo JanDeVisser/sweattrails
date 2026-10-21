@@ -77,6 +77,9 @@ Box Tile::box() const
     return Box { .sw = box_sw, .ne = box_ne };
 }
 
+// TODO: This uses std::filesystem calls that throw, which end the app on
+// e.g. an unreadable directory. Use the error_code overloads, as the job
+// thread code in Storage does.
 std::expected<std::string, LibCError> Tile::get_cached_tile(Storage const &storage) const
 {
     auto const file_name = (storage.tiles_dir / std::format("{}/{}/{}.png", zoom, x, y)).string();

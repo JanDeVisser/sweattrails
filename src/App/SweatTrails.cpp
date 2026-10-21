@@ -294,6 +294,10 @@ EError SweatTrails::read_settings()
     return { };
 }
 
+// TODO: This, like initialize(), read_settings() and load_font(), uses
+// std::filesystem calls that throw, which end the app on e.g. an unreadable
+// font directory. Use the error_code overloads, as the job thread code in
+// Storage does.
 StringList SweatTrails::get_font_dirs()
 {
     if (font_dirs.empty()) {
