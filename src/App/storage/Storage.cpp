@@ -237,9 +237,7 @@ StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view
         static_cast<u8>(activity.segment.start_time.month) + 1);
     auto const dest_dir = TRY_EVAL(ensure_directory(activity_dir / dest_dir_name));
     auto const dest_stem = std::format("{}", activity.segment.start_time.timestamp);
-    // A sidecar without its FIT file counts as a duplicate too, so that
-    // move_with_sidecar() finds both destinations free.
-    if (TRY_EVAL(stem_taken(dest_dir, dest_stem))) {
+    if (TRY_EVAL(path_exists(dest_dir / (dest_stem + ".fit")))) {
         // renamePreserve: never clobber an existing file. Set the duplicate
         // aside so it isn't processed again on every start. The same file can
         // arrive more than once, so number the copies.
@@ -258,27 +256,38 @@ StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view
 
 // Moves inbox file `<stem>.fit` to `<dest_dir>/<dest_stem>.fit`. The webhook
 // that collects the FIT files writes a JSON sidecar next to each one, which
-// goes along with its FIT file. Existing files are never overwritten: both
-// destinations are checked before anything is moved.
+// goes along with its FIT file. Existing files are never overwritten: if the
+// destination already has a sidecar, for example because its FIT file was
+// deleted to import it again, that one is kept and the new one stays in the
+// inbox.
 Error<StorageError> Storage::move_with_sidecar(std::string_view const &stem, fs::path const &dest_dir, std::string_view const &dest_stem) const
 {
     // TODO: Checking and then renaming isn't atomic: a file created in
     // between (by the webhook, say) is overwritten. renamex_np(RENAME_EXCL)
     // on macOS and renameat2(RENAME_NOREPLACE) on Linux would make "never
     // overwrite" atomic.
-    if (TRY_EVAL(stem_taken(dest_dir, dest_stem))) {
-        return std::unexpected(StorageError { LibCError { "`{}` already exists in `{}`", dest_stem, dest_dir.string() } });
+    auto const dest = dest_dir / std::format("{}.fit", dest_stem);
+    if (TRY_EVAL(path_exists(dest))) {
+        return std::unexpected(StorageError { LibCError { "`{}` already exists", dest.string() } });
     }
     std::error_code ec { };
-    fs::rename(inbox_dir / std::format("{}.fit", stem), dest_dir / std::format("{}.fit", dest_stem), ec);
+    fs::rename(inbox_dir / std::format("{}.fit", stem), dest, ec);
     if (ec) {
         return std::unexpected(StorageError { LibCError { ec } });
     }
 
     // The FIT file has moved, so the activity is stored whatever happens to
-    // the sidecar. Failing to move it is only worth a warning.
+    // the sidecar. Not moving it is only worth a warning.
     auto const sidecar = inbox_dir / std::format("{}.json", stem);
-    fs::rename(sidecar, dest_dir / std::format("{}.json", dest_stem), ec);
+    auto const sidecar_dest = dest_dir / std::format("{}.json", dest_stem);
+    if (auto const taken = path_exists(sidecar_dest); !taken || *taken) {
+        if (path_exists(sidecar).value_or(true)) {
+            warning(Storage, "Leaving sidecar `{}` in the inbox: {}", sidecar.string(),
+                taken ? std::format("`{}` already exists", sidecar_dest.string()) : taken.error().to_string());
+        }
+        return { };
+    }
+    fs::rename(sidecar, sidecar_dest, ec);
     if (ec && ec != std::errc::no_such_file_or_directory) {
         warning(Storage, "Could not move sidecar `{}` to `{}`: {}", sidecar.string(), dest_dir.string(), LibCError { ec }.to_string());
     }
