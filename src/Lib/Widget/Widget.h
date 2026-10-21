@@ -305,13 +305,13 @@ struct AppBus {
             // after the wait, we own the lock
             auto job = bus->jobs.front();
             bus->jobs.pop_front();
+
+            // Run the job without holding the lock, so that schedule() doesn't
+            // block for as long as a job runs, and jobs can schedule other
+            // jobs.
+            lk.unlock();
             trace(AppBus, "Executing {}", typeid(job).name());
             job.execute();
-
-            // manual unlocking is done before notifying, to avoid waking up
-            // the waiting thread only to block again (see notify_one for details)
-            lk.unlock();
-            bus->cv.notify_one();
         }
     }
 

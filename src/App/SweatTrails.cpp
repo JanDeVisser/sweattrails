@@ -95,6 +95,21 @@ void SweatTrails::job_find_newest_activity(Job::Payload const &)
     SweatTrails::the()->notify<NotificationType::Activity>(*activity);
 }
 
+void SweatTrails::job_process_inbox(Job::Payload const &)
+{
+    auto const on_file = [](std::string_view const &file_name) {
+        // TODO: Notify the UI with the name of the file being processed.
+        trace(Storage, "Processing inbox file {}", file_name);
+    };
+    auto res = SweatTrails::the()->storage.process_inbox(on_file);
+    if (!res) {
+        SweatTrails::the()->notify<NotificationType::Message>(
+            std::format("Error processing inbox: {}", res.error().to_string()));
+        return;
+    }
+    info(Storage, "Processed {} inbox files", res.value());
+}
+
 pSweatTrails SweatTrails::the()
 {
     return std::dynamic_pointer_cast<SweatTrails>(App::the());
@@ -228,6 +243,9 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_M, KModControl });
     bus.add_task<SweatTrails>("st-message", self(), cmd_message);
 
+    // Jobs run one at a time in the order they're scheduled, so the newest
+    // activity is looked up after the inbox has been processed.
+    bus.schedule(make_job<JobType::ProcessInbox>(std::monostate { }));
     bus.schedule(make_job<JobType::FindNewestActivity>(std::monostate { }));
 }
 

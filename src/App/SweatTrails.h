@@ -58,8 +58,9 @@ using pSweatTrails = std::shared_ptr<struct SweatTrails>;
 #define MESSAGE(N, T, VALUES) using N = Message < T, std::monostate,
 
 #define JOBTYPE(S)                       \
-    S(FindCurrentFolder, std::monostate) \
-    S(FindNewestActivity, std::monostate)
+    S(FindCurrentFolder, std::monostate)  \
+    S(FindNewestActivity, std::monostate) \
+    S(ProcessInbox, std::monostate)
 
 enum class JobType {
     JOBTYPE(ENUMVALUE2)
@@ -97,6 +98,7 @@ char const *value_to_string(NotificationType type);
 struct SweatTrails : public Main<Job, Notification> {
     static void job_find_current_folder(Job::Payload const &data);
     static void job_find_newest_activity(Job::Payload const &data);
+    static void job_process_inbox(Job::Payload const &data);
 
     template<JobType Type>
     static Job make_job(auto data)
@@ -106,6 +108,7 @@ struct SweatTrails : public Main<Job, Notification> {
             {
                 job_find_current_folder,
                 job_find_newest_activity,
+                job_process_inbox,
             });
     }
 

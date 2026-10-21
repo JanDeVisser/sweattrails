@@ -15,6 +15,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -61,8 +62,11 @@ struct Storage {
     StorageResult<std::optional<Activity>>   find_newest();
     StorageResult<Activities>                set_current_folder(Month const &month);
     StorageResult<std::optional<Activity>>   load_activity(ActivityID const &id);
-    Error<StorageError>                      process_inbox(SweatTrails &app);
-    Error<StorageError>                      organize_fit_file(SweatTrails &app, std::string_view const &file_name);
+    // Called with the name of each inbox file before it's processed.
+    using InboxProgress = std::function<void(std::string_view const &file_name)>;
+
+    StorageResult<u32>                       process_inbox(InboxProgress const &on_file = { });
+    Error<StorageError>                      organize_fit_file(std::string_view const &file_name);
 };
 
 }

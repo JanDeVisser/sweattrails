@@ -178,9 +178,8 @@ StorageResult<std::optional<Activity>> Storage::load_activity(ActivityID const &
     return id.load(*this, LoadingDepth::Deep);
 }
 
-Error<StorageError> Storage::process_inbox(SweatTrails &app)
+StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
 {
-    app.set_message("Organizing inbox");
     u32             processed { 0 };
     std::error_code ec { };
     for (auto const &entry : fs::directory_iterator { inbox_dir, ec }) {
@@ -191,7 +190,10 @@ Error<StorageError> Storage::process_inbox(SweatTrails &app)
             continue;
         }
         auto const file_name = entry.path().filename().string();
-        if (auto res = organize_fit_file(app, file_name); !res) {
+        if (on_file) {
+            on_file(file_name);
+        }
+        if (auto res = organize_fit_file(file_name); !res) {
             log_error("Error organizing inbox file {}: {}", file_name, res.error().to_string());
             continue;
         }
@@ -200,16 +202,14 @@ Error<StorageError> Storage::process_inbox(SweatTrails &app)
     if (ec) {
         return std::unexpected(StorageError { LibCError { ec.message() } });
     }
-    if (processed > 1) {
+    if (processed > 0) {
         TRY(rescan());
     }
-    app.set_message(std::format("Organized {} inbox files", processed));
-    return { };
+    return processed;
 }
 
-Error<StorageError> Storage::organize_fit_file(SweatTrails &app, std::string_view const &file_name)
+Error<StorageError> Storage::organize_fit_file(std::string_view const &file_name)
 {
-    app.set_message(std::format("Organizing {}", file_name));
     auto const stem = fs::path { file_name }.stem().string();
     Activity   activity {
         *this,
@@ -228,7 +228,8 @@ Error<StorageError> Storage::organize_fit_file(SweatTrails &app, std::string_vie
             static_cast<u16>(activity.segment.start_time.year),
             static_cast<u8>(activity.segment.start_time.month) + 1);
         auto const dest_dir = TRY_EVAL(create_dir_path_open(activity_dir, dest_dir_name));
-        auto const dest = dest_dir / std::format("{}.fit", activity.segment.start_time.timestamp);
+        auto const dest_stem = std::format("{}", activity.segment.start_time.timestamp);
+        auto const dest = dest_dir / (dest_stem + ".fit");
         if (fs::exists(dest)) {
             // renamePreserve: never clobber an existing file
             info(Storage, "File `{}` already exists at `{}`", file_name, dest_dir_name);
@@ -238,6 +239,16 @@ Error<StorageError> Storage::organize_fit_file(SweatTrails &app, std::string_vie
         fs::rename(inbox_dir / file_name, dest, ec);
         if (ec) {
             return std::unexpected(StorageError { LibCError { ec.message() } });
+        }
+
+        // The webhook that collects the FIT files writes a JSON sidecar next
+        // to each one. It goes along with its FIT file.
+        auto const sidecar = inbox_dir / (stem + ".json");
+        if (fs::exists(sidecar)) {
+            fs::rename(sidecar, dest_dir / (dest_stem + ".json"), ec);
+            if (ec) {
+                return std::unexpected(StorageError { LibCError { ec.message() } });
+            }
         }
     }
     return { };
