@@ -239,6 +239,22 @@ endfunction()
 
 sweattrails_test(listbox_test test/ListBoxTest.cpp)
 
+# A test of app code also needs that code, and what it uses.
+sweattrails_test(
+        activity_selector_test
+        test/ActivitySelectorTest.cpp
+        src/App/widget/ActivitySelector.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(activity_selector_test PRIVATE src/App)
+target_link_libraries(activity_selector_test PRIVATE ${CURL_LIBRARIES})
+
 install(TARGETS Base Widget sweattrails fitexplore
         ARCHIVE DESTINATION lib
         RUNTIME DESTINATION bin
