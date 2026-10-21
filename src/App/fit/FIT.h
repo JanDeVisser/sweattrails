@@ -739,6 +739,7 @@ enum class MetaDataUnits {
     S(HeaderMagicMissing)         \
     S(UnknownDeveloperField)      \
     S(RequiredFieldMissing)       \
+    S(Truncated)                  \
     S(IOError)
 
 enum class FITError {

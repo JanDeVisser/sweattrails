@@ -203,6 +203,12 @@ std::expected<void, FITError> FITFile::read_header()
         return { };
     }
 
+    // read_slice() asserts that the data is there, so check the length of
+    // the file before reading the header, and against the header after.
+    if (buffer.length() < 14) {
+        std::println("read_header: file is only {} bytes", buffer.length());
+        return std::unexpected(FITError::Truncated);
+    }
     std::string_view header_data = read_slice(14);
     u8 const         header_size = header_data[0];
     if (header_size > 14) {
@@ -222,6 +228,10 @@ std::expected<void, FITError> FITFile::read_header()
     };
     if (header_size >= 14) {
         header.crc = fit_read<u16>(FITArchitecture::LittleEndian, header_data.substr(12));
+    }
+    if (static_cast<size_t>(header.header_size) + header.data_size > buffer.length()) {
+        std::println("read_header: header says {} data bytes, file has {}", header.data_size, buffer.length() - header.header_size);
+        return std::unexpected(FITError::Truncated);
     }
     if (verbose) {
         std::println("file header: header_size: {} version: {}.{} data_size: {} crc: {}",
