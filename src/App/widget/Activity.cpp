@@ -377,6 +377,12 @@ void ActivityMap::draw()
         return;
     }
     DrawRectangleLines(viewport.x - 3, viewport.y - 3, viewport.width + 6, viewport.height + 6, RAYWHITE);
+
+    // The map and track are laid out for the viewport set_activity() saw,
+    // and aren't redone when it changes (see resize()). When it got
+    // smaller, such as when the status line appeared, don't draw the track
+    // over the widgets around the map.
+    BeginScissorMode(viewport.x, viewport.y, viewport.width, viewport.height);
     render_texture(0, 0, texture, map.rectangle.x, map.rectangle.y, viewport.width, viewport.height, RAYWHITE);
     constexpr static float thick = 3.0f;
     auto                   p_prev = track[0];
@@ -404,6 +410,7 @@ void ActivityMap::draw()
     if (activity->mark) {
         DrawCircleV(track[*activity->mark], thick, BLACK);
     }
+    EndScissorMode();
 }
 
 // TODO: The map is built for the viewport set_activity() sees, and isn't
