@@ -188,4 +188,93 @@ tiles and the status line message).
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: a tile that is still downloading counts as cached.** `download()`
+   (`src/App/Map.cpp:124`) writes straight into the tile's cache file, and
+   `get_cached_tile()` (`Map.cpp:86`) only checks that the file exists.
+   Before, only the UI thread used the cache, and it blocked while a tile
+   downloaded. Now the UI thread reads the cache while the job thread is
+   writing to it. Two ways this goes wrong:
+   - Open activity A with tile T not cached. While T downloads, open B whose
+     map also has T: a route that overlaps A, which is common for a regular
+     commute, or A again. `set_activity()` finds T's empty or half-written
+     file, takes it as cached, and leaves it out of B's `TileDownload`. The
+     PNG doesn't decode, so T stays grey on B's map. It isn't counted as a
+     failure, so the status line doesn't mention it.
+   - Quit while T downloads. This is now easy to do because the UI no
+     longer blocks, and the job thread isn't stopped. The truncated file is
+     left in the cache, and from then on every map that needs T shows it
+     grey and never downloads it again. The spec says a failed tile "is
+     tried again the next time".
+
+   Fix: download to a temporary file in the same directory, and rename it to
+   `<y>.png` only once the download has succeeded. I didn't add a test,
+   because it needs `download()` itself, so either the network or a change
+   to app code.
+2. **Bug (from before this branch, but it now breaks the spec's failure
+   handling): HTTP errors are saved as tiles.** `download()` doesn't set
+   `CURLOPT_FAILONERROR` or check the response code. A 403, 429 or 5xx from
+   tile.openstreetmap.org returns `CURLE_OK`, so its body is cached as the
+   tile and `get_tile()` reports success. On the map, `draw_tile()`
+   (`src/App/widget/Activity.cpp:515`) can't decode it and doesn't say so,
+   so the tile stays grey, isn't counted in "Couldn't download N map
+   tiles", and is never retried. OpenStreetMap answers 403 or 429 exactly
+   when a client breaks the usage policy, so this is the failure the spec
+   most needs to report. Fix: treat a response other than 200 as a failure,
+   which also removes the file. A check in `fetch_tiles()` or the job that
+   the bytes decode as a PNG would also catch tiles that were already
+   cached badly.
+3. **Bug (from before this branch, in `set_activity()`, which this branch
+   changes): `image` and `texture` are freed twice.** Open activity A (with
+   GPS), then B with no `segment.box` (an indoor workout), or one whose
+   `Map::init()` fails, then C. Opening B frees A's image
+   (`Activity.cpp:425`) and returns at line 432 or 442 without making a new
+   one. Opening C then calls `UnloadImage(image)` again on A's freed
+   buffer, which is a double free. Also, `Image image;` and
+   `Texture2D texture;` (`Activity.h:52-53`) have no initializers, so if no
+   activity was ever shown, `~ActivityMap()` frees an indeterminate pointer.
+   Fix: give both `{ }` defaults, and unload only when `image.data` is set,
+   or reset them after unloading. The new code doesn't make this worse,
+   because `stop_download()` runs first, so no `MapTile` can draw into the
+   freed image.
+4. **Missing test, with a suggestion for making it testable: the
+   `ActivityMap` logic.** Most of what the Test plan leaves to manual
+   checking can be tested without a window if it's pulled out of the
+   widget into `Map.h` or `Map.cpp`:
+   - Splitting a map's tiles into cached and missing: a free function
+     taking the `Map` and a cache reader (`Tile -> expected<string>`), which
+     returns the cached PNGs by index and the `TileDownload` of the rest.
+     `set_activity()` would then only decode and draw.
+   - The status text: `"Couldn't download {} map {}"` with "tile" or
+     "tiles", as a function of `failed`. 0, 1 and 3 should be tested.
+   - Ignoring stale notifications: `add_tile()` and `tiles_done()` return
+     before they touch raylib or `SweatTrails` when the download isn't
+     current. As it stands, though, a test can't create an `ActivityMap`:
+     `Activity.cpp` needs `SweatTrails::the()`, whose `.cpp` holds `main()`,
+     and the destructor frees the uninitialized `image` (see 3).
+     Either the helpers above, or making the "is this my download" check a
+     small type of its own, would let a test cover it.
+5. **Suggestion: the failure message shrinks a map that was laid out for
+   the taller viewport.** When `tiles_done()` shows the status line,
+   `set_status()` resizes the app, and the map's viewport gets shorter. But
+   `ActivityMap::resize()` is empty, so `map.rectangle` and the track's
+   screen positions keep the old size, and the bottom of the track can be
+   drawn below the map's frame, over the graph. This is the TODO the spec
+   defers, but the feature now triggers it on every map whose tiles fail,
+   for example every activity opened offline. It might be worth checking
+   during the manual test with the network off. Opening the next activity
+   clears the status line before `Map::init()` runs, so that map is laid
+   out correctly.
+
+Checked and found correct: the `+ 1` in `make_job()`'s `in_place_index`
+(the payload variant starts with a `std::monostate`, so `DownloadTiles`
+gets `pTileDownload`), the job's receiver holding a reference to the
+`pTileDownload` in the job's own payload copy, cancelling on another
+activity, on closing the activity and in the destructor, `MapTilesDone` not
+being sent when the download is cancelled, and maps with no missing tiles
+scheduling no job.
+
+Tests added to `test/MapTest.cpp` (all pass): an empty download, cancelling
+while the last tile fails, `Map::tile(ix)` matching the image position
+`draw_tile()` uses for several grid shapes, and the tile cache in a
+temporary directory (`get_cached_tile()` hits and misses, and `get_tile()`
+taking a cached tile without downloading it).
