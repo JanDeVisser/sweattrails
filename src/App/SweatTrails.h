@@ -61,7 +61,8 @@ using pSweatTrails = std::shared_ptr<struct SweatTrails>;
 #define JOBTYPE(S)                        \
     S(FindCurrentFolder, std::monostate)  \
     S(FindNewestActivity, std::monostate) \
-    S(ProcessInbox, std::monostate)
+    S(ProcessInbox, std::monostate)       \
+    S(DownloadTiles, pTileDownload)
 
 enum class JobType {
     JOBTYPE(ENUMVALUE2)
@@ -85,11 +86,13 @@ struct ImportingFile {
     size_t      count { 0 };
 };
 
-#define NOTIFICATIONTYPE(S)     \
-    S(Message, std::string)     \
-    S(ActivityList, Activities) \
-    S(Activity, Activity)       \
-    S(ImportingFile, ImportingFile)
+#define NOTIFICATIONTYPE(S)         \
+    S(Message, std::string)         \
+    S(ActivityList, Activities)     \
+    S(Activity, Activity)           \
+    S(ImportingFile, ImportingFile) \
+    S(MapTile, MapTile)             \
+    S(MapTilesDone, MapTilesDone)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -109,16 +112,20 @@ struct SweatTrails : public Main<Job, Notification> {
     static void job_find_current_folder(Job::Payload const &data);
     static void job_find_newest_activity(Job::Payload const &data);
     static void job_process_inbox(Job::Payload const &data);
+    static void job_download_tiles(Job::Payload const &data);
 
+    // The payload variant starts with a std::monostate, so a job type's
+    // payload comes one after its value.
     template<JobType Type>
     static Job make_job(auto data)
     {
         return Job::make<Type>(
-            Job::Payload { std::in_place_index<static_cast<size_t>(Type)>, data },
+            Job::Payload { std::in_place_index<static_cast<size_t>(Type) + 1>, data },
             {
                 job_find_current_folder,
                 job_find_newest_activity,
                 job_process_inbox,
+                job_download_tiles,
             });
     }
 
@@ -132,6 +139,8 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_activity_list(Notification::Payload const &data);
     static void notif_activity(Notification::Payload const &data);
     static void notif_importing_file(Notification::Payload const &data);
+    static void notif_map_tile(Notification::Payload const &data);
+    static void notif_map_tiles_done(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -143,6 +152,8 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_activity_list,
                 notif_activity,
                 notif_importing_file,
+                notif_map_tile,
+                notif_map_tiles_done,
             });
     }
 
@@ -163,8 +174,9 @@ struct SweatTrails : public Main<Job, Notification> {
     Storage    storage;
     ActivityID last_activity { };
 
-    std::shared_ptr<WidgetStack> widget_stack { nullptr };
-    std::shared_ptr<Label>       status { nullptr };
+    std::shared_ptr<WidgetStack>     widget_stack { nullptr };
+    std::shared_ptr<ActivityDisplay> activity_display { nullptr };
+    std::shared_ptr<Label>           status { nullptr };
 
     SweatTrails();
     static pSweatTrails the();

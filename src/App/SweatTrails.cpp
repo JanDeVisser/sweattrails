@@ -112,6 +112,24 @@ void SweatTrails::job_process_inbox(Job::Payload const &)
     info(ST, "Processed {} inbox files", res.value());
 }
 
+void SweatTrails::job_download_tiles(Job::Payload const &data)
+{
+    auto const &download = std::get<pTileDownload>(data);
+    auto const &storage = SweatTrails::the()->storage;
+    auto const  failed = fetch_tiles(
+        *download,
+        [&storage](Tile const &tile) {
+            return tile.get_tile(storage);
+        },
+        [&download](size_t index, std::string png) {
+            SweatTrails::the()->notify<NotificationType::MapTile>(
+                MapTile { download, index, std::move(png) });
+        });
+    if (!download->cancelled) {
+        SweatTrails::the()->notify<NotificationType::MapTilesDone>(MapTilesDone { download, failed });
+    }
+}
+
 pSweatTrails SweatTrails::the()
 {
     return std::dynamic_pointer_cast<SweatTrails>(App::the());
@@ -221,6 +239,16 @@ void SweatTrails::notif_importing_file(Notification::Payload const &data)
             : std::format("Importing {} of {}: {}", file.index + 1, file.count, file.file_name));
 }
 
+void SweatTrails::notif_map_tile(Notification::Payload const &data)
+{
+    SweatTrails::the()->activity_display->map->add_tile(std::get<MapTile>(data));
+}
+
+void SweatTrails::notif_map_tiles_done(Notification::Payload const &data)
+{
+    SweatTrails::the()->activity_display->map->tiles_done(std::get<MapTilesDone>(data));
+}
+
 void SweatTrails::show_activity(Activity const &activity)
 {
     std::println("Showing activity {}", activity.id);
@@ -247,7 +275,7 @@ void SweatTrails::initialize()
     storage = MUST_EVAL(Storage::init(app_name));
 
     widget_stack = add_widget<WidgetStack>();
-    widget_stack->add_widget<ActivityDisplay>();
+    activity_display = widget_stack->add_widget<ActivityDisplay>();
     // A status line at the bottom of the window, hidden while it's empty.
     status = add_widget<Label>("");
     status->policy = SizePolicy::Hide;

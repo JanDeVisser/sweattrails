@@ -360,6 +360,9 @@ ActivityMap::ActivityMap(pWidget const &parent)
 
 ActivityMap::~ActivityMap()
 {
+    if (download) {
+        download->cancelled = true;
+    }
     UnloadTexture(texture);
     UnloadImage(image);
 }
@@ -416,6 +419,7 @@ void ActivityMap::process_input()
 
 void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activity)
 {
+    stop_download();
     if (this->activity) {
         UnloadTexture(texture);
         UnloadImage(image);
@@ -432,7 +436,6 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
 
     auto const route_area = *activity->activity.segment.box;
 
-    // TODO: make async
     auto map_maybe = Map::init(route_area, viewport.width, viewport.height);
     if (!map_maybe) {
         std::println("Could not load map: {}", map_maybe.error().to_string());
@@ -440,39 +443,18 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
         return;
     }
     map = std::move(map_maybe.value());
-    std::vector<Image> images;
-    images.resize(map.num_tiles);
-    for (auto ix = 0; ix < map.num_tiles; ++ix) {
-        auto png = map.tile(ix).get_tile(SweatTrails::the()->storage);
-        if (!png) {
-            std::println("Could not load map: {}", png.error().to_string());
-            policy = SizePolicy::Hide;
-            return;
-        }
-        images[ix] = LoadImageFromMemory(".png", reinterpret_cast<unsigned char const *>(png->data()), static_cast<int>(png->size()));
-    }
 
-    image = GenImageColor(map.columns * 256, map.rows * 256, BLANK);
-    for (auto ix = 0; ix < map.num_tiles; ++ix) {
-        ImageDrawImagePro(
-            &image,
-            images[ix],
-            Rectangle {
-                .x = 0,
-                .y = 0,
-                .width = 256,
-                .height = 256,
-            },
-            Rectangle {
-                .x = static_cast<float>((ix % map.columns) * 256),
-                .y = static_cast<float>((ix / map.columns) * 256),
-                .width = 256,
-                .height = 256,
-            },
-            Vector2 { 0, 0 },
-            0.0f,
-            WHITE);
-        UnloadImage(images[ix]);
+    // Cached tiles are drawn right away. The others are grey until they've
+    // been downloaded in the background, see add_tile().
+    image = GenImageColor(map.columns * 256, map.rows * 256, LIGHTGRAY);
+    auto missing = std::make_shared<TileDownload>();
+    for (size_t ix = 0; ix < map.num_tiles; ++ix) {
+        auto const tile = map.tile(ix);
+        if (auto png = tile.get_cached_tile(SweatTrails::the()->storage); png) {
+            draw_tile(ix, *png);
+        } else {
+            missing->tiles.push_back(MissingTile { .index = ix, .tile = tile });
+        }
     }
 
     track.clear();
@@ -497,6 +479,73 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
         }
     }
     texture = LoadTextureFromImage(image);
+
+    if (!missing->tiles.empty()) {
+        download = missing;
+        SweatTrails::the()->schedule<JobType::DownloadTiles>(download);
+    }
+}
+
+void ActivityMap::add_tile(MapTile const &tile)
+{
+    if (tile.download != download) {
+        // Downloaded for a map that is no longer shown.
+        return;
+    }
+    draw_tile(tile.index, tile.png);
+    UpdateTexture(texture, image.data);
+}
+
+void ActivityMap::tiles_done(MapTilesDone const &done)
+{
+    if (done.download != download) {
+        return;
+    }
+    download.reset();
+    if (done.failed > 0) {
+        SweatTrails::the()->set_status(
+            std::format("Couldn't download {} map {}", done.failed, (done.failed == 1) ? "tile" : "tiles"));
+        reporting_failures = true;
+    }
+}
+
+// Draws a tile into the map's image, at its place in the grid.
+void ActivityMap::draw_tile(size_t index, std::string const &png)
+{
+    auto tile = LoadImageFromMemory(".png", reinterpret_cast<unsigned char const *>(png.data()), static_cast<int>(png.size()));
+    ImageDrawImagePro(
+        &image,
+        tile,
+        Rectangle {
+            .x = 0,
+            .y = 0,
+            .width = 256,
+            .height = 256,
+        },
+        Rectangle {
+            .x = static_cast<float>((index % map.columns) * 256),
+            .y = static_cast<float>((index / map.columns) * 256),
+            .width = 256,
+            .height = 256,
+        },
+        Vector2 { 0, 0 },
+        0.0f,
+        WHITE);
+    UnloadImage(tile);
+}
+
+// Drops the tiles still waiting to be downloaded for the map shown now, and
+// the status line message about the ones that failed.
+void ActivityMap::stop_download()
+{
+    if (download) {
+        download->cancelled = true;
+        download.reset();
+    }
+    if (reporting_failures) {
+        SweatTrails::the()->set_status("");
+        reporting_failures = false;
+    }
 }
 
 ActivityDisplay::ActivityDisplay(pWidget const &parent)

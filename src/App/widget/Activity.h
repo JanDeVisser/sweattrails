@@ -9,6 +9,7 @@
 
 #include <Widget.h>
 
+#include <Map.h>
 #include <storage/Activity.h>
 
 namespace ST {
@@ -50,6 +51,8 @@ struct ActivityMap : public Widget {
     Box                                box;
     Image                              image;
     Texture2D                          texture;
+    pTileDownload                      download { };                 // the tiles that weren't cached, while they download
+    bool                               reporting_failures { false }; // the status line says tiles failed
 
     explicit ActivityMap(pWidget const &parent);
     ~ActivityMap();
@@ -58,6 +61,12 @@ struct ActivityMap : public Widget {
     void resize() override;
     void process_input() override;
     void set_activity(std::shared_ptr<DisplayedActivity> const &activity);
+    void add_tile(MapTile const &tile);
+    void tiles_done(MapTilesDone const &done);
+
+private:
+    void draw_tile(size_t index, std::string const &png);
+    void stop_download();
 };
 
 struct ActivityGraph : public Widget {
