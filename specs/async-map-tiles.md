@@ -1,6 +1,6 @@
 # Download Map Tiles in the Background
 
-Status: In review, on branch feature/async-map-tiles
+Status: Done
 
 ## Goal
 
