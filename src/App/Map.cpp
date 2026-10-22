@@ -136,6 +136,10 @@ std::expected<void, std::variant<CURLcode, LibCError>> download(std::string url,
         std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(result) << "\n";
         return std::unexpected(result);
     }
+    file.close();
+    if (!file) {
+        return std::unexpected(LibCError { "Could not write `{}`", dest.string() });
+    }
     return { };
 }
 
@@ -149,10 +153,16 @@ std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) con
     auto const tile_dir = TRY_EVAL(ensure_directory(storage.tiles_dir / std::format("{}/{}", zoom, x)));
     auto const tile_file = tile_dir / std::format("{}.png", y);
 
-    auto const exit_code = download(url, tile_file);
+    // get_cached_tile() takes any file with the tile's name for the tile. So
+    // download to another name, and only rename it when it's complete: the
+    // UI thread may read the cache during the download, and the app may quit
+    // in the middle of one.
+    auto const part_file = tile_dir / std::format("{}.png.part", y);
+
+    auto const exit_code = download(url, part_file);
     if (!exit_code.has_value()) {
         std::error_code ec { };
-        fs::remove(tile_file, ec);
+        fs::remove(part_file, ec);
         return std::unexpected(
             std::visit(
                 overloaded {
@@ -164,6 +174,13 @@ std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) con
                     },
                 },
                 exit_code.error()));
+    }
+    std::error_code ec { };
+    fs::rename(part_file, tile_file, ec);
+    if (ec) {
+        auto const message = ec.message();
+        fs::remove(part_file, ec);
+        return std::unexpected(LibCError { "Could not cache tile `{}`: {}", url, message });
     }
     trace(Map, "fetched tile {}", url);
     return get_cached_tile(storage);
