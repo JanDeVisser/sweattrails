@@ -265,10 +265,14 @@ void ActivityGraph::process_input()
 }
 void ActivityGraph::set_activity(std::shared_ptr<DisplayedActivity> const &activity)
 {
-    if (this->activity) {
-        UnloadTexture(texture);
-        UnloadImage(image);
-    }
+    // Reset them after unloading: an activity without data to graph doesn't
+    // make new ones, and draw() mustn't draw the old texture, nor the next
+    // activity unload the old ones again. Unloading empty ones does nothing,
+    // and an empty texture isn't drawn.
+    UnloadTexture(texture);
+    UnloadImage(image);
+    texture = { };
+    image = { };
     this->activity = activity;
     if (!this->activity) {
         return;

@@ -72,8 +72,8 @@ private:
 struct ActivityGraph : public Widget {
     std::shared_ptr<DisplayedActivity> activity;
     bool                               dragging { false };
-    Image                              image;
-    Texture2D                          texture;
+    Image                              image { };   // empty while no graph is shown
+    Texture2D                          texture { }; // empty while no graph is shown
 
     explicit ActivityGraph(pWidget const &parent);
     ~ActivityGraph();
