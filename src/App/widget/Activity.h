@@ -49,8 +49,8 @@ struct ActivityMap : public Widget {
     Map                                map;
     std::vector<Vector2>               track { };
     Box                                box;
-    Image                              image;
-    Texture2D                          texture;
+    Image                              image { };                    // empty while no map is shown
+    Texture2D                          texture { };                  // empty while no map is shown
     pTileDownload                      download { };                 // the tiles that weren't cached, while they download
     bool                               reporting_failures { false }; // the status line says tiles failed
 

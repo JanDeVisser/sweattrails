@@ -420,10 +420,13 @@ void ActivityMap::process_input()
 void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activity)
 {
     stop_download();
-    if (this->activity) {
-        UnloadTexture(texture);
-        UnloadImage(image);
-    }
+    // Reset them after unloading: an activity without a map doesn't make
+    // new ones, and the next activity mustn't unload the old ones again.
+    // Unloading empty ones does nothing.
+    UnloadTexture(texture);
+    UnloadImage(image);
+    texture = { };
+    image = { };
     this->activity = activity;
     if (!this->activity) {
         return;
