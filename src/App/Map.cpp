@@ -119,6 +119,10 @@ std::expected<void, std::variant<CURLcode, LibCError>> download(std::string url,
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "sweattrails/1.0");
+    // Fail on an HTTP error, such as the 403 or 429 the tile server sends to
+    // clients that break its usage policy, instead of caching the error page
+    // as the tile.
+    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
 
     /* open the file */
     auto file = std::ofstream(dest, std::ios::binary | std::ios::out | std::ios::trunc);
