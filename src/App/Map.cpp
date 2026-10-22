@@ -174,17 +174,37 @@ std::string Tile::to_string() const
     return std::format("zoom {}/x: {} y: {}/box: `{}`", zoom, x, y, box());
 }
 
+size_t fetch_tiles(TileDownload const &download, TileFetcher const &fetch, TileReceiver const &on_tile)
+{
+    size_t failed = 0;
+    for (auto const &[index, tile] : download.tiles) {
+        if (download.cancelled) {
+            break;
+        }
+        auto png = fetch(tile);
+        if (download.cancelled) {
+            break;
+        }
+        if (!png) {
+            info(Map, "Could not get tile {}: {}", tile, png.error().to_string());
+            ++failed;
+            continue;
+        }
+        on_tile(index, std::move(png.value()));
+    }
+    return failed;
+}
+
 /**
- * Initializes a Map to display by calculating coordinates and downloading
- * OSM tiles.
+ * Initializes a Map to display by calculating its zoom level and the grid
+ * of OSM tiles that covers it. Getting the tiles is up to the caller.
  *
- * @param storage Reference to the application storage context
  * @param b Bounding box in real world map coordinates of the map to be
  * displayed.
  * @param width Width in pixels of the Map image area
  * @param height Height in pixels of the Map image area
  */
-std::expected<Map, LibCError> Map::init(Storage const &storage, Box const &b, u16 width, u16 height)
+std::expected<Map, LibCError> Map::init(Box const &b, u16 width, u16 height)
 {
     auto const mid = b.center();
     trace(Map, "middle of the box is `{}`", mid);
@@ -215,7 +235,7 @@ std::expected<Map, LibCError> Map::init(Storage const &storage, Box const &b, u1
             .height = static_cast<float>(height),
         };
         trace(Map, "Rectangle {}x{}@{},{}", rect.width, rect.height, rect.x, rect.y);
-        Map ret {
+        return Map {
             .zoom = zoom,
             .x = x0,
             .y = y0,
@@ -225,18 +245,7 @@ std::expected<Map, LibCError> Map::init(Storage const &storage, Box const &b, u1
             .rows = rows,
             .rectangle = rect,
             .num_tiles = static_cast<u16>(columns * rows),
-            .tiles = { },
         };
-        ret.tiles.reserve(ret.num_tiles);
-        for (u32 i = 0; i < ret.num_tiles; ++i) {
-            Tile const tile_ix {
-                .x = ret.x + (i % columns),
-                .y = ret.y + (i / columns),
-                .zoom = zoom,
-            };
-            ret.tiles.emplace_back(TRY_EVAL(tile_ix.get_tile(storage)));
-        }
-        return ret;
     }
     return std::unexpected(LibCError { "Could not find a zoom level for the requested box" });
 }

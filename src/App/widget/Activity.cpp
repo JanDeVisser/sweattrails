@@ -433,19 +433,23 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
     auto const route_area = *activity->activity.segment.box;
 
     // TODO: make async
-    auto map_maybe = Map::init(SweatTrails::the()->storage, route_area, viewport.width, viewport.height);
+    auto map_maybe = Map::init(route_area, viewport.width, viewport.height);
     if (!map_maybe) {
         std::println("Could not load map: {}", map_maybe.error().to_string());
         policy = SizePolicy::Hide;
         return;
     }
     map = std::move(map_maybe.value());
-    auto const         mid = route_area.center();
     std::vector<Image> images;
     images.resize(map.num_tiles);
-    int ix = 0;
-    for (auto const &m : map.tiles) {
-        images[ix++] = LoadImageFromMemory(".png", reinterpret_cast<unsigned char const *>(m.data()), static_cast<int>(m.size()));
+    for (auto ix = 0; ix < map.num_tiles; ++ix) {
+        auto png = map.tile(ix).get_tile(SweatTrails::the()->storage);
+        if (!png) {
+            std::println("Could not load map: {}", png.error().to_string());
+            policy = SizePolicy::Hide;
+            return;
+        }
+        images[ix] = LoadImageFromMemory(".png", reinterpret_cast<unsigned char const *>(png->data()), static_cast<int>(png->size()));
     }
 
     image = GenImageColor(map.columns * 256, map.rows * 256, BLANK);
