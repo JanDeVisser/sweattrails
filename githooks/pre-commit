@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+#
+# Runs clang-format on the C++ files about to be committed, and commits the
+# formatted versions. Files it changes are formatted in the working tree too.
+#
+# It formats what's staged, not the file in the working tree, so changes
+# that aren't staged stay out of the commit.
+#
+# It uses the clang-format from `git config hooks.clangFormat`, else
+# Homebrew's LLVM one, else the one on the PATH. Apple's clang-format, from
+# the Command Line Tools, is older and formats differently: don't use that.
+#
+# Install with `git config core.hooksPath githooks`. Skip it for a commit
+# with `git commit --no-verify`.
+
+set -euo pipefail
+
+clang_format=$(git config hooks.clangFormat || true)
+if [[ -z "$clang_format" ]]; then
+    if [[ -x /opt/homebrew/opt/llvm/bin/clang-format ]]; then
+        clang_format=/opt/homebrew/opt/llvm/bin/clang-format
+    else
+        clang_format=$(command -v clang-format || true)
+    fi
+fi
+if [[ -z "$clang_format" || ! -x "$clang_format" ]]; then
+    echo "pre-commit: clang-format not found. Install LLVM (brew install llvm)," >&2
+    echo "or point to it with git config hooks.clangFormat <path>." >&2
+    exit 1
+fi
+
+formatted=()
+while IFS= read -r -d '' file; do
+    case "$file" in
+    *.c | *.cc | *.cpp | *.h | *.hpp) ;;
+    *) continue ;;
+    esac
+
+    staged=$(git rev-parse ":$file")
+    reformatted=$(git cat-file blob "$staged" \
+        | "$clang_format" --assume-filename="$file" \
+        | git hash-object -w --stdin)
+    if [[ "$reformatted" == "$staged" ]]; then
+        continue
+    fi
+
+    mode=$(git ls-files --stage -- "$file" | cut -d ' ' -f 1)
+    git update-index --cacheinfo "$mode,$reformatted,$file"
+    if [[ -f "$file" ]]; then
+        "$clang_format" -i "$file"
+    fi
+    formatted+=("$file")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+
+if [[ ${#formatted[@]} -gt 0 ]]; then
+    echo "pre-commit: clang-format reformatted:"
+    printf '  %s\n' "${formatted[@]}"
+fi
