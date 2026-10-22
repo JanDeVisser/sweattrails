@@ -278,3 +278,19 @@ while the last tile fails, `Map::tile(ix)` matching the image position
 `draw_tile()` uses for several grid shapes, and the tile cache in a
 temporary directory (`get_cached_tile()` hits and misses, and `get_tile()`
 taking a cached tile without downloading it).
+
+### Resolution
+
+1. Fixed in 0c53a21: tiles download to `<y>.png.part`, renamed to
+   `<y>.png` when complete. `download()` also closes the file and checks
+   that writing it worked.
+2. Fixed in add0074 with `CURLOPT_FAILONERROR`. Checked against
+   tile.openstreetmap.org with a scratch program: the old code cached "You
+   requested an invalid tile." for tile 1/9/9; now `get_tile()` fails and
+   nothing is cached. Not done: checking that cached tiles decode as PNGs,
+   for error pages cached before this fix.
+3. Fixed in 82f595a: `image` and `texture` start empty, and
+   `set_activity()` always unloads and resets them.
+4. Not done, by Jan's choice.
+5. The overflow is fixed in fb011a8: the map and track are drawn clipped to
+   the viewport. Rebuilding the map for a new viewport stays deferred.
