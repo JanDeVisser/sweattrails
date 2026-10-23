@@ -49,6 +49,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 find_package(CURL)
+find_package(ZLIB REQUIRED)
 
 include(CheckCSourceCompiles)
 include(CheckCXXSourceCompiles)
@@ -117,6 +118,7 @@ add_library(
         src/Lib/Base/StringUtil.cpp
         src/Lib/Base/Token.cpp
         src/Lib/Base/Utf8.cpp
+        src/Lib/Base/Zip.cpp
 )
 
 target_include_directories(
@@ -124,6 +126,9 @@ target_include_directories(
         PRIVATE
         src/Lib/Base
 )
+# Only the library: on macOS, ZLIB::ZLIB adds the SDK's usr/include in front
+# of libc++'s headers, which breaks them. The compiler finds zlib.h anyway.
+target_link_libraries(Base PUBLIC ${ZLIB_LIBRARIES})
 
 add_library(
         Widget
@@ -245,6 +250,7 @@ function(sweattrails_test name)
 endfunction()
 
 sweattrails_test(listbox_test test/ListBoxTest.cpp)
+sweattrails_test(zip_test test/ZipTest.cpp)
 sweattrails_test(cursor_test test/CursorTest.cpp)
 
 # A test of app code also needs that code, and what it uses.
