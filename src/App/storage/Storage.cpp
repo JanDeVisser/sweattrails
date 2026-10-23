@@ -201,9 +201,10 @@ StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
     // This runs on the job thread, where an exception would end the app, so
     // use the std::filesystem overloads that don't throw.
     //
-    // TODO: If the webhook writes a sidecar after its FIT file, and this runs
-    // in between, the FIT file is moved without it and the sidecar stays in
-    // the inbox, which is never looked at for .json files.
+    // A sidecar has to be in the inbox before its FIT file: one that comes
+    // after is left behind, as the inbox only looks at .fit files. The
+    // Garmin Connect download writes the sidecar first, and runs as a job
+    // too, so never at the same time as this.
     std::vector<std::string> file_names { };
     std::error_code          ec { };
     for (fs::directory_iterator it { inbox_dir, ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
@@ -281,9 +282,9 @@ StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view
     return InboxOutcome::Organized;
 }
 
-// Moves inbox file `file_name` to `<dest_dir>/<dest_stem>.fit`. The webhook
-// that collects the FIT files writes a JSON sidecar, `<stem>.json`, next to
-// each one, which goes along with its FIT file. Existing files are never
+// Moves inbox file `file_name` to `<dest_dir>/<dest_stem>.fit`. The Garmin
+// Connect download writes a JSON sidecar, `<stem>.json`, next to each one,
+// which goes along with its FIT file. Existing files are never
 // overwritten: if the destination already has a sidecar, for example because
 // its FIT file was deleted to import it again, that one is kept and the new
 // one stays in the inbox.
@@ -319,7 +320,7 @@ Error<StorageError> Storage::move_with_sidecar(std::string_view const &file_name
     }
     fs::rename(sidecar, sidecar_dest, ec);
     if (ec == std::errc::no_such_file_or_directory) {
-        // The webhook names sidecars `.json`. On a case-sensitive filesystem,
+        // The download names sidecars `.json`. On a case-sensitive filesystem,
         // a `.JSON` put there by hand isn't found, so say so.
         if (auto const upper = inbox_dir / std::format("{}.JSON", stem); path_exists(upper).value_or(false)) {
             warning(Storage, "Leaving sidecar `{}` in the inbox: sidecars must be named `.json`", upper.string());

@@ -1,7 +1,7 @@
 We're building an application together, you, Claude and I. SweatTrails is a
 C++26 desktop app, built on raylib, for exploring sports activities (FIT
-files, Strava, Rungap). The development is incremental, based on specs we
-develop together, and which you then implement.
+files, Garmin Connect, Strava). The development is incremental, based on
+specs we develop together, and which you then implement.
 
 ## Process
 
@@ -43,7 +43,7 @@ The personas' instructions are in `.claude/skills/analyst/SKILL.md`,
 - `src/Lib/Base`: general purpose library (errors, JSON, strings, IO, ...).
 - `src/Lib/Widget`: the GUI widget library on top of raylib.
 - `src/App`: the app itself. `fit/` reads FIT files, `storage/` holds
-  activities and talks to Strava and Rungap, `widget/` has the app's widgets.
+  activities and talks to Garmin Connect and Strava, `widget/` has the app's widgets.
 - `specs/`: feature specs.
 - `test/`: tests. `test/README.md` says how to write them, including how to
   test widgets without a window.

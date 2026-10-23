@@ -1,7 +1,7 @@
 # SweatTrails
 
 A desktop app for exploring sports activities: rides, runs, walks and
-more, from FIT files, Strava and Rungap. It shows an activity on a map,
+more, from FIT files and Garmin Connect. It shows an activity on a map,
 with its data and graphs. It's written in C++26, on
 [raylib](https://www.raylib.com).
 

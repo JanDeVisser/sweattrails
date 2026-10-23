@@ -23,7 +23,6 @@
 #include <Expected.h>
 
 #include <storage/Activity.h>
-// #include <storage/Rungap.h>
 // #include <storage/Strava.h>
 #include <storage/Types.h>
 
@@ -56,7 +55,6 @@ struct Storage {
     fs::path activity_dir { };
     fs::path tiles_dir { };
     // std::optional<Strava> strava { };
-    // std::optional<Rungap> rungap { };
 
     // Threading: the paths above don't change after init(), and can be used
     // from any thread. `years` (and `current`) are rebuilt by rescan(), so
