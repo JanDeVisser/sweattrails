@@ -151,4 +151,56 @@ app icon in the Dock and Finder; and that the icon reads at 16 pixels.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+The build is clean and all 7 tests pass. Every item in the Test plan that
+can run without a window is tested. I found no bugs in the code against the
+spec.
+
+1. **Suggestion (check the spec's premise).** A real triathlon may never
+   show the triathlon icon. The icon is picked by `sport::Multisport`, but
+   `load_fit_file_filter()` (`src/App/storage/Activity.cpp:285-288`)
+   overwrites `sport` and `sub_sport` with each session message, so the
+   last session wins. As I understand the FIT SDK, a multisport file (a
+   Garmin triathlon, say) has one session for each leg, each with that
+   leg's sport (swimming, transition, cycling, running), and no session
+   with sport 18. A file like that loads as a run, with the running icon
+   (and only the run's distance and time, which was already the case).
+   There's no multisport FIT file in the repository to confirm this. Jan
+   could check one of his own: if no session says `Multisport`, the
+   triathlon row of the table can't be reached. Spotting a multisport file
+   (several sessions, or the activity message's `num_sessions`) would be a
+   feature of its own.
+2. **Suggestion.** The README's "Building" steps (`cmake`, `ninja`,
+   `ctest`) don't give a working app. `SWEATTRAILS_DATADIR` is
+   `build/share`, and only `install(DIRECTORY share ...)` fills it, which
+   `ninja` doesn't run. `build/share/icons` here has the walking and
+   trekking icons but not `sweattrails.png`, so it was installed before the
+   app icon commit. On Linux the window icon (and on any platform, new sport
+   icons and the system settings) only show up after `ninja -C build
+   install`. The README should say so.
+3. **Suggestion (readability).** `ActivityDataDisplay::sport_icon`, the
+   texture (`src/App/widget/Activity.h:44`), has the same name as the new
+   free function `ST::sport_icon()`. That's why the call at
+   `src/App/widget/Activity.cpp:195` needs the `ST::` qualifier, which a
+   reader might take for noise and remove, and then it doesn't compile. A
+   different name for one of them, such as `sport_icon_file()` for the
+   function, would avoid it.
+4. **Missing test (added).** `test/SportIconTest.cpp` only checked the
+   sample combinations. `test_every_sport_has_an_icon()` now checks that
+   every sport, with no sub-sport and with every sub-sport, gets an icon
+   that's in `share/icons`. `test_rides()` also checks the table's mountain
+   sub-sports crossed with the two sports (cycling with `e_bike_mountain`,
+   e-biking with `mountain`), and e-biking on the road. They pass. Putting
+   the old `share/icons/` prefix back on the default makes the loop fail.
+5. **Missing test (added).** `test/ActivityLoadTest.cpp`:
+   `test_sub_sport_is_from_the_last_session()` (a mountain-bike session and
+   then one without a sub-sport leaves `sub_sport` empty, consistent with
+   `sport` coming from the last session), and
+   `test_generic_sub_sport_is_kept()` (sub-sport 0 is `generic`, not
+   empty). They pass.
+
+The app icon (`sweattrails.png`, 256 pixels, with transparency) shows a
+blue drop with a red route, as the spec asks. The `.icns` has all ten
+sizes, and the built bundle's `Info.plist` has `CFBundleIconFile =
+sweattrails.icns`, with the file in `Contents/Resources`. The checks the
+Test plan leaves to be done by hand (the Dock, Finder, 16 pixels, the
+header icons) are still for Jan.
