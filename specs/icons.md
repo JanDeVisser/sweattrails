@@ -1,6 +1,6 @@
 # Sport Icons for Walking and Hiking, and an Application Icon
 
-Status: In progress, on branch feature/icons
+Status: In review, on branch feature/icons
 
 ## Goal
 
@@ -126,7 +126,11 @@ changes, and needs a Mac.
 
 **The credit.** There's no README in the repository, so this adds a short
 `README.md`: what SweatTrails is, how to build it, and the credit to
-Icons8, with a link.
+Icons8, with a link. It credits OpenStreetMap for the map tiles too, which
+its tile usage policy asks for.
+
+`fit/Profile.h` had no `#pragma once`, and `SportIcon.h` is the first
+header to include it next to another that does; it gets one.
 
 ## Test plan
 
