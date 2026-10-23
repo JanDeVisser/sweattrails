@@ -359,7 +359,8 @@ public:
         switch (type()) {
         case JSONType::Integer: {
             auto v = std::get<int64_t>(m_value);
-            if ((v < min_value<Int>()) || (static_cast<uint64_t>(v) > max_value<Int>())) {
+            // Only a positive value can be cast to unsigned to compare it.
+            if ((v < min_value<Int>()) || (v > 0 && static_cast<uint64_t>(v) > max_value<Int>())) {
                 return std::unexpected(JSONError {
                     JSONError::Code::TypeMismatch,
                     std::format("Cannot convert JSON value of type {} to {}", JSONType_name(type()), typeid(Int).name()),
@@ -370,7 +371,7 @@ public:
         }
         case JSONType::Double: {
             auto v = std::get<double>(m_value);
-            if ((v < min_value<Int>()) || (static_cast<uint64_t>(v) > max_value<Int>())) {
+            if ((v < static_cast<double>(min_value<Int>())) || (v > static_cast<double>(max_value<Int>()))) {
                 return std::unexpected(JSONError {
                     JSONError::Code::TypeMismatch,
                     std::format("Cannot convert JSON value of type {} to {}", JSONType_name(type()), typeid(Int).name()),

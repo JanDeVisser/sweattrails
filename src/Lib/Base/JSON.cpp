@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <charconv>
 #include <expected>
 
 #include <IO.h>
@@ -163,8 +164,78 @@ std::expected<JSONValue, JSONValue::ReadError> JSONValue::read_file(std::string_
     return json_maybe.value();
 }
 
-using JSONLexer = Lexer<std::string_view, EnumKeywords<std::string_view, SimpleKeywordCategory, JSONKeyword>, char>;
+// The lexer's own numbers have no sign or exponent: it lexes `-80.5` as a
+// symbol and a number, and `1.5e3` as a number and an identifier. JSON
+// numbers have both, so they're scanned here, before the lexer gets to
+// them: -?(0|[1-9][0-9]*)(.[0-9]+)?([eE][+-]?[0-9]+)?
+struct JSONKeywords : public EnumKeywords<std::string_view, SimpleKeywordCategory, JSONKeyword> {
+    std::optional<std::tuple<Token, size_t>> pre_match(std::string_view const &buffer, size_t index)
+    {
+        auto       at = index;
+        auto const digit = [&buffer](size_t ix) { return ix < buffer.length() && isdigit(buffer[ix]); };
+        auto const skip_digits = [&buffer, &at, &digit]() {
+            auto const start = at;
+            while (digit(at)) {
+                ++at;
+            }
+            return at > start;
+        };
+        if (at < buffer.length() && buffer[at] == '-') {
+            ++at;
+        }
+        if (!skip_digits()) {
+            return { };
+        }
+        auto type = NumberType::Integer;
+        if (at < buffer.length() && buffer[at] == '.' && digit(at + 1)) {
+            ++at;
+            skip_digits();
+            type = NumberType::Decimal;
+        }
+        if (at < buffer.length() && (buffer[at] == 'e' || buffer[at] == 'E')) {
+            auto exponent = at + 1;
+            if (exponent < buffer.length() && (buffer[exponent] == '+' || buffer[exponent] == '-')) {
+                ++exponent;
+            }
+            if (digit(exponent)) {
+                at = exponent;
+                skip_digits();
+                type = NumberType::Decimal;
+            }
+        }
+        return std::tuple { Token::number(type), at - index };
+    }
+};
+
+using JSONLexer = Lexer<std::string_view, JSONKeywords, char>;
 using JSONToken = JSONLexer::Token;
+
+std::expected<JSONValue, JSONError> decode_number(JSONToken const &token, std::string_view const &str)
+{
+    auto const text = str.substr(token.location.index, token.location.length);
+    auto const invalid = [&token, &text]() {
+        return std::unexpected(JSONError {
+            JSONError::Code::SyntaxError,
+            std::format("Invalid number '{}'", text),
+            static_cast<int>(token.location.line),
+            static_cast<int>(token.location.column),
+        });
+    };
+    if (token.number_type() == NumberType::Integer) {
+        int64_t integer { 0 };
+        auto const [end, ec] = std::from_chars(text.data(), text.data() + text.size(), integer);
+        if (ec == std::errc { } && end == text.data() + text.size()) {
+            return JSONValue { integer };
+        }
+        // Too big for an integer: it can still be a double.
+    }
+    double number { 0 };
+    auto const [end, ec] = std::from_chars(text.data(), text.data() + text.size(), number);
+    if (ec != std::errc { } || end != text.data() + text.size()) {
+        return invalid();
+    }
+    return JSONValue { number };
+}
 
 std::expected<JSONValue, JSONError> decode_value(JSONLexer &lexer, std::string_view const &str)
 {
@@ -261,20 +332,8 @@ std::expected<JSONValue, JSONError> decode_value(JSONLexer &lexer, std::string_v
         trace(JSON, "QuotedString: {}", token);
         return JSONValue { TRY_EVAL(decode_string(token)) };
     }
-    case TokenKind::Number: {
-        switch (token.number_type()) {
-        case NumberType::Decimal: {
-            auto dbl_maybe = string_to_double(std::string(str.substr(token.location.index, token.location.length)));
-            assert(dbl_maybe.has_value());
-            return JSONValue(dbl_maybe.value());
-        }
-        default: {
-            auto int_maybe = string_to_integer<long>(str.substr(token.location.index, token.location.length));
-            assert(int_maybe.has_value());
-            return JSONValue(int_maybe.value());
-        }
-        }
-    }
+    case TokenKind::Number:
+        return decode_number(token, str);
     case TokenKind::Keyword: {
         switch (token.keyword().code) {
         case JSONKeyword::False:

@@ -253,6 +253,7 @@ endfunction()
 
 sweattrails_test(listbox_test test/ListBoxTest.cpp)
 sweattrails_test(zip_test test/ZipTest.cpp)
+sweattrails_test(json_test test/JSONTest.cpp)
 sweattrails_test(cursor_test test/CursorTest.cpp)
 
 # A test of app code also needs that code, and what it uses.
