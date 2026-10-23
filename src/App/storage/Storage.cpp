@@ -34,6 +34,12 @@ bool eql_ignore_case(std::string_view const &lhs, std::string_view const &rhs)
     return to_lower(lhs) == to_lower(rhs);
 }
 
+// The directory, under activity/, of an activity that starts at `start`.
+std::string month_dir_name(DateTime const &start)
+{
+    return std::format("{:04}/{:02}", static_cast<u16>(start.year), static_cast<u8>(start.month) + 1);
+}
+
 // Whether `<dir>/<stem>.fit`, or its sidecar `<dir>/<stem>.json`, exists.
 std::expected<bool, LibCError> stem_taken(fs::path const &dir, std::string_view const &stem)
 {
@@ -181,6 +187,13 @@ StorageResult<std::optional<Activity>> Storage::load_activity(ActivityID const &
     return id.load(*this, LoadingDepth::Deep);
 }
 
+bool Storage::has_activity(i64 start_time) const
+{
+    auto const      start = DateTime::from_timestamp(static_cast<i32>(start_time));
+    std::error_code ec { };
+    return fs::exists(activity_dir / month_dir_name(start) / std::format("{}.fit", start_time), ec);
+}
+
 StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
 {
     // Collect the file names first: organizing a file moves it out of the
@@ -248,10 +261,7 @@ StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view
         return InboxOutcome::Skipped;
     }
     assert(activity.segment.start_time.timestamp > 0);
-    auto const dest_dir_name = std::format(
-        "{:04}/{:02}",
-        static_cast<u16>(activity.segment.start_time.year),
-        static_cast<u8>(activity.segment.start_time.month) + 1);
+    auto const dest_dir_name = month_dir_name(activity.segment.start_time);
     auto const dest_dir = TRY_EVAL(ensure_directory(activity_dir / dest_dir_name));
     auto const dest_stem = std::format("{}", activity.segment.start_time.timestamp);
     if (TRY_EVAL(path_exists(dest_dir / (dest_stem + ".fit")))) {

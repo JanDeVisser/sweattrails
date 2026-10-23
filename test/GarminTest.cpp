@@ -1,0 +1,385 @@
+/*
+ * Copyright (c) 2026, Jan de Visser <jan@finiandarcy.com>
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Tests the Garmin Connect download with canned responses: nothing here
+ * talks to Garmin.
+ */
+
+#include <cstdlib>
+#include <ctime>
+#include <filesystem>
+#include <format>
+#include <map>
+#include <string>
+#include <vector>
+
+#include <IO.h>
+#include <JSON.h>
+
+#include <Http.h>
+#include <storage/Garmin.h>
+#include <storage/Storage.h>
+
+#include <TestApp.h>
+#include <TestZip.h>
+
+using namespace ST;
+using namespace ST::Test;
+
+namespace {
+
+namespace fs = std::filesystem;
+
+// A directory for one test, removed when the test is done.
+struct TempDir {
+    fs::path path;
+
+    explicit TempDir(std::string_view name)
+        : path(fs::temp_directory_path() / std::format("sweattrails-{}-{}", name, std::time(nullptr)))
+    {
+        fs::remove_all(path);
+        fs::create_directories(path);
+    }
+
+    ~TempDir()
+    {
+        std::error_code ec { };
+        fs::remove_all(path, ec);
+    }
+};
+
+// A store in a temporary directory, with an inbox and no activities.
+struct TempStore {
+    TempDir dir { "store" };
+    Storage storage { };
+
+    TempStore()
+    {
+        storage.data_dir = dir.path;
+        storage.inbox_dir = dir.path / "inbox";
+        storage.activity_dir = dir.path / "activity";
+        fs::create_directories(storage.inbox_dir);
+        fs::create_directories(storage.activity_dir);
+    }
+
+    // Puts an activity that starts at `start_time` in the store, as the
+    // inbox would have.
+    void add_activity(i64 start_time) const
+    {
+        auto const start = DateTime::from_timestamp(static_cast<i32>(start_time));
+        auto const dir = storage.activity_dir / std::format("{:04}/{:02}", static_cast<u16>(start.year), static_cast<u8>(start.month) + 1);
+        fs::create_directories(dir);
+        MUST(write_file_by_name((dir / std::format("{}.fit", start_time)).string(), std::string_view { "fit" }));
+    }
+
+    [[nodiscard]] std::vector<std::string> inbox() const
+    {
+        std::vector<std::string> names;
+        for (auto const &entry : fs::directory_iterator { storage.inbox_dir }) {
+            names.push_back(entry.path().filename().string());
+        }
+        std::ranges::sort(names);
+        return names;
+    }
+};
+
+// Garmin Connect, as far as the tests need it: answers by the request's
+// path, without its query, and remembers the requests.
+struct FakeGarmin {
+    std::map<std::string, std::vector<HttpResponse>> responses { };
+    std::vector<HttpRequest>                         requests { };
+    bool                                             offline { false };
+
+    void answer(std::string const &path, HttpResponse response)
+    {
+        responses[path].push_back(std::move(response));
+    }
+
+    HttpFetch fetch()
+    {
+        return [this](HttpRequest const &request) -> std::expected<HttpResponse, LibCError> {
+            requests.push_back(request);
+            if (offline) {
+                return std::unexpected(LibCError { std::string { "Could not resolve host" } });
+            }
+            auto path = request.url.substr(GarminBaseUrl.size());
+            path = path.substr(0, path.find('?'));
+            auto &queue = responses[path];
+            if (queue.empty()) {
+                return HttpResponse { .status = 404, .body = "Not found" };
+            }
+            auto response = queue.front();
+            // The last response for a path is the answer from then on.
+            if (queue.size() > 1) {
+                queue.erase(queue.begin());
+            }
+            return response;
+        };
+    }
+};
+
+std::string const TokenPath = "/personalapitoken-service/personal-api/personal-api-key/token";
+std::string const ListPath = "/activitylist-service/activities/search/activities";
+
+std::string download_path(u64 id)
+{
+    return std::format("/download-service/files/activity/{}", id);
+}
+
+bool has_header(HttpRequest const &request, std::string_view header)
+{
+    return std::ranges::find(request.headers, header) != request.headers.end();
+}
+
+// A list entry, trimmed from a real one: the list has 101 fields.
+JSONValue list_entry(u64 id, i64 start_time, std::string_view name, bool manual = false)
+{
+    auto entry = JSONValue::object();
+    entry["activityId"] = JSONValue { static_cast<i64>(id) };
+    entry["activityName"] = JSONValue { name };
+    entry["beginTimestamp"] = JSONValue { start_time * 1000 };
+    entry["startTimeGMT"] = JSONValue { "2026-10-20 12:09:31" };
+    entry["manualActivity"] = JSONValue { manual };
+    return entry;
+}
+
+std::string list_of(std::vector<JSONValue> const &entries)
+{
+    auto list = JSONValue::array();
+    for (auto const &entry : entries) {
+        list.append(entry);
+    }
+    return list.serialize();
+}
+
+std::string fit_zip(u64 id, std::string const &fit)
+{
+    return make_zip({ { .name = std::format("{}_ACTIVITY.fit", id), .contents = fit, .deflated = true } });
+}
+
+void test_key_from_the_environment_or_the_file()
+{
+    TempDir    dir { "key" };
+    auto const file = dir.path / "connect-personal-api-key";
+    CHECK(!read_api_key({ }, file).has_value());
+
+    MUST(write_file_by_name(file.string(), std::string_view { "  file-key\n" }));
+    fs::permissions(file, fs::perms::owner_read | fs::perms::owner_write);
+    CHECK_EQ(read_api_key({ }, file).value_or(""), "file-key");
+    CHECK_EQ(read_api_key("env-key\n", file).value_or(""), "env-key");
+    // An empty variable is as good as none.
+    CHECK_EQ(read_api_key("  ", file).value_or(""), "file-key");
+
+    MUST(write_file_by_name(file.string(), std::string_view { "\n" }));
+    CHECK(!read_api_key({ }, file).has_value());
+}
+
+void test_parse_activity_list()
+{
+    auto const json = MUST_EVAL(JSONValue::deserialize(list_of({
+        list_entry(24790584050, 1792498171, "Zwift - Pacer Group Ride with Maria"),
+        list_entry(24790584051, 1792500000, "Yoga", true),
+    })));
+    auto const activities = parse_activity_list(json);
+    CHECK(activities.has_value());
+    if (!activities || activities->size() != 2) {
+        CHECK(false);
+        return;
+    }
+    CHECK_EQ(activities->at(0).id, 24790584050ull);
+    CHECK_EQ(activities->at(0).start_time, 1792498171ll);
+    CHECK(activities->at(0).has_file);
+    CHECK(!activities->at(1).has_file);
+    CHECK_EQ(activities->at(0).summary["activityName"].to_string(), "Zwift - Pacer Group Ride with Maria");
+
+    CHECK(!parse_activity_list(JSONValue::object()).has_value());
+    auto const without_id = MUST_EVAL(JSONValue::deserialize(R"([{"beginTimestamp": 1}])"));
+    CHECK(!parse_activity_list(without_id).has_value());
+}
+
+void test_start_date()
+{
+    setenv("TZ", "America/Toronto", 1);
+    tzset();
+    // October 23, 2026, 07:18 in Toronto: 30 days earlier is September 23.
+    CHECK_EQ(garmin_start_date(30, 1792754314), "2026-09-23");
+    // 23:30 on October 22 in Toronto is already the 23rd in UTC.
+    CHECK_EQ(garmin_start_date(0, 1792726200), "2026-10-22");
+}
+
+void test_token()
+{
+    FakeGarmin fake;
+    fake.answer(TokenPath, { .status = 200, .body = "header.payload.signature\n" });
+    GarminConnect garmin { .fetch = fake.fetch() };
+    CHECK(garmin.obtain_token("the-key").has_value());
+    CHECK_EQ(garmin.token, "header.payload.signature");
+    CHECK_EQ(fake.requests.size(), 1uz);
+    if (!fake.requests.empty()) {
+        CHECK_EQ(fake.requests[0].method, "POST");
+        CHECK(has_header(fake.requests[0], "Authorization: ApiKey the-key"));
+    }
+}
+
+void test_rejected_key()
+{
+    for (long const status : { 401, 403 }) {
+        FakeGarmin fake;
+        fake.answer(TokenPath, { .status = status, .body = "Unauthorized" });
+        GarminConnect garmin { .fetch = fake.fetch() };
+        auto const    result = garmin.obtain_token("old-key");
+        CHECK(!result.has_value() && result.error().kind == GarminError::Kind::KeyRejected);
+    }
+}
+
+void test_offline_and_server_errors()
+{
+    FakeGarmin fake;
+    fake.offline = true;
+    GarminConnect garmin { .fetch = fake.fetch() };
+    auto const    offline = garmin.obtain_token("key");
+    CHECK(!offline.has_value() && offline.error().kind == GarminError::Kind::Failed);
+
+    FakeGarmin broken;
+    broken.answer(TokenPath, { .status = 500, .body = "Oops" });
+    GarminConnect server { .fetch = broken.fetch() };
+    auto const    error = server.obtain_token("key");
+    CHECK(!error.has_value() && error.error().kind == GarminError::Kind::Failed);
+}
+
+// A full page asks for the next one; a short page is the last.
+void test_list_pages()
+{
+    std::vector<JSONValue> first;
+    for (u64 ix = 0; ix < 100; ++ix) {
+        first.push_back(list_entry(1000 + ix, 1792000000 + static_cast<i64>(ix), "Run"));
+    }
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of(first) });
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(2000, 1791000000, "Ride") }) });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    auto const    activities = garmin.list_activities("2026-09-23");
+    CHECK(activities.has_value());
+    CHECK_EQ(activities.value_or(std::vector<GarminActivity> { }).size(), 101uz);
+    CHECK_EQ(fake.requests.size(), 2uz);
+    if (fake.requests.size() == 2) {
+        CHECK(fake.requests[0].url.ends_with("?start=0&limit=100&startDate=2026-09-23"));
+        CHECK(fake.requests[1].url.ends_with("?start=100&limit=100&startDate=2026-09-23"));
+        CHECK(has_header(fake.requests[0], "Authorization: Bearer token"));
+    }
+}
+
+void test_expired_token_while_listing()
+{
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 401, .body = "" });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    auto const    activities = garmin.list_activities("2026-09-23");
+    CHECK(!activities.has_value() && activities.error().kind == GarminError::Kind::KeyRejected);
+}
+
+void test_download_unzips_the_fit_file()
+{
+    FakeGarmin fake;
+    fake.answer(download_path(42), { .status = 200, .body = fit_zip(42, "the FIT data") });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    CHECK_EQ(garmin.download_fit(42).value_or(""), "the FIT data");
+}
+
+void test_download_without_a_fit_file()
+{
+    FakeGarmin fake;
+    fake.answer(download_path(42), { .status = 200, .body = make_zip({ { .name = "42.gpx", .contents = "<gpx/>" } }) });
+    fake.answer(download_path(43), { .status = 200, .body = "<html>Maintenance</html>" });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    CHECK(!garmin.download_fit(42).has_value());
+    CHECK(!garmin.download_fit(43).has_value());
+}
+
+// Three activities on Garmin Connect: one the store has, one entered by
+// hand, and one new one, which is the only one downloaded.
+void test_download_new_activities()
+{
+    TempStore store;
+    store.add_activity(1792430925);
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({
+                                               list_entry(3, 1792524471, "Kitchener Running"),
+                                               list_entry(2, 1792500000, "Strength", true),
+                                               list_entry(1, 1792430925, "Kitchener Running"),
+                                           }) });
+    fake.answer(download_path(3), { .status = 200, .body = fit_zip(3, "run") });
+    GarminConnect                          garmin { .fetch = fake.fetch(), .token = "token" };
+    std::vector<std::pair<size_t, size_t>> progress;
+    auto const                             count = download_new_activities(garmin, store.storage, "2026-09-23",
+        [&progress](size_t index, size_t count) { progress.emplace_back(index, count); });
+    CHECK_EQ(count.value_or(99), 1uz);
+    CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-3.fit", "garmin-3.json" }));
+    CHECK_EQ(read_file_by_name((store.storage.inbox_dir / "garmin-3.fit").string()).value_or(""), "run");
+    auto const sidecar = JSONValue::read_file((store.storage.inbox_dir / "garmin-3.json").string());
+    CHECK(sidecar.has_value());
+    if (sidecar) {
+        CHECK_EQ((*sidecar)["activityName"].to_string(), "Kitchener Running");
+    }
+    CHECK_EQ(progress.size(), 1uz);
+    CHECK(progress == (std::vector<std::pair<size_t, size_t>> { { 0, 1 } }));
+}
+
+// Run again before the inbox is processed, the download doesn't fetch what
+// the inbox already has.
+void test_download_skips_what_the_inbox_has()
+{
+    TempStore store;
+    MUST(write_file_by_name((store.storage.inbox_dir / "garmin-3.fit").string(), std::string_view { "run" }));
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(3, 1792524471, "Run") }) });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23").value_or(99), 0uz);
+    CHECK_EQ(fake.requests.size(), 1uz);
+}
+
+// A failed download stops the download, but what came before it stays.
+void test_failed_download_keeps_the_earlier_ones()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    fake.answer(download_path(5), { .status = 200, .body = fit_zip(5, "b") });
+    fake.answer(download_path(4), { .status = 503, .body = "Busy" });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    auto const    count = download_new_activities(garmin, store.storage, "2026-09-23");
+    CHECK(!count.has_value());
+    CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-5.fit", "garmin-5.json" }));
+}
+
+void test_has_activity()
+{
+    TempStore store;
+    CHECK(!store.storage.has_activity(1792498171));
+    store.add_activity(1792498171);
+    CHECK(store.storage.has_activity(1792498171));
+    CHECK(!store.storage.has_activity(1792498172));
+}
+
+}
+
+int main()
+{
+    test_key_from_the_environment_or_the_file();
+    test_parse_activity_list();
+    test_start_date();
+    test_token();
+    test_rejected_key();
+    test_offline_and_server_errors();
+    test_list_pages();
+    test_expired_token_while_listing();
+    test_download_unzips_the_fit_file();
+    test_download_without_a_fit_file();
+    test_download_new_activities();
+    test_download_skips_what_the_inbox_has();
+    test_failed_download_keeps_the_earlier_ones();
+    test_has_activity();
+    return ST::Test::test_result();
+}
