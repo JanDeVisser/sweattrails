@@ -459,6 +459,25 @@ void test_run_cadence_in_spm()
     CHECK_EQ(t.value("Min Cadence"), "170 spm");
 }
 
+// Walks and hikes are doubled, as runs are.
+void test_walk_and_hike_cadence_in_spm()
+{
+    for (auto const the_sport : { sport::Walking, sport::Hiking }) {
+        TestActivity t { the_sport, cadence_records() };
+        CHECK_EQ(t.value("Avg Cadence"), "171 spm");
+        CHECK_EQ(t.value("Max Cadence"), "194 spm");
+    }
+}
+
+// Other sports' cadence is strokes per minute, shown as recorded.
+void test_rowing_cadence_as_recorded()
+{
+    TestActivity t { sport::Rowing, cadence_records() };
+    CHECK_EQ(t.value("Avg Cadence"), "86/min");
+    CHECK_EQ(t.value("Max Cadence"), "97/min");
+    CHECK_EQ(t.value("Min Cadence"), "85/min");
+}
+
 void test_unrealistic_cadence_is_not_shown()
 {
     TestActivity t { sport::Cycling, records_with(40, set_cadence, 0, u8 { 0 }, u8 { 9 }) };
@@ -709,6 +728,8 @@ int main()
     test_no_cadence_stats_without_pedaling();
     test_ride_cadence_in_rpm();
     test_run_cadence_in_spm();
+    test_walk_and_hike_cadence_in_spm();
+    test_rowing_cadence_as_recorded();
     test_unrealistic_cadence_is_not_shown();
     test_analyze_no_climb_without_altitude();
     test_ride_shows_speed();

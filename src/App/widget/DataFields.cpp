@@ -72,6 +72,11 @@ bool is_ride(Activity const &activity)
     return activity.sport == sport::Cycling || activity.sport == sport::E_biking;
 }
 
+bool is_on_foot(Activity const &activity)
+{
+    return activity.sport == sport::Running || activity.sport == sport::Walking || activity.sport == sport::Hiking;
+}
+
 void add_speed_lines(std::vector<DataLine> &lines, Activity const &activity)
 {
     auto const &segment = activity.segment;
@@ -153,11 +158,17 @@ void add_cadence_lines(std::vector<DataLine> &lines, Activity const &activity)
     if (!range || range->max < MinRealisticMax || !stats) {
         return;
     }
-    // Rides in rpm. FIT has running cadence in strides per minute, one
-    // foot's steps, which is shown doubled, as steps per minute.
-    auto const ride = is_ride(activity);
-    auto const format_cadence = [ride](float32 cadence) {
-        return ride ? std::format("{:.0f} rpm", cadence) : std::format("{:.0f} spm", 2 * cadence);
+    // Rides in rpm. FIT has running and walking cadence in strides per
+    // minute, one foot's steps, which is shown doubled, as steps per minute.
+    // Other sports, such as swimming or rowing, are in strokes per minute.
+    auto const format_cadence = [&activity](float32 cadence) {
+        if (is_ride(activity)) {
+            return std::format("{:.0f} rpm", cadence);
+        }
+        if (is_on_foot(activity)) {
+            return std::format("{:.0f} spm", 2 * cadence);
+        }
+        return std::format("{:.0f}/min", cadence);
     };
     lines.push_back(DataLine {
         .left = DataField { "Avg Cadence", format_cadence(stats->average) },
