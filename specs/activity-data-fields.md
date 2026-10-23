@@ -195,4 +195,35 @@ and that it's reset after Ctrl-M with the mouse over one.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+I found nothing wrong with the record-index `max_at`, the rules for which
+fields show, the units or the cursor handling. The two findings are small,
+and one is about the spec rather than the code.
+
+1. **Bug (minor):** `format_pace()` in `src/App/widget/DataFields.cpp:58`
+   works out the minutes as `pace.hours * 60 + pace.minutes` and drops
+   `Duration::days`. A pace of a day or more per km comes out too low. An
+   example is a gym or indoor session where the watch logged a few meters:
+   5 m in 50:00 is 10000:00 min/km, but the panel shows "1360:00 min/km".
+   The same goes for Max Pace when the max speed is below about 0.0116 m/s.
+   `test_pace_of_more_than_a_day` in `test/DataFieldsTest.cpp` fails on
+   this. The fix is to use `pace.elapsed / 60` and `pace.elapsed % 60`.
+2. **Suggestion:** Only `sport::Cycling` counts as a ride
+   (`DataFields.cpp:69`), as the spec says. But FIT also has a separate
+   sport `E_biking` (21), apart from Cycling's e-bike sub-sports. An
+   activity recorded with that sport shows a pace in min/km. Jan should
+   decide whether `E_biking` counts as a ride too. If it does, the spec and
+   the check both need to change.
+3. **Missing tests (added):** in `test/DataFieldsTest.cpp`:
+   - `max_at` with gaps in power, not just HR, as the Test plan asks;
+   - an HR or power maximum of exactly 10 is shown;
+   - VI is hidden when the average power rounds down to 0 W but there is
+     an NP, while NP and IF are still shown;
+   - with a distance but no moving time and no speed, there's no pace line;
+   - Max Pace and its `mark_at` with records that have no speed;
+   - the elevation values, which can't be clicked.
+
+   A new `test/CursorTest.cpp` (`cursor_test`) checks
+   `App::request_cursor()`. A request lasts for one frame, and while a
+   modal is open, a request left over from the panel goes back to the
+   I-beam. `SetMouseCursor()` turns out to be safe to call without a
+   window. These tests pass.
