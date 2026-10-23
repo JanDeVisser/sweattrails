@@ -19,10 +19,12 @@
 #include <JSON.h>
 
 #include <Http.h>
+#include <storage/Activity.h>
 #include <storage/Garmin.h>
 #include <storage/Storage.h>
 
 #include <TestApp.h>
+#include <TestFit.h>
 #include <TestZip.h>
 
 using namespace ST;
@@ -367,6 +369,67 @@ void test_download_request()
     CHECK_EQ(make_download_request(settings, startup).days, 90);
 }
 
+// A key binding passes the key and its modifiers as the arguments: the
+// settings still say how far back to look, and Ctrl+G isn't quiet.
+void test_download_request_from_a_key_binding()
+{
+    auto const settings = MUST_EVAL(JSONValue::deserialize(R"({"garmin": {"days": 90}})"));
+    auto const binding = MUST_EVAL(JSONValue::deserialize(R"({"key": 71, "modifier": 2})"));
+    CHECK_EQ(make_download_request(settings, binding).days, 90);
+    CHECK(!make_download_request(settings, binding).quiet);
+}
+
+// A downloaded activity goes through the inbox as any other: it's filed
+// under the start time the list gave, so has_activity() finds it, its
+// sidecar goes with it and gives it its title, and the next download
+// doesn't fetch it again.
+void test_downloaded_activity_goes_through_the_inbox()
+{
+    // October 31, 2021, 22:46 in Toronto, which test_start_date() set as the
+    // time zone, and November 1 in UTC: the inbox and has_activity() have to
+    // agree on the month.
+    constexpr i64 StartTime = 1635734760;
+    FITBuilder    fit;
+    add_workout(fit, "Tempo intervals");
+    fit.definition(0, 18,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 2, .size = 4, .base_type = Uint32 },
+            { .num = 5, .size = 1, .base_type = Enum },
+            { .num = 7, .size = 4, .base_type = Uint32 },
+            { .num = 8, .size = 4, .base_type = Uint32 },
+        });
+    fit.message(0);
+    auto const fit_start = static_cast<u32>(StartTime - DateTime::FIT_TIMESTAMP_OFFSET);
+    fit.u32_le(fit_start + 3600);
+    fit.u32_le(fit_start);
+    fit.byte(1); // Running
+    fit.u32_le(3600 * 1000);
+    fit.u32_le(3600 * 1000);
+
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(7, StartTime, "Westmount-Wallenstein") }) });
+    fake.answer(download_path(7), { .status = 200, .body = fit_zip(7, fit.file()) });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2021-10-01").value_or(99), 1uz);
+
+    CHECK_EQ(store.storage.process_inbox().value_or(99), 1u);
+    CHECK(store.inbox().empty());
+    CHECK(store.storage.has_activity(StartTime));
+
+    auto const newest = store.storage.find_newest();
+    CHECK(newest.has_value() && newest->has_value());
+    if (newest && *newest) {
+        CHECK_EQ((*newest)->title, "Westmount-Wallenstein");
+    }
+
+    auto const requests = fake.requests.size();
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2021-10-01").value_or(99), 0uz);
+    // Only the list: nothing is downloaded again.
+    CHECK_EQ(fake.requests.size(), requests + 1);
+}
+
 void test_has_activity()
 {
     TempStore store;
@@ -395,5 +458,7 @@ int main()
     test_failed_download_keeps_the_earlier_ones();
     test_download_request();
     test_has_activity();
+    test_download_request_from_a_key_binding();
+    test_downloaded_activity_goes_through_the_inbox();
     return ST::Test::test_result();
 }

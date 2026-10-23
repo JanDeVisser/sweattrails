@@ -38,6 +38,21 @@ void test_integers()
     CHECK(!number("-1.5e3").convert(small).has_value());
 }
 
+// Garmin's activity IDs are read as u64: a negative number isn't one.
+void test_unsigned_range()
+{
+    u64 id { 7 };
+    CHECK(number("24790584050").convert(id).has_value());
+    CHECK_EQ(id, 24790584050ull);
+    CHECK(!number("-1").convert(id).has_value());
+    CHECK(!number("-1.5").convert(id).has_value());
+    u8 small { 0 };
+    CHECK(!number("256").convert(small).has_value());
+    int64_t big { 0 };
+    CHECK(!number("1e19").convert(big).has_value());
+    CHECK(!number("-1e19").convert(big).has_value());
+}
+
 // Garmin Connect's activity lists have negative coordinates, and doubles
 // with exponents.
 void test_decimals()
@@ -81,6 +96,7 @@ void test_not_numbers()
 int main()
 {
     test_integers();
+    test_unsigned_range();
     test_decimals();
     test_in_objects_and_arrays();
     test_not_numbers();

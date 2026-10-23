@@ -53,6 +53,9 @@ void test_empty_entry()
     auto const empty = unzip(zip, "empty");
     CHECK(empty.has_value());
     CHECK_EQ(empty.value_or("x"), "");
+    // zip(1) stores empty files, but a deflated one is valid too.
+    auto const deflated = make_zip({ { .name = "empty", .contents = "", .deflated = true } });
+    CHECK_EQ(unzip(deflated, "empty").value_or("x"), "");
 }
 
 // The end of central directory record is found behind a comment.
