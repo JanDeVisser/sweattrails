@@ -68,7 +68,9 @@ std::string format_speed(float32 meters_per_second)
 void add_speed_lines(std::vector<DataLine> &lines, Activity const &activity)
 {
     auto const &segment = activity.segment;
-    auto const  cycling = activity.sport == sport::Cycling;
+    // FIT has e-biking as a sport of its own, besides Cycling's e-bike
+    // sub-sports.
+    auto const cycling = activity.sport == sport::Cycling || activity.sport == sport::E_biking;
     lines.push_back(DataLine { .left = DataField { "Distance", format_distance(segment.distance) } });
 
     DataLine line { };

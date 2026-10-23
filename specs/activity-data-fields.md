@@ -52,8 +52,9 @@ isn't shown, and nor is the line it's on if both of its fields are missing.
 | VI                      |                          | the activity has power     |
 | Min elevation           | Max elevation            | the activity has altitude  |
 
-- Rides (`sport::Cycling`, with any sub-sport such as indoor or e-bike)
-  show speed in km/h, with one decimal. All other sports show pace in
+- Rides (`sport::Cycling`, with any sub-sport such as indoor or e-bike,
+  and `sport::E_biking`, which FIT has as a sport of its own) show speed
+  in km/h, with one decimal. All other sports show pace in
   min/km. The fastest pace is the max speed converted to pace.
 - Average speed is distance over moving time, as average pace is now.
 - HR is in bpm, power in W, both as whole numbers. IF and VI have two

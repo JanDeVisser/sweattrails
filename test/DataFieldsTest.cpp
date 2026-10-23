@@ -168,6 +168,15 @@ void test_ride_shows_speed()
     CHECK(!t.field("Max Pace"));
 }
 
+void test_e_bike_ride_shows_speed()
+{
+    TestActivity t { sport::E_biking, records_with(10, set_speed, 7, 10.0f, 15.0f) };
+    t.activity.segment.distance = 30000;
+    CHECK_EQ(t.value("Avg Speed"), "36.0 km/h");
+    CHECK_EQ(t.value("Max Speed"), "54.0 km/h");
+    CHECK(!t.field("Avg Pace"));
+}
+
 void test_run_shows_pace()
 {
     TestActivity t { sport::Running, records_with(10, set_speed, 4, 3.0f, 5.0f) };
@@ -367,6 +376,7 @@ int main()
     test_smoothed_range_max_at();
     test_analyze_max_at_is_a_record_index();
     test_ride_shows_speed();
+    test_e_bike_ride_shows_speed();
     test_run_shows_pace();
     test_heart_rate();
     test_power();
