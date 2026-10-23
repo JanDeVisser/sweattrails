@@ -11,6 +11,7 @@
 
 #include <Map.h>
 #include <storage/Activity.h>
+#include <widget/DataFields.h>
 
 namespace ST {
 
@@ -32,8 +33,16 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
 };
 
 struct ActivityDataDisplay : public Widget {
+    // A field that marks a record when it's clicked, where the last draw()
+    // drew it, in screen coordinates.
+    struct ClickableField {
+        Rectangle area;
+        size_t    mark_at;
+    };
+
     std::shared_ptr<DisplayedActivity> activity;
     Texture2D                          sport_icon;
+    std::vector<ClickableField>        clickable { };
 
     explicit ActivityDataDisplay(pWidget const &parent);
     ~ActivityDataDisplay();
@@ -42,6 +51,10 @@ struct ActivityDataDisplay : public Widget {
     void resize() override;
     void process_input() override;
     void set_activity(std::shared_ptr<DisplayedActivity> const &activity);
+
+private:
+    void draw_fields(float y);
+    void draw_field(DataField const &field, float x, float value_x, float y, float height);
 };
 
 struct ActivityMap : public Widget {

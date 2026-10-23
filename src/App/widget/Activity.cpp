@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <ranges>
@@ -67,68 +68,86 @@ void ActivityDataDisplay::initialize()
 {
 }
 
+namespace {
+
+std::string label_text(DataField const &field)
+{
+    return field.label + ":";
+}
+
+}
+
 void ActivityDataDisplay::draw()
 {
-    if (activity != nullptr) {
-        auto y = 20;
+    if (activity == nullptr) {
+        return;
+    }
+    auto y = 20;
 
-        render_texture(10, y, sport_icon);
-        auto sz = render_text(
-            116, y,
-            TextFormat("%s - %s", FIT::tag(activity->activity.sport), activity->activity.segment.start_time.format().c_str()),
-            FontSize::Small,
-            RAYWHITE);
-        sz = render_text(116, y + sz.y + 20, activity->activity.title, FontSize::Large, RAYWHITE);
-        y += 106; // 6 * sz.y / 5;
+    render_texture(10, y, sport_icon);
+    auto sz = render_text(
+        116, y,
+        TextFormat("%s - %s", FIT::tag(activity->activity.sport), activity->activity.segment.start_time.format().c_str()),
+        FontSize::Small,
+        RAYWHITE);
+    render_text(116, y + sz.y + 20, activity->activity.title, FontSize::Large, RAYWHITE);
+    y += 106; // 6 * sz.y / 5;
 
-        char const *d;
-        auto        moving = activity->activity.segment.moving;
-        if (moving.minutes == 0) {
-            d = TextFormat("Moving Time:   %02d.%03d", moving.seconds, static_cast<int>(moving.fraction * 1000));
-        } else if (moving.hours == 0) {
-            d = TextFormat("Moving Time:   %02d:%02d", moving.minutes, moving.seconds);
-        } else {
-            d = TextFormat("Moving Time:   %d:%02d:%02d", moving.hours, moving.minutes, moving.seconds);
+    draw_fields(static_cast<float>(y));
+}
+
+// Draws the fields in two columns. In each column the values start at the
+// same x, past the column's widest label, so that they line up in any font.
+void ActivityDataDisplay::draw_fields(float y)
+{
+    auto const lines = data_fields(activity->activity);
+    auto const gap = App::the()->char_size(FontSize::Medium).x;
+    auto const line_height = 6.0f * App::measure_text("Mg", FontSize::Medium).y / 5.0f;
+    auto const label_width = [](DataField const &field) {
+        return App::measure_text(label_text(field).c_str(), FontSize::Medium).x;
+    };
+
+    auto const left = 10.0f;
+    auto const right = viewport.width / 2 + 10.0f;
+    auto       left_values = left;
+    auto       right_values = right;
+    for (auto const &line : lines) {
+        if (line.left) {
+            left_values = std::max(left_values, left + label_width(*line.left) + gap);
         }
-        sz = render_text(10, y, d, FontSize::Medium, RAYWHITE);
-
-        auto elapsed = activity->activity.segment.elapsed;
-        if (elapsed.hours == 0) {
-            d = TextFormat("Elapsed Time:   %02d:%02d.%03d", elapsed.minutes, elapsed.seconds, static_cast<int>(elapsed.fraction * 1000));
-        } else {
-            d = TextFormat("Elapsed Time:   %d:%02d:%02d", elapsed.hours, elapsed.minutes, elapsed.seconds);
+        if (line.right) {
+            right_values = std::max(right_values, right + label_width(*line.right) + gap);
         }
-        auto right_column = viewport.width / 2 + 10;
-        sz = render_text(right_column, y, d, FontSize::Medium, RAYWHITE);
-        y += 6 * sz.y / 5;
+    }
 
-        auto distance = activity->activity.segment.distance / 1000.0;
-        if (distance > 0) {
-            if (distance < 1.0) {
-                d = TextFormat("Distance:      %3d m", static_cast<int>(activity->activity.segment.distance));
-            } else if (distance < 10.0) {
-                d = TextFormat("Distance:      %4.2f km", distance);
-            } else if (distance < 20.0) {
-                d = TextFormat("Distance:      %5.2f km", distance);
-            } else if (distance < 100.0) {
-                d = TextFormat("Distance:      %4.1f km", distance);
-            } else {
-                d = TextFormat("Distance:      %3.0f km", distance);
-            }
-            sz = render_text(10, y, d, FontSize::Medium, RAYWHITE);
-            y += 6 * sz.y / 5;
+    clickable.clear();
+    for (auto const &line : lines) {
+        if (line.left) {
+            draw_field(*line.left, left, left_values, y, line_height);
+        }
+        if (line.right) {
+            draw_field(*line.right, right, right_values, y, line_height);
+        }
+        y += line_height;
+    }
+}
 
-            Duration pace(activity->activity.segment.moving.elapsed / distance);
-            d = TextFormat("Avg Pace:      %d:%02d min/km", pace.minutes, pace.seconds);
-            sz = render_text(10, y, d, FontSize::Medium, RAYWHITE);
-            y += 6 * sz.y / 5;
-        }
-        if (activity->activity.segment.computed_elevation_range.range) {
-            d = TextFormat("Min elevation: %d", static_cast<int>(activity->activity.segment.computed_elevation_range.min()));
-            sz = render_text(10, y, d, FontSize::Medium, RAYWHITE);
-            d = TextFormat("Max elevation: %d", static_cast<int>(activity->activity.segment.computed_elevation_range.max()));
-            sz = render_text(right_column, y, d, FontSize::Medium, RAYWHITE);
-        }
+// Draws the field's label at x and its value at value_x. Remembers where a
+// field that marks a record is, for process_input().
+void ActivityDataDisplay::draw_field(DataField const &field, float x, float value_x, float y, float height)
+{
+    render_text(x, y, label_text(field), FontSize::Medium, RAYWHITE);
+    auto const value_size = render_text(value_x, y, field.value, FontSize::Medium, RAYWHITE);
+    if (field.mark_at) {
+        clickable.push_back(ClickableField {
+            .area = Rectangle {
+                .x = viewport.x + x,
+                .y = viewport.y + y,
+                .width = value_x + value_size.x - x,
+                .height = height,
+            },
+            .mark_at = *field.mark_at,
+        });
     }
 }
 
@@ -136,12 +155,28 @@ void ActivityDataDisplay::resize()
 {
 }
 
+// Clicking a maximum marks the record where it happened, as hovering over
+// the graph does.
 void ActivityDataDisplay::process_input()
 {
+    if (activity == nullptr) {
+        return;
+    }
+    auto const mouse = GetMousePosition();
+    for (auto const &[area, mark_at] : clickable) {
+        if (CheckCollisionPointRec(mouse, area)) {
+            App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                activity->set_mark(mark_at);
+            }
+            return;
+        }
+    }
 }
 
 void ActivityDataDisplay::set_activity(std::shared_ptr<DisplayedActivity> const &activity)
 {
+    clickable.clear();
     if (this->activity) {
         UnloadTexture(sport_icon);
     }
