@@ -163,7 +163,12 @@ add_executable(
         src/App/storage/Activity.cpp
         src/App/storage/Storage.cpp
         src/App/storage/Types.cpp
+        share/icons/sweattrails.icns
 )
+
+# The bundle's icon, which the Dock and Finder show.
+set_source_files_properties(share/icons/sweattrails.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+set_target_properties(sweattrails PROPERTIES MACOSX_BUNDLE_ICON_FILE sweattrails.icns)
 
 target_include_directories(
         sweattrails

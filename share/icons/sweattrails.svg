@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The SweatTrails application icon: a sweat drop with a route winding
+     through it. make-app-icon.sh makes sweattrails.png and
+     sweattrails.icns from this file. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbf8f1"/>
+      <stop offset="1" stop-color="#e9e3d6"/>
+    </linearGradient>
+    <linearGradient id="drop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4fa3f7"/>
+      <stop offset="1" stop-color="#1557b8"/>
+    </linearGradient>
+  </defs>
+  <!-- The macOS icon grid: an 824 pixel rounded square in a 1024 canvas. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#paper)"/>
+  <!-- The drop. -->
+  <path d="M512 170 C440 300 272 460 272 620 A240 240 0 0 0 752 620 C752 460 584 300 512 170 Z" fill="url(#drop)"/>
+  <!-- A highlight, so it reads as a drop rather than a shape. -->
+  <path d="M372 600 C372 520 420 450 470 390" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="34" stroke-linecap="round"/>
+  <!-- The route, with a white casing as a map draws roads. -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path id="route" d="M190 800 C320 800 330 640 450 650 S580 790 670 700 S690 500 840 470" stroke="#ffffff" stroke-width="92"/>
+    <path d="M190 800 C320 800 330 640 450 650 S580 790 670 700 S690 500 840 470" stroke="#e0322b" stroke-width="56"/>
+  </g>
+  <circle cx="840" cy="470" r="46" fill="#e0322b" stroke="#ffffff" stroke-width="18"/>
+</svg>

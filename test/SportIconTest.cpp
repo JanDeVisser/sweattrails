@@ -66,6 +66,15 @@ void test_default()
     check_icon(sport::Generic, { }, "icons8-hyperactive-skin-type-3-96.png");
 }
 
+// make-app-icon.sh makes them from the SVG; the build expects them in
+// share/icons.
+void test_app_icon_files_exist()
+{
+    CHECK(fs::exists(Icons / "sweattrails.svg"));
+    CHECK(fs::exists(Icons / "sweattrails.png"));
+    CHECK(fs::exists(Icons / "sweattrails.icns"));
+}
+
 }
 
 int main()
@@ -75,5 +84,6 @@ int main()
     test_other_sports();
     test_sub_sport_of_another_sport();
     test_default();
+    test_app_icon_files_exist();
     return ST::Test::test_result();
 }

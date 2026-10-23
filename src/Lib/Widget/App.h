@@ -55,7 +55,7 @@ struct App : public Layout {
     size_t                      frame_count { 0 };
     std::vector<DrawFloating>   floatings;
     std::string                 title_string { "Sweattrails" };
-    std::string                 icon_file { "sweattrails.png" };
+    std::string                 icon_file { }; // The window's icon, if any
     CharSizes                   cells;
     static std::shared_ptr<App> s_app;
     std::set<int>               m_pressed_keys;
@@ -137,8 +137,11 @@ struct App : public Layout {
         app->viewport.height = static_cast<float>(GetScreenHeight());
         SetWindowMonitor(app->monitor);
         SetWindowState(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_MAXIMIZED | FLAG_VSYNC_HINT);
-        Image icon = LoadImage(app->icon_file.c_str());
-        SetWindowIcon(icon);
+        if (!app->icon_file.empty()) {
+            Image icon = LoadImage(app->icon_file.c_str());
+            SetWindowIcon(icon);
+            UnloadImage(icon);
+        }
         SetMouseCursor(app->m_cursor);
         SetExitKey(KEY_NULL);
         SetTargetFPS(60);

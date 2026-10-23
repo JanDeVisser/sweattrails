@@ -139,6 +139,10 @@ SweatTrails::SweatTrails()
     : Main<Job, Notification>(SWEATTRAILS_ID)
 {
     system_config_dir = fs::path { SWEATTRAILS_DATADIR };
+#ifndef __APPLE__
+    // macOS windows have no icon: the Dock and Finder show the bundle's.
+    icon_file = SWEATTRAILS_DATADIR "/icons/sweattrails.png";
+#endif
 }
 
 bool SweatTrails::query_close()
