@@ -11,7 +11,13 @@ with its data and graphs. It's written in C++26, on
 cmake -B build -G Ninja
 ninja -C build
 ctest --test-dir build --output-on-failure
+ninja -C build install
 ```
+
+The app reads its icons, fonts, themes and settings from `build/share`,
+which only the install step fills: run it after changing anything in
+`share`, such as an icon. The app is then `build/sweattrails.app` on
+macOS, and `build/sweattrails` elsewhere.
 
 How the app is developed, from specs, is in `CLAUDE.md`; the coding style
 is in `STYLE.md`, and how to write tests in `test/README.md`.
