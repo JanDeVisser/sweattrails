@@ -1,6 +1,6 @@
 # Cadence, a Summary Under the Title, and a Smoothed Climb
 
-Status: In review, on branch feature/activity-display-updates
+Status: Done
 
 ## Goal
 
