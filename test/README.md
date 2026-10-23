@@ -44,6 +44,13 @@ set, such as `ListBox::lines`, and drive the widget with `process_key()` and
 constants. `ListBoxTest.cpp` shows how, in a `ListBox` subclass with helpers
 to set it up and press keys.
 
+raylib's input functions, such as `GetKeyPressed()` and
+`IsMouseButtonPressed()`, do work without a window: there is no input, so they
+report no keys and no buttons. So a test can run a whole frame's input with
+`App::process_input()`, as long as a modal is open: without one, the app's
+own widgets handle input too, and they ask raylib about the window.
+`CursorTest.cpp` does this, to check which mouse cursor the app asks for.
+
 `TestApp.h` also has the checks:
 
 - `CHECK(cond)` reports `cond` if it's false.
