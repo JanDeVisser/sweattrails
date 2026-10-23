@@ -178,4 +178,39 @@ climb Garmin Connect shows. Drawing the summary is checked by hand too.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: a lap's cadence is worked out from the smoothed cadence.**
+   `Activity::analyze()` (`src/App/storage/Activity.cpp`, around line 219)
+   calls `segment.analyze(records, true)` first, which overwrites each
+   record's cadence with its 3-sample average (line 105), and only then
+   `lap.segment.analyze(..., false)` on the same records (line 236). So
+   `cadence_stats()` for a lap gets smoothed samples: a stop isn't a zero
+   any more, its neighbors are pulled down, the average includes them, and
+   the 5-record margin around stops has nothing to work from. With 20
+   records of 90 rpm and a stop at record 5, the session has an average
+   and minimum of 90, the lap 85 and 80. Nothing shows a lap's cadence
+   yet, but `Lap::segment.cadence` is there, and the first lap display
+   would show these numbers. (HR and power for laps are smoothed twice in
+   the same way, which predates this branch.) The cadence samples could be
+   collected before the session smooths the records, or the laps analyzed
+   first. `test_lap_cadence_is_from_the_recorded_cadence` in
+   `test/ActivityLoadTest.cpp` fails on this.
+2. **Suggestion: doubling the cadence for every sport that isn't a ride.**
+   `add_cadence_lines()` (`src/App/widget/DataFields.cpp`, around line
+   160) doubles the cadence for any sport other than Cycling and E-biking,
+   as the spec says. For running and walking that's right, but FIT records
+   swimming, rowing and paddling cadence in strokes per minute, so a row at
+   28 strokes/min shows as "56 spm". Worth deciding in a later spec whether
+   to double only for foot sports, and what to call the others.
+3. **Missing test, added: loading `total_ascent`.** It can be tested
+   without FIT files in the repository: `test/ActivityLoadTest.cpp` builds
+   a FIT file byte by byte and loads it with `load_from_slice()`. It checks
+   that the session's `total_ascent` loads and is what `climb()` returns,
+   that FIT's invalid value 0xFFFF leaves it empty, that the session's
+   other fields still load, and that laps don't get it and work out their
+   own climb with the hysteresis. These pass.
+4. **Missing test, added: edges of `cadence_stats()` and the climb.** In
+   `test/DataFieldsTest.cpp`: a sample exactly 5 records before or after a
+   stop is near it, 6 isn't; a stop in the first 5 records; the margin is
+   counted in records across a dropout, not in samples; one or two samples
+   give an average but no minimum; and the climb's threshold (exactly 3 m
+   counts, 2.9 m doesn't, and a descent lowers the reference). These pass.
