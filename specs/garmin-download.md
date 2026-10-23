@@ -304,4 +304,84 @@ titles in the activity list and the header.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+Reviewed on October 23, against main. The build is clean and all 10 tests
+pass, the new ones included. No bugs that lose or damage data turned up:
+the inbox, the sidecar and the title all work end to end (see 8).
+
+1. **Bug (UX).** Ctrl+G always schedules `FindNewestActivity` after the
+   download (`cmd_garmin_download()`, `src/App/SweatTrails.cpp:245-249`).
+   Say you're looking at last month's ride and press Ctrl+G when there's
+   nothing new: the message says "No new activities on Garmin Connect",
+   and the display jumps to the newest activity anyway. The same happens
+   after a rejected key or a network error. The Feature section says
+   the newest activity shows "what came in", and here nothing did. The
+   Architecture does list the three jobs, so it's Jan's call. One fix is
+   to let the job find the newest activity only when the download, or the
+   inbox, brought something in.
+2. **Suggestion (possible bug).** `list_activities()` stops at the first
+   page with fewer than 100 entries (`src/App/storage/Garmin.cpp:197`). If
+   the Personal API caps `limit` lower, say at Garmin Connect's usual 20, a
+   download of `garmin.days = 365` gets the newest page and nothing else,
+   and doesn't say so. The real-API check never hit paging (5
+   activities). The Swagger document may give the maximum. If it doesn't,
+   stop on an empty page instead, at the cost of one more request.
+3. **Suggestion.** At startup, the newest activity now waits for the
+   network: `FindNewestActivity` runs after the token, the list and every
+   download, each with a 60-second timeout (`src/App/Http.cpp:54`). Before
+   this change it showed up right away. On a slow network, or on a first
+   run with a large `garmin.days`, the window stays empty for a long time.
+   Showing the newest stored activity before the download, as well as
+   after it, would fix that.
+4. **Suggestion.** `GarminConnect::get()` treats a 403 on any request as
+   "key rejected" (`src/App/storage/Garmin.cpp:170`). The user is told to
+   make a new key, and the rest of the download stops. On the token, the
+   spec says 401 or 403 means a rejected key. On a single activity's
+   download, a 403 more likely means Garmin won't export that one, and
+   the spec's "a request fails: a message with the error" fits better.
+5. **Suggestion.** One list entry without an `activityId` or a
+   numeric `beginTimestamp` fails the whole list
+   (`src/App/storage/Garmin.cpp:104-106`), so a single odd activity
+   stops every download. Skipping that entry with a warning would be more
+   forgiving.
+6. **Suggestion.** `inflate_raw()` allocates the size the central
+   directory gives before it inflates anything (`src/Lib/Base/Zip.cpp:117`).
+   A damaged or hostile download with an uncompressed size of 0xFFFFFFFF
+   allocates and zeroes 4 GB. Rejecting sizes beyond what deflate can
+   produce from `compressed_size` (about 1032 to 1) would keep "corrupt is
+   an error, not a crash" true for this case too.
+7. **Suggestion.** Key bindings fire even when a modal is open
+   (`App.h`, `handle_keys()` runs after the modal's input). `cmd_list_month`
+   checks for that, but `cmd_garmin_download` doesn't. So Ctrl+G under a
+   message box starts a download, and its `FindNewestActivity` swaps the
+   display behind the box. Pressing Ctrl+G again while a download runs
+   also queues another download, inbox and lookup, each with its own
+   token and list request. Both are harmless, but cheap to guard against.
+8. **Missing test (added).** `test_has_activity()` checked
+   `has_activity()` against files laid out with the same formula it uses,
+   and no test ran the inbox on a downloaded file.
+   `test_downloaded_activity_goes_through_the_inbox()` in
+   `test/GarminTest.cpp` downloads a FIT file that starts on October 31 in
+   Toronto (November 1 in UTC). It runs `process_inbox()` and checks that
+   the inbox is empty and `has_activity()` finds the activity. It also
+   checks that `find_newest()` titles it from the sidecar, and that a
+   second download requests only the list. It passes. To make this
+   possible, the FIT builder moved from `ActivityLoadTest.cpp` to
+   `test/TestFit.h`.
+9. **Missing test (added).** `test_download_request_from_a_key_binding()`:
+   Ctrl+G's binding passes `{"key", "modifier"}` as arguments. The
+   settings' `garmin.days` still applies, and the download isn't quiet.
+   Passes.
+10. **Missing test (added).** `test_unsigned_range()` in
+    `test/JSONTest.cpp`: a negative number doesn't convert to `u64` (as
+    activity IDs are read), 256 isn't a `u8`, and ±1e19 isn't an
+    `int64_t`. `test_empty_entry()` in `test/ZipTest.cpp` now also unzips
+    a deflated empty entry. All pass.
+11. **Suggestion.** The README says SweatTrails reads Garmin Connect, but
+    not how to set it up: where the key goes, `chmod 600`, `garmin.days`
+    and Ctrl+G. Today only the in-app message says so.
+12. **Note, not for this feature.** `has_activity()` and the inbox both
+    pick the month directory in local time
+    (`DateTime::from_timestamp()`). So an activity near a month boundary
+    that was filed in another time zone isn't found. It is downloaded
+    again, and the inbox files a second copy under the other month. This
+    was already true of the inbox, for any file.
