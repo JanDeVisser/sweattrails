@@ -270,6 +270,94 @@ void test_only_maxima_can_be_clicked()
     }
 }
 
+// As test_analyze_max_at_is_a_record_index(), for power.
+void test_analyze_power_max_at_is_a_record_index()
+{
+    std::vector<record> records(8);
+    for (auto [ix, power] : std::vector<std::pair<size_t, u16>> { { 0, 100 }, { 1, 100 }, { 3, 100 }, { 4, 400 }, { 6, 100 }, { 7, 100 } }) {
+        records[ix].power = power;
+    }
+    Segment segment;
+    segment.analyze(records, true);
+    // Power samples are records 0, 1, 3, 4, 6 and 7. The windows end at 3
+    // (100), 4 (200), 6 (200) and 7 (100).
+    CHECK_EQ(segment.computed_power_range.max(), 200);
+    CHECK_EQ(segment.computed_power_range.range->max_at, 4uz);
+    CHECK_EQ(records[4].power.value_or(0), 200);
+}
+
+// A maximum of exactly 10 is realistic.
+void test_a_maximum_of_10_is_shown()
+{
+    TestActivity hr { sport::Running, records_with(40, set_hr, 0, u8 { 10 }, u8 { 10 }) };
+    CHECK_EQ(hr.value("Max HR"), "10 bpm");
+
+    TestActivity power { sport::Cycling, records_with(40, set_power, 0, u16 { 10 }, u16 { 10 }) };
+    CHECK_EQ(power.value("Max Power"), "10 W");
+    CHECK_EQ(power.value("NP"), "10 W");
+}
+
+// One 3000 W spike in 4000 records of 0 W: the average rounds down to 0 W,
+// but there is an NP. VI would divide by the average.
+void test_no_vi_without_average_power()
+{
+    TestActivity t { sport::Cycling, records_with(4000, set_power, 2000, u16 { 0 }, u16 { 3000 }) };
+    CHECK_EQ(t.value("Avg Power"), "0 W");
+    CHECK_EQ(t.value("Max Power"), "1000 W");
+    CHECK_EQ(t.mark_at("Max Power"), 2000uz);
+    CHECK_EQ(t.value("NP"), "29 W");
+    CHECK_EQ(t.value("IF"), "0.11");
+    CHECK(!t.field("VI"));
+}
+
+// With a distance but no moving time and no speed samples, there's neither
+// an average nor a maximum, and so no line for them.
+void test_no_pace_line_without_time_or_speed()
+{
+    TestActivity t { sport::Running, std::vector<record>(10) };
+    t.activity.segment.distance = 5000;
+    t.activity.segment.moving = Duration { };
+    auto const lines = data_fields(t.activity);
+    CHECK_EQ(lines.size(), 2uz);
+    CHECK_EQ(t.value("Distance"), "5.00 km");
+    CHECK(!t.field("Avg Pace"));
+    CHECK(!t.field("Max Pace"));
+}
+
+// A record without speed, as when GPS drops out, doesn't shift the mark.
+void test_max_speed_with_gaps()
+{
+    std::vector<record> records(6);
+    records[0].speed = 3.0f;
+    records[2].speed = 4.0f;
+    records[5].speed = 3.5f;
+    TestActivity t { sport::Running, records };
+    t.activity.segment.distance = 10000;
+    CHECK_EQ(t.value("Max Pace"), "4:10 min/km");
+    CHECK_EQ(t.mark_at("Max Pace"), 2uz);
+}
+
+void test_elevation()
+{
+    std::vector<record> records(5);
+    for (auto [ix, altitude] : std::vector<std::pair<size_t, float32>> { { 0, 120.4f }, { 1, 80.9f }, { 3, 250.0f }, { 4, 100.0f } }) {
+        records[ix].altitude = altitude;
+    }
+    TestActivity t { sport::Running, records };
+    CHECK_EQ(t.value("Min elevation"), "80 m");
+    CHECK_EQ(t.value("Max elevation"), "250 m");
+    CHECK_EQ(t.mark_at("Max elevation"), TestActivity::NoMark);
+}
+
+// A pace of a day or more per km, as for a gym session where the watch
+// recorded a few meters, lost the days: 5 m in 50:00 is 10000 min/km.
+void test_pace_of_more_than_a_day()
+{
+    TestActivity t { sport::Training, std::vector<record>(10) };
+    t.activity.segment.distance = 5;
+    CHECK_EQ(t.value("Avg Pace"), "10000:00 min/km");
+}
+
 }
 
 int main()
@@ -287,5 +375,12 @@ int main()
     test_only_times_without_data();
     test_moving_time_of_an_hour();
     test_only_maxima_can_be_clicked();
+    test_analyze_power_max_at_is_a_record_index();
+    test_a_maximum_of_10_is_shown();
+    test_no_vi_without_average_power();
+    test_no_pace_line_without_time_or_speed();
+    test_max_speed_with_gaps();
+    test_elevation();
+    test_pace_of_more_than_a_day();
     return ST::Test::test_result();
 }
