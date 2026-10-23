@@ -41,17 +41,29 @@ Three additions to the activity display, after
 - A line Avg Cadence | Max Cadence, and a line Min Cadence, after the
   power lines. Shown when the activity has cadence (a maximum of at least
   10, as for HR and power).
-- Rides in rpm, all other sports in steps per minute (spm), which is the
-  FIT cadence doubled.
+- Rides in rpm. Running, walking and hiking in steps per minute (spm),
+  which is the FIT cadence doubled. Other sports, such as swimming or
+  rowing, as FIT records them, in strokes per minute, shown as "/min".
 - Max Cadence and Min Cadence can be clicked, and mark the record where
   they happened, as Max HR does.
-- Min Cadence is the lowest 3-sample average whose samples are all
-  non-zero, and that isn't within 5 records of a zero, before or after. A
-  zero is coasting or standing still, and the records around it are
-  slowing down to it or getting going again, which isn't the cadence
-  anyone rode or ran at.
-- Avg Cadence leaves out the zeros, as Garmin shows it by default: it's
-  the average while pedaling or running, not pulled down by coasting.
+- A record counts as pedaling (or running) when its cadence is at least 20
+  (as in the FIT file, so 40 spm for a run) and, if it has power, its
+  power is at least 20 W. Cadence sensors don't just drop to zero when
+  the rider stops pedaling: on Jan's May 11 ride only 48 of 9313 samples
+  were zero. Coasting reads as cadence decaying to 1 to 5 rpm over
+  several seconds, as a reading held for many seconds (40 rpm at 1 to 4
+  W, slowing from 38 to 13 km/h), and, when pedaling again, as a lagging
+  6 to 13 rpm while the power meter already reads 60 to 120 W. The power
+  shows whether the rider pedals; activities without it rely on the
+  cadence floor alone.
+- Min Cadence is the lowest average over 30 consecutive records that are
+  all pedaling: the slowest cadence held for about 30 seconds. On the May
+  11 ride that's 59.5 rpm at 192 W, where the first version of this rule
+  (the lowest 3 samples away from zeros) found 1 rpm while coasting. It
+  marks the record that ends those 30. A short activity, or lap, may have
+  no such stretch, and then has no Min Cadence.
+- Avg Cadence is the average while pedaling (81 rpm on the May 11 ride,
+  where leaving out only the zeros gives 75).
 
 ### Summary under the title
 
@@ -106,33 +118,41 @@ altitude moves the reference down.
 
 **Cadence.** `computed_cadence_range` stays as it is: it smooths the
 records' cadence, as for HR and power, and gives Max Cadence and its
-`max_at`. Min and average need the raw samples, with the zeros, so
-`analyze()` collects them (before it smooths the records) and hands them
+`max_at`. Min and average need the recorded cadence and power, so
+`analyze()` collects them, before it smooths the records, and hands them
 to a free function, in `storage/Activity.h`:
 
 ```cpp
 struct CadenceSample {
-    size_t at;      // the record's index
-    u8     cadence; // as in the FIT file: rpm, or strides per minute
+    size_t             at;      // the record's index
+    u8                 cadence; // as in the FIT file: rpm, or strides per minute
+    std::optional<u16> power;   // the record's power, if it has one
 };
 
 struct CadenceStats {
-    float32               average { 0 }; // without the zeros
-    std::optional<u8>     min { };       // see the spec for which windows count
-    size_t                min_at { 0 };
+    float32                average { 0 }; // while pedaling
+    std::optional<float32> min { };       // over 30 records of pedaling
+    size_t                 min_at { 0 };
 };
 
 std::optional<CadenceStats> cadence_stats(std::span<CadenceSample const> samples);
 ```
 
-It returns nothing without a non-zero sample. `min` is the lowest average
-of 3 consecutive samples that are all non-zero, none of them within 5
-records of a zero sample; there may be no such window, and then there's no
-Min Cadence. `min_at` is the record that completes the window, as for the
-smoothed ranges. The result goes in a new `Segment::cadence`.
+`PedalingCadence` (20), `PedalingPower` (20 W) and `MinCadenceRecords`
+(30) are constants in `Activity.h`. `cadence_stats()` returns nothing when
+no sample is pedaling. `min` is the lowest average of 30 samples of
+consecutive records, all pedaling; a record without cadence breaks the
+run. `min_at` is the last of those records. The result goes in a new
+`Segment::cadence`.
 
-`data_fields()` doubles the cadence for everything that isn't a ride, and
-says "rpm" or "spm".
+`data_fields()` says "rpm" for rides, doubles the cadence for running,
+walking and hiking and says "spm", and shows other sports' cadence as it
+is, with "/min".
+
+**Laps are analyzed before the activity's own segment.** The activity's
+`analyze()` writes the smoothed values back into the records, and the laps
+analyze the same records. Analyzing them first gives them the recorded
+values, as the activity's segment gets.
 
 **TSS** in `analyze()` uses `moving.elapsed` instead of `elapsed.elapsed`.
 
@@ -161,11 +181,15 @@ In `test/DataFieldsTest.cpp`:
   nothing; a steady climb counts all but at most the last 3 m; a climb, a
   descent and another climb; records without altitude are skipped.
 - `Segment::climb()` prefers `total_ascent`.
-- `cadence_stats()`: the average leaves out zeros; the minimum skips
-  windows with a zero, and windows within 5 records of one, on both sides;
-  no minimum when no window is left; nothing without non-zero samples;
-  `min_at`.
-- `data_fields()`: cadence in rpm for rides and doubled in spm for runs,
+- `cadence_stats()`: the average is over the samples that are pedaling;
+  a sample below 20, or with power below 20 W, isn't; the minimum is over
+  30 consecutive records, all pedaling, and a record without cadence
+  breaks the run; no minimum without 30 such records; nothing when no
+  sample is pedaling; `min_at`. Also the May 11 ride's coasting patterns:
+  a decay to 1 rpm, and a held reading at low power.
+- A lap's cadence is from the recorded values, not the smoothed ones.
+- `data_fields()`: cadence in rpm for rides, doubled in spm for runs,
+  walks and hikes, and as recorded in "/min" for other sports,
   Max and Min Cadence clickable with their records, no cadence lines below
   the realistic maximum; the first line is only Elapsed Time.
 - TSS over the moving time.

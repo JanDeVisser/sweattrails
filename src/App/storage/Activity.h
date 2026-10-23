@@ -36,23 +36,33 @@ constexpr float32 JANS_FTP = 275;
 // so that noise in the altitude doesn't add to the climb.
 constexpr float32 ClimbHysteresis = 3.0f;
 
+// A record counts as pedaling, or running, with at least this cadence, as
+// in the FIT file, and, if it has power, at least this power. Coasting
+// doesn't just read as zero: the cadence decays over a few seconds, is
+// held at its last reading, or lags behind when pedaling again.
+constexpr u8  PedalingCadence = 20;
+constexpr u16 PedalingPower = 20;
+
+// Min Cadence is the lowest average over this many consecutive records,
+// all pedaling.
+constexpr size_t MinCadenceRecords = 30;
+
 struct CadenceSample {
-    size_t at { 0 };      // The record's index
-    u8     cadence { 0 }; // As in the FIT file: rpm, or strides per minute
+    size_t             at { 0 };      // The record's index
+    u8                 cadence { 0 }; // As in the FIT file: rpm, or strides per minute
+    std::optional<u16> power { };     // The record's power, if it has one
 };
 
 struct CadenceStats {
-    float32           average { 0 }; // Without the zeros
-    std::optional<u8> min { };       // Not near zeros, see cadence_stats()
-    size_t            min_at { 0 };
+    float32                average { 0 }; // While pedaling
+    std::optional<float32> min { };       // Over MinCadenceRecords of pedaling
+    size_t                 min_at { 0 };
 };
 
-// The average cadence, leaving out zeros, which are coasting or standing
-// still, and the lowest average of 3 consecutive samples. The minimum only
-// counts windows whose samples are all more than 5 records from a zero, so
-// that slowing down to a stop and getting going again don't count. min_at
-// is the record that completes the window. Nothing without a non-zero
-// sample.
+// The average cadence while pedaling, and the lowest average over
+// MinCadenceRecords consecutive records that are all pedaling. A record
+// without a sample breaks the run. min_at is the last record of the
+// lowest run. Nothing when no sample is pedaling.
 std::optional<CadenceStats> cadence_stats(std::span<CadenceSample const> samples);
 
 struct Segment {

@@ -34,10 +34,14 @@ bool eql_ignore_case(std::string_view const &lhs, std::string_view const &rhs)
 
 std::optional<CadenceStats> cadence_stats(std::span<CadenceSample const> samples)
 {
+    auto const pedaling = [](CadenceSample const &sample) {
+        return sample.cadence >= PedalingCadence && sample.power.value_or(PedalingPower) >= PedalingPower;
+    };
+
     u64    sum = 0;
     size_t count = 0;
     for (auto const &sample : samples) {
-        if (sample.cadence > 0) {
+        if (pedaling(sample)) {
             sum += sample.cadence;
             ++count;
         }
@@ -47,29 +51,32 @@ std::optional<CadenceStats> cadence_stats(std::span<CadenceSample const> samples
     }
     CadenceStats stats { .average = static_cast<float32>(sum) / static_cast<float32>(count) };
 
-    // The samples are in record order, so their zeros are too.
-    std::vector<size_t> zeros;
-    for (auto const &sample : samples) {
-        if (sample.cadence == 0) {
-            zeros.push_back(sample.at);
-        }
-    }
-    // True for a zero itself too.
-    auto const near_zero = [&zeros](CadenceSample const &sample) {
-        constexpr size_t Margin = 5;
-        auto const       first = std::ranges::lower_bound(zeros, (sample.at > Margin) ? sample.at - Margin : 0);
-        return first != zeros.end() && *first <= sample.at + Margin;
-    };
-
-    for (size_t end = 3; end <= samples.size(); ++end) {
-        auto const window = samples.subspan(end - 3, 3);
-        if (std::ranges::any_of(window, near_zero)) {
+    // A rolling sum over the current run of consecutive pedaling records.
+    u64    run_sum = 0;
+    size_t run_length = 0;
+    for (size_t ix = 0; ix < samples.size(); ++ix) {
+        auto const &sample = samples[ix];
+        bool const  follows = ix > 0 && samples[ix - 1].at + 1 == sample.at;
+        if (!pedaling(sample)) {
+            run_sum = 0;
+            run_length = 0;
             continue;
         }
-        auto const average = static_cast<u8>((window[0].cadence + window[1].cadence + window[2].cadence) / 3);
-        if (!stats.min || average < *stats.min) {
-            stats.min = average;
-            stats.min_at = window[2].at;
+        if (!follows) {
+            run_sum = 0;
+            run_length = 0;
+        }
+        run_sum += sample.cadence;
+        ++run_length;
+        if (run_length > MinCadenceRecords) {
+            run_sum -= samples[ix - MinCadenceRecords].cadence;
+        }
+        if (run_length >= MinCadenceRecords) {
+            auto const average = static_cast<float32>(run_sum) / static_cast<float32>(MinCadenceRecords);
+            if (!stats.min || average < *stats.min) {
+                stats.min = average;
+                stats.min_at = sample.at;
+            }
         }
     }
     return stats;
@@ -84,7 +91,8 @@ void Segment::analyze(std::span<record> records, bool smooth)
     // As recorded, before they're smoothed.
     std::vector<CadenceSample> cadence_samples;
     for (size_t ix = 0; ix < records.size(); ++ix) {
-        auto &rec = records[ix];
+        auto      &rec = records[ix];
+        auto const recorded_power = rec.power;
         if (rec.speed) {
             auto const smoothed = computed_speed_range.extend(*rec.speed, ix);
             if (smooth) {
@@ -99,7 +107,7 @@ void Segment::analyze(std::span<record> records, bool smooth)
             }
         }
         if (rec.cadence) {
-            cadence_samples.push_back(CadenceSample { .at = ix, .cadence = *rec.cadence });
+            cadence_samples.push_back(CadenceSample { .at = ix, .cadence = *rec.cadence, .power = recorded_power });
             auto const smoothed = computed_cadence_range.extend(*rec.cadence, ix);
             if (smooth) {
                 *rec.cadence = smoothed;

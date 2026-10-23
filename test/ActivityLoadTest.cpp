@@ -211,8 +211,10 @@ void test_laps_work_out_their_own_climb()
 }
 
 // The session's cadence leaves out the stop at record 5: the average is
-// 90, and the lowest window away from the stop is 90 too. A lap's cadence
-// should be worked out from the same, recorded, cadence.
+// 90, and so is the minimum, over the 30 records after the stop. A lap's
+// cadence should be worked out from the same, recorded, cadence: smoothed,
+// the records after the stop would be pedaling at 60, and pull the
+// average down. A lap of 20 records has no minimum.
 void test_lap_cadence_is_from_the_recorded_cadence()
 {
     LoadedActivity t { two_laps() };
@@ -221,7 +223,8 @@ void test_lap_cadence_is_from_the_recorded_cadence()
     CHECK(session.has_value());
     if (session) {
         CHECK_EQ(session->average, 90.0f);
-        CHECK_EQ(session->min.value_or(0), 90);
+        CHECK_EQ(session->min.value_or(0), 90.0f);
+        CHECK_EQ(session->min_at, 35uz);
     }
     if (t.activity.laps.empty()) {
         CHECK(!t.activity.laps.empty());
@@ -231,7 +234,7 @@ void test_lap_cadence_is_from_the_recorded_cadence()
     CHECK(lap.has_value());
     if (lap) {
         CHECK_EQ(lap->average, 90.0f);
-        CHECK_EQ(lap->min.value_or(0), 90);
+        CHECK(!lap->min.has_value());
     }
 }
 

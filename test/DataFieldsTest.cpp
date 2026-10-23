@@ -230,130 +230,163 @@ void set_cadence(record &rec, u8 cadence)
     rec.cadence = cadence;
 }
 
-// One sample per record, from record 0.
-std::vector<CadenceSample> cadence_samples(std::vector<u8> const &cadences)
+// One sample per record, from record `from`, without power.
+std::vector<CadenceSample> cadence_samples(std::vector<u8> const &cadences, size_t from = 0)
 {
     std::vector<CadenceSample> samples;
     for (size_t ix = 0; ix < cadences.size(); ++ix) {
-        samples.push_back(CadenceSample { .at = ix, .cadence = cadences[ix] });
+        samples.push_back(CadenceSample { .at = from + ix, .cadence = cadences[ix] });
     }
     return samples;
 }
 
-void test_cadence_average_leaves_out_zeros()
+// `count` samples of `cadence` at `power`, after the last of `samples`.
+void add_samples(std::vector<CadenceSample> &samples, size_t count, u8 cadence, std::optional<u16> power = { })
 {
-    auto const stats = cadence_stats(cadence_samples({ 80, 0, 0, 90 }));
-    CHECK(stats.has_value());
-    if (stats) {
-        CHECK_EQ(stats->average, 85.0f);
+    auto const from = samples.empty() ? 0 : samples.back().at + 1;
+    for (size_t ix = 0; ix < count; ++ix) {
+        samples.push_back(CadenceSample { .at = from + ix, .cadence = cadence, .power = power });
     }
 }
 
-// Record 10 is a stop. The slowing down before it (40 at record 6) and the
-// getting going after it (30 at record 13) are within 5 records, and don't
-// count. The 60 at record 22 does: the windows ending at 22, 23 and 24
-// average 80.
-void test_cadence_min_skips_stops()
-{
-    std::vector<u8> cadences(30, 90);
-    cadences[6] = 40;
-    cadences[10] = 0;
-    cadences[13] = 30;
-    cadences[22] = 60;
-    auto const stats = cadence_stats(cadence_samples(cadences));
-    CHECK(stats.has_value() && stats->min.has_value());
-    if (stats && stats->min) {
-        CHECK_EQ(static_cast<int>(*stats->min), 80);
-        CHECK_EQ(stats->min_at, 22uz);
-    }
-}
-
-// Every window is within 5 records of the zero at record 3.
-void test_no_cadence_min_near_stops_only()
-{
-    auto const stats = cadence_stats(cadence_samples({ 90, 85, 80, 0, 80, 85, 90 }));
-    CHECK(stats.has_value());
-    if (stats) {
-        CHECK(!stats->min.has_value());
-        CHECK_EQ(stats->average, 85.0f);
-    }
-}
-
-// 30 samples of 90, one per record, with a stop at record `zero_at` and a
-// 40 at record `low_at`.
-std::optional<CadenceStats> stop_and_low(size_t zero_at, size_t low_at)
-{
-    std::vector<u8> cadences(30, 90);
-    cadences[zero_at] = 0;
-    cadences[low_at] = 40;
-    return cadence_stats(cadence_samples(cadences));
-}
-
-void check_min(std::optional<CadenceStats> const &stats, int min, size_t min_at)
+void check_min(std::optional<CadenceStats> const &stats, float32 min, size_t min_at)
 {
     CHECK(stats.has_value() && stats->min.has_value());
     if (stats && stats->min) {
-        CHECK_EQ(static_cast<int>(*stats->min), min);
+        CHECK_EQ(*stats->min, min);
         CHECK_EQ(stats->min_at, min_at);
     }
 }
 
-// Exactly 5 records from a stop is near it, 6 isn't, before and after.
-// A window with the 40 averages (90 + 90 + 40) / 3 = 73.
-void test_cadence_min_margin_is_5_records()
+// Below 20 isn't pedaling: the 0 and the 19 are left out, the 20 isn't.
+void test_cadence_average_while_pedaling()
 {
-    // Record 4 is 6 before the stop: the window ending at 4 counts.
-    check_min(stop_and_low(10, 4), 73, 4);
-    // Record 5 is 5 before: no window with it counts.
-    check_min(stop_and_low(10, 5), 90, 2);
-    // Record 15 is 5 after.
-    check_min(stop_and_low(10, 15), 90, 2);
-    // Record 16 is 6 after: the window from 16 to 18 counts.
-    check_min(stop_and_low(10, 16), 73, 18);
+    auto const stats = cadence_stats(cadence_samples({ 80, 0, 19, 90, 20, 110 }));
+    CHECK(stats.has_value());
+    if (stats) {
+        CHECK_EQ(stats->average, 75.0f);
+    }
 }
 
-// A stop in the first 5 records: the margin before it is cut off at
-// record 0.
-void test_cadence_min_with_a_stop_at_the_start()
-{
-    // Records 0 to 6 are within 5 of the stop at 1, so the first window
-    // that counts is 7 to 9.
-    check_min(stop_and_low(1, 7), 73, 9);
-    check_min(stop_and_low(0, 3), 90, 8);
-}
-
-// The margin is in records, not in samples: records without cadence, as in
-// a sensor dropout, put the samples after them further from the stop.
-void test_cadence_min_margin_counts_records()
+// Below 20 W isn't pedaling, whatever the cadence; a sample without power
+// only needs the cadence.
+void test_cadence_average_leaves_out_low_power()
 {
     std::vector<CadenceSample> samples;
-    for (size_t at = 0; at < 10; ++at) {
-        samples.push_back(CadenceSample { .at = at, .cadence = static_cast<u8>((at == 9) ? 0 : 90) });
+    add_samples(samples, 1, 90, 200);
+    add_samples(samples, 1, 90, 19);
+    add_samples(samples, 1, 60, 0);
+    add_samples(samples, 1, 50, 20);
+    add_samples(samples, 1, 70);
+    auto const stats = cadence_stats(samples);
+    CHECK(stats.has_value());
+    if (stats) {
+        CHECK_EQ(stats->average, 70.0f);
     }
-    for (size_t at = 20; at < 30; ++at) {
-        samples.push_back(CadenceSample { .at = at, .cadence = static_cast<u8>((at == 20) ? 40 : 90) });
-    }
-    // Record 20 is the sample after the stop, but 11 records from it.
-    check_min(cadence_stats(samples), 73, 22);
 }
 
-// A single sample, or two, make no window of 3.
-void test_no_cadence_min_with_fewer_than_3_samples()
+// 60 records of 90 with 10 of 60 from record 30: the windows of 30 that
+// hold all ten average (20 * 90 + 10 * 60) / 30 = 80, the first ending at
+// record 39.
+void test_cadence_min_over_30_records()
 {
-    auto const one = cadence_stats(cadence_samples({ 90 }));
-    CHECK(one.has_value());
-    if (one) {
-        CHECK_EQ(one->average, 90.0f);
-        CHECK(!one->min.has_value());
-    }
-    auto const two = cadence_stats(cadence_samples({ 90, 80 }));
-    CHECK(two.has_value() && !two->min.has_value());
+    std::vector<CadenceSample> samples;
+    add_samples(samples, 30, 90);
+    add_samples(samples, 10, 60);
+    add_samples(samples, 20, 90);
+    check_min(cadence_stats(samples), 80.0f, 39);
 }
 
-void test_no_cadence_stats_without_cadence()
+// As on the May 11 ride: coasting reads as cadence decaying over several
+// seconds, then lagging behind the power when pedaling again.
+void test_cadence_min_leaves_out_coasting()
 {
-    CHECK(!cadence_stats(cadence_samples({ 0, 0, 0, 0 })).has_value());
+    std::vector<CadenceSample> samples;
+    add_samples(samples, 30, 90, 200);
+    for (u8 const cadence : { 60, 40, 25, 15, 8, 4, 2, 1, 1 }) {
+        add_samples(samples, 1, cadence, 0);
+    }
+    for (u8 const cadence : { 6, 9, 13 }) {
+        add_samples(samples, 1, cadence, 100);
+    }
+    add_samples(samples, 30, 90, 200);
+    check_min(cadence_stats(samples), 90.0f, 29);
+}
+
+// Also from the May 11 ride: the sensor holds its last reading, 40 rpm,
+// for many seconds while coasting, at a few watts.
+void test_cadence_min_leaves_out_a_held_reading()
+{
+    std::vector<CadenceSample> samples;
+    add_samples(samples, 30, 90, 200);
+    add_samples(samples, 40, 40, 3);
+    add_samples(samples, 30, 90, 200);
+    auto const stats = cadence_stats(samples);
+    check_min(stats, 90.0f, 29);
+    if (stats) {
+        CHECK_EQ(stats->average, 90.0f);
+    }
+}
+
+// Without power, the cadence floor is all there is: 30 records of 40 do
+// count.
+void test_cadence_min_without_power()
+{
+    std::vector<CadenceSample> samples;
+    add_samples(samples, 30, 90);
+    add_samples(samples, 30, 40);
+    check_min(cadence_stats(samples), 40.0f, 59);
+}
+
+// A stop, or a record without cadence, breaks the run: neither side has 30
+// records, and there's no minimum.
+void test_no_cadence_min_across_a_break()
+{
+    std::vector<CadenceSample> stop;
+    add_samples(stop, 20, 90);
+    add_samples(stop, 1, 0);
+    add_samples(stop, 20, 90);
+    auto const stopped = cadence_stats(stop);
+    CHECK(stopped.has_value() && !stopped->min.has_value());
+
+    auto dropout = cadence_samples(std::vector<u8>(20, 90));
+    auto after = cadence_samples(std::vector<u8>(20, 90), 21);
+    dropout.insert(dropout.end(), after.begin(), after.end());
+    auto const dropped = cadence_stats(dropout);
+    CHECK(dropped.has_value() && !dropped->min.has_value());
+}
+
+// A run starts again after a break: the 30 records of 90 after a stop
+// count, the 20 of 60 before it don't.
+void test_cadence_min_after_a_break()
+{
+    std::vector<CadenceSample> samples;
+    add_samples(samples, 20, 60);
+    add_samples(samples, 1, 0);
+    add_samples(samples, 30, 90);
+    check_min(cadence_stats(samples), 90.0f, 50);
+}
+
+// 29 records make no window of 30, but they have an average.
+void test_no_cadence_min_with_fewer_than_30_records()
+{
+    auto const stats = cadence_stats(cadence_samples(std::vector<u8>(29, 90)));
+    CHECK(stats.has_value());
+    if (stats) {
+        CHECK_EQ(stats->average, 90.0f);
+        CHECK(!stats->min.has_value());
+    }
+    auto const thirty = cadence_stats(cadence_samples(std::vector<u8>(30, 90)));
+    check_min(thirty, 90.0f, 29);
+}
+
+void test_no_cadence_stats_without_pedaling()
+{
+    CHECK(!cadence_stats(cadence_samples({ 0, 0, 19, 0 })).has_value());
     CHECK(!cadence_stats({ }).has_value());
+    std::vector<CadenceSample> coasting;
+    add_samples(coasting, 10, 90, 0);
+    CHECK(!cadence_stats(coasting).has_value());
 }
 
 void test_ride_shows_speed()
@@ -398,22 +431,22 @@ void test_heart_rate()
     CHECK_EQ(t.mark_at("Avg HR"), TestActivity::NoMark);
 }
 
-// 40 records at 85 rpm, with 100 at record 20: smoothed, the windows ending
-// at 20, 21 and 22 average 90. The average is (39 * 85 + 100) / 40 = 85.4,
-// and the lowest window is the first, ending at record 2.
+// 60 records at 85 rpm, with 121 at record 50: smoothed, the windows ending
+// at 50, 51 and 52 average 97. The average is (59 * 85 + 121) / 60 = 85.6,
+// and the lowest 30 records are the first, ending at record 29.
 std::vector<record> cadence_records()
 {
-    return records_with(40, set_cadence, 20, u8 { 85 }, u8 { 100 });
+    return records_with(60, set_cadence, 50, u8 { 85 }, u8 { 121 });
 }
 
 void test_ride_cadence_in_rpm()
 {
     TestActivity t { sport::Cycling, cadence_records() };
-    CHECK_EQ(t.value("Avg Cadence"), "85 rpm");
-    CHECK_EQ(t.value("Max Cadence"), "90 rpm");
-    CHECK_EQ(t.mark_at("Max Cadence"), 20uz);
+    CHECK_EQ(t.value("Avg Cadence"), "86 rpm");
+    CHECK_EQ(t.value("Max Cadence"), "97 rpm");
+    CHECK_EQ(t.mark_at("Max Cadence"), 50uz);
     CHECK_EQ(t.value("Min Cadence"), "85 rpm");
-    CHECK_EQ(t.mark_at("Min Cadence"), 2uz);
+    CHECK_EQ(t.mark_at("Min Cadence"), 29uz);
     CHECK_EQ(t.mark_at("Avg Cadence"), TestActivity::NoMark);
 }
 
@@ -422,7 +455,7 @@ void test_run_cadence_in_spm()
 {
     TestActivity t { sport::Running, cadence_records() };
     CHECK_EQ(t.value("Avg Cadence"), "171 spm");
-    CHECK_EQ(t.value("Max Cadence"), "180 spm");
+    CHECK_EQ(t.value("Max Cadence"), "194 spm");
     CHECK_EQ(t.value("Min Cadence"), "170 spm");
 }
 
@@ -664,14 +697,16 @@ int main()
     test_analyze_steady_climb();
     test_analyze_climb_threshold();
     test_climb_prefers_the_device();
-    test_cadence_average_leaves_out_zeros();
-    test_cadence_min_skips_stops();
-    test_no_cadence_min_near_stops_only();
-    test_no_cadence_stats_without_cadence();
-    test_cadence_min_margin_is_5_records();
-    test_cadence_min_with_a_stop_at_the_start();
-    test_cadence_min_margin_counts_records();
-    test_no_cadence_min_with_fewer_than_3_samples();
+    test_cadence_average_while_pedaling();
+    test_cadence_average_leaves_out_low_power();
+    test_cadence_min_over_30_records();
+    test_cadence_min_leaves_out_coasting();
+    test_cadence_min_leaves_out_a_held_reading();
+    test_cadence_min_without_power();
+    test_no_cadence_min_across_a_break();
+    test_cadence_min_after_a_break();
+    test_no_cadence_min_with_fewer_than_30_records();
+    test_no_cadence_stats_without_pedaling();
     test_ride_cadence_in_rpm();
     test_run_cadence_in_spm();
     test_unrealistic_cadence_is_not_shown();
