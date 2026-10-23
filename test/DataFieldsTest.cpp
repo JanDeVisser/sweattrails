@@ -131,6 +131,16 @@ void test_analyze_steady_climb()
     CHECK_EQ(climb_of(altitudes), 9.0f);
 }
 
+// At least 3 m counts: exactly 3 m does, just under doesn't. A descent
+// moves the point the next rise is measured from down.
+void test_analyze_climb_threshold()
+{
+    CHECK_EQ(climb_of({ 100.0f, 103.0f }), 3.0f);
+    CHECK_EQ(climb_of({ 100.0f, 102.9f }), 0.0f);
+    CHECK_EQ(climb_of({ 100.0f, 90.0f, 93.0f }), 3.0f);
+    CHECK_EQ(climb_of({ 100.0f, 102.0f, 101.0f, 104.0f }), 4.0f);
+}
+
 void test_climb_prefers_the_device()
 {
     Segment segment;
@@ -267,6 +277,77 @@ void test_no_cadence_min_near_stops_only()
         CHECK(!stats->min.has_value());
         CHECK_EQ(stats->average, 85.0f);
     }
+}
+
+// 30 samples of 90, one per record, with a stop at record `zero_at` and a
+// 40 at record `low_at`.
+std::optional<CadenceStats> stop_and_low(size_t zero_at, size_t low_at)
+{
+    std::vector<u8> cadences(30, 90);
+    cadences[zero_at] = 0;
+    cadences[low_at] = 40;
+    return cadence_stats(cadence_samples(cadences));
+}
+
+void check_min(std::optional<CadenceStats> const &stats, int min, size_t min_at)
+{
+    CHECK(stats.has_value() && stats->min.has_value());
+    if (stats && stats->min) {
+        CHECK_EQ(static_cast<int>(*stats->min), min);
+        CHECK_EQ(stats->min_at, min_at);
+    }
+}
+
+// Exactly 5 records from a stop is near it, 6 isn't, before and after.
+// A window with the 40 averages (90 + 90 + 40) / 3 = 73.
+void test_cadence_min_margin_is_5_records()
+{
+    // Record 4 is 6 before the stop: the window ending at 4 counts.
+    check_min(stop_and_low(10, 4), 73, 4);
+    // Record 5 is 5 before: no window with it counts.
+    check_min(stop_and_low(10, 5), 90, 2);
+    // Record 15 is 5 after.
+    check_min(stop_and_low(10, 15), 90, 2);
+    // Record 16 is 6 after: the window from 16 to 18 counts.
+    check_min(stop_and_low(10, 16), 73, 18);
+}
+
+// A stop in the first 5 records: the margin before it is cut off at
+// record 0.
+void test_cadence_min_with_a_stop_at_the_start()
+{
+    // Records 0 to 6 are within 5 of the stop at 1, so the first window
+    // that counts is 7 to 9.
+    check_min(stop_and_low(1, 7), 73, 9);
+    check_min(stop_and_low(0, 3), 90, 8);
+}
+
+// The margin is in records, not in samples: records without cadence, as in
+// a sensor dropout, put the samples after them further from the stop.
+void test_cadence_min_margin_counts_records()
+{
+    std::vector<CadenceSample> samples;
+    for (size_t at = 0; at < 10; ++at) {
+        samples.push_back(CadenceSample { .at = at, .cadence = static_cast<u8>((at == 9) ? 0 : 90) });
+    }
+    for (size_t at = 20; at < 30; ++at) {
+        samples.push_back(CadenceSample { .at = at, .cadence = static_cast<u8>((at == 20) ? 40 : 90) });
+    }
+    // Record 20 is the sample after the stop, but 11 records from it.
+    check_min(cadence_stats(samples), 73, 22);
+}
+
+// A single sample, or two, make no window of 3.
+void test_no_cadence_min_with_fewer_than_3_samples()
+{
+    auto const one = cadence_stats(cadence_samples({ 90 }));
+    CHECK(one.has_value());
+    if (one) {
+        CHECK_EQ(one->average, 90.0f);
+        CHECK(!one->min.has_value());
+    }
+    auto const two = cadence_stats(cadence_samples({ 90, 80 }));
+    CHECK(two.has_value() && !two->min.has_value());
 }
 
 void test_no_cadence_stats_without_cadence()
@@ -581,11 +662,16 @@ int main()
     test_analyze_climb();
     test_analyze_climb_ignores_jitter();
     test_analyze_steady_climb();
+    test_analyze_climb_threshold();
     test_climb_prefers_the_device();
     test_cadence_average_leaves_out_zeros();
     test_cadence_min_skips_stops();
     test_no_cadence_min_near_stops_only();
     test_no_cadence_stats_without_cadence();
+    test_cadence_min_margin_is_5_records();
+    test_cadence_min_with_a_stop_at_the_start();
+    test_cadence_min_margin_counts_records();
+    test_no_cadence_min_with_fewer_than_3_samples();
     test_ride_cadence_in_rpm();
     test_run_cadence_in_spm();
     test_unrealistic_cadence_is_not_shown();
