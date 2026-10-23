@@ -24,7 +24,7 @@ fs::path const Icons = fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "icons";
 
 void check_icon(sport the_sport, std::optional<sub_sport> the_sub_sport, std::string_view expected)
 {
-    auto const icon = sport_icon(the_sport, the_sub_sport);
+    auto const icon = sport_icon_file(the_sport, the_sub_sport);
     CHECK_EQ(icon, expected);
     // A typo in a name, or a path in front of it, and the icon isn't found.
     CHECK(fs::exists(Icons / icon));
@@ -84,7 +84,7 @@ void test_every_sport_has_an_icon()
 #undef S
     for (auto const the_sport : sports) {
         for (auto const &the_sub_sport : sub_sports) {
-            CHECK(fs::exists(Icons / sport_icon(the_sport, the_sub_sport)));
+            CHECK(fs::exists(Icons / sport_icon_file(the_sport, the_sub_sport)));
         }
     }
 }

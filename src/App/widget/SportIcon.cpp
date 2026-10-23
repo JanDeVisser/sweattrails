@@ -10,7 +10,7 @@ namespace ST {
 
 using namespace ST::FIT;
 
-std::string_view sport_icon(sport the_sport, std::optional<sub_sport> the_sub_sport)
+std::string_view sport_icon_file(sport the_sport, std::optional<sub_sport> the_sub_sport)
 {
     switch (the_sport) {
     case sport::Cycling:

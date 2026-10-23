@@ -192,7 +192,7 @@ void ActivityDataDisplay::set_activity(std::shared_ptr<DisplayedActivity> const 
     this->activity = activity;
     if (this->activity) {
         auto const &a = activity->activity;
-        auto const  icon = std::format(SWEATTRAILS_DATADIR "/icons/{}", ST::sport_icon(a.sport, a.sub_sport));
+        auto const  icon = std::format(SWEATTRAILS_DATADIR "/icons/{}", sport_icon_file(a.sport, a.sub_sport));
         sport_icon = LoadTexture(icon.c_str());
     }
 }

@@ -87,7 +87,7 @@ into a free function, so a test can reach it without a window, in a new
 
 ```cpp
 // The file name, in <datadir>/icons, of the 96 pixel icon for a sport.
-std::string_view sport_icon(sport the_sport, std::optional<FIT::sub_sport> the_sub_sport);
+std::string_view sport_icon_file(sport the_sport, std::optional<FIT::sub_sport> the_sub_sport);
 ```
 
 | Sport | Sub-sport | Icon |
@@ -136,9 +136,9 @@ header to include it next to another that does; it gets one.
 
 In a new `test/SportIconTest.cpp`:
 
-- `sport_icon()` for each row of the table, including the sub-sports, and
+- `sport_icon_file()` for each row of the table, including the sub-sports, and
   an unlisted sport getting hyperactive.
-- Every icon `sport_icon()` can return exists in `share/icons` in the
+- Every icon `sport_icon_file()` can return exists in `share/icons` in the
   source tree (the test gets the path as a compile definition). That
   catches the broken default, and a typo in a name.
 - `share/icons/sweattrails.png` and `sweattrails.icns` exist.
