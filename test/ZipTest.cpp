@@ -94,6 +94,19 @@ void test_truncated_and_corrupt()
     CHECK(!damaged.has_value());
 }
 
+// A damaged size, here 4 GB, is an error, not 4 GB of memory.
+void test_impossible_size()
+{
+    auto zip = make_zip({ { .name = "a.fit", .contents = Text, .deflated = true } });
+    // The size is at offset 24 in the central directory entry.
+    auto const entry = zip.find(std::string { "\x50\x4b\x01\x02", 4 });
+    CHECK(entry != std::string::npos);
+    for (size_t ix = 0; ix < 4; ++ix) {
+        zip[entry + 24 + ix] = '\xFF';
+    }
+    CHECK(!unzip(zip, "a.fit").has_value());
+}
+
 }
 
 int main()
@@ -105,5 +118,6 @@ int main()
     test_missing_entry();
     test_not_a_zip();
     test_truncated_and_corrupt();
+    test_impossible_size();
     return ST::Test::test_result();
 }

@@ -34,6 +34,10 @@ constexpr size_t MaxCommentSize = 0xFFFF;
 constexpr u16 Stored = 0;
 constexpr u16 Deflated = 8;
 
+// Deflate compresses at most about 1032 to 1, so an entry that claims to
+// be bigger than that is damaged, and the memory for it isn't reserved.
+constexpr size_t MaxDeflateRatio = 1032;
+
 LibCError zip_error(std::string const &what)
 {
     return LibCError { std::format("Invalid ZIP archive: {}", what) };
@@ -114,6 +118,9 @@ std::expected<std::vector<Entry>, LibCError> read_directory(std::string_view zip
 
 std::expected<std::string, LibCError> inflate_raw(std::string_view compressed, size_t size)
 {
+    if (size > (compressed.size() + 1) * MaxDeflateRatio) {
+        return std::unexpected(zip_error(std::format("an entry of {} bytes claims to inflate to {}", compressed.size(), size)));
+    }
     std::string out(size, '\0');
     z_stream    stream { };
     // Negative window bits: raw deflate data, without a zlib header.
