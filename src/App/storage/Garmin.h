@@ -48,6 +48,7 @@ struct GarminError {
 
     Kind        kind { Kind::Failed };
     std::string message { };
+    long        status { 0 }; // The HTTP status, for an HTTP error
 
     [[nodiscard]] std::string to_string() const { return message; }
 };
@@ -106,8 +107,9 @@ using GarminProgress = std::function<void(size_t index, size_t count)>;
 // Downloads the activities of the last `days` days that the store doesn't
 // have into its inbox: `garmin-<id>.json`, the activity's summary, and
 // `garmin-<id>.fit`. The inbox organizes them as any other file. Returns
-// how many were downloaded. Activities downloaded before an error stay in
-// the inbox.
+// how many were downloaded. An activity Garmin Connect won't hand over (403
+// or 404) is skipped with a warning; any other error stops the download.
+// Activities downloaded before an error stay in the inbox.
 GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage const &storage, std::string_view start_date, GarminProgress const &progress = { });
 
 }

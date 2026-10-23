@@ -42,9 +42,22 @@ GarminError rejected()
     };
 }
 
+// Only a 401 says the token is no good. A 403 could also be one resource
+// Garmin Connect won't hand over, except when asking for the token.
 bool is_rejection(long status)
 {
-    return status == 401 || status == 403;
+    return status == 401;
+}
+
+GarminError http_error(long status, std::string message)
+{
+    return GarminError { .kind = GarminError::Kind::Failed, .message = std::move(message), .status = status };
+}
+
+// Garmin Connect won't hand over this one activity.
+bool unavailable(GarminError const &error)
+{
+    return error.status == 403 || error.status == 404;
 }
 
 // Writes `contents` to `path` by way of `<path>.part`, so the inbox never
@@ -149,11 +162,11 @@ GarminResult<void> GarminConnect::obtain_token(std::string_view key)
     if (!response) {
         return std::unexpected(failed(std::format("Could not reach Garmin Connect: {}", response.error().to_string())));
     }
-    if (is_rejection(response->status)) {
+    if (is_rejection(response->status) || response->status == 403) {
         return std::unexpected(rejected());
     }
     if (response->status != 200) {
-        return std::unexpected(failed(std::format("Garmin Connect answered HTTP {} when asked for a token", response->status)));
+        return std::unexpected(http_error(response->status, std::format("Garmin Connect answered HTTP {} when asked for a token", response->status)));
     }
     token = std::string { strip(response->body) };
     return { };
@@ -172,7 +185,7 @@ GarminResult<HttpResponse> GarminConnect::get(std::string const &path, std::stri
         return std::unexpected(rejected());
     }
     if (response->status != 200) {
-        return std::unexpected(failed(std::format("Garmin Connect answered HTTP {} for `{}`", response->status, path)));
+        return std::unexpected(http_error(response->status, std::format("Garmin Connect answered HTTP {} for `{}`", response->status, path)));
     }
     return std::move(*response);
 }
@@ -242,12 +255,17 @@ GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage cons
             wanted.push_back(activity);
         }
     }
+    size_t downloaded { 0 };
     for (size_t ix = 0; ix < wanted.size(); ++ix) {
         auto const &activity = wanted[ix];
         if (progress) {
             progress(ix, wanted.size());
         }
         auto const fit = garmin.download_fit(activity.id);
+        if (!fit && unavailable(fit.error())) {
+            warning(Garmin, "Skipping activity {}: {}", activity.id, fit.error().to_string());
+            continue;
+        }
         if (!fit) {
             return std::unexpected(fit.error());
         }
@@ -261,8 +279,9 @@ GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage cons
             return std::unexpected(written.error());
         }
         trace(Garmin, "Downloaded activity {} to `{}.fit`", activity.id, stem.string());
+        ++downloaded;
     }
-    return wanted.size();
+    return downloaded;
 }
 
 }

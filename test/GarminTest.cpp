@@ -317,6 +317,31 @@ void test_expired_token_while_listing()
     CHECK(!activities.has_value() && activities.error().kind == GarminError::Kind::KeyRejected);
 }
 
+// After the token, a 403 isn't about the key: it's an error, not a
+// rejection.
+void test_forbidden_list_is_not_a_rejected_key()
+{
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 403, .body = "" });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    auto const    activities = garmin.list_activities("2026-09-23");
+    CHECK(!activities.has_value() && activities.error().kind == GarminError::Kind::Failed);
+}
+
+// An activity Garmin Connect won't hand over is skipped; the others come.
+void test_unavailable_activity_is_skipped()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(6, 1792700000, "C"), list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    fake.answer(download_path(6), { .status = 200, .body = fit_zip(6, "c") });
+    fake.answer(download_path(5), { .status = 403, .body = "Forbidden" });
+    fake.answer(download_path(4), { .status = 404, .body = "Not found" });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23").value_or(99), 1uz);
+    CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-6.fit", "garmin-6.json" }));
+}
+
 void test_download_unzips_the_fit_file()
 {
     FakeGarmin fake;
@@ -488,6 +513,8 @@ int main()
     test_list_pages();
     test_list_pages_smaller_than_asked_for();
     test_expired_token_while_listing();
+    test_forbidden_list_is_not_a_rejected_key();
+    test_unavailable_activity_is_skipped();
     test_download_unzips_the_fit_file();
     test_download_without_a_fit_file();
     test_download_new_activities();
