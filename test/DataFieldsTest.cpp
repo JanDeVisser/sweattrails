@@ -255,7 +255,7 @@ void test_moving_time_of_an_hour()
     CHECK_EQ(t.value("Moving Time"), "42.000");
 }
 
-void test_only_maxima_can_be_clicked()
+void test_which_fields_can_be_clicked()
 {
     auto records = records_with(40, set_power, 30, u16 { 200 }, u16 { 300 });
     for (size_t ix = 0; ix < records.size(); ++ix) {
@@ -270,11 +270,12 @@ void test_only_maxima_can_be_clicked()
             if (!field) {
                 continue;
             }
-            auto const is_max = field->label == "Max HR" || field->label == "Max Power" || field->label == "Max Speed";
-            if (field->mark_at.has_value() != is_max) {
+            auto const clickable = field->label == "Max HR" || field->label == "Max Power" || field->label == "Max Speed"
+                || field->label == "Min elevation" || field->label == "Max elevation";
+            if (field->mark_at.has_value() != clickable) {
                 std::println(stderr, "{} has the wrong mark_at", field->label);
             }
-            CHECK_EQ(field->mark_at.has_value(), is_max);
+            CHECK_EQ(field->mark_at.has_value(), clickable);
         }
     }
 }
@@ -355,7 +356,8 @@ void test_elevation()
     TestActivity t { sport::Running, records };
     CHECK_EQ(t.value("Min elevation"), "80 m");
     CHECK_EQ(t.value("Max elevation"), "250 m");
-    CHECK_EQ(t.mark_at("Max elevation"), TestActivity::NoMark);
+    CHECK_EQ(t.mark_at("Min elevation"), 1uz);
+    CHECK_EQ(t.mark_at("Max elevation"), 3uz);
 }
 
 // A pace of a day or more per km, as for a gym session where the watch
@@ -384,7 +386,7 @@ int main()
     test_unrealistic_maxima_are_not_shown();
     test_only_times_without_data();
     test_moving_time_of_an_hour();
-    test_only_maxima_can_be_clicked();
+    test_which_fields_can_be_clicked();
     test_analyze_power_max_at_is_a_record_index();
     test_a_maximum_of_10_is_shown();
     test_no_vi_without_average_power();

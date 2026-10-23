@@ -65,11 +65,12 @@ isn't shown, and nor is the line it's on if both of its fields are missing.
 
 ### Showing where a maximum happened
 
-Max HR, Max Power and Max Speed / Max Pace can be clicked, on the label or
-the value. Over them, the mouse cursor becomes a pointing hand.
+Max HR, Max Power, Max Speed / Max Pace, and Min and Max elevation can be
+clicked, on the label or the value. Over them, the mouse cursor becomes a
+pointing hand.
 
 Clicking one sets the existing mark (`DisplayedActivity::mark`) to the
-record where the maximum happened. The graph draws its line and value
+record where the maximum (or, for Min elevation, the minimum) happened. The graph draws its line and value
 banner there, and the map its dot, as they do for hovering now. There's no
 separate marker: hovering over the graph moves the mark again, as it does
 now. That was chosen over a sticky marker of its own because it's simple,
@@ -185,8 +186,8 @@ storage sources, as `activity_selector_test` is:
   - fields and lines without data aren't there: no HR, no power, no
     altitude, no distance, an HR or power maximum below 10, too few power
     samples for NP;
-  - the maxima carry the `mark_at` of their record, and the other fields
-    none.
+  - the maxima, and Min elevation, carry the `mark_at` of their record,
+    and the other fields none.
 
 Not tested automatically, because they need a window and fonts: drawing
 the panel, the hit rectangles, the cursor, and the click. Checked by hand:

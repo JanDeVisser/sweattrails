@@ -137,8 +137,8 @@ void add_elevation_lines(std::vector<DataLine> &lines, Segment const &segment)
         return;
     }
     lines.push_back(DataLine {
-        .left = DataField { "Min elevation", std::format("{} m", elevation->min) },
-        .right = DataField { "Max elevation", std::format("{} m", elevation->max) },
+        .left = DataField { "Min elevation", std::format("{} m", elevation->min), elevation->min_at },
+        .right = DataField { "Max elevation", std::format("{} m", elevation->max), elevation->max_at },
     });
 }
 
