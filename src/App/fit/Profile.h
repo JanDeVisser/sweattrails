@@ -253,6 +253,7 @@ struct session {
     std::optional<u16>       first_lap_index = { };
     std::optional<u16>       num_laps = { };
     std::optional<f32>       total_moving_time = { };
+    std::optional<u16>       total_ascent = { };
     std::vector<record>      records = { };
     std::vector<lap>         laps = { };
 };

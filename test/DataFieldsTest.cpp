@@ -94,23 +94,50 @@ record with_altitude(std::optional<float32> altitude)
     return record { .altitude = altitude };
 }
 
-// Only rises count. A record without altitude, as in a dropout, is skipped:
-// the climb goes on from the altitude before it.
-void test_analyze_climb()
+float32 climb_of(std::vector<std::optional<float32>> const &altitudes)
 {
-    std::vector<record> records {
-        with_altitude(100.0f),
-        with_altitude(105.0f),
-        with_altitude(103.0f),
-        with_altitude({ }),
-        with_altitude(110.0f),
-        with_altitude(90.0f),
-        with_altitude(92.5f),
-    };
+    std::vector<record> records;
+    for (auto const &altitude : altitudes) {
+        records.push_back(with_altitude(altitude));
+    }
     Segment segment;
     segment.analyze(records, true);
-    // 100 to 105, 103 to 110, and 90 to 92.5.
-    CHECK_EQ(segment.computed_climb, 14.5f);
+    return segment.computed_climb;
+}
+
+// A rise counts once it's 3 m above the lowest point since the last rise
+// that counted. Descents don't take anything off, and a record without
+// altitude is skipped.
+void test_analyze_climb()
+{
+    // 100 to 105 counts. 105 to 103 is down, 103 to 110 counts, and 90 to
+    // 92.5 is less than 3 m.
+    CHECK_EQ(climb_of({ 100.0f, 105.0f, 103.0f, { }, 110.0f, 90.0f, 92.5f }), 12.0f);
+}
+
+void test_analyze_climb_ignores_jitter()
+{
+    CHECK_EQ(climb_of({ 100.0f, 101.5f, 99.0f, 101.0f, 100.0f, 101.9f, 99.5f }), 0.0f);
+}
+
+// A climb in 1 m steps counts every 3 m: 100 to 110 gives 9 m, short of the
+// top by at most 3 m.
+void test_analyze_steady_climb()
+{
+    std::vector<std::optional<float32>> altitudes;
+    for (auto altitude = 100; altitude <= 110; ++altitude) {
+        altitudes.emplace_back(static_cast<float32>(altitude));
+    }
+    CHECK_EQ(climb_of(altitudes), 9.0f);
+}
+
+void test_climb_prefers_the_device()
+{
+    Segment segment;
+    segment.computed_climb = 120.0f;
+    CHECK_EQ(segment.climb(), 120.0f);
+    segment.total_ascent = 95;
+    CHECK_EQ(segment.climb(), 95.0f);
 }
 
 void test_analyze_no_climb_without_altitude()
@@ -414,6 +441,9 @@ int main()
     test_smoothed_range_max_at();
     test_analyze_max_at_is_a_record_index();
     test_analyze_climb();
+    test_analyze_climb_ignores_jitter();
+    test_analyze_steady_climb();
+    test_climb_prefers_the_device();
     test_analyze_no_climb_without_altitude();
     test_ride_shows_speed();
     test_e_bike_ride_shows_speed();

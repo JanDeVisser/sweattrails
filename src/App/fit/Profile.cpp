@@ -38,7 +38,7 @@ std::ostream &format_record<mesg_num::activity>(std::ostream &out, FITDataRecord
 
 constexpr static TypeMetaData session_meta {
     .mesg_num = mesg_num::session,
-    .num_fields = 11,
+    .num_fields = 12,
     .fields = {
         { .name = "timestamp", .num = 253, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(session, timestamp) },
         { .name = "start time", .num = 2, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(session, start_time) },
@@ -51,6 +51,7 @@ constexpr static TypeMetaData session_meta {
         { .name = "first lap index", .num = 25, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(session, first_lap_index) },
         { .name = "num laps", .num = 26, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(session, num_laps) },
         { .name = "total moving time", .num = 59, .scale = 1000, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_moving_time) },
+        { .name = "total ascent", .num = 22, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(session, total_ascent) },
     },
 };
 
@@ -70,7 +71,8 @@ std::expected<session, FITError> make_from_rec(FITDataRecord const &rec)
         u16,
         u16,
         u16,
-        f32>(rec);
+        f32,
+        u16>(rec);
 }
 
 template<>

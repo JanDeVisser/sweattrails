@@ -32,6 +32,10 @@ struct Storage;
 
 constexpr float32 JANS_FTP = 275;
 
+// A rise in altitude only counts as climbing once it's this many meters,
+// so that noise in the altitude doesn't add to the climb.
+constexpr float32 ClimbHysteresis = 3.0f;
+
 struct Segment {
     DateTime                 start_time { };
     DateTime                 end_time { };
@@ -46,12 +50,19 @@ struct Segment {
     SmoothedRange<u8, 3>     computed_hr_range { };
     Range<i16>               computed_elevation_range { };
     float32                  computed_climb { 0 }; // Meters climbed; descents don't count
+    std::optional<u16>       total_ascent { };     // Meters climbed, as the device worked it out
     std::optional<float32>   intensity_factor { };
     std::optional<float32>   variability_index { };
     std::optional<float32>   tss { };
     std::optional<Box>       box { };
 
     void analyze(std::span<record> records, bool smooth);
+
+    // The device's climb if it has one, else the one analyze() worked out.
+    [[nodiscard]] float32 climb() const
+    {
+        return total_ascent ? static_cast<float32>(*total_ascent) : computed_climb;
+    }
 };
 
 struct Lap {
