@@ -7,6 +7,7 @@
  * talks to Garmin.
  */
 
+#include <algorithm>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -88,7 +89,9 @@ struct TempStore {
 };
 
 // Garmin Connect, as far as the tests need it: answers by the request's
-// path, without its query, and remembers the requests.
+// path, without its query, in the order the answers were given, and
+// remembers the requests. Out of answers, the activity list is empty, as
+// past its last page, and anything else isn't found.
 struct FakeGarmin {
     std::map<std::string, std::vector<HttpResponse>> responses { };
     std::vector<HttpRequest>                         requests { };
@@ -110,13 +113,13 @@ struct FakeGarmin {
             path = path.substr(0, path.find('?'));
             auto &queue = responses[path];
             if (queue.empty()) {
+                if (path == "/activitylist-service/activities/search/activities") {
+                    return HttpResponse { .status = 200, .body = "[]" };
+                }
                 return HttpResponse { .status = 404, .body = "Not found" };
             }
             auto response = queue.front();
-            // The last response for a path is the answer from then on.
-            if (queue.size() > 1) {
-                queue.erase(queue.begin());
-            }
+            queue.erase(queue.begin());
             return response;
         };
     }
@@ -128,6 +131,14 @@ std::string const ListPath = "/activitylist-service/activities/search/activities
 std::string download_path(u64 id)
 {
     return std::format("/download-service/files/activity/{}", id);
+}
+
+// How many activities were downloaded, as opposed to listed.
+size_t downloads(FakeGarmin const &fake)
+{
+    return static_cast<size_t>(std::ranges::count_if(fake.requests, [](HttpRequest const &request) {
+        return request.url.contains("/download-service/");
+    }));
 }
 
 bool has_header(HttpRequest const &request, std::string_view header)
@@ -251,25 +262,49 @@ void test_offline_and_server_errors()
     CHECK(!error.has_value() && error.error().kind == GarminError::Kind::Failed);
 }
 
-// A full page asks for the next one; a short page is the last.
+std::string page_of(size_t count, u64 first_id)
+{
+    std::vector<JSONValue> entries;
+    for (u64 ix = 0; ix < count; ++ix) {
+        entries.push_back(list_entry(first_id + ix, 1792000000 - static_cast<i64>(first_id + ix), "Run"));
+    }
+    return list_of(entries);
+}
+
+// Pages are asked for until one comes back empty.
 void test_list_pages()
 {
-    std::vector<JSONValue> first;
-    for (u64 ix = 0; ix < 100; ++ix) {
-        first.push_back(list_entry(1000 + ix, 1792000000 + static_cast<i64>(ix), "Run"));
-    }
     FakeGarmin fake;
-    fake.answer(ListPath, { .status = 200, .body = list_of(first) });
-    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(2000, 1791000000, "Ride") }) });
+    fake.answer(ListPath, { .status = 200, .body = page_of(100, 1000) });
+    fake.answer(ListPath, { .status = 200, .body = page_of(1, 2000) });
     GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
     auto const    activities = garmin.list_activities("2026-09-23");
     CHECK(activities.has_value());
     CHECK_EQ(activities.value_or(std::vector<GarminActivity> { }).size(), 101uz);
-    CHECK_EQ(fake.requests.size(), 2uz);
-    if (fake.requests.size() == 2) {
+    CHECK_EQ(fake.requests.size(), 3uz);
+    if (fake.requests.size() == 3) {
         CHECK(fake.requests[0].url.ends_with("?start=0&limit=100&startDate=2026-09-23"));
         CHECK(fake.requests[1].url.ends_with("?start=100&limit=100&startDate=2026-09-23"));
+        CHECK(fake.requests[2].url.ends_with("?start=101&limit=100&startDate=2026-09-23"));
         CHECK(has_header(fake.requests[0], "Authorization: Bearer token"));
+    }
+}
+
+// A server that sends 20 at a time, whatever it's asked for: the next page
+// starts after the 20, and a short page isn't the last.
+void test_list_pages_smaller_than_asked_for()
+{
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = page_of(20, 1000) });
+    fake.answer(ListPath, { .status = 200, .body = page_of(20, 1020) });
+    fake.answer(ListPath, { .status = 200, .body = page_of(5, 1040) });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    auto const    activities = garmin.list_activities("2025-10-23");
+    CHECK_EQ(activities.value_or(std::vector<GarminActivity> { }).size(), 45uz);
+    CHECK_EQ(fake.requests.size(), 4uz);
+    if (fake.requests.size() == 4) {
+        CHECK(fake.requests[1].url.find("?start=20&") != std::string::npos);
+        CHECK(fake.requests[3].url.find("?start=45&") != std::string::npos);
     }
 }
 
@@ -339,7 +374,7 @@ void test_download_skips_what_the_inbox_has()
     fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(3, 1792524471, "Run") }) });
     GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
     CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23").value_or(99), 0uz);
-    CHECK_EQ(fake.requests.size(), 1uz);
+    CHECK_EQ(downloads(fake), 0uz);
 }
 
 // A failed download stops the download, but what came before it stays.
@@ -424,10 +459,11 @@ void test_downloaded_activity_goes_through_the_inbox()
         CHECK_EQ((*newest)->title, "Westmount-Wallenstein");
     }
 
-    auto const requests = fake.requests.size();
+    // Garmin Connect still lists it, but it isn't downloaded again.
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(7, StartTime, "Westmount-Wallenstein") }) });
+    fake.answer(download_path(7), { .status = 200, .body = fit_zip(7, fit.file()) });
     CHECK_EQ(download_new_activities(garmin, store.storage, "2021-10-01").value_or(99), 0uz);
-    // Only the list: nothing is downloaded again.
-    CHECK_EQ(fake.requests.size(), requests + 1);
+    CHECK_EQ(downloads(fake), 1uz);
 }
 
 void test_has_activity()
@@ -450,6 +486,7 @@ int main()
     test_rejected_key();
     test_offline_and_server_errors();
     test_list_pages();
+    test_list_pages_smaller_than_asked_for();
     test_expired_token_while_listing();
     test_download_unzips_the_fit_file();
     test_download_without_a_fit_file();

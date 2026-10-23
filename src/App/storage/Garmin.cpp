@@ -24,7 +24,8 @@ constexpr std::string_view TokenPath = "/personalapitoken-service/personal-api/p
 constexpr std::string_view ActivitiesPath = "/activitylist-service/activities/search/activities";
 constexpr std::string_view DownloadPath = "/download-service/files/activity/";
 
-// Activities asked for per request. Garmin's client uses 20 by default.
+// Activities asked for per request. Garmin's client uses 20 by default,
+// and the server may send fewer than asked for.
 constexpr size_t PageSize = 100;
 
 GarminError failed(std::string message)
@@ -179,7 +180,9 @@ GarminResult<HttpResponse> GarminConnect::get(std::string const &path, std::stri
 GarminResult<std::vector<GarminActivity>> GarminConnect::list_activities(std::string_view start_date)
 {
     std::vector<GarminActivity> activities;
-    for (size_t start = 0;; start += PageSize) {
+    // Until a page comes back empty: a short page doesn't mean the last one,
+    // if the server sends fewer than asked for.
+    for (size_t start = 0;;) {
         auto const path = std::format("{}?start={}&limit={}&startDate={}", ActivitiesPath, start, PageSize, start_date);
         auto const response = get(path, "application/json");
         if (!response) {
@@ -193,10 +196,11 @@ GarminResult<std::vector<GarminActivity>> GarminConnect::list_activities(std::st
         if (!page) {
             return std::unexpected(failed(std::format("Unexpected activity list from Garmin Connect: {}", page.error().to_string())));
         }
-        activities.insert(activities.end(), page->begin(), page->end());
-        if (page->size() < PageSize) {
+        if (page->empty()) {
             return activities;
         }
+        activities.insert(activities.end(), page->begin(), page->end());
+        start += page->size();
     }
 }
 
