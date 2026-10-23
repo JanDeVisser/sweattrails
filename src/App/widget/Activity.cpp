@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <memory>
 #include <ranges>
 
@@ -12,6 +13,7 @@
 #include <SweatTrails.h>
 #include <storage/Activity.h>
 #include <widget/Activity.h>
+#include <widget/SportIcon.h>
 
 namespace ST {
 
@@ -189,19 +191,9 @@ void ActivityDataDisplay::set_activity(std::shared_ptr<DisplayedActivity> const 
     }
     this->activity = activity;
     if (this->activity) {
-        char const *icon;
-        switch (activity->activity.sport) {
-        case sport::Cycling:
-            icon = "icons8-cycling-skin-type-2-96";
-            break;
-        case sport::Running:
-            icon = "icons8-running-skin-type-2-96";
-            break;
-        default:
-            icon = "share/icons/icons8-hyperactive-skin-type-3-96";
-            break;
-        }
-        sport_icon = LoadTexture(TextFormat(SWEATTRAILS_DATADIR "/icons/%s.png", icon));
+        auto const &a = activity->activity;
+        auto const  icon = std::format(SWEATTRAILS_DATADIR "/icons/{}", ST::sport_icon(a.sport, a.sub_sport));
+        sport_icon = LoadTexture(icon.c_str());
     }
 }
 

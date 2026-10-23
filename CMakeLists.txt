@@ -159,6 +159,7 @@ add_executable(
         src/App/widget/Activity.cpp
         src/App/widget/ActivitySelector.cpp
         src/App/widget/DataFields.cpp
+        src/App/widget/SportIcon.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Storage.cpp
         src/App/storage/Types.cpp
@@ -294,6 +295,15 @@ sweattrails_test(
 )
 target_include_directories(activity_load_test PRIVATE src/App)
 target_link_libraries(activity_load_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        sport_icon_test
+        test/SportIconTest.cpp
+        src/App/widget/SportIcon.cpp
+)
+target_include_directories(sport_icon_test PRIVATE src/App)
+# The test checks that the icons are in the source tree.
+target_compile_definitions(sport_icon_test PRIVATE SWEATTRAILS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
 install(TARGETS Base Widget sweattrails fitexplore
         ARCHIVE DESTINATION lib

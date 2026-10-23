@@ -7,6 +7,8 @@
  * made about the modules that have not been translated yet.
  */
 
+#pragma once
+
 #include <optional>
 
 #include <Date.h>
