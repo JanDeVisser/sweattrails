@@ -215,6 +215,66 @@ void set_power(record &rec, u16 power)
     rec.power = power;
 }
 
+void set_cadence(record &rec, u8 cadence)
+{
+    rec.cadence = cadence;
+}
+
+// One sample per record, from record 0.
+std::vector<CadenceSample> cadence_samples(std::vector<u8> const &cadences)
+{
+    std::vector<CadenceSample> samples;
+    for (size_t ix = 0; ix < cadences.size(); ++ix) {
+        samples.push_back(CadenceSample { .at = ix, .cadence = cadences[ix] });
+    }
+    return samples;
+}
+
+void test_cadence_average_leaves_out_zeros()
+{
+    auto const stats = cadence_stats(cadence_samples({ 80, 0, 0, 90 }));
+    CHECK(stats.has_value());
+    if (stats) {
+        CHECK_EQ(stats->average, 85.0f);
+    }
+}
+
+// Record 10 is a stop. The slowing down before it (40 at record 6) and the
+// getting going after it (30 at record 13) are within 5 records, and don't
+// count. The 60 at record 22 does: the windows ending at 22, 23 and 24
+// average 80.
+void test_cadence_min_skips_stops()
+{
+    std::vector<u8> cadences(30, 90);
+    cadences[6] = 40;
+    cadences[10] = 0;
+    cadences[13] = 30;
+    cadences[22] = 60;
+    auto const stats = cadence_stats(cadence_samples(cadences));
+    CHECK(stats.has_value() && stats->min.has_value());
+    if (stats && stats->min) {
+        CHECK_EQ(static_cast<int>(*stats->min), 80);
+        CHECK_EQ(stats->min_at, 22uz);
+    }
+}
+
+// Every window is within 5 records of the zero at record 3.
+void test_no_cadence_min_near_stops_only()
+{
+    auto const stats = cadence_stats(cadence_samples({ 90, 85, 80, 0, 80, 85, 90 }));
+    CHECK(stats.has_value());
+    if (stats) {
+        CHECK(!stats->min.has_value());
+        CHECK_EQ(stats->average, 85.0f);
+    }
+}
+
+void test_no_cadence_stats_without_cadence()
+{
+    CHECK(!cadence_stats(cadence_samples({ 0, 0, 0, 0 })).has_value());
+    CHECK(!cadence_stats({ }).has_value());
+}
+
 void test_ride_shows_speed()
 {
     TestActivity t { sport::Cycling, records_with(10, set_speed, 7, 10.0f, 15.0f) };
@@ -257,6 +317,42 @@ void test_heart_rate()
     CHECK_EQ(t.mark_at("Max HR"), 5uz);
     CHECK_EQ(t.value("Avg HR"), "123 bpm");
     CHECK_EQ(t.mark_at("Avg HR"), TestActivity::NoMark);
+}
+
+// 40 records at 85 rpm, with 100 at record 20: smoothed, the windows ending
+// at 20, 21 and 22 average 90. The average is (39 * 85 + 100) / 40 = 85.4,
+// and the lowest window is the first, ending at record 2.
+std::vector<record> cadence_records()
+{
+    return records_with(40, set_cadence, 20, u8 { 85 }, u8 { 100 });
+}
+
+void test_ride_cadence_in_rpm()
+{
+    TestActivity t { sport::Cycling, cadence_records() };
+    CHECK_EQ(t.value("Avg Cadence"), "85 rpm");
+    CHECK_EQ(t.value("Max Cadence"), "90 rpm");
+    CHECK_EQ(t.mark_at("Max Cadence"), 20uz);
+    CHECK_EQ(t.value("Min Cadence"), "85 rpm");
+    CHECK_EQ(t.mark_at("Min Cadence"), 2uz);
+    CHECK_EQ(t.mark_at("Avg Cadence"), TestActivity::NoMark);
+}
+
+// FIT has running cadence in strides per minute: the panel doubles it.
+void test_run_cadence_in_spm()
+{
+    TestActivity t { sport::Running, cadence_records() };
+    CHECK_EQ(t.value("Avg Cadence"), "171 spm");
+    CHECK_EQ(t.value("Max Cadence"), "180 spm");
+    CHECK_EQ(t.value("Min Cadence"), "170 spm");
+}
+
+void test_unrealistic_cadence_is_not_shown()
+{
+    TestActivity t { sport::Cycling, records_with(40, set_cadence, 0, u8 { 0 }, u8 { 9 }) };
+    CHECK(!t.field("Avg Cadence"));
+    CHECK(!t.field("Max Cadence"));
+    CHECK(!t.field("Min Cadence"));
 }
 
 void test_power()
@@ -444,6 +540,13 @@ int main()
     test_analyze_climb_ignores_jitter();
     test_analyze_steady_climb();
     test_climb_prefers_the_device();
+    test_cadence_average_leaves_out_zeros();
+    test_cadence_min_skips_stops();
+    test_no_cadence_min_near_stops_only();
+    test_no_cadence_stats_without_cadence();
+    test_ride_cadence_in_rpm();
+    test_run_cadence_in_spm();
+    test_unrealistic_cadence_is_not_shown();
     test_analyze_no_climb_without_altitude();
     test_ride_shows_speed();
     test_e_bike_ride_shows_speed();

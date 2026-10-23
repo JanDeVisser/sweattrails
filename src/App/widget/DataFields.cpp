@@ -65,12 +65,17 @@ std::string format_speed(float32 meters_per_second)
     return std::format("{:.1f} km/h", meters_per_second * 3.6f);
 }
 
+// FIT has e-biking as a sport of its own, besides Cycling's e-bike
+// sub-sports.
+bool is_ride(Activity const &activity)
+{
+    return activity.sport == sport::Cycling || activity.sport == sport::E_biking;
+}
+
 void add_speed_lines(std::vector<DataLine> &lines, Activity const &activity)
 {
     auto const &segment = activity.segment;
-    // FIT has e-biking as a sport of its own, besides Cycling's e-bike
-    // sub-sports.
-    auto const cycling = activity.sport == sport::Cycling || activity.sport == sport::E_biking;
+    auto const  cycling = is_ride(activity);
     lines.push_back(DataLine { .left = DataField { "Distance", format_distance(segment.distance) } });
 
     DataLine line { };
@@ -130,6 +135,28 @@ void add_power_lines(std::vector<DataLine> &lines, Segment const &segment)
     }
 }
 
+void add_cadence_lines(std::vector<DataLine> &lines, Activity const &activity)
+{
+    auto const &range = activity.segment.computed_cadence_range.range;
+    auto const &stats = activity.segment.cadence;
+    if (!range || range->max < MinRealisticMax || !stats) {
+        return;
+    }
+    // Rides in rpm. FIT has running cadence in strides per minute, one
+    // foot's steps, which is shown doubled, as steps per minute.
+    auto const ride = is_ride(activity);
+    auto const format_cadence = [ride](float32 cadence) {
+        return ride ? std::format("{:.0f} rpm", cadence) : std::format("{:.0f} spm", 2 * cadence);
+    };
+    lines.push_back(DataLine {
+        .left = DataField { "Avg Cadence", format_cadence(stats->average) },
+        .right = DataField { "Max Cadence", format_cadence(range->max), range->max_at },
+    });
+    if (stats->min) {
+        lines.push_back(DataLine { .left = DataField { "Min Cadence", format_cadence(*stats->min), stats->min_at } });
+    }
+}
+
 void add_elevation_lines(std::vector<DataLine> &lines, Segment const &segment)
 {
     auto const &elevation = segment.computed_elevation_range.range;
@@ -158,6 +185,7 @@ std::vector<DataLine> data_fields(Activity const &activity)
     }
     add_hr_lines(lines, segment);
     add_power_lines(lines, segment);
+    add_cadence_lines(lines, activity);
     add_elevation_lines(lines, segment);
     return lines;
 }

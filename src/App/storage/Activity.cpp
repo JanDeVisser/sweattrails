@@ -32,12 +32,57 @@ bool eql_ignore_case(std::string_view const &lhs, std::string_view const &rhs)
 
 }
 
+std::optional<CadenceStats> cadence_stats(std::span<CadenceSample const> samples)
+{
+    u64    sum = 0;
+    size_t count = 0;
+    for (auto const &sample : samples) {
+        if (sample.cadence > 0) {
+            sum += sample.cadence;
+            ++count;
+        }
+    }
+    if (count == 0) {
+        return { };
+    }
+    CadenceStats stats { .average = static_cast<float32>(sum) / static_cast<float32>(count) };
+
+    // The samples are in record order, so their zeros are too.
+    std::vector<size_t> zeros;
+    for (auto const &sample : samples) {
+        if (sample.cadence == 0) {
+            zeros.push_back(sample.at);
+        }
+    }
+    // True for a zero itself too.
+    auto const near_zero = [&zeros](CadenceSample const &sample) {
+        constexpr size_t Margin = 5;
+        auto const       first = std::ranges::lower_bound(zeros, (sample.at > Margin) ? sample.at - Margin : 0);
+        return first != zeros.end() && *first <= sample.at + Margin;
+    };
+
+    for (size_t end = 3; end <= samples.size(); ++end) {
+        auto const window = samples.subspan(end - 3, 3);
+        if (std::ranges::any_of(window, near_zero)) {
+            continue;
+        }
+        auto const average = static_cast<u8>((window[0].cadence + window[1].cadence + window[2].cadence) / 3);
+        if (!stats.min || average < *stats.min) {
+            stats.min = average;
+            stats.min_at = window[2].at;
+        }
+    }
+    return stats;
+}
+
 // The ranges' min_at and max_at are indices into `records`: for a lap,
 // they're relative to the lap's first record.
 void Segment::analyze(std::span<record> records, bool smooth)
 {
     // The lowest altitude since the last rise that counted as climbing.
     std::optional<float32> climb_from { };
+    // As recorded, before they're smoothed.
+    std::vector<CadenceSample> cadence_samples;
     for (size_t ix = 0; ix < records.size(); ++ix) {
         auto &rec = records[ix];
         if (rec.speed) {
@@ -54,6 +99,7 @@ void Segment::analyze(std::span<record> records, bool smooth)
             }
         }
         if (rec.cadence) {
+            cadence_samples.push_back(CadenceSample { .at = ix, .cadence = *rec.cadence });
             auto const smoothed = computed_cadence_range.extend(*rec.cadence, ix);
             if (smooth) {
                 *rec.cadence = smoothed;
@@ -87,6 +133,7 @@ void Segment::analyze(std::span<record> records, bool smooth)
             }
         }
     }
+    cadence = cadence_stats(cadence_samples);
     if (computed_normalized_range.range && computed_power_range.range) {
         auto const &np = *computed_normalized_range.range;
         auto const &avg = *computed_power_range.range;

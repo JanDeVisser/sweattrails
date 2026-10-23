@@ -36,25 +36,45 @@ constexpr float32 JANS_FTP = 275;
 // so that noise in the altitude doesn't add to the climb.
 constexpr float32 ClimbHysteresis = 3.0f;
 
+struct CadenceSample {
+    size_t at { 0 };      // The record's index
+    u8     cadence { 0 }; // As in the FIT file: rpm, or strides per minute
+};
+
+struct CadenceStats {
+    float32           average { 0 }; // Without the zeros
+    std::optional<u8> min { };       // Not near zeros, see cadence_stats()
+    size_t            min_at { 0 };
+};
+
+// The average cadence, leaving out zeros, which are coasting or standing
+// still, and the lowest average of 3 consecutive samples. The minimum only
+// counts windows whose samples are all more than 5 records from a zero, so
+// that slowing down to a stop and getting going again don't count. min_at
+// is the record that completes the window. Nothing without a non-zero
+// sample.
+std::optional<CadenceStats> cadence_stats(std::span<CadenceSample const> samples);
+
 struct Segment {
-    DateTime                 start_time { };
-    DateTime                 end_time { };
-    Duration                 elapsed { };
-    Duration                 moving { };
-    float32                  distance { 0 };
-    float32                  computed_distance { 0 };
-    Range<float32>           computed_speed_range { };
-    SmoothedRange<u16, 3>    computed_power_range { };
-    NormalizedRange<u16, 30> computed_normalized_range { };
-    SmoothedRange<u8, 3>     computed_cadence_range { };
-    SmoothedRange<u8, 3>     computed_hr_range { };
-    Range<i16>               computed_elevation_range { };
-    float32                  computed_climb { 0 }; // Meters climbed; descents don't count
-    std::optional<u16>       total_ascent { };     // Meters climbed, as the device worked it out
-    std::optional<float32>   intensity_factor { };
-    std::optional<float32>   variability_index { };
-    std::optional<float32>   tss { };
-    std::optional<Box>       box { };
+    DateTime                    start_time { };
+    DateTime                    end_time { };
+    Duration                    elapsed { };
+    Duration                    moving { };
+    float32                     distance { 0 };
+    float32                     computed_distance { 0 };
+    Range<float32>              computed_speed_range { };
+    SmoothedRange<u16, 3>       computed_power_range { };
+    NormalizedRange<u16, 30>    computed_normalized_range { };
+    SmoothedRange<u8, 3>        computed_cadence_range { };
+    std::optional<CadenceStats> cadence { };
+    SmoothedRange<u8, 3>        computed_hr_range { };
+    Range<i16>                  computed_elevation_range { };
+    float32                     computed_climb { 0 }; // Meters climbed; descents don't count
+    std::optional<u16>          total_ascent { };     // Meters climbed, as the device worked it out
+    std::optional<float32>      intensity_factor { };
+    std::optional<float32>      variability_index { };
+    std::optional<float32>      tss { };
+    std::optional<Box>          box { };
 
     void analyze(std::span<record> records, bool smooth);
 
