@@ -82,18 +82,25 @@ void ActivityDataDisplay::draw()
     if (activity == nullptr) {
         return;
     }
-    auto y = 20;
-
-    render_texture(10, y, sport_icon);
+    auto const top = 20.0f;
+    render_texture(10, top, sport_icon);
     auto sz = render_text(
-        116, y,
+        116, top,
         TextFormat("%s - %s", FIT::tag(activity->activity.sport), activity->activity.segment.start_time.format().c_str()),
         FontSize::Small,
         RAYWHITE);
-    render_text(116, y + sz.y + 20, activity->activity.title, FontSize::Large, RAYWHITE);
-    y += 106; // 6 * sz.y / 5;
 
-    draw_fields(static_cast<float>(y));
+    // The title, and the summary under it in the same font.
+    auto const line_height = 6.0f * App::measure_text("Mg", FontSize::Large).y / 5.0f;
+    auto const title_y = top + sz.y + 20;
+    render_text(116, title_y, activity->activity.title, FontSize::Large, RAYWHITE);
+    auto const summary_y = title_y + line_height;
+    render_text(116, summary_y, activity_summary(activity->activity), FontSize::Large, RAYWHITE);
+
+    // The fields start below the icon, which is 96 high, or below the
+    // summary, whichever is lower.
+    auto const icon_bottom = top + 96;
+    draw_fields(std::max(icon_bottom, summary_y + line_height) + 10);
 }
 
 // Draws the fields in two columns. In each column the values start at the

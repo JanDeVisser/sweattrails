@@ -76,7 +76,6 @@ void add_speed_lines(std::vector<DataLine> &lines, Activity const &activity)
 {
     auto const &segment = activity.segment;
     auto const  cycling = is_ride(activity);
-    lines.push_back(DataLine { .left = DataField { "Distance", format_distance(segment.distance) } });
 
     DataLine line { };
     if (segment.moving.elapsed > 0) {
@@ -206,10 +205,8 @@ std::vector<DataLine> data_fields(Activity const &activity)
 {
     auto const           &segment = activity.segment;
     std::vector<DataLine> lines;
-    lines.push_back(DataLine {
-        .left = DataField { "Moving Time", format_moving_time(segment.moving) },
-        .right = DataField { "Elapsed Time", format_elapsed_time(segment.elapsed) },
-    });
+    // The distance and the moving time are in activity_summary().
+    lines.push_back(DataLine { .left = DataField { "Elapsed Time", format_elapsed_time(segment.elapsed) } });
     if (segment.distance > 0) {
         add_speed_lines(lines, activity);
     }

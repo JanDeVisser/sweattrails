@@ -279,7 +279,6 @@ void test_ride_shows_speed()
 {
     TestActivity t { sport::Cycling, records_with(10, set_speed, 7, 10.0f, 15.0f) };
     t.activity.segment.distance = 30000;
-    CHECK_EQ(t.value("Distance"), "30.0 km");
     CHECK_EQ(t.value("Avg Speed"), "36.0 km/h");
     CHECK_EQ(t.value("Max Speed"), "54.0 km/h");
     CHECK_EQ(t.mark_at("Max Speed"), 7uz);
@@ -300,7 +299,6 @@ void test_run_shows_pace()
 {
     TestActivity t { sport::Running, records_with(10, set_speed, 4, 3.0f, 5.0f) };
     t.activity.segment.distance = 10000;
-    CHECK_EQ(t.value("Distance"), "10.00 km");
     CHECK_EQ(t.value("Avg Pace"), "5:00 min/km");
     // 5 m/s is 200 s/km.
     CHECK_EQ(t.value("Max Pace"), "3:20 min/km");
@@ -378,6 +376,21 @@ void test_tss_over_moving_time()
     }
 }
 
+// They're in the summary under the title instead.
+void test_panel_has_no_distance_or_moving_time()
+{
+    TestActivity t { sport::Running, records_with(10, set_speed, 4, 3.0f, 5.0f) };
+    t.activity.segment.distance = 10000;
+    auto const lines = data_fields(t.activity);
+    CHECK(!lines.empty());
+    if (!lines.empty()) {
+        CHECK(lines[0].left.has_value() && lines[0].left->label == "Elapsed Time");
+        CHECK(!lines[0].right.has_value());
+    }
+    CHECK(!t.field("Distance"));
+    CHECK(!t.field("Moving Time"));
+}
+
 void test_summary()
 {
     TestActivity t { sport::Cycling, records_with(40, set_power, 0, u16 { 200 }, u16 { 200 }) };
@@ -425,9 +438,7 @@ void test_only_times_without_data()
     TestActivity t { sport::Running, std::vector<record>(10) };
     auto const   lines = data_fields(t.activity);
     CHECK_EQ(lines.size(), 1uz);
-    CHECK_EQ(t.value("Moving Time"), "50:00");
     CHECK_EQ(t.value("Elapsed Time"), "51:40.000");
-    CHECK(!t.field("Distance"));
     CHECK(!t.field("Min elevation"));
     CHECK(!t.field("Climbed"));
 }
@@ -438,9 +449,9 @@ void test_moving_time_of_an_hour()
 {
     TestActivity t { sport::Running, { } };
     t.activity.segment.moving = Duration { 3630 };
-    CHECK_EQ(t.value("Moving Time"), "1:00:30");
+    CHECK_EQ(activity_summary(t.activity), "1:00:30");
     t.activity.segment.moving = Duration { 42 };
-    CHECK_EQ(t.value("Moving Time"), "42.000");
+    CHECK_EQ(activity_summary(t.activity), "42.000");
 }
 
 void test_which_fields_can_be_clicked()
@@ -516,8 +527,7 @@ void test_no_pace_line_without_time_or_speed()
     t.activity.segment.distance = 5000;
     t.activity.segment.moving = Duration { };
     auto const lines = data_fields(t.activity);
-    CHECK_EQ(lines.size(), 2uz);
-    CHECK_EQ(t.value("Distance"), "5.00 km");
+    CHECK_EQ(lines.size(), 1uz);
     CHECK(!t.field("Avg Pace"));
     CHECK(!t.field("Max Pace"));
 }
@@ -587,6 +597,7 @@ int main()
     test_power();
     test_no_np_with_few_power_samples();
     test_tss_over_moving_time();
+    test_panel_has_no_distance_or_moving_time();
     test_summary();
     test_summary_without_distance_or_tss();
     test_unrealistic_maxima_are_not_shown();
