@@ -228,3 +228,12 @@ and one is about the spec rather than the code.
    modal is open, a request left over from the panel goes back to the
    I-beam. `SetMouseCursor()` turns out to be safe to call without a
    window. These tests pass.
+
+### Resolution
+
+1. Fixed in 5c39738: the pace is worked out from `Duration::elapsed`.
+   `test_pace_of_more_than_a_day` passes.
+2. Jan decided that `E_biking` counts as a ride. Fixed in 229e00b, in the
+   spec's Feature section and in `data_fields()`, with
+   `test_e_bike_ride_shows_speed`, which fails without the change.
+3. The tests are kept.
