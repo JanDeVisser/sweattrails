@@ -60,6 +60,9 @@ struct App : public Layout {
     static std::shared_ptr<App> s_app;
     std::set<int>               m_pressed_keys;
     std::set<int>               m_new_keys; // Pressed this frame
+    MouseCursor                 default_cursor { MOUSE_CURSOR_IBEAM };
+    MouseCursor                 m_requested_cursor { MOUSE_CURSOR_IBEAM }; // For this frame
+    MouseCursor                 m_cursor { MOUSE_CURSOR_IBEAM };           // Shown now
 
     explicit App(std::string_view const &app_name);
     ~App();
@@ -81,6 +84,15 @@ struct App : public Layout {
     void handle_keyboard(pWidget const &focus);
     void push_modal(pWidget const &modal);
     void pop_modal();
+
+    // A widget that wants another mouse cursor than the default asks for it
+    // in process_input(), in every frame that it wants it. In other frames
+    // the app shows the default cursor, so a widget doesn't have to put it
+    // back, which it can't do while a modal gets the input instead of it.
+    void request_cursor(MouseCursor cursor)
+    {
+        m_requested_cursor = cursor;
+    }
     // void change_font_size(int increment, FontSize size = FontSize::Medium);
 
     virtual bool query_close()
@@ -127,7 +139,7 @@ struct App : public Layout {
         SetWindowState(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_MAXIMIZED | FLAG_VSYNC_HINT);
         Image icon = LoadImage(app->icon_file.c_str());
         SetWindowIcon(icon);
-        SetMouseCursor(MOUSE_CURSOR_IBEAM);
+        SetMouseCursor(app->m_cursor);
         SetExitKey(KEY_NULL);
         SetTargetFPS(60);
         MaximizeWindow();

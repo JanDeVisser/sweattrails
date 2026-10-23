@@ -137,6 +137,7 @@ void App::handle_keyboard(pWidget const &focus)
 void App::process_input()
 {
     m_new_keys.clear();
+    m_requested_cursor = default_cursor;
     KeyboardModifier modifier = modifier_current();
     auto             handle_keyboard = [this, &modifier](pWidget const &f) -> bool {
         for (int ch = GetCharPressed(); ch != 0; ch = GetCharPressed()) {
@@ -172,15 +173,19 @@ void App::process_input()
         pWidget modal = modals.back();
         handle_keyboard(modal);
         modal->process_input();
-        return;
+    } else {
+        pWidget f = focus;
+        if (!f) {
+            f = self();
+        }
+        handle_keyboard(f);
+        Layout::process_input();
     }
 
-    pWidget f = focus;
-    if (!f) {
-        f = self();
+    if (m_requested_cursor != m_cursor) {
+        SetMouseCursor(m_requested_cursor);
+        m_cursor = m_requested_cursor;
     }
-    handle_keyboard(f);
-    Layout::process_input();
 }
 
 void App::push_modal(pWidget const &modal)
