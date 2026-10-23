@@ -1,6 +1,6 @@
 # Download Activities from Garmin Connect
 
-Status: In progress, on branch feature/garmin-download
+Status: In review, on branch feature/garmin-download
 
 ## Goal
 
@@ -208,7 +208,7 @@ no new library to install. The other options were shelling out to
 
 - `read_api_key(environment value, file)`: the key from
   `GARMIN_PERSONAL_API_KEY`, else the file, trimmed; nothing if neither
-  has one. Warns if the file can be read by group or others.
+  has one. An empty variable counts as none. Warns if the file can be read by group or others.
 - `struct GarminActivity { u64 id; i64 start_time; bool has_file; JSONValue
   summary; }`, and `parse_activity_list(JSONValue)`: the list's entries.
   `start_time` is `beginTimestamp / 1000`; `has_file` is false for manual
@@ -235,6 +235,18 @@ one, and sets `title` to its `activityName` if it has one, after the FIT
 file, so it wins over the workout name. A sidecar without it, or that
 isn't JSON, is ignored, with a trace.
 
+**JSON numbers.** Found running the download against Garmin: the JSON
+decoder in `src/Lib/Base` read neither negative numbers nor exponents,
+because it took its numbers from the general lexer. Every longitude in
+Canada is negative. `JSON.cpp` now scans JSON numbers itself, through the
+lexer's `pre_match()` hook, so the lexer is unchanged for its other uses,
+and converts them with `std::from_chars`. Converting a negative integer to
+a signed type failed too, and is fixed.
+
+**Reading the sidecar** doesn't use `JSONValue::read_file()`, which ends
+the program on a syntax error: a damaged sidecar would have taken the app
+down.
+
 **The task and the job.** `st-garmin-download` is added with
 `bus.add_task()` in `SweatTrails::initialize()`, and bound to Ctrl+G. Its
 handler schedules three jobs, which run in order: a new
@@ -242,10 +254,16 @@ handler schedules three jobs, which run in order: a new
 arguments are `{"days": N}`, optional, and `{"quiet": true}`, which
 startup passes, to say nothing when there's no key. At startup,
 `initialize()` submits the task instead of scheduling `ProcessInbox` and
-`FindNewestActivity` itself. The job reads `garmin.days` from the
-settings (30 if it isn't there), and reports progress with a new
+`FindNewestActivity` itself. The handler, on the UI thread, works out a
+`GarminDownloadRequest { days, quiet }` from the settings' `garmin.days`
+(30 if it isn't there) and the arguments, with
+`make_download_request()` in `Garmin.h`, and gives it to the job, so the
+job thread doesn't read the settings. The job reports progress with a new
 `Downloading { index, count }` notification, shown in the status line as
-the inbox's is, and errors as a `Message`.
+the inbox's is, and errors as a `Message`. On Ctrl+G, but not at startup,
+it also says how many activities it downloaded, or that there were none.
+An activity whose `garmin-<id>.fit` is still in the inbox isn't
+downloaded again.
 
 **Rungap** goes: `storage/Rungap.h` and `Rungap.cpp`, the commented-out
 `rungap` in `Storage.h`, and the webhook in the comments in
@@ -253,7 +271,11 @@ the inbox's is, and errors as a `Message`.
 
 ## Test plan
 
-- `test/ZipTest.cpp`: a ZIP built in the test, with a stored and a
+- `test/JSONTest.cpp`: negative integers and decimals, exponents, numbers
+  too big for an integer, the range of a signed conversion, and things
+  that aren't numbers.
+- `test/ZipTest.cpp`: a ZIP built in the test (`test/TestZip.h`, shared
+  with `GarminTest.cpp`), with a stored and a
   deflated entry; finding an entry by name or extension; a missing entry;
   a truncated or corrupt ZIP is an error, not a crash.
 - `test/GarminTest.cpp`, with a fake `HttpFetch`:
@@ -270,6 +292,11 @@ the inbox's is, and errors as a `Message`.
 - `test/ActivityLoadTest.cpp`: the sidecar's `activityName` becomes the
   title; a sidecar without one, or not JSON, leaves the FIT title.
 - `Storage::has_activity()`, in a temporary store.
+
+Checked once against Garmin, with Jan's key, into a temporary store: the
+last 7 days, 5 activities, downloaded, organized by the inbox under the
+start times the list gave, with their names in the sidecars; a second
+run downloaded nothing.
 
 By hand: a download at startup and on Ctrl+G with Jan's key, the status
 line while it runs, the messages for a missing and a rejected key, and the
