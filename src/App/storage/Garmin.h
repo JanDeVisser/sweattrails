@@ -88,6 +88,17 @@ private:
     GarminResult<HttpResponse> get(std::string const &path, std::string accept);
 };
 
+// What a download is asked to do: the `st-garmin-download` task's
+// arguments, with the settings filling in what they don't say.
+struct GarminDownloadRequest {
+    int  days { GarminDefaultDays };
+    bool quiet { false }; // Say nothing when there's no key, as at startup
+};
+
+// `garmin.days` from the settings, unless the task's `days` argument
+// overrides it, and the task's `quiet` argument.
+GarminDownloadRequest make_download_request(JSONValue const &settings, JSONValue const &arguments);
+
 // Called before each activity is downloaded, with its index and the number
 // of activities to download.
 using GarminProgress = std::function<void(size_t index, size_t count)>;

@@ -354,6 +354,19 @@ void test_failed_download_keeps_the_earlier_ones()
     CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-5.fit", "garmin-5.json" }));
 }
 
+void test_download_request()
+{
+    auto const settings = MUST_EVAL(JSONValue::deserialize(R"({"garmin": {"days": 90}})"));
+    CHECK_EQ(make_download_request(JSONValue::object(), JSONValue { }).days, GarminDefaultDays);
+    CHECK_EQ(make_download_request(settings, JSONValue { }).days, 90);
+    auto const year = MUST_EVAL(JSONValue::deserialize(R"({"days": 365})"));
+    CHECK_EQ(make_download_request(settings, year).days, 365);
+    CHECK(!make_download_request(settings, year).quiet);
+    auto const startup = MUST_EVAL(JSONValue::deserialize(R"({"quiet": true})"));
+    CHECK(make_download_request(settings, startup).quiet);
+    CHECK_EQ(make_download_request(settings, startup).days, 90);
+}
+
 void test_has_activity()
 {
     TempStore store;
@@ -380,6 +393,7 @@ int main()
     test_download_new_activities();
     test_download_skips_what_the_inbox_has();
     test_failed_download_keeps_the_earlier_ones();
+    test_download_request();
     test_has_activity();
     return ST::Test::test_result();
 }

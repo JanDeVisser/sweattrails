@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <cstdlib>
+#include <ctime>
 #include <variant>
 
 #include <config.h>
@@ -20,8 +22,10 @@
 #include <Modal.h>
 #include <Widget.h>
 
+#include <Http.h>
 #include <SweatTrails.h>
 #include <storage/Activity.h>
+#include <storage/Garmin.h>
 #include <storage/Storage.h>
 #include <storage/Types.h>
 #include <widget/Activity.h>
@@ -130,6 +134,47 @@ void SweatTrails::job_download_tiles(Job::Payload const &data)
     }
 }
 
+void SweatTrails::job_download_garmin(Job::Payload const &data)
+{
+    auto const &request = std::get<GarminDownloadRequest>(data);
+    auto const  the = SweatTrails::the();
+    auto const *variable = std::getenv(GarminKeyVariable);
+    auto const  key = read_api_key(variable ? std::optional<std::string_view> { variable } : std::nullopt, garmin_key_file());
+    if (!key) {
+        // Downloading from Garmin Connect is something a user opts into by
+        // creating a key, so at startup no key isn't worth a word.
+        if (!request.quiet) {
+            the->notify<NotificationType::Message>(std::format(
+                "There's no Garmin Connect API key. Create one in Garmin Connect's settings, under "
+                "Personal API, and save it in {}.",
+                garmin_key_file().string()));
+        }
+        return;
+    }
+    GarminConnect garmin { .fetch = http_fetch };
+    if (auto const token = garmin.obtain_token(*key); !token) {
+        the->notify<NotificationType::Message>(token.error().to_string());
+        return;
+    }
+    auto const on_activity = [&the](size_t index, size_t count) {
+        the->notify_latest<NotificationType::Downloading>(Downloading { index, count });
+    };
+    auto const count = download_new_activities(garmin, the->storage, garmin_start_date(request.days, std::time(nullptr)), on_activity);
+    the->notify_latest<NotificationType::Downloading>(Downloading { });
+    if (!count) {
+        the->notify<NotificationType::Message>(count.error().to_string());
+        return;
+    }
+    info(ST, "Downloaded {} activities from Garmin Connect", *count);
+    // At startup the new activity shows up by itself. Asked for, the
+    // download says what it found, if only that there was nothing.
+    if (!request.quiet) {
+        the->notify<NotificationType::Message>(*count == 0
+                ? std::string { "No new activities on Garmin Connect" }
+                : std::format("Downloaded {} {} from Garmin Connect", *count, (*count == 1) ? "activity" : "activities"));
+    }
+}
+
 pSweatTrails SweatTrails::the()
 {
     return std::dynamic_pointer_cast<SweatTrails>(App::the());
@@ -192,6 +237,17 @@ void cmd_quit(pSweatTrails const &sweattrails, JSONValue const &)
     query_box(sweattrails, prompt, are_you_sure, QueryOptionYesNo);
 }
 
+// Downloads new activities from Garmin Connect, and then processes the
+// inbox, so they show up. Arguments: `days`, how far back to look, instead
+// of the settings' `garmin.days`, and `quiet`, as at startup.
+void cmd_garmin_download(pSweatTrails const &sweattrails, JSONValue const &arguments)
+{
+    // Jobs run one at a time in the order they're scheduled.
+    sweattrails->schedule<JobType::DownloadGarmin>(make_download_request(sweattrails->settings, arguments));
+    sweattrails->schedule<JobType::ProcessInbox>(std::monostate { });
+    sweattrails->schedule<JobType::FindNewestActivity>(std::monostate { });
+}
+
 void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
 {
     if (!sweattrails->modals.empty()) {
@@ -243,6 +299,14 @@ void SweatTrails::notif_importing_file(Notification::Payload const &data)
             : std::format("Importing {} of {}: {}", file.index + 1, file.count, file.file_name));
 }
 
+void SweatTrails::notif_downloading(Notification::Payload const &data)
+{
+    auto const &download = std::get<Downloading>(data);
+    SweatTrails::the()->set_status(download.count == 0
+            ? std::string { }
+            : std::format("Downloading {} of {} from Garmin Connect", download.index + 1, download.count));
+}
+
 void SweatTrails::notif_map_tile(Notification::Payload const &data)
 {
     SweatTrails::the()->activity_display->map->add_tile(std::get<MapTile>(data));
@@ -290,12 +354,15 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_Q, KModControl });
     bus.add_task<SweatTrails>("st-list-month", self(), cmd_list_month)
         .bind(KeyCombo { KEY_M, KModControl });
+    bus.add_task<SweatTrails>("st-garmin-download", self(), cmd_garmin_download)
+        .bind(KeyCombo { KEY_G, KModControl });
     bus.add_task<SweatTrails>("st-message", self(), cmd_message);
 
-    // Jobs run one at a time in the order they're scheduled, so the newest
-    // activity is looked up after the inbox has been processed.
-    bus.schedule(make_job<JobType::ProcessInbox>(std::monostate { }));
-    bus.schedule(make_job<JobType::FindNewestActivity>(std::monostate { }));
+    // The download processes the inbox and shows the newest activity after
+    // it, also when there's nothing to download.
+    auto quiet = JSONValue::object();
+    quiet["quiet"] = JSONValue { true };
+    bus.submit("st-garmin-download", quiet);
 }
 
 EError SweatTrails::read_settings()

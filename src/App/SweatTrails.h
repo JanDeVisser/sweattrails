@@ -16,6 +16,7 @@
 #include <App.h>
 
 #include <storage/Activity.h>
+#include <storage/Garmin.h>
 #include <storage/Storage.h>
 #include <storage/Types.h>
 #include <widget/Activity.h>
@@ -62,7 +63,8 @@ using pSweatTrails = std::shared_ptr<struct SweatTrails>;
     S(FindCurrentFolder, std::monostate)  \
     S(FindNewestActivity, std::monostate) \
     S(ProcessInbox, std::monostate)       \
-    S(DownloadTiles, pTileDownload)
+    S(DownloadTiles, pTileDownload)       \
+    S(DownloadGarmin, GarminDownloadRequest)
 
 enum class JobType {
     JOBTYPE(ENUMVALUE2)
@@ -86,13 +88,21 @@ struct ImportingFile {
     size_t      count { 0 };
 };
 
+// Sent by the Garmin Connect download before each activity, and with a
+// count of 0 when it's done.
+struct Downloading {
+    size_t index { 0 };
+    size_t count { 0 };
+};
+
 #define NOTIFICATIONTYPE(S)         \
     S(Message, std::string)         \
     S(ActivityList, Activities)     \
     S(Activity, Activity)           \
     S(ImportingFile, ImportingFile) \
     S(MapTile, MapTile)             \
-    S(MapTilesDone, MapTilesDone)
+    S(MapTilesDone, MapTilesDone)   \
+    S(Downloading, Downloading)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -113,6 +123,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void job_find_newest_activity(Job::Payload const &data);
     static void job_process_inbox(Job::Payload const &data);
     static void job_download_tiles(Job::Payload const &data);
+    static void job_download_garmin(Job::Payload const &data);
 
     // The payload variant starts with a std::monostate, so a job type's
     // payload comes one after its value.
@@ -126,6 +137,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 job_find_newest_activity,
                 job_process_inbox,
                 job_download_tiles,
+                job_download_garmin,
             });
     }
 
@@ -141,6 +153,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_importing_file(Notification::Payload const &data);
     static void notif_map_tile(Notification::Payload const &data);
     static void notif_map_tiles_done(Notification::Payload const &data);
+    static void notif_downloading(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -154,6 +167,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_importing_file,
                 notif_map_tile,
                 notif_map_tiles_done,
+                notif_downloading,
             });
     }
 
