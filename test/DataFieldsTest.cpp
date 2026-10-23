@@ -367,6 +367,38 @@ void test_power()
     CHECK_EQ(t.mark_at("NP"), TestActivity::NoMark);
 }
 
+// 200 W over the moving time of 3000 s, at an IF of 200 / 275: 44. Over
+// the elapsed time of 3100 s it would be 45.
+void test_tss_over_moving_time()
+{
+    TestActivity t { sport::Cycling, records_with(40, set_power, 0, u16 { 200 }, u16 { 200 }) };
+    CHECK(t.activity.segment.tss.has_value());
+    if (t.activity.segment.tss) {
+        CHECK_EQ(*t.activity.segment.tss, 44.0f);
+    }
+}
+
+void test_summary()
+{
+    TestActivity t { sport::Cycling, records_with(40, set_power, 0, u16 { 200 }, u16 { 200 }) };
+    t.activity.segment.distance = 30000;
+    CHECK_EQ(activity_summary(t.activity), "30.0 km · 50:00 · TSS 44");
+}
+
+void test_summary_without_distance_or_tss()
+{
+    TestActivity no_distance { sport::Cycling, records_with(40, set_power, 0, u16 { 200 }, u16 { 200 }) };
+    CHECK_EQ(activity_summary(no_distance.activity), "50:00 · TSS 44");
+
+    TestActivity no_power { sport::Running, std::vector<record>(10) };
+    no_power.activity.segment.distance = 10000;
+    CHECK_EQ(activity_summary(no_power.activity), "10.00 km · 50:00");
+
+    // Too few power samples for an NP, so no TSS.
+    TestActivity no_np { sport::Cycling, records_with(30, set_power, 0, u16 { 200 }, u16 { 200 }) };
+    CHECK_EQ(activity_summary(no_np.activity), "50:00");
+}
+
 void test_no_np_with_few_power_samples()
 {
     TestActivity t { sport::Cycling, records_with(30, set_power, 0, u16 { 200 }, u16 { 200 }) };
@@ -554,6 +586,9 @@ int main()
     test_heart_rate();
     test_power();
     test_no_np_with_few_power_samples();
+    test_tss_over_moving_time();
+    test_summary();
+    test_summary_without_distance_or_tss();
     test_unrealistic_maxima_are_not_shown();
     test_only_times_without_data();
     test_moving_time_of_an_hour();

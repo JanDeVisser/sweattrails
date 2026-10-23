@@ -139,8 +139,9 @@ void Segment::analyze(std::span<record> records, bool smooth)
         auto const &avg = *computed_power_range.range;
         variability_index = static_cast<float32>(np.normalized) / static_cast<float32>(avg.average);
         intensity_factor = static_cast<float32>(np.normalized) / JANS_FTP;
+        // Over the moving time: the stops weren't training.
         tss = std::trunc(
-            (static_cast<float32>(elapsed.elapsed) * static_cast<float32>(np.normalized) * *intensity_factor)
+            (static_cast<float32>(moving.elapsed) * static_cast<float32>(np.normalized) * *intensity_factor)
             / (JANS_FTP * 36));
     }
 }

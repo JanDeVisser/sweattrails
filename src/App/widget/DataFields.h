@@ -30,6 +30,10 @@ struct DataLine {
     std::optional<DataField> right { };
 };
 
+// The line under the activity's title: the distance, the active time and
+// the TSS, as far as the activity has them, e.g. "42.3 km · 1:32:10 · TSS 87".
+std::string activity_summary(Activity const &activity);
+
 // The lines of the activity's data panel, in two columns. Fields without
 // data in the activity are left out, and so are lines without fields.
 std::vector<DataLine> data_fields(Activity const &activity);

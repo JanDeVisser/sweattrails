@@ -108,24 +108,36 @@ void add_hr_lines(std::vector<DataLine> &lines, Segment const &segment)
     });
 }
 
-void add_power_lines(std::vector<DataLine> &lines, Segment const &segment)
+bool has_power(Segment const &segment)
 {
     auto const &power = segment.computed_power_range.range;
-    if (!power || power->max < MinRealisticMax) {
+    return power && power->max >= MinRealisticMax;
+}
+
+// There's only an NP after more than 30 power samples. IF, VI and TSS are
+// worked out from it.
+bool has_np(Segment const &segment)
+{
+    auto const &np = segment.computed_normalized_range.range;
+    return has_power(segment) && np && np->normalized > 0;
+}
+
+void add_power_lines(std::vector<DataLine> &lines, Segment const &segment)
+{
+    if (!has_power(segment)) {
         return;
     }
+    auto const &power = segment.computed_power_range.range;
     lines.push_back(DataLine {
         .left = DataField { "Avg Power", std::format("{} W", power->average) },
         .right = DataField { "Max Power", std::format("{} W", power->max), power->max_at },
     });
 
-    // There's only an NP after more than 30 power samples. IF and VI are
-    // worked out from it.
-    auto const &np = segment.computed_normalized_range.range;
-    if (!np || np->normalized == 0) {
+    if (!has_np(segment)) {
         return;
     }
-    DataLine np_line { .left = DataField { "NP", std::format("{} W", np->normalized) } };
+    auto const &np = segment.computed_normalized_range.range;
+    DataLine    np_line { .left = DataField { "NP", std::format("{} W", np->normalized) } };
     if (segment.intensity_factor) {
         np_line.right = DataField { "IF", std::format("{:.2f}", *segment.intensity_factor) };
     }
@@ -170,6 +182,24 @@ void add_elevation_lines(std::vector<DataLine> &lines, Segment const &segment)
     lines.push_back(DataLine { .left = DataField { "Climbed", std::format("{:.0f} m", segment.climb()) } });
 }
 
+}
+
+std::string activity_summary(Activity const &activity)
+{
+    auto const              &segment = activity.segment;
+    std::vector<std::string> parts;
+    if (segment.distance > 0) {
+        parts.push_back(format_distance(segment.distance));
+    }
+    parts.push_back(format_moving_time(segment.moving));
+    if (has_np(segment) && segment.tss) {
+        parts.push_back(std::format("TSS {:.0f}", *segment.tss));
+    }
+    std::string summary;
+    for (auto const &part : parts) {
+        summary += summary.empty() ? part : " · " + part;
+    }
+    return summary;
 }
 
 std::vector<DataLine> data_fields(Activity const &activity)
