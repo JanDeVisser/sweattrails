@@ -224,8 +224,6 @@ StorageResult<bool> Activity::load_from_slice(std::string_view const &buffer)
 
 Error<StorageError> Activity::analyze()
 {
-    segment.analyze(records, true);
-
     // Laps are contiguous and in chronological order, so a lap runs from its
     // own start time up to the start time of the next lap. Everything from the
     // start of the last lap onwards belongs to the last lap.
@@ -243,6 +241,9 @@ Error<StorageError> Activity::analyze()
         lap.end_record = static_cast<size_t>(end - records.begin());
         lap.segment.analyze(std::span { begin, end }, false);
     }
+    // Last: it smooths the records, and the laps should see them as
+    // recorded, as the activity does.
+    segment.analyze(records, true);
     return { };
 }
 
