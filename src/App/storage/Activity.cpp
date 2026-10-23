@@ -285,6 +285,7 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
         if (s->sport) {
             sport = *s->sport;
         }
+        sub_sport = s->sub_sport;
         if (s->total_distance) {
             segment.distance = *s->total_distance;
         }

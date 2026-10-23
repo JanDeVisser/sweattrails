@@ -107,17 +107,18 @@ struct Lap {
 };
 
 struct Activity {
-    Storage            *storage { nullptr };
-    LoadingDepth        depth { LoadingDepth::None };
-    ActivityID          id { };
-    u32                 serial { 0 };
-    u16                 number { 0 };
-    ST::sport           sport { ST::sport::Running };
-    std::string         title { };
-    std::string         notes { };
-    Segment             segment { };
-    std::vector<record> records { };
-    std::vector<Lap>    laps { };
+    Storage                      *storage { nullptr };
+    LoadingDepth                  depth { LoadingDepth::None };
+    ActivityID                    id { };
+    u32                           serial { 0 };
+    u16                           number { 0 };
+    ST::sport                     sport { ST::sport::Running };
+    std::optional<FIT::sub_sport> sub_sport { };
+    std::string                   title { };
+    std::string                   notes { };
+    Segment                       segment { };
+    std::vector<record>           records { };
+    std::vector<Lap>              laps { };
 
     // Local time minus UTC in seconds, from the FIT activity message. Empty
     // if the file doesn't record the local time.

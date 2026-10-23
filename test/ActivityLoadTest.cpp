@@ -89,15 +89,20 @@ struct FITBuilder {
     }
 };
 
-// A session of `count` seconds, with its total ascent; 0xFFFF is FIT's
+// FIT's invalid value for an enum, as a device without a sub-sport writes
+// it.
+constexpr u8 NoSubSport = 0xFF;
+
+// A ride of `count` seconds, with its total ascent; 0xFFFF is FIT's
 // invalid value, as a device without a climb writes it.
-void add_session(FITBuilder &fit, u32 count, u16 total_ascent)
+void add_session(FITBuilder &fit, u32 count, u16 total_ascent, u8 sub_sport = NoSubSport)
 {
     fit.definition(0, 18,
         {
             { .num = 253, .size = 4, .base_type = Uint32 },
             { .num = 2, .size = 4, .base_type = Uint32 },
             { .num = 5, .size = 1, .base_type = Enum },
+            { .num = 6, .size = 1, .base_type = Enum },
             { .num = 7, .size = 4, .base_type = Uint32 },
             { .num = 8, .size = 4, .base_type = Uint32 },
             { .num = 22, .size = 2, .base_type = Uint16 },
@@ -106,6 +111,7 @@ void add_session(FITBuilder &fit, u32 count, u16 total_ascent)
     fit.u32_le(Start + count);
     fit.u32_le(Start);
     fit.byte(2); // Cycling
+    fit.byte(sub_sport);
     fit.u32_le(count * 1000);
     fit.u32_le(count * 1000);
     fit.u16_le(total_ascent);
@@ -177,6 +183,25 @@ void test_session_without_total_ascent()
     CHECK(!t.activity.segment.total_ascent.has_value());
 }
 
+void test_session_sub_sport_is_loaded()
+{
+    FITBuilder fit;
+    add_session(fit, 3600, 345, 8); // Mountain
+    LoadedActivity t { fit.file() };
+    CHECK(t.loaded);
+    CHECK(t.activity.sport == sport::Cycling);
+    CHECK(t.activity.sub_sport == FIT::sub_sport::mountain);
+}
+
+void test_session_without_sub_sport()
+{
+    FITBuilder fit;
+    add_session(fit, 3600, 345);
+    LoadedActivity t { fit.file() };
+    CHECK(t.loaded);
+    CHECK(!t.activity.sub_sport.has_value());
+}
+
 // Two laps of 20 records. Lap 1 jitters by 1 m and has a stop at record
 // 5; lap 2 climbs from 100 m to 110 m in 1 m steps. The session has the
 // device's climb, the laps work out their own, with the hysteresis.
@@ -244,6 +269,8 @@ int main()
 {
     test_session_total_ascent_is_loaded();
     test_session_without_total_ascent();
+    test_session_sub_sport_is_loaded();
+    test_session_without_sub_sport();
     test_laps_work_out_their_own_climb();
     test_lap_cadence_is_from_the_recorded_cadence();
     return ST::Test::test_result();
