@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 #include <widget/SportIcon.h>
 
@@ -36,6 +37,10 @@ void test_rides()
     check_icon(sport::Cycling, sub_sport::mountain, "icons8-cycling-mountain-bike-skin-type-2-96.png");
     check_icon(sport::E_biking, { }, "icons8-cycling-skin-type-2-96.png");
     check_icon(sport::E_biking, sub_sport::e_bike_mountain, "icons8-cycling-mountain-bike-skin-type-2-96.png");
+    // The table pairs both sports with both mountain sub-sports.
+    check_icon(sport::Cycling, sub_sport::e_bike_mountain, "icons8-cycling-mountain-bike-skin-type-2-96.png");
+    check_icon(sport::E_biking, sub_sport::mountain, "icons8-cycling-mountain-bike-skin-type-2-96.png");
+    check_icon(sport::E_biking, sub_sport::road, "icons8-cycling-skin-type-2-96.png");
 }
 
 void test_runs()
@@ -66,6 +71,24 @@ void test_default()
     check_icon(sport::Generic, { }, "icons8-hyperactive-skin-type-3-96.png");
 }
 
+// Whatever the sport and sub-sport, the icon is one that's there.
+void test_every_sport_has_an_icon()
+{
+    std::vector<sport> sports { };
+#define S(V, N) sports.push_back(sport::V);
+    SPORT(S)
+#undef S
+    std::vector<std::optional<sub_sport>> sub_sports { std::nullopt };
+#define S(V, N) sub_sports.emplace_back(sub_sport::V);
+    SUB_SPORT(S)
+#undef S
+    for (auto const the_sport : sports) {
+        for (auto const &the_sub_sport : sub_sports) {
+            CHECK(fs::exists(Icons / sport_icon(the_sport, the_sub_sport)));
+        }
+    }
+}
+
 // make-app-icon.sh makes them from the SVG; the build expects them in
 // share/icons.
 void test_app_icon_files_exist()
@@ -84,6 +107,7 @@ int main()
     test_other_sports();
     test_sub_sport_of_another_sport();
     test_default();
+    test_every_sport_has_an_icon();
     test_app_icon_files_exist();
     return ST::Test::test_result();
 }

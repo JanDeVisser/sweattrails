@@ -202,6 +202,28 @@ void test_session_without_sub_sport()
     CHECK(!t.activity.sub_sport.has_value());
 }
 
+// A file with two sessions shows the sport of the last one, so the
+// sub-sport has to come from that one too, even when it has none.
+void test_sub_sport_is_from_the_last_session()
+{
+    FITBuilder fit;
+    add_session(fit, 3600, 345, 8); // Mountain
+    add_session(fit, 1800, 100);
+    LoadedActivity t { fit.file() };
+    CHECK(t.loaded);
+    CHECK(!t.activity.sub_sport.has_value());
+}
+
+// Generic is a sub-sport, not the lack of one.
+void test_generic_sub_sport_is_kept()
+{
+    FITBuilder fit;
+    add_session(fit, 3600, 345, 0); // Generic
+    LoadedActivity t { fit.file() };
+    CHECK(t.loaded);
+    CHECK(t.activity.sub_sport == FIT::sub_sport::generic);
+}
+
 // Two laps of 20 records. Lap 1 jitters by 1 m and has a stop at record
 // 5; lap 2 climbs from 100 m to 110 m in 1 m steps. The session has the
 // device's climb, the laps work out their own, with the hysteresis.
@@ -271,6 +293,8 @@ int main()
     test_session_without_total_ascent();
     test_session_sub_sport_is_loaded();
     test_session_without_sub_sport();
+    test_sub_sport_is_from_the_last_session();
+    test_generic_sub_sport_is_kept();
     test_laps_work_out_their_own_climb();
     test_lap_cadence_is_from_the_recorded_cadence();
     return ST::Test::test_result();
