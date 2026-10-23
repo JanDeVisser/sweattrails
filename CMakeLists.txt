@@ -158,6 +158,7 @@ add_executable(
         src/App/fit/Profile.cpp
         src/App/widget/Activity.cpp
         src/App/widget/ActivitySelector.cpp
+        src/App/widget/DataFields.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Storage.cpp
         src/App/storage/Types.cpp
@@ -267,6 +268,7 @@ target_link_libraries(map_test PRIVATE ${CURL_LIBRARIES})
 sweattrails_test(
         data_fields_test
         test/DataFieldsTest.cpp
+        src/App/widget/DataFields.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Storage.cpp
         src/App/storage/Types.cpp
