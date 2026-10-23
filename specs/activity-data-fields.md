@@ -51,6 +51,7 @@ isn't shown, and nor is the line it's on if both of its fields are missing.
 | NP                      | IF                       | the activity has power     |
 | VI                      |                          | the activity has power     |
 | Min elevation           | Max elevation            | the activity has altitude  |
+| Climbed                 |                          | the activity has altitude  |
 
 - Rides (`sport::Cycling`, with any sub-sport such as indoor or e-bike,
   and `sport::E_biking`, which FIT has as a sport of its own) show speed
@@ -59,6 +60,9 @@ isn't shown, and nor is the line it's on if both of its fields are missing.
 - Average speed is distance over moving time, as average pace is now.
 - HR is in bpm, power in W, both as whole numbers. IF and VI have two
   decimals.
+- Climbed is the meters climbed, as a whole number: every rise in altitude
+  from one record to the next counts, and descents don't take anything
+  off.
 - An activity "has HR" or "has power" only when its maximum is at least 10
   bpm or W. A lower maximum isn't realistic, and then no HR, or no power,
   NP, IF or VI, fields are shown.
@@ -161,6 +165,12 @@ void request_cursor(MouseCursor cursor);
 I-beam) before the widgets handle input, and afterwards calls
 `SetMouseCursor()` if the request differs from the cursor that is shown.
 
+**Climbed** is worked out in `Segment::analyze()`, as
+`Segment::computed_climb`: the sum of the rises in altitude between
+consecutive records with an altitude. A record without altitude is skipped,
+so the climb goes on from the altitude before it. Laps get their own climb,
+as they get their own ranges.
+
 **When there's no data for a field.** "The activity has HR" (or power)
 means that its maximum is at least 10 (bpm or W). Below that it can't be
 real, such as a sensor that only sent zeros, and none of the HR fields, or
@@ -178,7 +188,8 @@ storage sources, as `activity_selector_test` is:
   with the maximum on ties. With smoothing, `max_at` is the record that
   completes the window with the highest average.
 - `Segment::analyze()`: records with gaps in their HR and power, as in a
-  sensor dropout. `max_at` is the record index of the maximum.
+  sensor dropout. `max_at` is the record index of the maximum. The climb
+  only counts rises, and skips records without altitude.
 - `data_fields()`, for activities built in the test:
   - a ride shows speed in km/h with one decimal, a run pace in min/km,
     and Max Pace is the max speed as a pace;

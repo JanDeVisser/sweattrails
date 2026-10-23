@@ -36,6 +36,7 @@ bool eql_ignore_case(std::string_view const &lhs, std::string_view const &rhs)
 // they're relative to the lap's first record.
 void Segment::analyze(std::span<record> records, bool smooth)
 {
+    std::optional<float32> previous_altitude { };
     for (size_t ix = 0; ix < records.size(); ++ix) {
         auto &rec = records[ix];
         if (rec.speed) {
@@ -66,6 +67,10 @@ void Segment::analyze(std::span<record> records, bool smooth)
         if (rec.altitude) {
             auto const elev_int = static_cast<i16>(*rec.altitude);
             computed_elevation_range.extend(elev_int, ix);
+            if (previous_altitude && *rec.altitude > *previous_altitude) {
+                computed_climb += *rec.altitude - *previous_altitude;
+            }
+            previous_altitude = rec.altitude;
         }
         if (rec.position) {
             auto const &position = *rec.position;

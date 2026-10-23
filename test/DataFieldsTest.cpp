@@ -89,6 +89,38 @@ void test_analyze_max_at_is_a_record_index()
     CHECK_EQ(segment.computed_hr_range.range->max_at, 6uz);
 }
 
+record with_altitude(std::optional<float32> altitude)
+{
+    return record { .altitude = altitude };
+}
+
+// Only rises count. A record without altitude, as in a dropout, is skipped:
+// the climb goes on from the altitude before it.
+void test_analyze_climb()
+{
+    std::vector<record> records {
+        with_altitude(100.0f),
+        with_altitude(105.0f),
+        with_altitude(103.0f),
+        with_altitude({ }),
+        with_altitude(110.0f),
+        with_altitude(90.0f),
+        with_altitude(92.5f),
+    };
+    Segment segment;
+    segment.analyze(records, true);
+    // 100 to 105, 103 to 110, and 90 to 92.5.
+    CHECK_EQ(segment.computed_climb, 14.5f);
+}
+
+void test_analyze_no_climb_without_altitude()
+{
+    std::vector<record> records(5);
+    Segment             segment;
+    segment.analyze(records, true);
+    CHECK_EQ(segment.computed_climb, 0.0f);
+}
+
 // An activity with the given records, analyzed as when it's loaded.
 struct TestActivity {
     Storage  storage { };
@@ -242,6 +274,7 @@ void test_only_times_without_data()
     CHECK_EQ(t.value("Elapsed Time"), "51:40.000");
     CHECK(!t.field("Distance"));
     CHECK(!t.field("Min elevation"));
+    CHECK(!t.field("Climbed"));
 }
 
 // It used to show only the seconds when the minutes were 0, also with
@@ -358,6 +391,9 @@ void test_elevation()
     CHECK_EQ(t.value("Max elevation"), "250 m");
     CHECK_EQ(t.mark_at("Min elevation"), 1uz);
     CHECK_EQ(t.mark_at("Max elevation"), 3uz);
+    // Only 80.9 m to 250 m is a climb.
+    CHECK_EQ(t.value("Climbed"), "169 m");
+    CHECK_EQ(t.mark_at("Climbed"), TestActivity::NoMark);
 }
 
 // A pace of a day or more per km, as for a gym session where the watch
@@ -377,6 +413,8 @@ int main()
     test_range_ties_go_to_the_first_record();
     test_smoothed_range_max_at();
     test_analyze_max_at_is_a_record_index();
+    test_analyze_climb();
+    test_analyze_no_climb_without_altitude();
     test_ride_shows_speed();
     test_e_bike_ride_shows_speed();
     test_run_shows_pace();

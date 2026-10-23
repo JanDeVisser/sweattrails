@@ -45,6 +45,7 @@ struct Segment {
     SmoothedRange<u8, 3>     computed_cadence_range { };
     SmoothedRange<u8, 3>     computed_hr_range { };
     Range<i16>               computed_elevation_range { };
+    float32                  computed_climb { 0 }; // Meters climbed; descents don't count
     std::optional<float32>   intensity_factor { };
     std::optional<float32>   variability_index { };
     std::optional<float32>   tss { };
