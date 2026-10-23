@@ -264,6 +264,20 @@ sweattrails_test(
 target_include_directories(map_test PRIVATE src/App)
 target_link_libraries(map_test PRIVATE ${CURL_LIBRARIES})
 
+sweattrails_test(
+        data_fields_test
+        test/DataFieldsTest.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(data_fields_test PRIVATE src/App)
+target_link_libraries(data_fields_test PRIVATE ${CURL_LIBRARIES})
+
 install(TARGETS Base Widget sweattrails fitexplore
         ARCHIVE DESTINATION lib
         RUNTIME DESTINATION bin

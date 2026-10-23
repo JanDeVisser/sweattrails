@@ -12,7 +12,6 @@
 
 #pragma once
 
-#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -65,7 +64,11 @@ struct SmoothedRange {
         }
     }
 
-    T extend(T value)
+    // `at` is the index of the record the value comes from. min_at and max_at
+    // are the first records with the minimum and the maximum. With
+    // smoothing, that's the record that completes the window, which is the
+    // record the smoothed value is for.
+    T extend(T value, size_t at)
     {
         if (!range) {
             range = RangeData { };
@@ -89,17 +92,17 @@ struct SmoothedRange {
         }
         if (r.samples == Smooth) {
             r.min = r.rolling;
-            r.min_at = Smooth - 1;
+            r.min_at = at;
             r.max = r.rolling;
-            r.max_at = Smooth - 1;
+            r.max_at = at;
         } else {
-            r.min = std::min(r.min, r.rolling);
-            if (r.min == r.rolling) {
-                r.min_at = r.samples - 1;
+            if (r.rolling < r.min) {
+                r.min = r.rolling;
+                r.min_at = at;
             }
-            r.max = std::max(r.max, r.rolling);
-            if (r.max == r.rolling) {
-                r.max_at = r.samples - 1;
+            if (r.rolling > r.max) {
+                r.max = r.rolling;
+                r.max_at = at;
             }
         }
         r.accumulated += to_accum_type(r.rolling);

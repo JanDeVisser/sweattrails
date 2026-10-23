@@ -32,37 +32,40 @@ bool eql_ignore_case(std::string_view const &lhs, std::string_view const &rhs)
 
 }
 
+// The ranges' min_at and max_at are indices into `records`: for a lap,
+// they're relative to the lap's first record.
 void Segment::analyze(std::span<record> records, bool smooth)
 {
-    for (auto &rec : records) {
+    for (size_t ix = 0; ix < records.size(); ++ix) {
+        auto &rec = records[ix];
         if (rec.speed) {
-            auto const smoothed = computed_speed_range.extend(*rec.speed);
+            auto const smoothed = computed_speed_range.extend(*rec.speed, ix);
             if (smooth) {
                 *rec.speed = smoothed;
             }
         }
         if (rec.power) {
             computed_normalized_range.extend(*rec.power);
-            auto const smoothed = computed_power_range.extend(*rec.power);
+            auto const smoothed = computed_power_range.extend(*rec.power, ix);
             if (smooth) {
                 *rec.power = smoothed;
             }
         }
         if (rec.cadence) {
-            auto const smoothed = computed_cadence_range.extend(*rec.cadence);
+            auto const smoothed = computed_cadence_range.extend(*rec.cadence, ix);
             if (smooth) {
                 *rec.cadence = smoothed;
             }
         }
         if (rec.heart_rate) {
-            auto const smoothed = computed_hr_range.extend(*rec.heart_rate);
+            auto const smoothed = computed_hr_range.extend(*rec.heart_rate, ix);
             if (smooth) {
                 *rec.heart_rate = smoothed;
             }
         }
         if (rec.altitude) {
             auto const elev_int = static_cast<i16>(*rec.altitude);
-            computed_elevation_range.extend(elev_int);
+            computed_elevation_range.extend(elev_int, ix);
         }
         if (rec.position) {
             auto const &position = *rec.position;
