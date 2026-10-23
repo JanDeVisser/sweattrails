@@ -238,3 +238,20 @@ climb Garmin Connect shows. Drawing the summary is checked by hand too.
    counted in records across a dropout, not in samples; one or two samples
    give an average but no minimum; and the climb's threshold (exactly 3 m
    counts, 2.9 m doesn't, and a descent lowers the reference). These pass.
+
+### Resolution
+
+1. Fixed: `Activity::analyze()` analyzes the laps first, and the activity's
+   segment, which smooths the records, last. This also ends the double
+   smoothing of lap HR and power. `test_lap_cadence_is_from_the_recorded_cadence`
+   passes, and fails with the old order.
+2. Fixed in this spec rather than a later one: the cadence is doubled for
+   running, walking and hiking only. Rides stay in rpm, and other sports
+   show their cadence as recorded, as "/min".
+   `test_walk_and_hike_cadence_in_spm` and `test_rowing_cadence_as_recorded`
+   cover it.
+3. and 4. Kept. The tests in 4 for the 5-record margin went with the rule
+   itself: checked by hand on the May 11 ride, it gave a Min Cadence of 1
+   rpm, because coasting rarely reads as zero (see Cadence, above). The
+   rule is now pedaling-based, with its own tests, including that ride's
+   coasting patterns, each of which fails without the power check.
