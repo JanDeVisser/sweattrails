@@ -54,8 +54,10 @@ std::string format_distance(float32 meters)
 
 std::string format_pace(float32 seconds_per_km)
 {
+    // All of it in minutes, however slow: a watch that logged next to no
+    // distance gives a pace of hours, or days, per km.
     Duration const pace { seconds_per_km };
-    return std::format("{}:{:02} min/km", pace.hours * 60 + pace.minutes, pace.seconds);
+    return std::format("{}:{:02} min/km", pace.elapsed / 60, pace.elapsed % 60);
 }
 
 std::string format_speed(float32 meters_per_second)
