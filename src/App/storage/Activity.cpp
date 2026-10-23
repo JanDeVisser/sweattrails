@@ -169,6 +169,10 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
         if (!TRY_EVAL(load_fit_file_by_name(dir / std::format("{}.fit", id.name)))) {
             return false;
         }
+        // After the FIT file, so that it wins over the workout's name.
+        if (auto const name = sidecar_title(dir / std::format("{}.json", id.name)); name) {
+            title = *name;
+        }
         // if (id.files.contains(ActivityFile::Strava)) {
         //     if (!TRY_EVAL(load_strava_file(dir))) {
         //         return false;
@@ -177,6 +181,30 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
     }
     TRY(analyze());
     return true;
+}
+
+std::optional<std::string> sidecar_title(fs::path const &sidecar)
+{
+    std::error_code ec { };
+    if (!fs::exists(sidecar, ec)) {
+        return { };
+    }
+    // Not JSONValue::read_file(), which ends the program on a syntax error.
+    auto const contents = read_file_by_name(sidecar.string());
+    if (!contents) {
+        trace(Storage, "Ignoring sidecar `{}`: {}", sidecar.string(), contents.error().to_string());
+        return { };
+    }
+    auto const json = JSONValue::deserialize(*contents);
+    if (!json) {
+        trace(Storage, "Ignoring sidecar `{}`: it isn't JSON", sidecar.string());
+        return { };
+    }
+    auto name = json->try_get<std::string>("activityName");
+    if (!name || name->empty()) {
+        return { };
+    }
+    return *name;
 }
 
 StorageResult<bool> Activity::load_from_file(fs::path const &file)

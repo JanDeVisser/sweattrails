@@ -7,9 +7,14 @@
  * test: there are no FIT files in the repository.
  */
 
+#include <ctime>
+#include <filesystem>
+#include <format>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include <IO.h>
 
 #include <storage/Activity.h>
 #include <storage/Storage.h>
@@ -17,6 +22,8 @@
 #include <TestApp.h>
 
 using namespace ST;
+
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -28,6 +35,7 @@ constexpr u8 Enum = 0x00;
 constexpr u8 Uint8 = 0x02;
 constexpr u8 Uint16 = 0x84;
 constexpr u8 Uint32 = 0x86;
+constexpr u8 String = 0x07;
 
 struct FieldDefinition {
     u8 num { 0 };
@@ -115,6 +123,15 @@ void add_session(FITBuilder &fit, u32 count, u16 total_ascent, u8 sub_sport = No
     fit.u32_le(count * 1000);
     fit.u32_le(count * 1000);
     fit.u16_le(total_ascent);
+}
+
+// A workout message with just its name, which becomes the title.
+void add_workout(FITBuilder &fit, std::string_view name)
+{
+    fit.definition(3, 26, { { .num = 8, .size = static_cast<u8>(name.size() + 1), .base_type = String } });
+    fit.message(3);
+    fit.data += name;
+    fit.byte(0);
 }
 
 void add_lap(FITBuilder &fit, u32 start, u32 count)
@@ -285,6 +302,55 @@ void test_lap_cadence_is_from_the_recorded_cadence()
     }
 }
 
+// An activity in a directory of its own, as `dummy.fit` and, if
+// `sidecar` isn't empty, `dummy.json`, loaded as the store loads it.
+struct ActivityInDir {
+    fs::path dir { fs::temp_directory_path() / std::format("sweattrails-sidecar-{}", std::time(nullptr)) };
+    Storage  storage { };
+    Activity activity { storage, ActivityID::dummy(ActivityFile::Fit) };
+    bool     loaded { false };
+
+    explicit ActivityInDir(std::string_view sidecar)
+    {
+        fs::create_directories(dir);
+        FITBuilder fit;
+        add_workout(fit, "Tempo intervals");
+        add_session(fit, 3600, 345);
+        MUST(write_file_by_name((dir / "dummy.fit").string(), fit.file()));
+        if (!sidecar.empty()) {
+            MUST(write_file_by_name((dir / "dummy.json").string(), sidecar));
+        }
+        activity.depth = LoadingDepth::Deep;
+        auto const res = activity.load_from_dir(dir);
+        loaded = res.has_value() && *res;
+    }
+
+    ~ActivityInDir()
+    {
+        std::error_code ec { };
+        fs::remove_all(dir, ec);
+    }
+};
+
+// The name on Garmin Connect wins over the FIT file's workout name.
+void test_title_from_the_sidecar()
+{
+    ActivityInDir t { R"({"activityId": 24790584050, "activityName": "Zwift - Pacer Group Ride with Maria"})" };
+    CHECK(t.loaded);
+    CHECK_EQ(t.activity.title, "Zwift - Pacer Group Ride with Maria");
+}
+
+// Without a name in the sidecar, such as the Rungap webhook's, or without
+// a valid one, the title is the workout's name.
+void test_sidecar_without_a_title()
+{
+    for (auto const *sidecar : { "", R"({"start_time": 1767536377})", "not JSON", R"({"activityName": ""})", "[1, 2]" }) {
+        ActivityInDir t { sidecar };
+        CHECK(t.loaded);
+        CHECK_EQ(t.activity.title, "Tempo intervals");
+    }
+}
+
 }
 
 int main()
@@ -297,5 +363,7 @@ int main()
     test_generic_sub_sport_is_kept();
     test_laps_work_out_their_own_climb();
     test_lap_cadence_is_from_the_recorded_cadence();
+    test_title_from_the_sidecar();
+    test_sidecar_without_a_title();
     return ST::Test::test_result();
 }
