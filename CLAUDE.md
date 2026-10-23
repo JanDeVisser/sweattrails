@@ -54,7 +54,11 @@ The personas' instructions are in `.claude/skills/analyst/SKILL.md`,
 cmake -B build -G Ninja
 ninja -C build
 ctest --test-dir build --output-on-failure
+ninja -C build install
 ```
+
+The app reads `share/` from `build/share`, which only the install step
+fills: run it after changing anything in `share/`, such as an icon.
 
 A pre-commit hook (`githooks/pre-commit`) runs clang-format on the C++ files
 being committed. Install it once per clone with
