@@ -323,22 +323,18 @@ void ActivityGraph::set_activity(std::shared_ptr<DisplayedActivity> const &activ
     std::optional<float> dalt_maybe { };
     if (seg.computed_elevation_range) {
         dalt_maybe = static_cast<float>(height) / static_cast<float>(*seg.computed_elevation_range.diff());
-        std::println("dalt_maybe: {}", *dalt_maybe);
     }
     std::optional<float> dspeed_maybe { };
     if (seg.computed_speed_range.range) {
         dspeed_maybe = static_cast<float>(height) / static_cast<float>(*seg.computed_speed_range.diff());
-        std::println("dspeed_maybe: {}", *dspeed_maybe);
     }
     std::optional<float> dpower_maybe { };
     if (seg.computed_power_range.range) {
         dpower_maybe = static_cast<float>(height) / static_cast<float>(*seg.computed_power_range.diff());
-        std::println("dpower_maybe: {}", *dpower_maybe);
     }
     std::optional<float> dhr_maybe { };
     if (seg.computed_hr_range.range) {
         dhr_maybe = static_cast<float>(height) / static_cast<float>(*seg.computed_hr_range.diff());
-        std::println("dhr_maybe: {}", *dhr_maybe);
     }
     if (!dalt_maybe && !dspeed_maybe && !dpower_maybe && !dhr_maybe) {
         return;

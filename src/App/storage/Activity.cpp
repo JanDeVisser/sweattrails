@@ -135,7 +135,6 @@ void Segment::analyze(std::span<record> records, bool smooth)
                 if (box) {
                     box->extend(position);
                 } else {
-                    std::println("Initializing box");
                     box = Box { .sw = position, .ne = position };
                 }
             }

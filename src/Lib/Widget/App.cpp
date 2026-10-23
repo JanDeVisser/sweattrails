@@ -45,7 +45,7 @@ void App::set_fonts(std::string_view const &path)
     for (auto ix = static_cast<size_t>(FontSize::XSmall); ix <= static_cast<size_t>(FontSize::XLarge); ++ix) {
         auto sz = clamp(font_sizes[ix], 4, 48);
         font_sizes[ix] = sz;
-        std::println("Loading font '{:}', size {:}", p, sz);
+        trace(App, "Loading font '{}', size {}", p, sz);
         if (codepoints[0] != 32) {
             for (auto ix = 0; ix < 992; ++ix) {
                 codepoints[ix] = ix + 32;

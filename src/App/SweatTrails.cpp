@@ -255,7 +255,7 @@ void SweatTrails::notif_map_tiles_done(Notification::Payload const &data)
 
 void SweatTrails::show_activity(Activity const &activity)
 {
-    std::println("Showing activity {}", activity.id);
+    trace(ST, "Showing activity {}", activity.id);
     last_activity = activity.id;
     auto display = widget_stack->activate<ActivityDisplay>();
     assert(display != nullptr);
@@ -264,7 +264,6 @@ void SweatTrails::show_activity(Activity const &activity)
 
 void SweatTrails::initialize()
 {
-    std::println("initialize!");
     MUST(read_settings());
     load_font();
 

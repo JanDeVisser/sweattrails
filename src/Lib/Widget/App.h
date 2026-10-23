@@ -131,7 +131,8 @@ struct App : public Layout {
         }
         app->time = GetTime();
 
-        //        SetTraceLogLevel(LOG_FATAL);
+        // raylib logs every texture, font and shader it loads.
+        SetTraceLogLevel(LOG_WARNING);
         InitWindow(static_cast<int>(app->viewport.width), static_cast<int>(app->viewport.height), app->window_title());
         app->viewport.width = static_cast<float>(GetScreenWidth());
         app->viewport.height = static_cast<float>(GetScreenHeight());

@@ -71,8 +71,6 @@ struct UTF8_std {
         for (wchar_t ch; is.get(ch);) {
             ret += ch;
         }
-        std::println("Read file:");
-        std::wcout << ret << std::endl;
         return ret;
     }
 };

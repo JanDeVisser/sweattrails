@@ -12,6 +12,7 @@
 
 #include <Defer.h>
 #include <Error.h>
+#include <Logging.h>
 #include <Pipe.h>
 #include <StringUtil.h>
 
@@ -59,7 +60,7 @@ public:
 
     CError start(T const &ctx)
     {
-        std::println("[CMD] {} {}", m_command, join(m_arguments, " "));
+        trace(Process, "{} {}", m_command, join(m_arguments, " "));
         signal(SIGCHLD, sigchld);
         size_t sz = m_arguments.size();
         size_t bufsz = m_command.length() + 1;
