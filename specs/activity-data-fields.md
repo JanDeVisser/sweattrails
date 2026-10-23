@@ -1,6 +1,6 @@
 # More Data Fields in the Activity Display
 
-Status: In progress, on branch feature/activity-data-fields
+Status: In review, on branch feature/activity-data-fields
 
 ## Goal
 
