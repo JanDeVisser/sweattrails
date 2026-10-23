@@ -204,3 +204,14 @@ sizes, and the built bundle's `Info.plist` has `CFBundleIconFile =
 sweattrails.icns`, with the file in `Contents/Resources`. The checks the
 Test plan leaves to be done by hand (the Dock, Finder, 16 pixels, the
 header icons) are still for Jan.
+
+### Resolution
+
+1. Left for later: Jan doesn't want to decide yet how multisport
+   activities should work. Until then, a triathlon that FIT records as one
+   session per leg shows its last leg's icon.
+2. Fixed: the README's build steps end with `ninja -C build install`, and
+   say why the app needs it.
+3. Fixed: the function is `sport_icon_file()` now, and the call in
+   `ActivityDataDisplay::set_activity()` needs no `ST::`.
+4. and 5. Kept.
