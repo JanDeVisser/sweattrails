@@ -115,13 +115,18 @@ Decoded<std::vector<GarminActivity>> parse_activity_list(JSONValue const &list)
     }
     std::vector<GarminActivity> activities;
     for (auto const &entry : list) {
-        auto const id = TRY_EVAL(entry.try_get<u64>("activityId"));
+        auto const id = entry.try_get<u64>("activityId");
         // Milliseconds since 1970.
-        auto const begin = TRY_EVAL(entry.try_get<i64>("beginTimestamp"));
+        auto const begin = entry.try_get<i64>("beginTimestamp");
+        // One odd entry shouldn't keep the others from being downloaded.
+        if (!id || !begin) {
+            warning(Garmin, "Skipping an activity without an ID or start time: {}", entry.serialize());
+            continue;
+        }
         auto const manual = entry.try_get<bool>("manualActivity").value_or(false);
         activities.push_back(GarminActivity {
-            .id = id,
-            .start_time = begin / 1000,
+            .id = *id,
+            .start_time = *begin / 1000,
             .has_file = !manual,
             .summary = entry,
         });

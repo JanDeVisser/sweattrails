@@ -68,6 +68,8 @@ struct GarminActivity {
     JSONValue summary { };       // The list's entry, as it came
 };
 
+// The activities in the list. An entry without an ID or start time is
+// skipped, with a warning.
 Decoded<std::vector<GarminActivity>> parse_activity_list(JSONValue const &list);
 
 // The first day a download of the last `days` days asks for, in local time,

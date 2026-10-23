@@ -208,8 +208,23 @@ void test_parse_activity_list()
     CHECK_EQ(activities->at(0).summary["activityName"].to_string(), "Zwift - Pacer Group Ride with Maria");
 
     CHECK(!parse_activity_list(JSONValue::object()).has_value());
-    auto const without_id = MUST_EVAL(JSONValue::deserialize(R"([{"beginTimestamp": 1}])"));
-    CHECK(!parse_activity_list(without_id).has_value());
+}
+
+// An entry without an ID or start time is skipped; the others are kept.
+void test_odd_entries_are_skipped()
+{
+    auto const json = MUST_EVAL(JSONValue::deserialize(R"([
+        {"beginTimestamp": 1792000000000},
+        {"activityId": 2, "beginTimestamp": "yesterday"},
+        {"activityId": 3},
+        {"activityId": 4, "beginTimestamp": 1792000000000}
+    ])"));
+    auto const activities = parse_activity_list(json);
+    CHECK(activities.has_value());
+    CHECK_EQ(activities.value_or(std::vector<GarminActivity> { }).size(), 1uz);
+    if (activities && activities->size() == 1) {
+        CHECK_EQ(activities->at(0).id, 4ull);
+    }
 }
 
 void test_start_date()
@@ -506,6 +521,7 @@ int main()
 {
     test_key_from_the_environment_or_the_file();
     test_parse_activity_list();
+    test_odd_entries_are_skipped();
     test_start_date();
     test_token();
     test_rejected_key();
