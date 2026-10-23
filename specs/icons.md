@@ -1,6 +1,6 @@
 # Sport Icons for Walking and Hiking, and an Application Icon
 
-Status: In review, on branch feature/icons
+Status: Done
 
 ## Goal
 
