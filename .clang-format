@@ -25,7 +25,7 @@ IncludeBlocks: Regroup
 # subdirectory of src/App, has to be added to its list. The first matching
 # category wins, so the app's comes first: its subdirectories are lower case.
 IncludeCategories:
-  - Regex: "^<((Coordinates|Map|Range|SweatTrails)\\.h|(fit|storage|widget)/.*)>$"
+  - Regex: "^<((Coordinates|Http|Map|Range|SweatTrails)\\.h|(fit|storage|widget)/.*)>$"
     Priority: 5 # src/App
     CaseSensitive: true
   - Regex: "^<[a-z0-9_]+>$"

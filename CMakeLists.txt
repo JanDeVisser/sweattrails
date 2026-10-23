@@ -156,6 +156,7 @@ add_executable(
         src/App/SweatTrails.h
         src/App/SweatTrails.cpp
         src/App/Coordinates.cpp
+        src/App/Http.cpp
         src/App/Map.h
         src/App/Map.cpp
         src/App/Range.h
