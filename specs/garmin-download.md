@@ -1,6 +1,6 @@
 # Download Activities from Garmin Connect
 
-Status: In review, on branch feature/garmin-download
+Status: Done
 
 ## Goal
 
