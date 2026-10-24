@@ -58,15 +58,25 @@ std::optional<i64> rate_limit_reset(HttpResponse const &response)
     return seconds;
 }
 
+// When to try again, `reset` seconds from now.
+std::string when(std::optional<i64> reset)
+{
+    if (!reset) {
+        return "later";
+    }
+    if (*reset <= 60) {
+        return "in a minute";
+    }
+    return std::format("in {} minutes", (*reset + 59) / 60);
+}
+
 WahooError http_error(HttpResponse const &response, std::string_view what)
 {
     if (response.status == 429) {
         auto const reset = rate_limit_reset(response);
         return WahooError {
             .kind = WahooError::Kind::Failed,
-            .message = reset
-                ? std::format("Wahoo's limit on requests is reached. Try again in {} minutes.", (*reset + 59) / 60)
-                : std::string { "Wahoo's limit on requests is reached. Try again later." },
+            .message = std::format("Wahoo's limit on requests is reached. Try again {}.", when(reset)),
             .status = response.status,
         };
     }

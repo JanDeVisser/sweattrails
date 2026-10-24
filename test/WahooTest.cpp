@@ -441,6 +441,16 @@ void test_rate_limit()
         CHECK(listed.error().kind == WahooError::Kind::Failed);
         CHECK_EQ(listed.error().message, "Wahoo's limit on requests is reached. Try again in 5 minutes.");
     }
+    for (auto const &[reset, message] : std::vector<std::pair<std::string, std::string>> {
+             { "0", "Try again in a minute." },
+             { "30", "Try again in a minute." },
+             { "60", "Try again in a minute." },
+             { "61", "Try again in 2 minutes." },
+         }) {
+        fake.answer("/v1/workouts", { .status = 429, .body = "", .headers = { { "X-RateLimit-Reset", reset } } });
+        auto const limited = wahoo.list_workouts(0);
+        CHECK(!limited.has_value() && limited.error().message.ends_with(message));
+    }
     fake.answer("/v1/workouts", { .status = 429, .body = "" });
     auto const no_reset = wahoo.list_workouts(0);
     CHECK(!no_reset.has_value() && no_reset.error().message.ends_with("Try again later."));
