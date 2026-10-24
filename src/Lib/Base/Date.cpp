@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <format>
@@ -61,6 +62,11 @@ std::expected<DateTime, LibCError> DateTime::parse_iso8601(std::string_view cons
     //           1
     // 01234567890123456789
     // 2025-09-05T14:09:50Z
+    // 2025-09-05T14:09:50.123Z: the fraction of a second is dropped.
+    if (s.length() > 21 && s[19] == '.' && s.back() == 'Z'
+        && std::ranges::all_of(s.substr(20, s.length() - 21), [](char c) { return c >= '0' && c <= '9'; })) {
+        return parse_iso8601(std::format("{}Z", s.substr(0, 19)));
+    }
     if (s.length() != 20 && s.length() != 16) {
         return std::unexpected(LibCError { std::format("`{}` is not an ISO8601 timestamp", s) });
     }

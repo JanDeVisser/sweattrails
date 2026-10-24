@@ -271,6 +271,7 @@ sweattrails_test(json_test test/JSONTest.cpp)
 sweattrails_test(cursor_test test/CursorTest.cpp)
 sweattrails_test(string_util_test test/StringUtilTest.cpp)
 sweattrails_test(io_test test/IOTest.cpp)
+sweattrails_test(date_test test/DateTest.cpp)
 
 sweattrails_test(http_test test/HttpTest.cpp src/App/Http.cpp)
 target_include_directories(http_test PRIVATE src/App)
