@@ -8,6 +8,7 @@
 #include <cctype>
 #include <csignal>
 #include <format>
+#include <list>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -38,12 +39,21 @@ namespace ST {
 
 namespace {
 
-// How long a connection may take to send its request: a browser sends it
-// right away, and a connection that doesn't mustn't hold up the login.
-constexpr int ConnectionTimeoutSeconds = 5;
+using Clock = std::chrono::steady_clock;
+
+// How long a connection may stay open without sending its request. A
+// browser may open one before it needs it, and use it a little later.
+constexpr std::chrono::seconds ConnectionLifetime { 30 };
+
+// The most connections handled at a time. Past that, new ones wait.
+constexpr size_t MaxConnections = 16;
 
 // How often the wait checks its stop token.
 constexpr std::chrono::milliseconds PollInterval { 200 };
+
+// How long sending a response may take. It's small, and fits in the
+// socket's buffer right away.
+constexpr std::chrono::seconds SendTimeout { 1 };
 
 // The most of a request that's read: the request line is all that's needed.
 constexpr size_t MaxRequestSize = 16 * 1024;
@@ -143,64 +153,147 @@ std::string page(int status, std::string_view reason, std::string_view text)
 
 using Ssl = std::unique_ptr<SSL, decltype(&SSL_free)>;
 
-// Reads the request's head, up to the empty line.
-std::string read_request(SSL *ssl)
-{
-    std::string request;
-    char        buffer[4096];
-    while (!request.contains("\r\n\r\n") && request.size() < MaxRequestSize) {
-        auto const count = SSL_read(ssl, buffer, sizeof(buffer));
-        if (count <= 0) {
-            break;
+// A connection from the browser. It's handled without blocking: its TLS
+// handshake and request arrive bit by bit, while the wait looks after the
+// other connections, the deadline and the stop token.
+struct Connection {
+    int               fd { -1 };
+    Ssl               ssl { nullptr, SSL_free };
+    Clock::time_point expires { };
+    bool              handshaken { false };
+    std::string       request { };
+    short             events { POLLIN }; // What OpenSSL waits for
+
+    Connection(int fd, SSL_CTX *context)
+        : fd(fd)
+        , ssl(SSL_new(context), SSL_free)
+        , expires(Clock::now() + ConnectionLifetime)
+    {
+        // Accepted from a non-blocking socket, which on macOS makes this one
+        // non-blocking too, but not on Linux.
+        ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL) | O_NONBLOCK);
+        ::fcntl(fd, F_SETFD, FD_CLOEXEC);
+        ignore_sigpipe(fd);
+        if (ssl) {
+            SSL_set_fd(ssl.get(), fd);
+            SSL_set_accept_state(ssl.get());
         }
-        request.append(buffer, static_cast<size_t>(count));
     }
-    return request;
+
+    Connection(Connection const &) = delete;
+    Connection &operator=(Connection const &) = delete;
+
+    ~Connection()
+    {
+        ssl.reset();
+        ::close(fd);
+    }
+};
+
+enum class Progress {
+    Waiting,  // For more from the browser
+    Complete, // The request's head is in
+    Failed,   // Such as a browser that doesn't trust the certificate
+};
+
+// What OpenSSL needs before `result`, a call that didn't finish, can go on.
+Progress waiting_for(Connection &connection, int result)
+{
+    switch (SSL_get_error(connection.ssl.get(), result)) {
+    case SSL_ERROR_WANT_READ:
+        connection.events = POLLIN;
+        return Progress::Waiting;
+    case SSL_ERROR_WANT_WRITE:
+        connection.events = POLLOUT;
+        return Progress::Waiting;
+    default:
+        trace(OAuth, "Dropping a connection: {}", openssl_error("TLS").to_string());
+        return Progress::Failed;
+    }
 }
 
-// Handles one connection. Returns the query parameters if it was the
-// request for `path`.
-std::optional<QueryParameters> handle_connection(int fd, SSL_CTX *context, std::string_view path)
+// Takes what has arrived: the rest of the handshake, and then the request.
+Progress advance(Connection &connection)
 {
-    // Accepted from a non-blocking socket, which on macOS makes this one
-    // non-blocking too. With a timeout instead, a connection that never
-    // sends anything doesn't hold up the login for long.
-    ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL) & ~O_NONBLOCK);
-    timeval timeout { .tv_sec = ConnectionTimeoutSeconds, .tv_usec = 0 };
-    ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-    ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-    ignore_sigpipe(fd);
+    if (!connection.ssl) {
+        return Progress::Failed;
+    }
+    if (!connection.handshaken) {
+        if (auto const result = SSL_accept(connection.ssl.get()); result != 1) {
+            return waiting_for(connection, result);
+        }
+        connection.handshaken = true;
+    }
+    char buffer[4096];
+    while (true) {
+        auto const count = SSL_read(connection.ssl.get(), buffer, sizeof(buffer));
+        if (count <= 0) {
+            return waiting_for(connection, count);
+        }
+        connection.request.append(buffer, static_cast<size_t>(count));
+        if (connection.request.contains("\r\n\r\n")) {
+            return Progress::Complete;
+        }
+        if (connection.request.size() > MaxRequestSize) {
+            return Progress::Failed;
+        }
+    }
+}
 
-    Ssl ssl { SSL_new(context), SSL_free };
-    if (!ssl || SSL_set_fd(ssl.get(), fd) != 1) {
+// Sends `response`, and gives up after SendTimeout.
+void respond(Connection &connection, std::string_view response)
+{
+    auto const deadline = Clock::now() + SendTimeout;
+    while (Clock::now() < deadline) {
+        auto const result = SSL_write(connection.ssl.get(), response.data(), static_cast<int>(response.size()));
+        if (result > 0) {
+            SSL_shutdown(connection.ssl.get());
+            return;
+        }
+        if (waiting_for(connection, result) == Progress::Failed) {
+            return;
+        }
+        pollfd fd { .fd = connection.fd, .events = connection.events, .revents = 0 };
+        ::poll(&fd, 1, static_cast<int>(PollInterval.count()));
+    }
+}
+
+// The path and query parameters of a request's head: GET
+// /callback?code=...&state=... HTTP/1.1. Nothing if it isn't a GET.
+std::optional<std::pair<std::string, QueryParameters>> parse_request(std::string_view head)
+{
+    auto const parts = split(head.substr(0, head.find("\r\n")), ' ');
+    if (parts.size() != 3 || parts[0] != "GET") {
         return { };
     }
-    if (SSL_accept(ssl.get()) != 1) {
-        // A browser that doesn't trust the certificate hangs up here.
-        trace(OAuth, "Dropping a connection: {}", openssl_error("TLS handshake").to_string());
-        return { };
-    }
-    auto const request = read_request(ssl.get());
-    // GET /callback?code=...&state=... HTTP/1.1
-    auto const                     parts = split(request.substr(0, request.find("\r\n")), ' ');
-    auto const                     target = std::string_view { parts.size() == 3 ? parts[1] : std::string_view { } };
-    auto const                     query_start = std::min(target.find('?'), target.size());
-    std::optional<QueryParameters> result { };
-    std::string                    response;
+    auto const target = std::string_view { parts[1] };
+    auto const query_start = std::min(target.find('?'), target.size());
+    return std::pair {
+        std::string { target.substr(0, query_start) },
+        parse_query(target.substr(std::min(query_start + 1, target.size()))),
+    };
+}
+
+// Answers the request `connection` sent. Returns its query parameters if
+// it's the redirect the login waits for: a request for `path`, with the
+// login's `state`.
+std::optional<QueryParameters> answer(Connection &connection, std::string_view path, std::string_view state)
+{
+    auto const request = parse_request(connection.request);
     // Not the query, which has the authorization code.
-    trace(OAuth, "Request for `{}`", target.substr(0, query_start));
-    if (parts.size() == 3 && parts[0] == "GET" && target.substr(0, query_start) == path) {
-        result = parse_query(target.substr(std::min(query_start + 1, target.size())));
-        response = page(200, "OK",
-            result->contains("error")
-                ? "The login didn't go through. You can close this window, and try again from SweatTrails."
-                : "You're logged in. You can close this window and go back to SweatTrails.");
-    } else {
-        response = page(404, "Not Found", "Not found.");
+    trace(OAuth, "Request for `{}`", request ? request->first : std::string { "?" });
+    if (!request || request->first != path) {
+        respond(connection, page(404, "Not Found", "Not found."));
+        return { };
     }
-    SSL_write(ssl.get(), response.data(), static_cast<int>(response.size()));
-    SSL_shutdown(ssl.get());
-    return result;
+    auto const &parameters = request->second;
+    // From an earlier login, such as a tab reloaded: this login goes on.
+    if (!parameters.contains("state") || parameters.at("state") != state) {
+        respond(connection, page(400, "Bad Request", "This login is over. You can close this window."));
+        return { };
+    }
+    respond(connection, page(200, "OK", parameters.contains("error") ? "The login didn't go through. You can close this window, and try again from SweatTrails." : "You're logged in. You can close this window and go back to SweatTrails."));
+    return parameters;
 }
 
 }
@@ -312,40 +405,67 @@ std::expected<LoopbackServer, LibCError> LoopbackServer::listen(int port, TlsCon
     return server;
 }
 
-std::expected<QueryParameters, RedirectError> LoopbackServer::wait_for_redirect(std::string_view path, std::chrono::seconds timeout, std::stop_token const &stop)
+std::expected<QueryParameters, RedirectError> LoopbackServer::wait_for_redirect(std::string_view path, std::string_view state, std::chrono::seconds timeout, std::stop_token const &stop)
 {
-    using Clock = std::chrono::steady_clock;
-    auto const deadline = Clock::now() + timeout;
+    auto const            deadline = Clock::now() + timeout;
+    std::list<Connection> connections;
     while (true) {
         if (stop.stop_requested()) {
             return std::unexpected(RedirectError { .kind = RedirectError::Kind::Stopped, .message = "The login was stopped" });
         }
-        auto const left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now());
-        if (left <= std::chrono::milliseconds::zero()) {
+        auto const now = Clock::now();
+        if (now >= deadline) {
             return std::unexpected(RedirectError { .kind = RedirectError::Kind::TimedOut, .message = "The login timed out" });
         }
+        connections.remove_if([now](Connection const &connection) { return connection.expires <= now; });
+
+        // The listening sockets first, then a pollfd per connection, in
+        // the list's order.
         std::vector<pollfd> fds;
-        for (auto const fd : { m_ipv4, m_ipv6 }) {
-            if (fd >= 0) {
-                fds.push_back(pollfd { .fd = fd, .events = POLLIN, .revents = 0 });
+        size_t              listeners { 0 };
+        if (connections.size() < MaxConnections) {
+            for (auto const fd : { m_ipv4, m_ipv6 }) {
+                if (fd >= 0) {
+                    fds.push_back(pollfd { .fd = fd, .events = POLLIN, .revents = 0 });
+                    ++listeners;
+                }
             }
         }
-        auto const ready = ::poll(fds.data(), fds.size(), static_cast<int>(std::min(left, PollInterval).count()));
-        if (ready < 0 && errno != EINTR) {
+        for (auto const &connection : connections) {
+            fds.push_back(pollfd { .fd = connection.fd, .events = connection.events, .revents = 0 });
+        }
+        auto const left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
+        if (::poll(fds.data(), fds.size(), static_cast<int>(std::min(left, PollInterval).count())) < 0 && errno != EINTR) {
             return std::unexpected(RedirectError { .message = std::format("The login failed: {}", LibCError { }.to_string()) });
         }
-        for (auto const &fd : fds) {
-            if ((fd.revents & POLLIN) == 0) {
+
+        auto connection = connections.begin();
+        for (size_t ix = listeners; ix < fds.size(); ++ix) {
+            if (fds[ix].revents == 0) {
+                ++connection;
                 continue;
             }
-            int const connection = ::accept(fd.fd, nullptr, nullptr);
-            if (connection < 0) {
+            auto const progress = advance(*connection);
+            if (progress == Progress::Waiting) {
+                ++connection;
                 continue;
             }
-            auto parameters = handle_connection(connection, m_tls.context.get(), path);
-            ::close(connection);
+            auto parameters = (progress == Progress::Complete)
+                ? answer(*connection, path, state)
+                : std::nullopt;
+            connection = connections.erase(connection);
             if (parameters) {
                 return std::move(*parameters);
+            }
+        }
+        // New connections after the others: the list's order has to match
+        // the pollfds' above.
+        for (size_t ix = 0; ix < listeners; ++ix) {
+            if ((fds[ix].revents & POLLIN) == 0) {
+                continue;
+            }
+            if (int const fd = ::accept(fds[ix].fd, nullptr, nullptr); fd >= 0) {
+                connections.emplace_back(fd, m_tls.context.get());
             }
         }
     }

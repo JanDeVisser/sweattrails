@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <csignal>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -159,7 +160,7 @@ void test_redirect()
     auto                  server = certificate.server();
     std::string           response;
     std::jthread          browser { [&] { response = https_get(server.port(), "/callback?code=the%20code&state=s"); } };
-    auto const            parameters = server.wait_for_redirect("/callback", 5s, { });
+    auto const            parameters = server.wait_for_redirect("/callback", "s", 5s, { });
     browser.join();
     CHECK(parameters.has_value());
     if (parameters) {
@@ -174,8 +175,8 @@ void test_redirect_over_ipv6()
 {
     TestCertificate const certificate;
     auto                  server = certificate.server();
-    std::jthread          browser { [&] { https_get(server.port(), "/callback?code=c", true); } };
-    auto const            parameters = server.wait_for_redirect("/callback", 5s, { });
+    std::jthread          browser { [&] { https_get(server.port(), "/callback?code=c&state=s", true); } };
+    auto const            parameters = server.wait_for_redirect("/callback", "s", 5s, { });
     browser.join();
     CHECK(parameters.has_value() && parameters->at("code") == "c");
 }
@@ -185,8 +186,8 @@ void test_denied_login()
     TestCertificate const certificate;
     auto                  server = certificate.server();
     std::string           response;
-    std::jthread          browser { [&] { response = https_get(server.port(), "/callback?error=access_denied"); } };
-    auto const            parameters = server.wait_for_redirect("/callback", 5s, { });
+    std::jthread          browser { [&] { response = https_get(server.port(), "/callback?error=access_denied&state=s"); } };
+    auto const            parameters = server.wait_for_redirect("/callback", "s", 5s, { });
     browser.join();
     CHECK(parameters.has_value() && parameters->at("error") == "access_denied");
     CHECK(response.contains("didn't go through"));
@@ -199,10 +200,10 @@ void test_other_requests_are_not_the_redirect()
     std::string           favicon;
     std::jthread          browser { [&] {
         favicon = https_get(server.port(), "/favicon.ico");
-        https_get(server.port(), "/callbackx?code=wrong");
-        https_get(server.port(), "/callback?code=right");
+        https_get(server.port(), "/callbackx?code=wrong&state=s");
+        https_get(server.port(), "/callback?code=right&state=s");
     } };
-    auto const parameters = server.wait_for_redirect("/callback", 5s, { });
+    auto const parameters = server.wait_for_redirect("/callback", "s", 5s, { });
     browser.join();
     CHECK(favicon.starts_with("HTTP/1.1 404"));
     CHECK(parameters.has_value() && parameters->at("code") == "right");
@@ -214,17 +215,65 @@ void test_failed_connections_are_dropped()
     auto                  server = certificate.server();
     std::jthread          browser { [&] {
         // Not TLS, and a connection that hangs up before the handshake.
-        plain_send(server.port(), "GET /callback?code=plain HTTP/1.1\r\n\r\n");
+        plain_send(server.port(), "GET /callback?code=plain&state=s HTTP/1.1\r\n\r\n");
         plain_send(server.port(), "");
-        https_get(server.port(), "/callback?code=tls");
+        https_get(server.port(), "/callback?code=tls&state=s");
     } };
-    auto const parameters = server.wait_for_redirect("/callback", 5s, { });
+    auto const parameters = server.wait_for_redirect("/callback", "s", 5s, { });
     browser.join();
     CHECK(parameters.has_value() && parameters->at("code") == "tls");
 }
 
 // A browser may open a connection it doesn't use yet, as Chrome's
-// preconnect does: the login goes on once the connection times out.
+// preconnect does: the login goes on alongside it.
+// A callback from an earlier login, such as a tab reloaded, has another
+// state: it's told that login is over, and this one goes on.
+void test_earlier_login_is_not_the_redirect()
+{
+    TestCertificate const certificate;
+    auto                  server = certificate.server();
+    std::string           stale;
+    std::string           without_state;
+    std::jthread          browser { [&] {
+        stale = https_get(server.port(), "/callback?code=old&state=old");
+        without_state = https_get(server.port(), "/callback?code=none");
+        https_get(server.port(), "/callback?code=new&state=s");
+    } };
+    auto const parameters = server.wait_for_redirect("/callback", "s", 5s, { });
+    browser.join();
+    CHECK(stale.starts_with("HTTP/1.1 400"));
+    CHECK(stale.contains("This login is over"));
+    CHECK(!stale.contains("You're logged in"));
+    CHECK(without_state.starts_with("HTTP/1.1 400"));
+    CHECK(parameters.has_value() && parameters->at("code") == "new");
+}
+
+// The browser keeps its connection open after the request: the login
+// doesn't wait for it to close.
+void test_many_connections()
+{
+    TestCertificate const certificate;
+    auto                  server = certificate.server();
+    std::vector<int>      idle;
+    std::jthread          browser { [&] {
+        // More than the server handles at a time: the last ones wait their
+        // turn, until the first ones expire or close.
+        for (int ix = 0; ix < 20; ++ix) {
+            idle.push_back(connect_to(server.port()));
+        }
+        for (int ix = 0; ix < 10; ++ix) {
+            ::close(idle[ix]);
+        }
+        https_get(server.port(), "/callback?code=crowded&state=s");
+    } };
+    auto const parameters = server.wait_for_redirect("/callback", "s", 10s, { });
+    browser.join();
+    for (size_t ix = 10; ix < idle.size(); ++ix) {
+        ::close(idle[ix]);
+    }
+    CHECK(parameters.has_value() && parameters->at("code") == "crowded");
+}
+
 void test_silent_client_does_not_block_the_login()
 {
     TestCertificate const certificate;
@@ -233,12 +282,16 @@ void test_silent_client_does_not_block_the_login()
     std::jthread          browser { [&] {
         silent = connect_to(server.port());
         std::this_thread::sleep_for(100ms);
-        https_get(server.port(), "/callback?code=after");
+        https_get(server.port(), "/callback?code=after&state=s");
     } };
-    auto const parameters = server.wait_for_redirect("/callback", 30s, { });
+    auto const start = std::chrono::steady_clock::now();
+    auto const parameters = server.wait_for_redirect("/callback", "s", 30s, { });
+    auto const waited = std::chrono::steady_clock::now() - start;
     browser.join();
     ::close(silent);
     CHECK(parameters.has_value() && parameters->at("code") == "after");
+    // Not held up by the silent one.
+    CHECK(waited < 2s);
 }
 
 // Starts a TLS record that announces 16 KB, and sends it a byte at a time,
@@ -267,7 +320,7 @@ void test_slow_client_and_the_timeout()
     auto                  server = certificate.server();
     auto                  client = trickle(server.port(), 2500ms);
     auto const            start = std::chrono::steady_clock::now();
-    auto const            parameters = server.wait_for_redirect("/callback", 1s, { });
+    auto const            parameters = server.wait_for_redirect("/callback", "s", 1s, { });
     auto const            waited = std::chrono::steady_clock::now() - start;
     CHECK(!parameters.has_value() && parameters.error().kind == RedirectError::Kind::TimedOut);
     CHECK(waited < 1500ms);
@@ -286,7 +339,7 @@ void test_slow_client_and_a_stop_request()
         stop.request_stop();
     } };
     auto const start = std::chrono::steady_clock::now();
-    auto const parameters = server.wait_for_redirect("/callback", 60s, stop.get_token());
+    auto const parameters = server.wait_for_redirect("/callback", "s", 60s, stop.get_token());
     auto const waited = std::chrono::steady_clock::now() - start;
     CHECK(!parameters.has_value() && parameters.error().kind == RedirectError::Kind::Stopped);
     CHECK(waited < 1000ms);
@@ -296,7 +349,7 @@ void test_timeout()
 {
     TestCertificate const certificate;
     auto                  server = certificate.server();
-    auto const            parameters = server.wait_for_redirect("/callback", 1s, { });
+    auto const            parameters = server.wait_for_redirect("/callback", "s", 1s, { });
     CHECK(!parameters.has_value() && parameters.error().kind == RedirectError::Kind::TimedOut);
 }
 
@@ -310,7 +363,7 @@ void test_stop()
         stop.request_stop();
     } };
     auto const start = std::chrono::steady_clock::now();
-    auto const parameters = server.wait_for_redirect("/callback", 60s, stop.get_token());
+    auto const parameters = server.wait_for_redirect("/callback", "s", 60s, stop.get_token());
     CHECK(!parameters.has_value() && parameters.error().kind == RedirectError::Kind::Stopped);
     CHECK(std::chrono::steady_clock::now() - start < 5s);
 }
@@ -347,6 +400,9 @@ void test_missing_certificate()
 
 int main()
 {
+    // The tests' clients write to connections the server may have closed,
+    // as when a login times out: that's an error to them, not the end.
+    std::signal(SIGPIPE, SIG_IGN);
     test_challenge();
     test_verifier();
     test_parse_query();
@@ -356,6 +412,8 @@ int main()
     test_other_requests_are_not_the_redirect();
     test_failed_connections_are_dropped();
     test_silent_client_does_not_block_the_login();
+    test_earlier_login_is_not_the_redirect();
+    test_many_connections();
     test_slow_client_and_the_timeout();
     test_slow_client_and_a_stop_request();
     test_timeout();

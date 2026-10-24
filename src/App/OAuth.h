@@ -83,12 +83,16 @@ struct LoopbackServer {
 
     [[nodiscard]] int port() const { return m_port; }
 
-    // Waits for a request for `path`, answers it with a page that says the
-    // window can be closed, and returns its query parameters. Other
-    // requests, such as for /favicon.ico, get a 404, and connections that
-    // fail, such as a browser that doesn't trust the certificate, are
-    // dropped: the wait goes on.
-    std::expected<QueryParameters, RedirectError> wait_for_redirect(std::string_view path, std::chrono::seconds timeout, std::stop_token const &stop);
+    // Waits for a request for `path` with the login's `state`, answers it
+    // with a page that says the window can be closed, and returns its query
+    // parameters. The wait goes on past other requests: one for
+    // /favicon.ico gets a 404, and one from an earlier login, with another
+    // state, a page that says that login is over. Connections that fail,
+    // such as from a browser that doesn't trust the certificate, are
+    // dropped. Connections are handled side by side, so that one that's
+    // slow, or that the browser opens before it needs it, holds up neither
+    // the others nor the timeout and the stop token.
+    std::expected<QueryParameters, RedirectError> wait_for_redirect(std::string_view path, std::string_view state, std::chrono::seconds timeout, std::stop_token const &stop);
 
 private:
     LoopbackServer() = default;
