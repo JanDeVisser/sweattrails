@@ -383,4 +383,88 @@ Checked on October 24, 2026, with six rides from Jan's ELEMNT:
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+Reviewed on October 24, 2026, against `main`. The build is clean, and the
+tests pass, except the two new ones in `oauth_test` that show finding 1.
+Everything in Version 1 scope is there; the findings are about edges.
+
+1. **Bug.** A slow client holds the login past its timeout and its stop
+   request. `wait_for_redirect()` handles a connection in
+   `handle_connection()` (`OAuth.cpp:345`), which only has a timeout per
+   read (`SO_RCVTIMEO`, 5 seconds, `OAuth.cpp:170`): `SSL_accept()`
+   (`OAuth.cpp:178`) and `read_request()` (`OAuth.cpp:151`) keep reading as
+   long as each byte comes within 5 seconds, up to a 16 KB TLS record or
+   request. Meanwhile neither the 5-minute deadline nor the stop token is
+   looked at. A client that sends a byte every few seconds keeps the login
+   waiting for hours, and since `~SweatTrails` joins the `wahoo_login`
+   jthread, quitting the app hangs as long. Milder and likelier: a browser's
+   unused preconnection, or one that hangs mid-handshake, delays the real
+   callback by 5 seconds, and quitting by as much. Shown by
+   `test_slow_client_and_the_timeout` (timeout 1 s, returns after 2.5 s)
+   and `test_slow_client_and_a_stop_request` (stop after 0.3 s, returns
+   after 2.5 s), both failing. A fix would bound each connection by the
+   time left and poll the stop token during the handshake and read, for
+   example with a non-blocking socket and `poll()`. Related: when a
+   callback does arrive during quit, the thread goes on to call
+   `SweatTrails::the()` (`SweatTrails.cpp:433`) while `~SweatTrails` is
+   running; checking `stop.stop_requested()` after the wait closes that.
+2. **Bug.** The download after a login doesn't set `downloading`, but its
+   `DownloadDone` clears it (`SweatTrails.cpp:289`, `:509`). Sequence: log
+   in; while `job_wahoo_login` downloads, press Ctrl+G (allowed, since
+   `downloading` is false), which schedules a `Download`; the login's
+   `DownloadDone` then clears `downloading` while that `Download` is still
+   queued or running, so another Ctrl+G schedules a third. The downloads
+   skip what's in the inbox, so nothing is doubled, but each costs Wahoo
+   requests, against a sandbox limit of 25 per 5 minutes. The login could
+   set `downloading` on the UI thread when `WahooLoginEnded` reports
+   success, or the login job could schedule a `Download` job instead.
+3. **Bug.** The status line stops saying "Waiting for the Wahoo login in
+   your browser" while the login still waits, as soon as anything else
+   uses it: Ctrl+G during the wait sets "Downloading ... from Garmin
+   Connect" and then `notif_download_done()` clears it
+   (`SweatTrails.cpp:510`); the inbox's "Importing ..." does the same.
+   The spec has the status line say it while it waits.
+4. **Bug.** Any request for `/callback` ends the login, even one that isn't
+   this login's. `login_failure()` (`SweatTrails.cpp:161`) turns a missing
+   or different `state` into a failure, and the thread stops waiting.
+   Sequence: log in once; later, start a second login, and before
+   finishing it, reload or restore the first login's browser tab,
+   `https://localhost:8090/callback?code=old&state=old`. The second login
+   ends with "came back without what SweatTrails asked for", and the
+   page in that tab says "You're logged in" (`OAuth.cpp`, `page()` is
+   chosen before the state is checked). Ignoring a request with the wrong
+   `state` and waiting on would match the spec's "the wait goes on" for
+   requests that aren't the callback.
+5. **Suggestion.** `login_failure()` and `run_downloads()` live in
+   SweatTrails.cpp's anonymous namespace, so no test reaches them: which
+   outcomes trigger `ProcessInbox`, and which redirects count as a login,
+   are logic a test could check. `login_failure()` fits in `Wahoo.h` or
+   `OAuth.h` (checking `state` is generic OAuth).
+6. **Suggestion.** "No downloads are set up. The README says how to set up
+   Garmin Connect and Wahoo." (`Download.cpp:109`) mentions Wahoo to a user
+   without a client ID, where the spec says such a user never hears of
+   Wahoo. Before this branch, Ctrl+G without a Garmin key said where to put
+   the key; that's now replaced by the generic text.
+7. **Suggestion.** `request_tokens()` takes any 400 as a lost login
+   (`Wahoo.cpp:239`); the spec and Architecture say 400 `invalid_grant`.
+   A 400 for anything else (`invalid_request`, an app setup mistake) makes
+   Ctrl+G ask for a login, which then fails the same way, with no hint of
+   what Wahoo said. Checking the `error` field would keep that apart.
+8. **Suggestion.** The rate-limit message rounds up to minutes without
+   minding the number (`Wahoo.cpp:68`): `X-RateLimit-Reset: 30` gives "Try
+   again in 1 minutes.", and `0` gives "Try again in 0 minutes."
+9. **Missing test, added.** The test plan's "a client that never
+   handshakes" only had a client that hangs up at once:
+   `test_silent_client_does_not_block_the_login` covers one that stays
+   connected and silent (passes, in about 5 seconds).
+10. **Missing test, added.** "Saved before the next request" was checked
+    after the list was done. `test_refreshed_tokens_are_saved_before_they_are_used`
+    reads the file at the moment of the workouts request;
+    `test_unsaved_tokens_are_not_used`, `test_refreshed_token_is_kept` and
+    `test_rate_limited_refresh` cover the rest of the refresh. All pass.
+11. **Missing test, added.** `download_report()` for more combinations:
+    Garmin not set up with each Wahoo outcome, a Garmin failure with a
+    Wahoo login to ask for, and quiet single-source reports. All pass.
+12. **Bug in the tests, fixed.** With `ctest -j`, `garmin_test` and
+    `wahoo_test` failed nearly every run: both `TempStore`s were named
+    `sweattrails-store-<second>`, so they shared, and removed, one
+    directory. `TempDir` now adds the process ID.
