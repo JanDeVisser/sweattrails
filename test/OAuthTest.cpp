@@ -223,6 +223,75 @@ void test_failed_connections_are_dropped()
     CHECK(parameters.has_value() && parameters->at("code") == "tls");
 }
 
+// A browser may open a connection it doesn't use yet, as Chrome's
+// preconnect does: the login goes on once the connection times out.
+void test_silent_client_does_not_block_the_login()
+{
+    TestCertificate const certificate;
+    auto                  server = certificate.server();
+    int                   silent { -1 };
+    std::jthread          browser { [&] {
+        silent = connect_to(server.port());
+        std::this_thread::sleep_for(100ms);
+        https_get(server.port(), "/callback?code=after");
+    } };
+    auto const parameters = server.wait_for_redirect("/callback", 30s, { });
+    browser.join();
+    ::close(silent);
+    CHECK(parameters.has_value() && parameters->at("code") == "after");
+}
+
+// Starts a TLS record that announces 16 KB, and sends it a byte at a time,
+// every 100 ms, for `duration`: each byte comes well within the server's
+// timeout for a connection.
+std::jthread trickle(int port, std::chrono::milliseconds duration)
+{
+    return std::jthread { [port, duration] {
+        int const  fd = connect_to(port);
+        char const header[] = { 0x16, 0x03, 0x01, 0x40, 0x00 };
+        ::write(fd, header, sizeof(header));
+        auto const end = std::chrono::steady_clock::now() + duration;
+        while (std::chrono::steady_clock::now() < end) {
+            std::this_thread::sleep_for(100ms);
+            ::write(fd, "\x01", 1);
+        }
+        ::close(fd);
+    } };
+}
+
+// A client that sends its handshake slowly mustn't keep the login waiting
+// past its timeout.
+void test_slow_client_and_the_timeout()
+{
+    TestCertificate const certificate;
+    auto                  server = certificate.server();
+    auto                  client = trickle(server.port(), 2500ms);
+    auto const            start = std::chrono::steady_clock::now();
+    auto const            parameters = server.wait_for_redirect("/callback", 1s, { });
+    auto const            waited = std::chrono::steady_clock::now() - start;
+    CHECK(!parameters.has_value() && parameters.error().kind == RedirectError::Kind::TimedOut);
+    CHECK(waited < 1500ms);
+}
+
+// Nor past a stop request: when the app quits, it waits for the login's
+// thread.
+void test_slow_client_and_a_stop_request()
+{
+    TestCertificate const certificate;
+    auto                  server = certificate.server();
+    std::stop_source      stop;
+    auto                  client = trickle(server.port(), 2500ms);
+    std::jthread          stopper { [&] {
+        std::this_thread::sleep_for(300ms);
+        stop.request_stop();
+    } };
+    auto const start = std::chrono::steady_clock::now();
+    auto const parameters = server.wait_for_redirect("/callback", 60s, stop.get_token());
+    auto const waited = std::chrono::steady_clock::now() - start;
+    CHECK(!parameters.has_value() && parameters.error().kind == RedirectError::Kind::Stopped);
+    CHECK(waited < 1000ms);
+}
+
 void test_timeout()
 {
     TestCertificate const certificate;
@@ -286,6 +355,9 @@ int main()
     test_denied_login();
     test_other_requests_are_not_the_redirect();
     test_failed_connections_are_dropped();
+    test_silent_client_does_not_block_the_login();
+    test_slow_client_and_the_timeout();
+    test_slow_client_and_a_stop_request();
     test_timeout();
     test_stop();
     test_taken_port();
