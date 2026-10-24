@@ -240,8 +240,9 @@ struct SweatTrails : public Main<Job, Notification> {
     StringList get_font_dirs();
     void       terminate();
     void       set_message(std::string_view const &text);
-    void       set_status(std::string_view const &text);
-    void       show_activity(Activity const &activity);
+    // An empty text, while a login waits, shows that it waits.
+    void set_status(std::string_view const &text);
+    void show_activity(Activity const &activity);
 };
 
 }

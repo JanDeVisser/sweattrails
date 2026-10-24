@@ -42,6 +42,8 @@ namespace {
 // How long the Wahoo login waits for the browser to come back.
 constexpr std::chrono::minutes WahooLoginTimeout { 5 };
 
+constexpr std::string_view WaitingForLoginStatus = "Waiting for the Wahoo login in your browser";
+
 // The certificate the Wahoo login's server answers with: Wahoo only sends
 // the browser back to an https URL. The user makes it with mkcert.
 fs::path certificate_file(fs::path const &config_dir)
@@ -403,7 +405,7 @@ void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &)
         return;
     }
     sweattrails->wahoo_logging_in = true;
-    sweattrails->set_status("Waiting for the Wahoo login in your browser");
+    sweattrails->set_status(WaitingForLoginStatus);
     sweattrails->wahoo_login = std::jthread {
         [server = std::move(*server), client_id = *client_id, pkce, state, days](std::stop_token const &stop) mutable {
             auto const redirect = server.wait_for_redirect(WahooCallbackPath, state, WahooLoginTimeout, stop);
@@ -719,8 +721,12 @@ void SweatTrails::set_message(std::string_view const &text)
 }
 
 // Must be called on the UI thread; jobs send a notification instead.
-void SweatTrails::set_status(std::string_view const &text)
+void SweatTrails::set_status(std::string_view const &status_text)
 {
+    // A download or the inbox may finish while a login waits.
+    auto const text = (status_text.empty() && wahoo_logging_in)
+        ? WaitingForLoginStatus
+        : status_text;
     status->text = text;
     auto const policy = text.empty() ? SizePolicy::Hide : SizePolicy::Characters;
     if (status->policy != policy) {
