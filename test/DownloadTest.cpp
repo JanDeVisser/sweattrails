@@ -116,6 +116,32 @@ void test_report_offers_the_login()
     CHECK_EQ(report.text, "Garmin Connect: 2 new activities. Wahoo: not logged in.");
 }
 
+// Each source that's set up gets its sentence, whatever the other did.
+void test_report_combinations()
+{
+    auto const only_wahoo = download_report({ garmin(Kind::NotSetUp, 0, "No key."), wahoo(Kind::NeedsLogin) }, false);
+    CHECK_EQ(only_wahoo.text, "Wahoo: not logged in.");
+    CHECK(only_wahoo.ask_login);
+
+    auto const both_wrong = download_report({ garmin(Kind::Failed, 0, "Could not reach Garmin Connect."), wahoo(Kind::NeedsLogin) }, false);
+    CHECK_EQ(both_wrong.text, "Could not reach Garmin Connect. Wahoo: not logged in.");
+    CHECK(both_wrong.ask_login);
+
+    CHECK_EQ(download_report({ garmin(Kind::NotSetUp, 0, "No key."), wahoo(Kind::Failed, 0, "Could not reach Wahoo.") }, false).text, "Could not reach Wahoo.");
+    CHECK_EQ(download_report({ garmin(Kind::NotSetUp, 0, "No key."), wahoo(Kind::Downloaded, 0) }, false).text, "Wahoo: nothing new.");
+    CHECK_EQ(download_report({ garmin(Kind::Downloaded, 0), wahoo(Kind::NotSetUp, 0, "No ID.") }, false).text, "Garmin Connect: nothing new.");
+    CHECK(!download_report({ garmin(Kind::Downloaded, 0), wahoo(Kind::Downloaded, 0) }, false).ask_login);
+}
+
+void test_quiet_report_of_one_source()
+{
+    CHECK(download_report({ wahoo(Kind::NotSetUp, 0, "No ID.") }, true).text.empty());
+    auto const needs_login = download_report({ wahoo(Kind::NeedsLogin) }, true);
+    CHECK(needs_login.text.empty());
+    CHECK(!needs_login.ask_login);
+    CHECK_EQ(download_report({ garmin(Kind::Failed, 0, "Could not reach Garmin Connect.") }, true).text, "Could not reach Garmin Connect.");
+}
+
 void test_quiet_report()
 {
     // At startup, new activities show up by themselves, and the login isn't
@@ -138,6 +164,8 @@ int main()
     test_report_failures();
     test_report_leaves_out_sources_not_set_up();
     test_report_offers_the_login();
+    test_report_combinations();
+    test_quiet_report_of_one_source();
     test_quiet_report();
     return ST::Test::test_result();
 }
