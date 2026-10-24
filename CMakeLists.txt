@@ -258,6 +258,9 @@ sweattrails_test(cursor_test test/CursorTest.cpp)
 sweattrails_test(string_util_test test/StringUtilTest.cpp)
 sweattrails_test(io_test test/IOTest.cpp)
 
+sweattrails_test(http_test test/HttpTest.cpp src/App/Http.cpp)
+target_include_directories(http_test PRIVATE src/App)
+target_link_libraries(http_test PRIVATE ${CURL_LIBRARIES})
 
 # A test of app code also needs that code, and what it uses.
 sweattrails_test(
