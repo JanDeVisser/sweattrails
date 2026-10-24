@@ -84,8 +84,13 @@ copying from the watch would need libmtp. With the API there's no need.
   It takes an optional `days` argument that overrides `garmin.days` for
   that one download, so the palette, or a binding, can offer "the last
   year" without changing the settings.
-- After a download, the inbox is processed, whether the download was at
-  startup or on the task: the files it brought in show up right away.
+- At startup, the inbox is processed and the newest activity shown
+  first, as before, and then the download runs: asking Garmin Connect can
+  take a while. A download that brings activities in processes the inbox
+  and shows the newest activity, so they show up right away. One that
+  brings nothing leaves the display alone.
+- Ctrl+G does nothing while a modal is open, as Ctrl+M, or while a
+  download is running.
 - Each download looks at the last N days of activities on Garmin Connect
   (`garmin.days` in the settings, 30 by default). An activity whose start
   time SweatTrails already has isn't downloaded, so a download that finds
@@ -149,6 +154,9 @@ copying from the watch would need libmtp. With the API there's no need.
 - Garmin Connect can't be reached, or a request fails: a message with the
   error. Activities downloaded before the failure stay in the inbox and
   are processed; the next download picks up the rest.
+- An activity Garmin Connect won't hand over (403 or 404 on its
+  download) is skipped, with a warning in the log, and the others still
+  come. So is an entry in the list without an ID or start time.
 
 ### Version 1 scope
 
@@ -210,21 +218,29 @@ no new library to install. The other options were shelling out to
   `GARMIN_PERSONAL_API_KEY`, else the file, trimmed; nothing if neither
   has one. An empty variable counts as none. Warns if the file can be read by group or others.
 - `struct GarminActivity { u64 id; i64 start_time; bool has_file; JSONValue
-  summary; }`, and `parse_activity_list(JSONValue)`: the list's entries.
+  summary; }`, and `parse_activity_list(JSONValue)`: the list's entries,
+  skipping, with a warning, one without an ID or start time.
   `start_time` is `beginTimestamp / 1000`; `has_file` is false for manual
   activities.
 - `struct GarminConnect`, holding the `HttpFetch` and the token:
-  `obtain_token(key)`, `list_activities(since)` (pages of 100 until a short
-  page), `download_fit(id)` (the ZIP, and the `.fit` in it).
+  `obtain_token(key)`, `list_activities(since)` (asking for pages of 100,
+  each starting after what came, until one is empty: the server may send
+  fewer than asked for), `download_fit(id)` (the ZIP, and the `.fit` in
+  it).
 - `download_new_activities(GarminConnect &, Storage const &, days,
   progress)`: lists the last `days` days, skips what the store has, and
   writes each new activity to the inbox as `garmin-<activityId>.json` (the
   summary) and then `garmin-<activityId>.fit`, each through a `.part` file
   and a rename, so the inbox never sees half a file. The sidecar goes
   first, so the inbox can't take a FIT file without it. The inbox renames
-  both by start time, as now.
-- `GarminError`: no key, key rejected (401 or 403 on the token), an HTTP
-  error with its status, and the `LibCError` and `JSONError` underneath.
+  both by start time, as now. A 403 or 404 on one download skips that
+  activity.
+- `GarminError`: no key, key rejected (a 401, or a 403 on the token), or
+  failed, with a message, and the HTTP status for an HTTP error.
+
+**The ZIP reader** refuses an entry that claims to inflate to more than
+deflate can produce from its data (about 1032 to 1), rather than reserve
+what a damaged ZIP says, up to 4 GB.
 
 **The store.** `Storage::has_activity(i64 start_time)`: whether
 `activity/<year>/<month>/<start_time>.fit` exists, with the year and month
@@ -249,12 +265,16 @@ down.
 
 **The task and the job.** `st-garmin-download` is added with
 `bus.add_task()` in `SweatTrails::initialize()`, and bound to Ctrl+G. Its
-handler schedules three jobs, which run in order: a new
-`DownloadGarmin` job, `ProcessInbox` and `FindNewestActivity`. The
-arguments are `{"days": N}`, optional, and `{"quiet": true}`, which
-startup passes, to say nothing when there's no key. At startup,
-`initialize()` submits the task instead of scheduling `ProcessInbox` and
-`FindNewestActivity` itself. The handler, on the UI thread, works out a
+handler schedules a new `DownloadGarmin` job. If the job brings anything
+in, or fails after bringing something, it schedules `ProcessInbox` and
+`FindNewestActivity` itself: jobs can schedule jobs. The arguments are
+`{"days": N}`, optional, and `{"quiet": true}`, which startup passes, to
+say nothing when there's no key. At startup, `initialize()` schedules
+`ProcessInbox` and `FindNewestActivity`, as before, and then submits the
+task. The handler does nothing under a modal, or while
+`SweatTrails::garmin_downloading` is set: the handler sets it, and the
+job's last `Downloading` notification, with a count of 0, which it sends
+however it ends, clears it, on the UI thread. The handler, on the UI thread, works out a
 `GarminDownloadRequest { days, quiet }` from the settings' `garmin.days`
 (30 if it isn't there) and the arguments, with
 `make_download_request()` in `Garmin.h`, and gives it to the job, so the
@@ -385,3 +405,34 @@ the inbox, the sidecar and the title all work end to end (see 8).
     that was filed in another time zone isn't found. It is downloaded
     again, and the inbox files a second copy under the other month. This
     was already true of the inbox, for any file.
+
+### Resolution
+
+1. Fixed: the download job processes the inbox and shows the newest
+   activity only if it brought something in, or failed after bringing
+   something. Ctrl+G that finds nothing, or fails, leaves the display
+   alone.
+2. Fixed: the list asks for pages until one is empty, each starting after
+   what came, so a server that sends 20 at a time still gives everything.
+   `test_list_pages_smaller_than_asked_for()`. The tests' fake server now
+   answers in order, and with an empty list once it's out of answers; with
+   that, the check in `test_downloaded_activity_goes_through_the_inbox()`
+   that a known activity isn't downloaded again listed nothing the second
+   time, so it now lists the activity again and counts downloads.
+3. Fixed: startup processes the inbox and shows the newest activity
+   first, as before, and downloads after.
+4. Fixed: only a 401, or a 403 on the token, is a rejected key. A 403 or
+   404 on one activity's download skips it with a warning.
+   `test_forbidden_list_is_not_a_rejected_key()`,
+   `test_unavailable_activity_is_skipped()`.
+5. Fixed: a list entry without an ID or start time is skipped with a
+   warning. `test_odd_entries_are_skipped()`.
+6. Fixed: an entry that claims more than about 1032 times its compressed
+   size is an error. `test_impossible_size()`; without the check, it
+   reserved 3 GB.
+7. Fixed: Ctrl+G does nothing under a modal, or while a download runs.
+   Not tested: the task needs the whole app.
+8. to 10. Kept.
+11. Fixed: the README has a Garmin Connect section.
+12. Left for later, as Jan agreed: the month folder in local time
+    predates this feature.
