@@ -84,10 +84,6 @@ std::optional<WahooTokens> read_tokens(fs::path const &file);
 // Writes `tokens` to `file`, readable only by the user.
 WahooResult<void> write_tokens(fs::path const &file, WahooTokens const &tokens);
 
-// `wahoo.client_id` from the settings: without one, the user doesn't use
-// Wahoo.
-std::optional<std::string> wahoo_client_id(JSONValue const &settings);
-
 // A workout in Wahoo's list.
 struct WahooWorkout {
     u64         id { 0 };

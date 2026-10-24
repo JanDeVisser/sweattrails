@@ -186,19 +186,6 @@ void test_tokens_folder_is_made()
     CHECK(read_tokens(file).has_value());
 }
 
-void test_client_id()
-{
-    auto settings = JSONValue::object();
-    CHECK(!wahoo_client_id(settings).has_value());
-    settings["wahoo"] = JSONValue::object();
-    CHECK(!wahoo_client_id(settings).has_value());
-    settings["wahoo"]["client_id"] = JSONValue { "  " };
-    CHECK(!wahoo_client_id(settings).has_value());
-    settings["wahoo"]["client_id"] = JSONValue { " abc123 " };
-    CHECK_EQ(wahoo_client_id(settings).value_or(""), "abc123");
-    CHECK(!wahoo_client_id(JSONValue { }).has_value());
-}
-
 void test_authorize_url()
 {
     FakeWahoo  fake;
@@ -512,7 +499,6 @@ int main()
 {
     test_tokens_file();
     test_tokens_folder_is_made();
-    test_client_id();
     test_authorize_url();
     test_exchange_code();
     test_rejected_code();

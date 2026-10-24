@@ -133,21 +133,6 @@ std::string garmin_start_date(int days, i64 now)
     return std::format("{:04}-{:02}-{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
 }
 
-GarminDownloadRequest make_download_request(JSONValue const &settings, JSONValue const &arguments)
-{
-    GarminDownloadRequest request;
-    if (settings.is_object()) {
-        if (auto const garmin = settings.get("garmin"); garmin && garmin->is_object()) {
-            request.days = garmin->try_get<int>("days").value_or(request.days);
-        }
-    }
-    if (arguments.is_object()) {
-        request.days = arguments.try_get<int>("days").value_or(request.days);
-        request.quiet = arguments.try_get<bool>("quiet").value_or(false);
-    }
-    return request;
-}
-
 GarminResult<void> GarminConnect::obtain_token(std::string_view key)
 {
     auto const response = fetch(HttpRequest {

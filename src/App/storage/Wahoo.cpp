@@ -162,22 +162,6 @@ WahooResult<void> write_tokens(fs::path const &file, WahooTokens const &tokens)
     return { };
 }
 
-std::optional<std::string> wahoo_client_id(JSONValue const &settings)
-{
-    if (!settings.is_object()) {
-        return { };
-    }
-    auto const wahoo = settings.get("wahoo");
-    if (!wahoo || !wahoo->is_object()) {
-        return { };
-    }
-    auto const client_id = wahoo->try_get<std::string>("client_id");
-    if (!client_id || strip(*client_id).empty()) {
-        return { };
-    }
-    return std::string { strip(*client_id) };
-}
-
 Decoded<std::vector<WahooWorkout>> parse_workouts(JSONValue const &page)
 {
     auto const list = page.is_object() ? page.get("workouts") : std::nullopt;

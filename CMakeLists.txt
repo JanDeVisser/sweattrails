@@ -180,6 +180,7 @@ add_executable(
         src/App/widget/DataFields.cpp
         src/App/widget/SportIcon.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Download.cpp
         src/App/storage/Garmin.cpp
         src/App/storage/Storage.cpp
         src/App/storage/Types.cpp
@@ -376,6 +377,9 @@ sweattrails_test(
 )
 target_include_directories(wahoo_test PRIVATE src/App)
 target_link_libraries(wahoo_test PRIVATE ${CURL_LIBRARIES} OpenSSL::SSL)
+
+sweattrails_test(download_test test/DownloadTest.cpp src/App/storage/Download.cpp)
+target_include_directories(download_test PRIVATE src/App)
 
 install(TARGETS Base Widget sweattrails fitexplore
         ARCHIVE DESTINATION lib
