@@ -64,6 +64,31 @@ which only the install step fills: run it after changing anything in
 `share`, such as an icon. The app is then `build/sweattrails.app` on
 macOS, and `build/sweattrails` elsewhere.
 
+## Garmin Connect
+
+SweatTrails downloads your activities from Garmin Connect with Garmin's
+Personal API, which is free for your own data:
+
+1. Create a key on the Garmin Connect website, under Settings, Personal
+   API (https://connect.garmin.com/app/settings/personalApiToken). It's
+   shown only once, and lasts from 30 days to a year: pick a year.
+2. Save it where Garmin's own tools look for it, readable only by you:
+
+   ```sh
+   mkdir -p ~/.config/garmin
+   pbpaste > ~/.config/garmin/connect-personal-api-key   # with the key copied
+   chmod 600 ~/.config/garmin/connect-personal-api-key
+   ```
+
+   Or set `GARMIN_PERSONAL_API_KEY`, which wins over the file.
+
+SweatTrails then downloads new activities when it starts, and on Ctrl+G.
+It looks at the last 30 days; `"garmin": { "days": 365 }` in your
+`settings.json` (in `~/Library/Application Support/sweattrails` on macOS,
+`~/.config/sweattrails` on Linux) looks further back. Activities it already has aren't downloaded again.
+The name an activity has on Garmin Connect becomes its title. When the
+key expires, SweatTrails says so: create a new one the same way.
+
 How the app is developed, from specs, is in `CLAUDE.md`; the coding style
 is in `STYLE.md`, and how to write tests in `test/README.md`.
 
