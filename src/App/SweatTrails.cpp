@@ -17,6 +17,7 @@
 #include <IO.h>
 #include <JSON.h>
 #include <Logging.h>
+#include <OAuth.h>
 #include <Options.h>
 
 #include <App.h>
@@ -29,12 +30,51 @@
 #include <storage/Garmin.h>
 #include <storage/Storage.h>
 #include <storage/Types.h>
+#include <storage/Wahoo.h>
 #include <widget/Activity.h>
 #include <widget/ActivitySelector.h>
 
 namespace ST {
 
 namespace fs = std::filesystem;
+
+namespace {
+
+// How long the Wahoo login waits for the browser to come back.
+constexpr std::chrono::minutes WahooLoginTimeout { 5 };
+
+// The certificate the Wahoo login's server answers with: Wahoo only sends
+// the browser back to an https URL. The user makes it with mkcert.
+fs::path certificate_file(fs::path const &config_dir)
+{
+    return config_dir / "localhost.pem";
+}
+
+fs::path certificate_key_file(fs::path const &config_dir)
+{
+    return config_dir / "localhost-key.pem";
+}
+
+// What to tell the user when the browser comes back from the login
+// without a code, or nothing if it brought one.
+std::optional<std::string> login_failure(std::expected<QueryParameters, RedirectError> const &redirect, std::string const &state)
+{
+    if (!redirect) {
+        return redirect.error().kind == RedirectError::Kind::TimedOut
+            ? std::string { "The Wahoo login timed out. Try again from SweatTrails when you're ready to log in." }
+            : redirect.error().to_string();
+    }
+    if (redirect->contains("error")) {
+        return std::format("The Wahoo login didn't go through: {}", redirect->at("error"));
+    }
+    // Not the login this SweatTrails started.
+    if (!redirect->contains("state") || redirect->at("state") != state || !redirect->contains("code")) {
+        return std::string { "The Wahoo login came back without what SweatTrails asked for. Try again." };
+    }
+    return { };
+}
+
+}
 
 template<>
 char const *value_to_string(JobType type)
@@ -184,6 +224,23 @@ void SweatTrails::job_download_garmin(Job::Payload const &data)
     }
 }
 
+void SweatTrails::job_wahoo_login(Job::Payload const &data)
+{
+    auto const &login = std::get<WahooLogin>(data);
+    auto const  the = SweatTrails::the();
+    Wahoo       wahoo {
+        .fetch = http_fetch,
+        .client_id = login.client_id,
+        .tokens_file = wahoo_tokens_file(the->user_config_dir),
+    };
+    if (auto const exchanged = wahoo.exchange_code(login.code, login.verifier); !exchanged) {
+        the->notify<NotificationType::WahooLoginEnded>(WahooLoginEnded { exchanged.error().to_string() });
+        return;
+    }
+    info(ST, "Logged in to Wahoo");
+    the->notify<NotificationType::WahooLoginEnded>(WahooLoginEnded { "Logged in to Wahoo." });
+}
+
 pSweatTrails SweatTrails::the()
 {
     return std::dynamic_pointer_cast<SweatTrails>(App::the());
@@ -219,6 +276,8 @@ void SweatTrails::on_resize()
 
 void SweatTrails::on_terminate()
 {
+    // Not waiting for a browser that's not coming back.
+    wahoo_login.request_stop();
 }
 
 void SweatTrails::terminate()
@@ -259,6 +318,67 @@ void cmd_garmin_download(pSweatTrails const &sweattrails, JSONValue const &argum
     }
     sweattrails->garmin_downloading = true;
     sweattrails->schedule<JobType::DownloadGarmin>(make_download_request(sweattrails->settings, arguments));
+}
+
+// Logs in to Wahoo: opens the browser at Wahoo's login page, and waits, on a
+// thread of its own, for the browser to come back with the code. Waiting as
+// a job would hold up the other jobs, such as the inbox, for as long as the
+// user takes to log in.
+void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (!sweattrails->modals.empty() || sweattrails->wahoo_logging_in) {
+        return;
+    }
+    auto const client_id = wahoo_client_id(sweattrails->settings);
+    if (!client_id) {
+        message_box("Wahoo isn't set up. Register an app with Wahoo, and put its client ID in the settings, as "
+                    "\"wahoo\": { \"client_id\": \"...\" }. The README says how.");
+        return;
+    }
+    auto const &config_dir = sweattrails->user_config_dir;
+    auto        tls = TlsContext::load(certificate_file(config_dir), certificate_key_file(config_dir));
+    if (!tls) {
+        warning(ST, "No certificate for the Wahoo login: {}", tls.error().to_string());
+        message_box(std::format(
+            "Logging in to Wahoo needs a certificate for localhost. Make one with mkcert: run `mkcert -install` once, "
+            "and then, in {}, `mkcert -cert-file localhost.pem -key-file localhost-key.pem localhost 127.0.0.1 ::1`.",
+            config_dir.string()));
+        return;
+    }
+    auto server = LoopbackServer::listen(WahooCallbackPort, std::move(*tls));
+    if (!server) {
+        message_box(std::format("Could not wait for the Wahoo login: {}. Is another program using port {}?",
+            server.error().to_string(), WahooCallbackPort));
+        return;
+    }
+    auto const pkce = Pkce::make();
+    auto const state = random_token(16);
+    auto const url = Wahoo { .client_id = *client_id }.authorize_url(pkce.challenge, state);
+    if (auto const opened = open_browser(url); !opened) {
+        message_box(std::format("Could not open the browser for the Wahoo login: {}", opened.error().to_string()));
+        return;
+    }
+    sweattrails->wahoo_logging_in = true;
+    sweattrails->set_status("Waiting for the Wahoo login in your browser");
+    sweattrails->wahoo_login = std::jthread {
+        [server = std::move(*server), client_id = *client_id, pkce, state](std::stop_token const &stop) mutable {
+            auto const redirect = server.wait_for_redirect(WahooCallbackPath, WahooLoginTimeout, stop);
+            if (!redirect && redirect.error().kind == RedirectError::Kind::Stopped) {
+                // The app is quitting.
+                return;
+            }
+            auto const the = SweatTrails::the();
+            if (auto const failure = login_failure(redirect, state); failure) {
+                the->notify<NotificationType::WahooLoginEnded>(WahooLoginEnded { *failure });
+                return;
+            }
+            the->schedule<JobType::WahooLogin>(WahooLogin {
+                .client_id = client_id,
+                .code = redirect->at("code"),
+                .verifier = pkce.verifier,
+            });
+        }
+    };
 }
 
 void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
@@ -323,6 +443,17 @@ void SweatTrails::notif_downloading(Notification::Payload const &data)
             : std::format("Downloading {} of {} from Garmin Connect", download.index + 1, download.count));
 }
 
+void SweatTrails::notif_wahoo_login_ended(Notification::Payload const &data)
+{
+    auto const &ended = std::get<WahooLoginEnded>(data);
+    auto const  the = SweatTrails::the();
+    the->wahoo_logging_in = false;
+    the->set_status("");
+    if (!ended.message.empty()) {
+        message_box(ended.message);
+    }
+}
+
 void SweatTrails::notif_map_tile(Notification::Payload const &data)
 {
     SweatTrails::the()->activity_display->map->add_tile(std::get<MapTile>(data));
@@ -372,6 +503,8 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_M, KModControl });
     bus.add_task<SweatTrails>("st-garmin-download", self(), cmd_garmin_download)
         .bind(KeyCombo { KEY_G, KModControl });
+    // No key: Ctrl+G offers it when it's needed.
+    bus.add_task<SweatTrails>("st-wahoo-login", self(), cmd_wahoo_login);
     bus.add_task<SweatTrails>("st-message", self(), cmd_message);
 
     // Jobs run one at a time in the order they're scheduled: the newest
