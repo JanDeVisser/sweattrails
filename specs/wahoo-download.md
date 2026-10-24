@@ -248,8 +248,13 @@ until the reset).
     Strava.cpp, which this replaces in time, with OpenSSL's `SSL` on top.
     `LoopbackServer` takes the TLS context as an argument, so a test can
     use a certificate it makes on the fly.
-  - `open_browser(url)`: `open` on macOS, `xdg-open` on Linux, with
-    `Process`.
+  - `open_browser(url)`: `open` on macOS, `xdg-open` on Linux, run with
+    `run_and_wait()`, which uses `posix_spawnp()`. Not `Process`, which
+    turned out to be broken: its `start()` takes the success of a
+    `std::expected` for an error and never forks, and its pipes' reader
+    threads, which it detaches, outlive it.
+- `DateTime::parse_iso8601()` drops a fraction of a second, which
+  Wahoo's `starts` has.
 - **`write_file_atomically(path, contents, perms)`** in `IO.h`: the
   `.part`-and-rename that's now `write_whole_file()` in Garmin.cpp, with
   the permissions set on the `.part` before anything is written to it.
@@ -284,19 +289,22 @@ Mirrors Garmin.h:
 ### Jobs and tasks
 
 - **One download job for every source.** `DownloadGarmin` becomes
-  `Download(DownloadRequest { garmin, wahoo, days, quiet })`. The job
+  `Download(DownloadRequest { garmin, wahoo, garmin_days, wahoo_days,
+  wahoo_client_id, quiet })`. The job
   runs each source asked for in turn, and collects a `SourceOutcome` per
   source: not set up, needs a login, n new activities, or an error.
-  `download_report(outcomes)` turns them into the one message ("Garmin
+  `download_report(outcomes, quiet)` turns them into the one message ("Garmin
   Connect: 2 new activities. Wahoo: nothing new."): a function a test
   can reach. If anything came in, the job schedules ProcessInbox and
   FindNewestActivity, as now.
 - `st-download` (Ctrl+G), `st-garmin-download` and `st-wahoo-download`
   schedule that job, with both sources or one. `make_download_request()`
   moves out of Garmin.h, into `src/App/storage/Download.h`, with the
-  outcome and the report.
-- When the job is done it sends `DownloadDone { report, ask_wahoo_login }`
-  to the UI thread. The UI shows the report in a message box, or, when
+  outcome, the report, and `wahoo_client_id(settings)`. The request
+  carries the client ID, so that the job thread doesn't read the
+  settings, which the UI thread changes.
+- When the job is done it sends `DownloadDone`, with a
+  `DownloadReport { text, ask_login }`, to the UI thread. The UI shows the report in a message box, or, when
   Wahoo needs a login and the download wasn't quiet, a `query_box` with
   the report and "Log in to Wahoo now?". Yes submits `st-wahoo-login`.
 - The `Downloading` notification gets the source's name, for the status
@@ -308,7 +316,10 @@ Mirrors Garmin.h:
   browser, and starts a `std::jthread` that waits for the redirect. The
   thread does nothing but wait: it hands the code, or the error, to a
   `WahooLogin` job, which trades it for tokens, saves them, and runs the
-  Wahoo download. A `wahoo_logging_in` flag keeps a second login from
+  Wahoo download. A login that ends without a code, or whose code Wahoo
+  doesn't take, sends `WahooLoginEnded { message }` to the UI thread,
+  which clears the flag and the status line; so does a login that
+  worked, before the download. A `wahoo_logging_in` flag keeps a second login from
   starting, and keeps Ctrl+G from offering one. The jthread is a member
   of SweatTrails: on quit, its stop token ends the wait.
 - **Titles.** `sidecar_title()` takes `activityName`, Garmin's, or else
@@ -321,6 +332,17 @@ Jan's app, and check that the redirect URI is accepted, whether the FIT
 file's URL needs the token, and that `starts` is the FIT session's start
 time. Tokens and the client ID aren't printed.
 
+Checked on October 24, 2026, with six rides from Jan's ELEMNT:
+
+- Wahoo takes `https://localhost:8090/callback`, and the browser trusts
+  the mkcert certificate.
+- The FIT file's URL needs no token: the download doesn't send one.
+- `starts` is the FIT session's start time to the second: each ride was
+  filed under its `starts`, so `has_activity()` recognizes them.
+- Wahoo refuses the login ("The requested scope is invalid, unknown, or
+  malformed") if the app in the portal doesn't have all three scopes.
+  The README says to tick them.
+
 ## Test plan
 
 - `OAuthTest`:
@@ -331,6 +353,10 @@ time. Tokens and the client ID aren't printed.
     with `code` and `state`, one with `error=access_denied`, a
     `/favicon.ico` before the callback, a client that never handshakes,
     a timeout, a stop request, a taken port, a missing certificate.
+  - `run_and_wait()`'s exit codes.
+- `StringUtilTest`, `IOTest`, `HttpTest`, `DateTest`: base64url,
+  `write_file_atomically()` and its permissions, URL and form encoding
+  and response headers, and `starts` with milliseconds.
 - `WahooTest`, with a fake `HttpFetch`, as `GarminTest`:
   - `authorize_url()` has the client ID, scopes, redirect URI and S256
     challenge, URL-encoded; `exchange_code()` POSTs the form body with

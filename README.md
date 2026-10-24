@@ -100,8 +100,10 @@ that, and log in to it:
 1. Register an app at https://developers.wahooligan.com, as a sandbox app,
    which works right away and is plenty for one person. Don't make it
    confidential: SweatTrails logs in without a client secret, with PKCE.
-   Give it the scopes `workouts_read`, `user_read` and `offline_data`, and
-   the redirect URI `https://localhost:8090/callback`.
+   Tick the scopes `workouts_read`, `user_read` and `offline_data`, all
+   three: without one, Wahoo refuses the login, saying "The requested
+   scope is invalid". Give it the redirect URI
+   `https://localhost:8090/callback`.
 2. Put its client ID in your `settings.json`, in SweatTrails' config
    folder:
 
