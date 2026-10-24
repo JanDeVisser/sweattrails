@@ -1,6 +1,6 @@
 # Download Activities from Wahoo
 
-Status: In review
+Status: Done
 
 ## Goal
 
