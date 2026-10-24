@@ -89,7 +89,7 @@ struct ImportingFile {
 };
 
 // Sent by the Garmin Connect download before each activity, and with a
-// count of 0 when it's done.
+// count of 0 when it's done, however it ends.
 struct Downloading {
     size_t index { 0 };
     size_t count { 0 };
