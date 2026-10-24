@@ -51,6 +51,18 @@ endif()
 find_package(CURL)
 find_package(ZLIB REQUIRED)
 
+# Homebrew's OpenSSL isn't linked into /opt/homebrew, so CMake doesn't find
+# it by itself.
+if (APPLE AND NOT OPENSSL_ROOT_DIR)
+    foreach (prefix /opt/homebrew/opt/openssl /usr/local/opt/openssl)
+        if (EXISTS ${prefix})
+            set(OPENSSL_ROOT_DIR ${prefix})
+            break()
+        endif ()
+    endforeach ()
+endif ()
+find_package(OpenSSL REQUIRED)
+
 include(CheckCSourceCompiles)
 include(CheckCXXSourceCompiles)
 
@@ -157,6 +169,7 @@ add_executable(
         src/App/SweatTrails.cpp
         src/App/Coordinates.cpp
         src/App/Http.cpp
+        src/App/OAuth.cpp
         src/App/Map.h
         src/App/Map.cpp
         src/App/Range.h
@@ -195,6 +208,7 @@ target_link_libraries(
         ${raylib_LIBRARIES}
         ${FREETYPE_LIBRARIES}
         ${CURL_LIBRARIES}
+        OpenSSL::SSL
         ${ICONV}
         m
 )
@@ -261,6 +275,10 @@ sweattrails_test(io_test test/IOTest.cpp)
 sweattrails_test(http_test test/HttpTest.cpp src/App/Http.cpp)
 target_include_directories(http_test PRIVATE src/App)
 target_link_libraries(http_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(oauth_test test/OAuthTest.cpp src/App/OAuth.cpp)
+target_include_directories(oauth_test PRIVATE src/App)
+target_link_libraries(oauth_test PRIVATE OpenSSL::SSL)
 
 # A test of app code also needs that code, and what it uses.
 sweattrails_test(
