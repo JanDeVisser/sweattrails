@@ -252,6 +252,12 @@ void cmd_quit(pSweatTrails const &sweattrails, JSONValue const &)
 // at startup.
 void cmd_garmin_download(pSweatTrails const &sweattrails, JSONValue const &arguments)
 {
+    // Not under a modal, as in cmd_quit, and not while a download runs:
+    // another would only list what this one is downloading.
+    if (!sweattrails->modals.empty() || sweattrails->garmin_downloading) {
+        return;
+    }
+    sweattrails->garmin_downloading = true;
     sweattrails->schedule<JobType::DownloadGarmin>(make_download_request(sweattrails->settings, arguments));
 }
 
@@ -309,6 +315,9 @@ void SweatTrails::notif_importing_file(Notification::Payload const &data)
 void SweatTrails::notif_downloading(Notification::Payload const &data)
 {
     auto const &download = std::get<Downloading>(data);
+    if (download.count == 0) {
+        SweatTrails::the()->garmin_downloading = false;
+    }
     SweatTrails::the()->set_status(download.count == 0
             ? std::string { }
             : std::format("Downloading {} of {} from Garmin Connect", download.index + 1, download.count));

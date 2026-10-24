@@ -187,6 +187,9 @@ struct SweatTrails : public Main<Job, Notification> {
 
     Storage    storage;
     ActivityID last_activity { };
+    // Between the st-garmin-download task and the end of its job. Only used
+    // on the UI thread.
+    bool garmin_downloading { false };
 
     std::shared_ptr<WidgetStack>     widget_stack { nullptr };
     std::shared_ptr<ActivityDisplay> activity_display { nullptr };
