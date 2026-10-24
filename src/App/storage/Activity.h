@@ -66,7 +66,7 @@ struct CadenceStats {
 std::optional<CadenceStats> cadence_stats(std::span<CadenceSample const> samples);
 
 // The activity's name in its sidecar, `<name>.json` next to its FIT file,
-// which the Garmin Connect download writes. Nothing if there's no sidecar,
+// which the Garmin Connect and Wahoo downloads write. Nothing if there's no sidecar,
 // or it has no name, such as those of the Rungap webhook SweatTrails used
 // before.
 std::optional<std::string> sidecar_title(fs::path const &sidecar);

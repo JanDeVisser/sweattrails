@@ -235,11 +235,19 @@ void test_title_from_the_sidecar()
     CHECK_EQ(t.activity.title, "Zwift - Pacer Group Ride with Maria");
 }
 
+// Wahoo calls it `name`.
+void test_title_from_a_wahoo_sidecar()
+{
+    ActivityInDir t { R"({"id": 2, "starts": "2026-10-20T12:00:00.000Z", "name": "Morning ride"})" };
+    CHECK(t.loaded);
+    CHECK_EQ(t.activity.title, "Morning ride");
+}
+
 // Without a name in the sidecar, such as the Rungap webhook's, or without
 // a valid one, the title is the workout's name.
 void test_sidecar_without_a_title()
 {
-    for (auto const *sidecar : { "", R"({"start_time": 1767536377})", "not JSON", R"({"activityName": ""})", "[1, 2]" }) {
+    for (auto const *sidecar : { "", R"({"start_time": 1767536377})", "not JSON", R"({"activityName": ""})", R"({"name": ""})", R"({"name": 12})", "[1, 2]" }) {
         ActivityInDir t { sidecar };
         CHECK(t.loaded);
         CHECK_EQ(t.activity.title, "Tempo intervals");
@@ -259,6 +267,7 @@ int main()
     test_laps_work_out_their_own_climb();
     test_lap_cadence_is_from_the_recorded_cadence();
     test_title_from_the_sidecar();
+    test_title_from_a_wahoo_sidecar();
     test_sidecar_without_a_title();
     return ST::Test::test_result();
 }
