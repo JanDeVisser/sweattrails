@@ -20,14 +20,19 @@
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <poll.h>
+#include <spawn.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <Logging.h>
-#include <Process.h>
 #include <StringUtil.h>
 
 #include <OAuth.h>
+
+// The environment, for the programs run_and_wait() runs: POSIX has no
+// header that declares it.
+extern char **environ;
 
 namespace ST {
 
@@ -103,6 +108,8 @@ std::expected<int, LibCError> listen_on(sockaddr const *address, socklen_t size)
         return std::unexpected(error);
     }
     ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL) | O_NONBLOCK);
+    // Not for the browser that open_browser() starts to inherit.
+    ::fcntl(fd, F_SETFD, FD_CLOEXEC);
     return fd;
 }
 
@@ -344,19 +351,42 @@ std::expected<QueryParameters, RedirectError> LoopbackServer::wait_for_redirect(
     }
 }
 
+std::expected<int, LibCError> run_and_wait(std::vector<std::string> const &command)
+{
+    // Not Process: its pipes' reader threads outlive it.
+    std::vector<char *> argv;
+    for (auto const &argument : command) {
+        argv.push_back(const_cast<char *>(argument.c_str()));
+    }
+    argv.push_back(nullptr);
+    pid_t pid { 0 };
+    if (auto const error = ::posix_spawnp(&pid, argv[0], nullptr, nullptr, argv.data(), environ); error != 0) {
+        return std::unexpected(LibCError { error });
+    }
+    int status { 0 };
+    while (::waitpid(pid, &status, 0) == -1) {
+        if (errno != EINTR) {
+            return std::unexpected(LibCError { });
+        }
+    }
+    if (!WIFEXITED(status)) {
+        return std::unexpected(LibCError { std::format("`{}` ended with signal {}", command.front(), WTERMSIG(status)) });
+    }
+    return WEXITSTATUS(status);
+}
+
 std::expected<void, LibCError> open_browser(std::string const &url)
 {
 #ifdef __APPLE__
-    Process<> opener { "open", url };
+    auto const exit_code = run_and_wait({ "open", url });
 #else
-    Process<> opener { "xdg-open", url };
+    auto const exit_code = run_and_wait({ "xdg-open", url });
 #endif
-    auto const exit_code = opener.execute();
     if (!exit_code) {
         return std::unexpected(exit_code.error());
     }
     if (*exit_code != 0) {
-        return std::unexpected(LibCError { std::format("Could not open the browser: exit code {}", *exit_code) });
+        return std::unexpected(LibCError { std::format("exit code {}", *exit_code) });
     }
     return { };
 }

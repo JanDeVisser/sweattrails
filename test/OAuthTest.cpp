@@ -254,6 +254,17 @@ void test_taken_port()
     CHECK(!second.has_value());
 }
 
+// What open_browser() runs the browser with.
+void test_run_and_wait()
+{
+    CHECK_EQ(run_and_wait({ "sh", "-c", "exit 0" }).value_or(-1), 0);
+    CHECK_EQ(run_and_wait({ "sh", "-c", "exit 3" }).value_or(-1), 3);
+    CHECK_EQ(run_and_wait({ "sh", "-c", "sleep 0.1; exit 4" }).value_or(-1), 4);
+    // An error on macOS, exit code 127 elsewhere.
+    auto const missing = run_and_wait({ "sweattrails-no-such-program" });
+    CHECK(!missing.has_value() || *missing != 0);
+}
+
 void test_missing_certificate()
 {
     TestCertificate const certificate;
@@ -279,5 +290,6 @@ int main()
     test_stop();
     test_taken_port();
     test_missing_certificate();
+    test_run_and_wait();
     return ST::Test::test_result();
 }

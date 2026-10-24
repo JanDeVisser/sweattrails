@@ -19,6 +19,7 @@
 #include <stop_token>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <Error.h>
 
@@ -97,6 +98,10 @@ private:
     int        m_ipv6 { -1 };
     int        m_port { 0 };
 };
+
+// Runs `command`, the program and its arguments, looking for the program
+// on the PATH, and waits for it to end. Returns its exit code.
+std::expected<int, LibCError> run_and_wait(std::vector<std::string> const &command);
 
 // Opens `url` in the user's browser.
 std::expected<void, LibCError> open_browser(std::string const &url);
