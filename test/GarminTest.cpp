@@ -18,6 +18,7 @@
 
 #include <IO.h>
 #include <JSON.h>
+#include <TempDir.h>
 
 #include <Http.h>
 #include <storage/Activity.h>
@@ -34,24 +35,6 @@ using namespace ST::Test;
 namespace {
 
 namespace fs = std::filesystem;
-
-// A directory for one test, removed when the test is done.
-struct TempDir {
-    fs::path path;
-
-    explicit TempDir(std::string_view name)
-        : path(fs::temp_directory_path() / std::format("sweattrails-{}-{}", name, std::time(nullptr)))
-    {
-        fs::remove_all(path);
-        fs::create_directories(path);
-    }
-
-    ~TempDir()
-    {
-        std::error_code ec { };
-        fs::remove_all(path, ec);
-    }
-};
 
 // A store in a temporary directory, with an inbox and no activities.
 struct TempStore {

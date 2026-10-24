@@ -4,40 +4,24 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include <ctime>
 #include <filesystem>
-#include <format>
 #include <string>
 
 #include <IO.h>
+#include <TempDir.h>
 
 #include <TestApp.h>
 
 using namespace ST;
+using namespace ST::Test;
 
 namespace {
 
 namespace fs = std::filesystem;
 
-struct TempDir {
-    fs::path path { fs::temp_directory_path() / std::format("sweattrails-io-{}", std::time(nullptr)) };
-
-    TempDir()
-    {
-        fs::remove_all(path);
-        fs::create_directories(path);
-    }
-
-    ~TempDir()
-    {
-        std::error_code ec { };
-        fs::remove_all(path, ec);
-    }
-};
-
 void test_write_file_atomically()
 {
-    TempDir    dir;
+    TempDir    dir { "io" };
     auto const file = dir.path / "file.json";
     CHECK(write_file_atomically(file, "{}").has_value());
     CHECK_EQ(read_file_by_name(file.string()).value_or(""), "{}");
@@ -50,7 +34,7 @@ void test_write_file_atomically()
 
 void test_write_file_atomically_with_permissions()
 {
-    TempDir    dir;
+    TempDir    dir { "io" };
     auto const file = dir.path / "secret.json";
     auto const owner_only = fs::perms::owner_read | fs::perms::owner_write;
     CHECK(write_file_atomically(file, "secret", owner_only).has_value());
@@ -60,7 +44,7 @@ void test_write_file_atomically_with_permissions()
 
 void test_write_file_atomically_fails_cleanly()
 {
-    TempDir    dir;
+    TempDir    dir { "io" };
     auto const file = dir.path / "missing" / "file.json";
     auto const written = write_file_atomically(file, "{}");
     CHECK(!written.has_value());
