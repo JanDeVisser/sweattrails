@@ -9,6 +9,7 @@
 #include <expected>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 
 #include <netinet/in.h>
@@ -100,6 +101,13 @@ std::expected<ssize_t, LibCError> write_file_by_name(std::string_view const &fil
 {
     return write_file_by_name(file_name, std::basic_string_view<T> { contents });
 }
+
+// Writes `contents` to `path` by way of `<path>.part`, which is renamed to
+// `path` when it's complete, so whoever watches `path` never sees half a
+// file. With `permissions`, the `.part` gets them before anything is
+// written to it, so that, for example, a file only the user may read never
+// is readable by others, if only for a moment.
+std::expected<void, LibCError> write_file_atomically(std::filesystem::path const &path, std::string_view contents, std::optional<std::filesystem::perms> permissions = { });
 
 // The user's home directory: $HOME, or the password database entry if HOME
 // isn't set.

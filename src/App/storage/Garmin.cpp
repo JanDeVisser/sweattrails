@@ -60,19 +60,10 @@ bool unavailable(GarminError const &error)
     return error.status == 403 || error.status == 404;
 }
 
-// Writes `contents` to `path` by way of `<path>.part`, so the inbox never
-// sees half a file.
 GarminResult<void> write_whole_file(fs::path const &path, std::string_view contents)
 {
-    auto const part = fs::path { path.string() + ".part" };
-    if (auto const written = write_file_by_name(part.string(), contents); !written) {
-        return std::unexpected(failed(std::format("Could not write `{}`: {}", part.string(), written.error().to_string())));
-    }
-    std::error_code ec { };
-    fs::rename(part, path, ec);
-    if (ec) {
-        fs::remove(part, ec);
-        return std::unexpected(failed(std::format("Could not write `{}`: {}", path.string(), LibCError { ec }.to_string())));
+    if (auto const written = write_file_atomically(path, contents); !written) {
+        return std::unexpected(failed(written.error().to_string()));
     }
     return { };
 }
