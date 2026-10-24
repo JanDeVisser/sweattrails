@@ -186,6 +186,19 @@ void test_tokens_folder_is_made()
     CHECK(read_tokens(file).has_value());
 }
 
+void test_login_code()
+{
+    CHECK_EQ(login_code(QueryParameters { { "code", "abc" }, { "state", "s" } }).value_or(""), "abc");
+    auto const denied = login_code(QueryParameters { { "error", "access_denied" }, { "state", "s" } });
+    CHECK(!denied.has_value() && denied.error() == "The Wahoo login didn't go through: access_denied");
+    CHECK(!login_code(QueryParameters { { "state", "s" } }).has_value());
+    CHECK(!login_code(QueryParameters { { "code", "" } }).has_value());
+    auto const timed_out = login_code(std::unexpected(RedirectError { .kind = RedirectError::Kind::TimedOut, .message = "The login timed out" }));
+    CHECK(!timed_out.has_value() && timed_out.error().starts_with("The Wahoo login timed out."));
+    auto const failed = login_code(std::unexpected(RedirectError { .kind = RedirectError::Kind::Failed, .message = "The login failed: oops" }));
+    CHECK(!failed.has_value() && failed.error() == "The login failed: oops");
+}
+
 void test_authorize_url()
 {
     FakeWahoo  fake;
@@ -570,6 +583,7 @@ void test_failed_download_keeps_the_earlier_ones()
 
 int main()
 {
+    test_login_code();
     test_tokens_file();
     test_tokens_folder_is_made();
     test_authorize_url();

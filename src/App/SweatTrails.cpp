@@ -145,25 +145,6 @@ void run_downloads(pSweatTrails const &the, DownloadRequest const &request)
     the->notify<NotificationType::DownloadDone>(download_report(outcomes, request.quiet));
 }
 
-// What to tell the user when the browser comes back from the login
-// without a code, or nothing if it brought one.
-std::optional<std::string> login_failure(std::expected<QueryParameters, RedirectError> const &redirect, std::string const &state)
-{
-    if (!redirect) {
-        return redirect.error().kind == RedirectError::Kind::TimedOut
-            ? std::string { "The Wahoo login timed out. Try again from SweatTrails when you're ready to log in." }
-            : redirect.error().to_string();
-    }
-    if (redirect->contains("error")) {
-        return std::format("The Wahoo login didn't go through: {}", redirect->at("error"));
-    }
-    // Not the login this SweatTrails started.
-    if (!redirect->contains("state") || redirect->at("state") != state || !redirect->contains("code")) {
-        return std::string { "The Wahoo login came back without what SweatTrails asked for. Try again." };
-    }
-    return { };
-}
-
 }
 
 template<>
@@ -425,19 +406,21 @@ void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &)
     sweattrails->set_status("Waiting for the Wahoo login in your browser");
     sweattrails->wahoo_login = std::jthread {
         [server = std::move(*server), client_id = *client_id, pkce, state, days](std::stop_token const &stop) mutable {
-            auto const redirect = server.wait_for_redirect(WahooCallbackPath, WahooLoginTimeout, stop);
-            if (!redirect && redirect.error().kind == RedirectError::Kind::Stopped) {
-                // The app is quitting.
+            auto const redirect = server.wait_for_redirect(WahooCallbackPath, state, WahooLoginTimeout, stop);
+            // The app is quitting, and may be gone already: whatever the
+            // browser brought, leave the app alone.
+            if (stop.stop_requested()) {
                 return;
             }
             auto const the = SweatTrails::the();
-            if (auto const failure = login_failure(redirect, state); failure) {
-                the->notify<NotificationType::WahooLoginEnded>(WahooLoginEnded { *failure });
+            auto const code = login_code(redirect);
+            if (!code) {
+                the->notify<NotificationType::WahooLoginEnded>(WahooLoginEnded { code.error() });
                 return;
             }
             the->schedule<JobType::WahooLogin>(WahooLogin {
                 .client_id = client_id,
-                .code = redirect->at("code"),
+                .code = *code,
                 .verifier = pkce.verifier,
                 .days = days,
             });

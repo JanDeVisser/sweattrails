@@ -22,9 +22,9 @@
 
 #include <JSON.h>
 #include <Logging.h>
-#include <OAuth.h>
 
 #include <Http.h>
+#include <OAuth.h>
 
 namespace ST {
 
@@ -83,6 +83,10 @@ std::optional<WahooTokens> read_tokens(fs::path const &file);
 
 // Writes `tokens` to `file`, readable only by the user.
 WahooResult<void> write_tokens(fs::path const &file, WahooTokens const &tokens);
+
+// The code the browser brought back from the login, or what to tell the
+// user if it didn't bring one.
+std::expected<std::string, std::string> login_code(std::expected<QueryParameters, RedirectError> const &redirect);
 
 // A workout in Wahoo's list.
 struct WahooWorkout {

@@ -162,6 +162,23 @@ WahooResult<void> write_tokens(fs::path const &file, WahooTokens const &tokens)
     return { };
 }
 
+std::expected<std::string, std::string> login_code(std::expected<QueryParameters, RedirectError> const &redirect)
+{
+    if (!redirect) {
+        return std::unexpected(redirect.error().kind == RedirectError::Kind::TimedOut
+                ? std::string { "The Wahoo login timed out. Try again from SweatTrails when you're ready to log in." }
+                : redirect.error().to_string());
+    }
+    // access_denied when the user doesn't allow SweatTrails access.
+    if (redirect->contains("error")) {
+        return std::unexpected(std::format("The Wahoo login didn't go through: {}", redirect->at("error")));
+    }
+    if (!redirect->contains("code") || redirect->at("code").empty()) {
+        return std::unexpected(std::string { "The Wahoo login came back without a code. Try again." });
+    }
+    return redirect->at("code");
+}
+
 Decoded<std::vector<WahooWorkout>> parse_workouts(JSONValue const &page)
 {
     auto const list = page.is_object() ? page.get("workouts") : std::nullopt;
