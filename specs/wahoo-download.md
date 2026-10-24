@@ -258,7 +258,8 @@ until the reset).
     `run_and_wait()`, which uses `posix_spawnp()`. Not `Process`, which
     turned out to be broken: its `start()` takes the success of a
     `std::expected` for an error and never forks, and its pipes' reader
-    threads, which it detaches, outlive it.
+    threads, which it detaches, outlive it
+    ([issue #5](https://github.com/JanDeVisser/sweattrails/issues/5)).
 - `DateTime::parse_iso8601()` drops a fraction of a second, which
   Wahoo's `starts` has.
 - **`write_file_atomically(path, contents, perms)`** in `IO.h`: the
