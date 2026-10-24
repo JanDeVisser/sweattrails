@@ -239,13 +239,19 @@ until the reset).
     made (a browser may take `localhost` to be either), and loads the
     certificate and key into an OpenSSL context, so a taken port or a
     missing certificate is an error right away, before the browser opens.
-    `wait_for_redirect(timeout, stop_token)` waits for a connection with
-    `poll()`, does the TLS handshake, reads one request, answers it with
-    a short HTML page, and returns the query string's parameters. A
-    connection that isn't a request for the callback (a failed handshake,
-    the browser asking for `/favicon.ico`) is answered or dropped, and
-    the wait goes on. POSIX sockets, as `wait_for_oauth_callback()` in
-    Strava.cpp, which this replaces in time, with OpenSSL's `SSL` on top.
+    `wait_for_redirect(path, state, timeout, stop_token)` polls the
+    listening sockets and every connection, non-blocking, side by side:
+    the TLS handshake and the request arrive bit by bit, so that a slow
+    connection, or one the browser opens before it needs it, holds up
+    neither the others nor the timeout and the stop token. It answers
+    the request for the callback with the login's state with a short
+    HTML page, and returns its query parameters. A request for another
+    path gets a 404, and one with another state, such as a reloaded tab
+    of an earlier login, a page that says that login is over; the wait
+    goes on. Each connection has 30 seconds for its request, and at most
+    16 are handled at a time. POSIX sockets, as
+    `wait_for_oauth_callback()` in Strava.cpp, which this replaces in
+    time, with OpenSSL's `SSL` on top.
     `LoopbackServer` takes the TLS context as an argument, so a test can
     use a certificate it makes on the fly.
   - `open_browser(url)`: `open` on macOS, `xdg-open` on Linux, run with
@@ -468,3 +474,41 @@ Everything in Version 1 scope is there; the findings are about edges.
     `wahoo_test` failed nearly every run: both `TempStore`s were named
     `sweattrails-store-<second>`, so they shared, and removed, one
     directory. `TempDir` now adds the process ID.
+
+### Resolution
+
+All twelve findings were taken up, with Jan's agreement:
+
+1. Fixed in `6d5d7b5`: the login's server handles its connections side
+   by side, non-blocking, and polls them with the listening sockets, so
+   the deadline and the stop token are checked every 200 ms whatever the
+   clients do. Each connection has 30 seconds for its request, and at
+   most 16 are handled at a time. The Reviewer's two tests pass, the
+   silent client no longer holds up the callback at all, and
+   `test_many_connections` is new. In `f0d728f`, the login's thread
+   checks its stop token after the wait, before it touches the app.
+2. Fixed in `f32e6d1`: `WahooLoginEnded` says when a download follows,
+   and the UI sets `downloading` for it.
+3. Fixed in `e4a3901`: while a login waits, clearing the status line
+   shows the login's message again.
+4. Fixed in `6d5d7b5`: `wait_for_redirect()` takes the login's state. A
+   callback with another state, or none, gets a page that says that
+   login is over, and the wait goes on
+   (`test_earlier_login_is_not_the_redirect`).
+5. Done in `f0d728f` for the redirect: with the state check in the
+   server, what was left of `login_failure()` is `login_code()` in
+   `Wahoo.h`, tested by `test_login_code`. `run_downloads()` stays in
+   SweatTrails.cpp: what it decides is in `download_report()`, which is
+   tested, and the rest is calls to the app.
+6. Fixed in `78f143b`: with nothing set up, Ctrl+G says how to set up
+   Garmin Connect, as before, and doesn't mention Wahoo.
+7. Fixed in `ad5f279`: only `invalid_grant` means logging in again; for
+   another error, such as `invalid_client`, the user sees Wahoo's error
+   and description (`test_token_request_refused_for_another_reason`).
+8. Fixed in `e7392af`: "Try again in a minute" up to 60 seconds, and
+   whole minutes, rounded up, past that.
+9. to 11. The Reviewer's tests stay. 9 now also checks that the silent
+   client doesn't hold up the callback.
+12. The Reviewer's fix stays. The OAuth tests also ignore SIGPIPE now:
+    their clients write to connections the server closes when a wait
+    ends.
