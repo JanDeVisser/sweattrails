@@ -298,6 +298,79 @@ void test_expiring_token_is_refreshed_first()
     CHECK(saved && saved->refresh_token == "refresh-2" && saved->code_verifier == "verifier");
 }
 
+// Once the new access token is used, Wahoo revokes the old tokens: by
+// then, the file has to have the new ones.
+void test_refreshed_tokens_are_saved_before_they_are_used()
+{
+    FakeWahoo fake;
+    TempDir   dir { "wahoo-saved-first" };
+    auto      tokens = fresh_tokens();
+    tokens.expires_at = Now + 30;
+    auto wahoo = logged_in(fake, dir, tokens);
+    fake.answer("/oauth/token", { .status = 200, .body = token_response("access-2", "refresh-2") });
+    std::optional<WahooTokens> saved_at_use { };
+    wahoo.fetch = [&fake, &saved_at_use, file = wahoo.tokens_file, fetch = fake.fetch()](HttpRequest const &request) {
+        if (request.url.contains("/v1/workouts")) {
+            saved_at_use = read_tokens(file);
+        }
+        return fetch(request);
+    };
+    CHECK(wahoo.list_workouts(0).has_value());
+    CHECK(saved_at_use.has_value());
+    if (saved_at_use) {
+        CHECK_EQ(saved_at_use->access_token, "access-2");
+        CHECK_EQ(saved_at_use->refresh_token, "refresh-2");
+        CHECK_EQ(saved_at_use->expires_at, Now + 7200);
+    }
+}
+
+// New tokens that can't be saved aren't used: using them would revoke the
+// saved ones, and the next start would have no login.
+void test_unsaved_tokens_are_not_used()
+{
+    FakeWahoo fake;
+    TempDir   dir { "wahoo-unsaved" };
+    MUST(write_file_by_name((dir.path / "not-a-folder").string(), std::string_view { "file" }));
+    auto tokens = fresh_tokens();
+    tokens.expires_at = Now + 30;
+    auto wahoo = logged_in(fake, dir, tokens);
+    wahoo.tokens_file = wahoo_tokens_file(dir.path / "not-a-folder");
+    fake.answer("/oauth/token", { .status = 200, .body = token_response("access-2", "refresh-2") });
+    auto const listed = wahoo.list_workouts(0);
+    CHECK(!listed.has_value() && listed.error().kind == WahooError::Kind::Failed);
+    CHECK_EQ(fake.count("/v1/workouts"), 0uz);
+    CHECK(wahoo.tokens.has_value() && wahoo.tokens->access_token == "access");
+}
+
+// The refreshed token lasts: the next request doesn't refresh again.
+void test_refreshed_token_is_kept()
+{
+    FakeWahoo fake;
+    TempDir   dir { "wahoo-refresh-once" };
+    auto      tokens = fresh_tokens();
+    tokens.expires_at = Now - 10;
+    auto wahoo = logged_in(fake, dir, tokens);
+    fake.answer("/oauth/token", { .status = 200, .body = token_response("access-2", "refresh-2") });
+    CHECK(wahoo.list_workouts(0).has_value());
+    CHECK(wahoo.list_workouts(0).has_value());
+    CHECK_EQ(fake.count("/oauth/token"), 1uz);
+    CHECK(has_header(fake.requests.back(), "Authorization: Bearer access-2"));
+}
+
+// A refresh Wahoo turns down for its rate limit isn't a lost login.
+void test_rate_limited_refresh()
+{
+    FakeWahoo fake;
+    TempDir   dir { "wahoo-refresh-429" };
+    auto      tokens = fresh_tokens();
+    tokens.expires_at = Now - 10;
+    auto wahoo = logged_in(fake, dir, tokens);
+    fake.answer("/oauth/token", { .status = 429, .body = "", .headers = { { "X-RateLimit-Reset", "60" } } });
+    auto const listed = wahoo.list_workouts(0);
+    CHECK(!listed.has_value() && listed.error().kind == WahooError::Kind::Failed && listed.error().status == 429);
+    CHECK(!fs::exists(wahoo.tokens_file));
+}
+
 void test_rejected_refresh()
 {
     FakeWahoo fake;
@@ -505,6 +578,10 @@ int main()
     test_not_logged_in();
     test_fresh_token_is_used_as_it_is();
     test_expiring_token_is_refreshed_first();
+    test_refreshed_tokens_are_saved_before_they_are_used();
+    test_unsaved_tokens_are_not_used();
+    test_refreshed_token_is_kept();
+    test_rate_limited_refresh();
     test_rejected_refresh();
     test_revoked_token();
     test_rate_limit();
