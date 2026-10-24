@@ -1,7 +1,7 @@
 # SweatTrails
 
 A desktop app for exploring sports activities: rides, runs, walks and
-more, from FIT files and Garmin Connect. It shows an activity on a map,
+more, from FIT files, Garmin Connect and Wahoo. It shows an activity on a map,
 with its data and graphs. It's written in C++26, on
 [raylib](https://www.raylib.com).
 
@@ -15,8 +15,9 @@ later, Ninja, and these libraries:
 |---|---|---|---|
 | [raylib](https://www.raylib.com) | windows, drawing, input | Homebrew | your distribution, or built from source |
 | FreeType | fonts | Homebrew | your distribution |
-| libcurl | map tiles, Garmin Connect | the system's | your distribution |
+| libcurl | map tiles, Garmin Connect, Wahoo | the system's | your distribution |
 | zlib | unzipping Garmin Connect downloads | the system's | your distribution |
+| OpenSSL 3 or later | the Wahoo login | Homebrew | your distribution |
 | iconv | text encodings | the system's | glibc's |
 
 ### macOS
@@ -25,7 +26,7 @@ The Xcode Command Line Tools, for Clang, libc++, libcurl, zlib and iconv,
 and from [Homebrew](https://brew.sh):
 
 ```sh
-brew install cmake ninja pkgconf raylib freetype llvm
+brew install cmake ninja pkgconf raylib freetype openssl llvm
 ```
 
 `llvm` is for its clang-format, which the pre-commit hook uses (Apple's
@@ -39,7 +40,7 @@ Not tested yet. On Debian or Ubuntu, the packages would be:
 
 ```sh
 sudo apt install clang libc++-dev libc++abi-dev cmake ninja-build pkg-config \
-    libraylib-dev libfreetype-dev libcurl4-openssl-dev zlib1g-dev
+    libraylib-dev libfreetype-dev libcurl4-openssl-dev zlib1g-dev libssl-dev
 ```
 
 Distributions that don't package raylib need it built from
@@ -85,9 +86,55 @@ Personal API, which is free for your own data:
 SweatTrails then downloads new activities when it starts, and on Ctrl+G.
 It looks at the last 30 days; `"garmin": { "days": 365 }` in your
 `settings.json` (in `~/Library/Application Support/sweattrails` on macOS,
-`~/.config/sweattrails` on Linux) looks further back. Activities it already has aren't downloaded again.
-The name an activity has on Garmin Connect becomes its title. When the
-key expires, SweatTrails says so: create a new one the same way.
+`~/.config/sweattrails` on Linux, SweatTrails' config folder) looks
+further back. Activities it already has aren't downloaded again. The name
+an activity has on Garmin Connect becomes its title. When the key
+expires, SweatTrails says so: create a new one the same way.
+
+## Wahoo
+
+SweatTrails downloads your workouts from Wahoo, such as an ELEMNT's rides,
+with Wahoo's Cloud API. Wahoo has you register an app of your own for
+that, and log in to it:
+
+1. Register an app at https://developers.wahooligan.com, as a sandbox app,
+   which works right away and is plenty for one person. Don't make it
+   confidential: SweatTrails logs in without a client secret, with PKCE.
+   Give it the scopes `workouts_read`, `user_read` and `offline_data`, and
+   the redirect URI `https://localhost:8090/callback`.
+2. Put its client ID in your `settings.json`, in SweatTrails' config
+   folder:
+
+   ```json
+   { "wahoo": { "client_id": "..." } }
+   ```
+
+3. Wahoo only sends the browser back to an `https` address, so the login
+   needs a certificate for localhost that your browser trusts. Make one
+   with [mkcert](https://github.com/FiloSottile/mkcert) (`brew install
+   mkcert` on macOS, `sudo apt install mkcert libnss3-tools` on Debian or
+   Ubuntu; Firefox needs `nss` from Homebrew on macOS too):
+
+   ```sh
+   mkcert -install    # once: asks for your password
+   cd ~/Library/Application\ Support/sweattrails    # ~/.config/sweattrails on Linux
+   mkcert -cert-file localhost.pem -key-file localhost-key.pem localhost 127.0.0.1 ::1
+   ```
+
+   The certificate lasts a little over two years: make a new one the same
+   way when it expires.
+4. Press Ctrl+G. SweatTrails asks whether to log in to Wahoo: Yes opens
+   the browser at Wahoo's login page. Once you've logged in and allowed
+   SweatTrails access, the browser comes back to SweatTrails, which
+   downloads your workouts. The login is saved in `wahoo-tokens.json` in
+   the config folder, readable only by you.
+
+SweatTrails then downloads new workouts when it starts, and on Ctrl+G,
+along with Garmin Connect's. It looks at the last 30 days; `"wahoo": {
+"days": 365 }` in the settings looks further back. The name a workout has
+on Wahoo becomes its title. A ride recorded on a Wahoo and a Garmin at the
+same time shows up twice. If you don't use SweatTrails for 60 days, Wahoo
+forgets the login, and Ctrl+G asks you to log in again.
 
 How the app is developed, from specs, is in `CLAUDE.md`; the coding style
 is in `STYLE.md`, and how to write tests in `test/README.md`.
