@@ -112,6 +112,7 @@ struct Downloading {
 // the user, if anything.
 struct WahooLoginEnded {
     std::string message { };
+    bool        downloading { false }; // The login worked, and a download follows
 };
 
 #define NOTIFICATIONTYPE(S)         \

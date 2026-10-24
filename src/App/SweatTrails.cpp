@@ -267,7 +267,7 @@ void SweatTrails::job_wahoo_login(Job::Payload const &data)
         return;
     }
     info(ST, "Logged in to Wahoo");
-    the->notify<NotificationType::WahooLoginEnded>(WahooLoginEnded { });
+    the->notify<NotificationType::WahooLoginEnded>(WahooLoginEnded { .downloading = true });
     // What the user logged in for. The report says how it went.
     run_downloads(the, DownloadRequest { .wahoo = true, .wahoo_days = login.days, .wahoo_client_id = login.client_id });
 }
@@ -514,6 +514,11 @@ void SweatTrails::notif_wahoo_login_ended(Notification::Payload const &data)
     auto const  the = SweatTrails::the();
     the->wahoo_logging_in = false;
     the->set_status("");
+    // The download its DownloadDone ends: until then, Ctrl+G mustn't start
+    // another.
+    if (ended.downloading) {
+        the->downloading = true;
+    }
     if (!ended.message.empty()) {
         message_box(ended.message);
     }
