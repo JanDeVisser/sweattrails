@@ -435,4 +435,5 @@ the inbox, the sidecar and the title all work end to end (see 8).
 8. to 10. Kept.
 11. Fixed: the README has a Garmin Connect section.
 12. Left for later, as Jan agreed: the month folder in local time
-    predates this feature.
+    predates this feature. Logged as
+    [#4](https://github.com/JanDeVisser/sweattrails/issues/4).
