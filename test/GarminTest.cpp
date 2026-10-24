@@ -24,6 +24,7 @@
 #include <storage/Garmin.h>
 #include <storage/Storage.h>
 
+#include <TempStore.h>
 #include <TestApp.h>
 #include <TestFit.h>
 #include <TestZip.h>
@@ -34,59 +35,6 @@ using namespace ST::Test;
 namespace {
 
 namespace fs = std::filesystem;
-
-// A directory for one test, removed when the test is done.
-struct TempDir {
-    fs::path path;
-
-    explicit TempDir(std::string_view name)
-        : path(fs::temp_directory_path() / std::format("sweattrails-{}-{}", name, std::time(nullptr)))
-    {
-        fs::remove_all(path);
-        fs::create_directories(path);
-    }
-
-    ~TempDir()
-    {
-        std::error_code ec { };
-        fs::remove_all(path, ec);
-    }
-};
-
-// A store in a temporary directory, with an inbox and no activities.
-struct TempStore {
-    TempDir dir { "store" };
-    Storage storage { };
-
-    TempStore()
-    {
-        storage.data_dir = dir.path;
-        storage.inbox_dir = dir.path / "inbox";
-        storage.activity_dir = dir.path / "activity";
-        fs::create_directories(storage.inbox_dir);
-        fs::create_directories(storage.activity_dir);
-    }
-
-    // Puts an activity that starts at `start_time` in the store, as the
-    // inbox would have.
-    void add_activity(i64 start_time) const
-    {
-        auto const start = DateTime::from_timestamp(static_cast<i32>(start_time));
-        auto const dir = storage.activity_dir / std::format("{:04}/{:02}", static_cast<u16>(start.year), static_cast<u8>(start.month) + 1);
-        fs::create_directories(dir);
-        MUST(write_file_by_name((dir / std::format("{}.fit", start_time)).string(), std::string_view { "fit" }));
-    }
-
-    [[nodiscard]] std::vector<std::string> inbox() const
-    {
-        std::vector<std::string> names;
-        for (auto const &entry : fs::directory_iterator { storage.inbox_dir }) {
-            names.push_back(entry.path().filename().string());
-        }
-        std::ranges::sort(names);
-        return names;
-    }
-};
 
 // Garmin Connect, as far as the tests need it: answers by the request's
 // path, without its query, in the order the answers were given, and
@@ -431,29 +379,6 @@ void test_failed_download_keeps_the_earlier_ones()
     CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-5.fit", "garmin-5.json" }));
 }
 
-void test_download_request()
-{
-    auto const settings = MUST_EVAL(JSONValue::deserialize(R"({"garmin": {"days": 90}})"));
-    CHECK_EQ(make_download_request(JSONValue::object(), JSONValue { }).days, GarminDefaultDays);
-    CHECK_EQ(make_download_request(settings, JSONValue { }).days, 90);
-    auto const year = MUST_EVAL(JSONValue::deserialize(R"({"days": 365})"));
-    CHECK_EQ(make_download_request(settings, year).days, 365);
-    CHECK(!make_download_request(settings, year).quiet);
-    auto const startup = MUST_EVAL(JSONValue::deserialize(R"({"quiet": true})"));
-    CHECK(make_download_request(settings, startup).quiet);
-    CHECK_EQ(make_download_request(settings, startup).days, 90);
-}
-
-// A key binding passes the key and its modifiers as the arguments: the
-// settings still say how far back to look, and Ctrl+G isn't quiet.
-void test_download_request_from_a_key_binding()
-{
-    auto const settings = MUST_EVAL(JSONValue::deserialize(R"({"garmin": {"days": 90}})"));
-    auto const binding = MUST_EVAL(JSONValue::deserialize(R"({"key": 71, "modifier": 2})"));
-    CHECK_EQ(make_download_request(settings, binding).days, 90);
-    CHECK(!make_download_request(settings, binding).quiet);
-}
-
 // A downloaded activity goes through the inbox as any other: it's filed
 // under the start time the list gave, so has_activity() finds it, its
 // sidecar goes with it and gives it its title, and the next download
@@ -536,9 +461,7 @@ int main()
     test_download_new_activities();
     test_download_skips_what_the_inbox_has();
     test_failed_download_keeps_the_earlier_ones();
-    test_download_request();
     test_has_activity();
-    test_download_request_from_a_key_binding();
     test_downloaded_activity_goes_through_the_inbox();
     return ST::Test::test_result();
 }

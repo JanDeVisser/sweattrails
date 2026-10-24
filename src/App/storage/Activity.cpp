@@ -200,11 +200,13 @@ std::optional<std::string> sidecar_title(fs::path const &sidecar)
         trace(Storage, "Ignoring sidecar `{}`: it isn't JSON", sidecar.string());
         return { };
     }
-    auto name = json->try_get<std::string>("activityName");
-    if (!name || name->empty()) {
-        return { };
+    // Garmin Connect calls it `activityName`, Wahoo `name`.
+    for (auto const *field : { "activityName", "name" }) {
+        if (auto name = json->try_get<std::string>(field); name && !name->empty()) {
+            return *name;
+        }
     }
-    return *name;
+    return { };
 }
 
 StorageResult<bool> Activity::load_from_file(fs::path const &file)

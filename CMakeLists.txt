@@ -51,6 +51,18 @@ endif()
 find_package(CURL)
 find_package(ZLIB REQUIRED)
 
+# Homebrew's OpenSSL isn't linked into /opt/homebrew, so CMake doesn't find
+# it by itself.
+if (APPLE AND NOT OPENSSL_ROOT_DIR)
+    foreach (prefix /opt/homebrew/opt/openssl /usr/local/opt/openssl)
+        if (EXISTS ${prefix})
+            set(OPENSSL_ROOT_DIR ${prefix})
+            break()
+        endif ()
+    endforeach ()
+endif ()
+find_package(OpenSSL REQUIRED)
+
 include(CheckCSourceCompiles)
 include(CheckCXXSourceCompiles)
 
@@ -157,6 +169,7 @@ add_executable(
         src/App/SweatTrails.cpp
         src/App/Coordinates.cpp
         src/App/Http.cpp
+        src/App/OAuth.cpp
         src/App/Map.h
         src/App/Map.cpp
         src/App/Range.h
@@ -167,9 +180,11 @@ add_executable(
         src/App/widget/DataFields.cpp
         src/App/widget/SportIcon.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Download.cpp
         src/App/storage/Garmin.cpp
         src/App/storage/Storage.cpp
         src/App/storage/Types.cpp
+        src/App/storage/Wahoo.cpp
         share/icons/sweattrails.icns
 )
 
@@ -195,6 +210,7 @@ target_link_libraries(
         ${raylib_LIBRARIES}
         ${FREETYPE_LIBRARIES}
         ${CURL_LIBRARIES}
+        OpenSSL::SSL
         ${ICONV}
         m
 )
@@ -255,6 +271,17 @@ sweattrails_test(listbox_test test/ListBoxTest.cpp)
 sweattrails_test(zip_test test/ZipTest.cpp)
 sweattrails_test(json_test test/JSONTest.cpp)
 sweattrails_test(cursor_test test/CursorTest.cpp)
+sweattrails_test(string_util_test test/StringUtilTest.cpp)
+sweattrails_test(io_test test/IOTest.cpp)
+sweattrails_test(date_test test/DateTest.cpp)
+
+sweattrails_test(http_test test/HttpTest.cpp src/App/Http.cpp)
+target_include_directories(http_test PRIVATE src/App)
+target_link_libraries(http_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(oauth_test test/OAuthTest.cpp src/App/OAuth.cpp)
+target_include_directories(oauth_test PRIVATE src/App)
+target_link_libraries(oauth_test PRIVATE OpenSSL::SSL)
 
 # A test of app code also needs that code, and what it uses.
 sweattrails_test(
@@ -333,6 +360,26 @@ sweattrails_test(
 )
 target_include_directories(garmin_test PRIVATE src/App)
 target_link_libraries(garmin_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        wahoo_test
+        test/WahooTest.cpp
+        src/App/storage/Wahoo.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Http.cpp
+        src/App/Map.cpp
+        src/App/OAuth.cpp
+)
+target_include_directories(wahoo_test PRIVATE src/App)
+target_link_libraries(wahoo_test PRIVATE ${CURL_LIBRARIES} OpenSSL::SSL)
+
+sweattrails_test(download_test test/DownloadTest.cpp src/App/storage/Download.cpp)
+target_include_directories(download_test PRIVATE src/App)
 
 install(TARGETS Base Widget sweattrails fitexplore
         ARCHIVE DESTINATION lib

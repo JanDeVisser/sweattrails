@@ -36,6 +36,28 @@ std::string to_upper(std::string_view const &input)
     return ret;
 }
 
+std::string base64url(std::string_view const &bytes)
+{
+    static constexpr std::string_view alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    std::string                       encoded;
+    // Three bytes make four characters of six bits each. A last group of
+    // one or two bytes makes two or three characters.
+    for (size_t ix = 0; ix < bytes.size(); ix += 3) {
+        auto const remaining = std::min<size_t>(3, bytes.size() - ix);
+        u32        group = 0;
+        for (size_t jx = 0; jx < 3; ++jx) {
+            group <<= 8;
+            if (jx < remaining) {
+                group |= static_cast<unsigned char>(bytes[ix + jx]);
+            }
+        }
+        for (size_t jx = 0; jx < remaining + 1; ++jx) {
+            encoded += alphabet[(group >> (18 - 6 * jx)) & 0x3F];
+        }
+    }
+    return encoded;
+}
+
 std::string to_lower(std::string_view const &input)
 {
     std::string ret;

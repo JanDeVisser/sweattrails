@@ -60,19 +60,10 @@ bool unavailable(GarminError const &error)
     return error.status == 403 || error.status == 404;
 }
 
-// Writes `contents` to `path` by way of `<path>.part`, so the inbox never
-// sees half a file.
 GarminResult<void> write_whole_file(fs::path const &path, std::string_view contents)
 {
-    auto const part = fs::path { path.string() + ".part" };
-    if (auto const written = write_file_by_name(part.string(), contents); !written) {
-        return std::unexpected(failed(std::format("Could not write `{}`: {}", part.string(), written.error().to_string())));
-    }
-    std::error_code ec { };
-    fs::rename(part, path, ec);
-    if (ec) {
-        fs::remove(part, ec);
-        return std::unexpected(failed(std::format("Could not write `{}`: {}", path.string(), LibCError { ec }.to_string())));
+    if (auto const written = write_file_atomically(path, contents); !written) {
+        return std::unexpected(failed(written.error().to_string()));
     }
     return { };
 }
@@ -140,21 +131,6 @@ std::string garmin_start_date(int days, i64 now)
     std::tm    tm { };
     localtime_r(&start, &tm);
     return std::format("{:04}-{:02}-{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
-}
-
-GarminDownloadRequest make_download_request(JSONValue const &settings, JSONValue const &arguments)
-{
-    GarminDownloadRequest request;
-    if (settings.is_object()) {
-        if (auto const garmin = settings.get("garmin"); garmin && garmin->is_object()) {
-            request.days = garmin->try_get<int>("days").value_or(request.days);
-        }
-    }
-    if (arguments.is_object()) {
-        request.days = arguments.try_get<int>("days").value_or(request.days);
-        request.quiet = arguments.try_get<bool>("quiet").value_or(false);
-    }
-    return request;
 }
 
 GarminResult<void> GarminConnect::obtain_token(std::string_view key)

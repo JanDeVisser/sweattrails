@@ -7,6 +7,8 @@
 #include <cerrno>
 #include <cstddef>
 #include <expected>
+#include <filesystem>
+#include <format>
 
 #include <config.h>
 #include <netdb.h>
@@ -371,6 +373,37 @@ std::filesystem::path xdg_dir(char const *env_var, std::filesystem::path const &
 }
 #endif
 
+}
+
+std::expected<void, LibCError> write_file_atomically(std::filesystem::path const &path, std::string_view contents, std::optional<std::filesystem::perms> permissions)
+{
+    namespace fs = std::filesystem;
+    auto const      part = fs::path { path.string() + ".part" };
+    std::error_code ec { };
+    auto const      fail = [&part](std::string_view what, LibCError const &error) -> std::unexpected<LibCError> {
+        std::error_code ignored { };
+        fs::remove(part, ignored);
+        return std::unexpected(LibCError { std::format("Could not {} `{}`: {}", what, part.string(), error.to_string()) });
+    };
+    if (permissions) {
+        // Created empty, so that it has the permissions before it has the
+        // contents.
+        if (auto const created = write_file_by_name(part.string(), std::string_view { }); !created) {
+            return fail("write", created.error());
+        }
+        fs::permissions(part, *permissions, ec);
+        if (ec) {
+            return fail("set the permissions of", LibCError { ec });
+        }
+    }
+    if (auto const written = write_file_by_name(part.string(), contents); !written) {
+        return fail("write", written.error());
+    }
+    fs::rename(part, path, ec);
+    if (ec) {
+        return fail("rename", LibCError { ec });
+    }
+    return { };
 }
 
 std::filesystem::path user_config_dir(std::string_view const &app)
