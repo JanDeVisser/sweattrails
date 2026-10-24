@@ -266,6 +266,28 @@ void test_rejected_code()
     CHECK(!fs::exists(wahoo.tokens_file));
 }
 
+// Logging in again won't help with these: the user sees what Wahoo said.
+void test_token_request_refused_for_another_reason()
+{
+    FakeWahoo fake;
+    TempDir   dir { "wahoo-refused" };
+    auto      wahoo = logged_in(fake, dir, std::nullopt);
+    fake.answer("/oauth/token", { .status = 401, .body = R"({"error":"invalid_client","error_description":"Client authentication failed."})" });
+    auto const unknown_client = wahoo.exchange_code("code", "verifier");
+    CHECK(!unknown_client.has_value());
+    if (!unknown_client) {
+        CHECK(unknown_client.error().kind == WahooError::Kind::Failed);
+        CHECK_EQ(unknown_client.error().message, "Wahoo refused the login: invalid_client: Client authentication failed.");
+    }
+    fake.answer("/oauth/token", { .status = 400, .body = R"({"error":"invalid_request"})" });
+    auto const bad_request = wahoo.exchange_code("code", "verifier");
+    CHECK(!bad_request.has_value() && bad_request.error().message == "Wahoo refused the login: invalid_request");
+    fake.answer("/oauth/token", { .status = 400, .body = "<html>" });
+    auto const not_json = wahoo.exchange_code("code", "verifier");
+    CHECK(!not_json.has_value() && not_json.error().kind == WahooError::Kind::Failed);
+    CHECK(!fs::exists(wahoo.tokens_file));
+}
+
 void test_not_logged_in()
 {
     FakeWahoo  fake;
@@ -589,6 +611,7 @@ int main()
     test_authorize_url();
     test_exchange_code();
     test_rejected_code();
+    test_token_request_refused_for_another_reason();
     test_not_logged_in();
     test_fresh_token_is_used_as_it_is();
     test_expiring_token_is_refreshed_first();

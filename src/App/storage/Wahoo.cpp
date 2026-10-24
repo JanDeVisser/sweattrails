@@ -77,6 +77,24 @@ WahooError http_error(HttpResponse const &response, std::string_view what)
     };
 }
 
+// What a 400 or 401 from the token request means. invalid_grant is a code
+// or refresh token Wahoo doesn't take: the user logs in again. Anything
+// else, such as invalid_client for a client ID Wahoo doesn't know, logging
+// in again won't fix, so the user sees what Wahoo said.
+WahooError token_error(std::string_view body)
+{
+    auto const json = JSONValue::deserialize(body);
+    auto const error = json ? json->try_get<std::string>("error").value_or("") : std::string { };
+    if (error == "invalid_grant") {
+        return not_logged_in();
+    }
+    auto const description = json ? json->try_get<std::string>("error_description").value_or("") : std::string { };
+    return failed(std::format("Wahoo refused the login: {}{}{}",
+        error.empty() ? std::string { "no reason given" } : error,
+        description.empty() ? "" : ": ",
+        description));
+}
+
 WahooError unreachable(LibCError const &error)
 {
     return failed(std::format("Could not reach Wahoo: {}", error.to_string()));
@@ -251,10 +269,8 @@ WahooResult<void> Wahoo::request_tokens(std::vector<std::pair<std::string, std::
     if (!response) {
         return std::unexpected(unreachable(response.error()));
     }
-    // A code or refresh token Wahoo doesn't accept: 400 invalid_grant, or
-    // 401 for an app it doesn't know.
     if (response->status == 400 || response->status == 401) {
-        return std::unexpected(not_logged_in());
+        return std::unexpected(token_error(response->body));
     }
     if (response->status != 200) {
         return std::unexpected(http_error(*response, "when asked for tokens"));
