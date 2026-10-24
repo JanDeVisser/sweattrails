@@ -62,7 +62,7 @@ struct DownloadReport {
 // One sentence per source, such as "Garmin Connect: 2 new activities.
 // Wahoo: nothing new." A source that isn't set up is left out, unless it's
 // the only one asked for, so that a user who doesn't use Wahoo never hears
-// of it. Quiet, only failures are reported, and the login isn't offered.
+// of it. When none is, the first one's message says how to set it up. Quiet, only failures are reported, and the login isn't offered.
 DownloadReport download_report(std::vector<SourceOutcome> const &outcomes, bool quiet);
 
 }

@@ -106,7 +106,7 @@ void test_report_leaves_out_sources_not_set_up()
     CHECK_EQ(download_report({ wahoo(Kind::NotSetUp, 0, "Wahoo isn't set up.") }, false).text, "Wahoo isn't set up.");
     // Nothing set up at all.
     auto const nothing = download_report({ garmin(Kind::NotSetUp, 0, "No key."), wahoo(Kind::NotSetUp, 0, "No client ID.") }, false);
-    CHECK(nothing.text.starts_with("No downloads are set up."));
+    CHECK_EQ(nothing.text, "No key.");
 }
 
 void test_report_offers_the_login()

@@ -104,9 +104,11 @@ DownloadReport download_report(std::vector<SourceOutcome> const &outcomes, bool 
         }
         report.text += sentence(outcome);
     }
-    // Asked for every source, and none is set up.
+    // Asked for every source, and none is set up: how to set up the first,
+    // Garmin Connect, as before there was a second. A user who doesn't use
+    // Wahoo never hears of it.
     if (!quiet && outcomes.size() > 1 && set_up == 0) {
-        report.text = "No downloads are set up. The README says how to set up Garmin Connect and Wahoo.";
+        report.text = outcomes.front().message;
     }
     return report;
 }
