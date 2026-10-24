@@ -23,8 +23,8 @@
 #include <unistd.h>
 
 #include <OAuth.h>
-#include <TempDir.h>
 
+#include <TempDir.h>
 #include <TestApp.h>
 
 using namespace ST;

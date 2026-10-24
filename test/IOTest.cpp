@@ -8,8 +8,8 @@
 #include <string>
 
 #include <IO.h>
-#include <TempDir.h>
 
+#include <TempDir.h>
 #include <TestApp.h>
 
 using namespace ST;

@@ -15,12 +15,12 @@
 
 #include <IO.h>
 #include <JSON.h>
-#include <OAuth.h>
-#include <TempStore.h>
 
 #include <Http.h>
+#include <OAuth.h>
 #include <storage/Wahoo.h>
 
+#include <TempStore.h>
 #include <TestApp.h>
 
 using namespace ST;

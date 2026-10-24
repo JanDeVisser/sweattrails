@@ -16,7 +16,6 @@
 #include <IO.h>
 #include <JSON.h>
 #include <Logging.h>
-#include <OAuth.h>
 #include <Options.h>
 
 #include <App.h>
@@ -24,6 +23,7 @@
 #include <Widget.h>
 
 #include <Http.h>
+#include <OAuth.h>
 #include <SweatTrails.h>
 #include <storage/Activity.h>
 #include <storage/Garmin.h>

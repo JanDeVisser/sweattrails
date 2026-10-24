@@ -24,9 +24,10 @@
 #include <unistd.h>
 
 #include <Logging.h>
-#include <OAuth.h>
 #include <Process.h>
 #include <StringUtil.h>
+
+#include <OAuth.h>
 
 namespace ST {
 

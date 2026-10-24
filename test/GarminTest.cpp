@@ -18,13 +18,13 @@
 
 #include <IO.h>
 #include <JSON.h>
-#include <TempStore.h>
 
 #include <Http.h>
 #include <storage/Activity.h>
 #include <storage/Garmin.h>
 #include <storage/Storage.h>
 
+#include <TempStore.h>
 #include <TestApp.h>
 #include <TestFit.h>
 #include <TestZip.h>
