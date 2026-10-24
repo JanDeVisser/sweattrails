@@ -12,14 +12,18 @@
 #include <string_view>
 #include <system_error>
 
+#include <unistd.h>
+
 namespace ST::Test {
 
-// A directory for one test, removed when the test is done.
+// A directory for one test, removed when the test is done. The process ID
+// keeps tests that ctest runs side by side, with `-j`, out of each other's
+// directories.
 struct TempDir {
     std::filesystem::path path;
 
     explicit TempDir(std::string_view name)
-        : path(std::filesystem::temp_directory_path() / std::format("sweattrails-{}-{}", name, std::time(nullptr)))
+        : path(std::filesystem::temp_directory_path() / std::format("sweattrails-{}-{}-{}", name, ::getpid(), std::time(nullptr)))
     {
         std::filesystem::remove_all(path);
         std::filesystem::create_directories(path);
