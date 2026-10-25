@@ -149,6 +149,10 @@ add_library(
         src/Lib/Widget/App.cpp
         src/Lib/Widget/Layout.cpp
         src/Lib/Widget/Modal.h
+        src/Lib/Widget/Scroll.h
+        src/Lib/Widget/Scroll.cpp
+        src/Lib/Widget/Table.h
+        src/Lib/Widget/Table.cpp
         src/Lib/Widget/Widget.h
         src/Lib/Widget/Widget.cpp
 )
@@ -178,6 +182,7 @@ add_executable(
         src/App/widget/Activity.cpp
         src/App/widget/ActivitySelector.cpp
         src/App/widget/DataFields.cpp
+        src/App/widget/DisplayedActivity.cpp
         src/App/widget/SportIcon.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Download.cpp
@@ -268,6 +273,9 @@ function(sweattrails_test name)
 endfunction()
 
 sweattrails_test(listbox_test test/ListBoxTest.cpp)
+sweattrails_test(scroll_test test/ScrollTest.cpp)
+sweattrails_test(table_test test/TableTest.cpp)
+sweattrails_test(key_binding_test test/KeyBindingTest.cpp)
 sweattrails_test(zip_test test/ZipTest.cpp)
 sweattrails_test(json_test test/JSONTest.cpp)
 sweattrails_test(cursor_test test/CursorTest.cpp)
@@ -322,6 +330,21 @@ sweattrails_test(
 )
 target_include_directories(data_fields_test PRIVATE src/App)
 target_link_libraries(data_fields_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        displayed_activity_test
+        test/DisplayedActivityTest.cpp
+        src/App/widget/DisplayedActivity.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(displayed_activity_test PRIVATE src/App)
+target_link_libraries(displayed_activity_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         activity_load_test

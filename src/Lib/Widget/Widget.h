@@ -218,6 +218,7 @@ struct AppBus {
         std::string task;
         pWidget     owner;
         Handler     handler;
+        bool        under_modals { false }; // Whether its keys work while a modal is open
 
         Task(AppBus &bus, std::string name, pWidget const &owner, Handler handler)
             : bus(bus)
@@ -231,6 +232,13 @@ struct AppBus {
         Task &bind(KeyCombo const &combo, JSONValue const &arguments = JSONValue { })
         {
             return bus.bind(*this, combo, arguments);
+        }
+
+        // Its keys also work while a modal is open, such as force quit's.
+        Task &run_under_modals()
+        {
+            under_modals = true;
+            return *this;
         }
     };
 
@@ -394,11 +402,18 @@ struct AppBus {
             message);
     }
 
-    void handle_keys(std::set<int> pressed_keys)
+    // Runs the bindings of the keys pressed. If a modal was open when they
+    // were, the modal had them, also the one that closed it, such as Esc,
+    // which shouldn't then also run Esc's binding: only the tasks that run
+    // under modals run then.
+    void handle_keys(std::set<int> pressed_keys, bool modal_was_open)
     {
         KeyboardModifier modifier = modifier_current();
         for (auto key : pressed_keys) {
             for (auto const &[combo, task, arguments] : bindings) {
+                if (modal_was_open && !(tasks.contains(task) && tasks.at(task).under_modals)) {
+                    continue;
+                }
                 if (combo.key == key && combo.modifier == modifier) {
                     submit(task, arguments);
                     return;

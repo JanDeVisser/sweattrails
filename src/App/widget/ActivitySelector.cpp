@@ -22,7 +22,7 @@ void ActivitySelector::populate()
     matches.clear();
     search = { };
     selection = 0;
-    top_line = 0;
+    scroll.top_line = 0;
     prompt = std::format("{} {}", month_name(month.month), month.year);
     auto activities = MUST_EVAL(month.list(storage));
     for (auto const &a : activities.activities) {

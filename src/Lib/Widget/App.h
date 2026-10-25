@@ -222,10 +222,12 @@ struct Main : public App {
             app_state.monitor(monitor);
         }
         bus.handle_one();
+        // Before the modal handles its keys, and maybe closes.
+        auto const modal_was_open = !modals.empty();
         App::process_input();
         // Only the keys pressed this frame: a binding runs once per press,
         // not on every frame its keys are held down.
-        bus.handle_keys(m_new_keys);
+        bus.handle_keys(m_new_keys, modal_was_open);
     }
 };
 

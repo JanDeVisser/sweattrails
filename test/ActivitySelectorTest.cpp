@@ -46,7 +46,7 @@ struct Fixture {
         for (auto const &name : names) {
             selector->entries.emplace_back(name, ActivityID { month, name, FileTypes::one(ActivityFile::Fit) });
         }
-        selector->lines = 20;
+        selector->scroll.lines = 20;
         selector->status = ModalStatus::Active;
     }
 

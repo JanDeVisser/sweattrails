@@ -430,6 +430,37 @@ void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &)
     };
 }
 
+// The activity on display, for the lap keys: none under a modal, as in
+// cmd_quit, or without an activity.
+std::shared_ptr<DisplayedActivity> lap_keys_activity(pSweatTrails const &sweattrails)
+{
+    if (!sweattrails->modals.empty()) {
+        return nullptr;
+    }
+    return sweattrails->activity_display->activity;
+}
+
+void cmd_next_lap(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (auto activity = lap_keys_activity(sweattrails)) {
+        activity->next_lap();
+    }
+}
+
+void cmd_previous_lap(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (auto activity = lap_keys_activity(sweattrails)) {
+        activity->previous_lap();
+    }
+}
+
+void cmd_whole_activity(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (auto activity = lap_keys_activity(sweattrails)) {
+        activity->whole_activity();
+    }
+}
+
 void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
 {
     if (!sweattrails->modals.empty()) {
@@ -566,7 +597,8 @@ void SweatTrails::initialize()
     status->background = DARKGRAY;
 
     bus.add_task<SweatTrails>("st-force-quit", self(), cmd_force_quit)
-        .bind(KeyCombo { KEY_Q, KModControl | KModShift });
+        .bind(KeyCombo { KEY_Q, KModControl | KModShift })
+        .run_under_modals();
     bus.add_task<SweatTrails>("st-quit", self(), cmd_quit)
         .bind(KeyCombo { KEY_Q, KModControl });
     bus.add_task<SweatTrails>("st-list-month", self(), cmd_list_month)
@@ -578,6 +610,13 @@ void SweatTrails::initialize()
     // No key: Ctrl+G offers it when it's needed.
     bus.add_task<SweatTrails>("st-wahoo-login", self(), cmd_wahoo_login);
     bus.add_task<SweatTrails>("st-message", self(), cmd_message);
+    // The table and the data panel follow the lap these select.
+    bus.add_task<SweatTrails>("st-next-lap", self(), cmd_next_lap)
+        .bind(KeyCombo { KEY_DOWN, KModNone });
+    bus.add_task<SweatTrails>("st-previous-lap", self(), cmd_previous_lap)
+        .bind(KeyCombo { KEY_UP, KModNone });
+    bus.add_task<SweatTrails>("st-whole-activity", self(), cmd_whole_activity)
+        .bind(KeyCombo { KEY_ESCAPE, KModNone });
 
     // Jobs run one at a time in the order they're scheduled: the newest
     // activity shows before Garmin Connect or Wahoo is asked for anything,

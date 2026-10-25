@@ -7,30 +7,15 @@
 
 #include <Logging.h>
 
+#include <Table.h>
 #include <Widget.h>
 
 #include <Map.h>
 #include <storage/Activity.h>
 #include <widget/DataFields.h>
+#include <widget/DisplayedActivity.h>
 
 namespace ST {
-
-struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity> {
-    struct RecordRange {
-        size_t min;
-        size_t max;
-    };
-
-    Activity                   activity;
-    std::optional<size_t>      mark { };
-    std::optional<RecordRange> segment;
-
-    explicit DisplayedActivity(Activity const &activity);
-    void clear_segment();
-    void clear_mark();
-    void set_mark(size_t t);
-    void set_segment(size_t t);
-};
 
 struct ActivityDataDisplay : public Widget {
     // A field that marks a record when it's clicked, where the last draw()
@@ -95,18 +80,30 @@ struct ActivityGraph : public Widget {
     void resize() override;
     void process_input() override;
     void set_activity(std::shared_ptr<DisplayedActivity> const &activity);
+
+private:
+    // The lap strip under the graph, half a character high: none without
+    // laps.
+    [[nodiscard]] float     strip_height() const;
+    [[nodiscard]] Rectangle strip_area() const; // In screen coordinates
+    void                    draw_strip() const;
+    void                    draw_selected_range() const;
 };
 
 struct ActivityDisplay : public Layout {
+    static constexpr int LapTableRows = 5;
+
     std::shared_ptr<DisplayedActivity>   activity;
     std::shared_ptr<ActivityDataDisplay> data_display;
     std::shared_ptr<ActivityMap>         map;
+    std::shared_ptr<Table>               laps;
     std::shared_ptr<ActivityGraph>       graph;
 
     explicit ActivityDisplay(pWidget const &parent);
     void set_activity(Activity const &activity);
     void clear_activity();
     void initialize() override;
+    void on_draw() override;
 };
 
 }

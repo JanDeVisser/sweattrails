@@ -12,6 +12,7 @@
 #include <raylib.h>
 
 #include <App.h>
+#include <Scroll.h>
 #include <Widget.h>
 
 namespace ST {
@@ -94,8 +95,10 @@ struct ListBox : public Modal {
     ListBoxEntries entries { };
     ListBoxEntries matches { };
     std::string    search { };
-    int            lines { 0 };
-    int            top_line { 0 };
+    ScrollRange    scroll { }; // Of the entries on display
+    Scrollbar      scrollbar { };
+    Rectangle      track { };     // The scrollbar's, where draw() drew it
+    Rectangle      rows_area { }; // The entries', where draw() drew them
     int            selection { -1 };
     ToString       to_string_fnc { nullptr };
 
@@ -113,7 +116,7 @@ struct ListBox : public Modal {
     }
 
     // The entries on display: the matches while there is a search, else all
-    // of them. `selection` and `top_line` index this list.
+    // of them. `selection` and `scroll.top_line` index this list.
     [[nodiscard]] ListBoxEntries const &shown() const
     {
         return (Config.search && !search.empty()) ? matches : entries;
@@ -126,7 +129,7 @@ struct ListBox : public Modal {
     }
 
     // The number of entries on display, as an int like selection and
-    // top_line, so that the arithmetic on them can't wrap around.
+    // scroll.top_line, so that the arithmetic on them can't wrap around.
     [[nodiscard]] int shown_count() const
     {
         return static_cast<int>(shown().size());
@@ -135,20 +138,25 @@ struct ListBox : public Modal {
     // Scrolls just far enough to have the selection on screen.
     void scroll_to_selection()
     {
-        auto const page = std::max(1, lines);
-        top_line = std::clamp(top_line, std::max(0, selection - page + 1), std::max(0, selection));
+        scroll.count = shown_count();
+        scroll.scroll_to(selection);
     }
 
     void draw_entries(size_t y_offset)
     {
         auto const &cell = App::the()->cells[static_cast<size_t>(FontSize::Medium)];
-        size_t      maxlen = (viewport.width - 28) / (cell.x * textsize);
+        auto const  row_height = (cell.y * textsize) + 2;
+        auto const  bar_width = scroll.overflows() ? cell.x : 0.0f;
+        size_t      maxlen = (viewport.width - 28 - bar_width) / (cell.x * textsize);
         auto const &entries_to_draw = shown();
-        for (int ix = top_line; ix < top_line + lines && ix < shown_count(); ++ix) {
+        rows_area = Rectangle { .x = viewport.x, .y = viewport.y + y_offset, .width = viewport.width - 10 - bar_width, .height = scroll.lines * row_height };
+        track = Rectangle { .x = viewport.x + viewport.width - 8 - bar_width, .y = rows_area.y, .width = bar_width, .height = rows_area.height };
+        Scrollbar::draw(track, scroll);
+        for (int ix = scroll.top_line; ix < scroll.top_line + scroll.lines && ix < shown_count(); ++ix) {
             auto const &e = entries_to_draw[static_cast<size_t>(ix)];
             auto        text_color = RAYWHITE; // Theme::the().fg();
             if (ix == selection) {
-                draw_rectangle(8, y_offset - 1, -8, cell.y * textsize + 1, RAYWHITE /*Theme::the().selection_bg()*/);
+                draw_rectangle(8, y_offset - 1, -8 - bar_width, cell.y * textsize + 1, RAYWHITE /*Theme::the().selection_bg()*/);
                 text_color = DARKGRAY; // Theme::the().selection_fg();
             }
             // Keep the text in a string: a string_view of the temporaries
@@ -189,9 +197,9 @@ struct ListBox : public Modal {
         viewport.y = screen.height / 4;
         viewport.width = screen.width / 2;
         viewport.height = screen.height / 2;
-        lines = (viewport.height - 19 + cell.y) / (cell.y + 2);
+        scroll.lines = (viewport.height - 19 + cell.y) / (cell.y + 2);
         if constexpr (Config.shrink && !Config.search) {
-            lines = clamp(lines, 0, entries.size());
+            scroll.lines = clamp(scroll.lines, 0, entries.size());
         }
         auto    f = App::the()->font();
         Vector2 m = MeasureTextEx(*f, prompt.c_str(), f->baseSize, 2);
@@ -199,9 +207,22 @@ struct ListBox : public Modal {
             viewport.width = m.x + 16;
             viewport.x = (screen.width - m.x) / 2;
         }
-        viewport.height = 19 + cell.y + lines * (cell.y + 2);
+        viewport.height = 19 + cell.y + scroll.lines * (cell.y + 2);
         // The number of lines may have changed.
         scroll_to_selection();
+    }
+
+    // The scrollbar and the mouse wheel. They scroll, and leave the
+    // selection where it is.
+    void process_input() override
+    {
+        handle_scrolling(ScrollInput::current());
+    }
+
+    void handle_scrolling(ScrollInput const &input)
+    {
+        scroll.count = shown_count();
+        scrollbar.handle(scroll, track, rows_area, input);
     }
 
     bool character(int ch) override
@@ -256,16 +277,18 @@ struct ListBox : public Modal {
             }
             case KEY_PAGE_UP: {
                 if (count > 0) {
-                    selection = std::max(0, selection - lines);
-                    top_line = std::max(0, top_line - lines);
+                    selection = std::max(0, selection - scroll.lines);
+                    scroll.count = count;
+                    scroll.page(-1);
                     scroll_to_selection();
                 }
                 return true;
             }
             case KEY_PAGE_DOWN: {
                 if (count > 0) {
-                    selection = std::min(count - 1, selection + lines);
-                    top_line = std::min(top_line + lines, std::max(0, count - lines));
+                    selection = std::min(count - 1, selection + scroll.lines);
+                    scroll.count = count;
+                    scroll.page(1);
                     scroll_to_selection();
                 }
                 return true;
@@ -306,7 +329,7 @@ struct ListBox : public Modal {
             // The list on display changes, so start at its top. Also when the
             // search is cleared: the selection indexed the matches.
             selection = 0;
-            top_line = 0;
+            scroll.top_line = 0;
             if (search.empty()) {
                 return;
             }
@@ -331,7 +354,7 @@ struct ListBox : public Modal {
         sort();
         filter();
         selection = 0;
-        top_line = 0;
+        scroll.top_line = 0;
         resize();
         status = ModalStatus::Active;
     }
