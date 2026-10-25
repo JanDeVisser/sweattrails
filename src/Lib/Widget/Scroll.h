@@ -82,6 +82,7 @@ struct Scrollbar {
 
     bool  dragging { false };
     float drag_offset { 0 }; // From the thumb's top to where it was grabbed
+    float wheel_total { 0 }; // The fractions of a notch not scrolled yet
 
     // The thumb: as high as the share of rows in view, where top_line is.
     [[nodiscard]] static Rectangle thumb(Rectangle track, ScrollRange const &range);

@@ -55,8 +55,12 @@ bool Scrollbar::handle(ScrollRange &range, Rectangle track, Rectangle content, S
         return true;
     }
     if (input.wheel != 0 && (CheckCollisionPointRec(input.mouse, content) || CheckCollisionPointRec(input.mouse, track))) {
-        // Up, a positive notch, shows the rows above.
-        range.scroll_by(-static_cast<int>(std::lround(input.wheel)));
+        // Up, a positive notch, shows the rows above. A trackpad reports
+        // fractions of a notch: they add up until there's a whole one.
+        wheel_total += input.wheel;
+        auto const notches = std::trunc(wheel_total);
+        wheel_total -= notches;
+        range.scroll_by(-static_cast<int>(notches));
         return true;
     }
     if (input.pressed && CheckCollisionPointRec(input.mouse, track)) {
