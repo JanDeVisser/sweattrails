@@ -113,9 +113,10 @@ Each is a task, for the command palette to come:
 | `st-previous-lap`   | Up   | Selects the previous lap; with none selected, the last     |
 | `st-whole-activity` | Esc  | Goes back to the whole activity                            |
 
-They do nothing under a modal, such as the month's list, or for an
-activity with one lap. Down on the last lap, and Up on the first, stay
-where they are.
+They do nothing under a modal, such as the month's list. Down and Up do
+nothing for an activity with one lap; Esc there still clears a range
+dragged in the graph, as it does in an activity with laps. Down on the
+last lap, and Up on the first, stay where they are.
 
 ### The Table widget
 
@@ -242,7 +243,9 @@ None.
   key, so Esc that closes the month's list would find the modal gone,
   and also go back to the whole activity. `Main::process_input()` notes
   whether a modal was open before the frame's input, and passes it to
-  `AppBus::handle_keys()`, which skips the bindings if one was. The tasks still
+  `AppBus::handle_keys()`, which skips the bindings if one was, except
+  those of tasks marked with `run_under_modals()`: force quit
+  (Ctrl+Shift+Q) is, so that it still gets past a modal. The tasks still
   check for a modal, as they do now, for when they're run otherwise.
 
 ## Test plan
@@ -332,6 +335,22 @@ None.
    the anonymous namespace but not declared in `DataFields.h`, so it has
    external linkage for no reason. Move it into the anonymous namespace.
 
+Resolution, agreed with Jan:
+
+1. Fixed: `set_activity()` and `clear_activity()` lay out once before
+   the children get the activity, so the map is fitted to the row with
+   the table's room taken, and once after, for the map hiding without a
+   route.
+2. Fixed: `Scrollbar` adds up the wheel's fractions of a notch in
+   `wheel_total`, and scrolls a row per whole notch.
+3. Fixed: a task can opt in to running under a modal with
+   `run_under_modals()`; force quit does. `KeyBindingTest` covers it.
+4. Fixed: a drag starts only with a press in the graph, and goes on,
+   wherever the mouse goes, until the button is let go.
+5. Spec changed: Esc clears a dragged range in a one-lap activity too,
+   as it does with laps (see Keys).
+6. Fixed: `segment_summary()` is in the anonymous namespace.
+
 Tests added by the Reviewer (commit "Add review tests for the lap display
 and scrolling"): `ScrollTest::test_trackpad_wheel` (fails, finding 2);
 `TableTest`: a thumb dragged over the rows isn't a click, clicks past the
@@ -341,4 +360,5 @@ search leaves fewer entries than fit, Page Down after the wheel;
 records, its zero width in the strip, a lap from the keys replacing a
 dragged range; `DataFieldsTest`: a lap's Max Power and elevation marks
 offset by its first record, empty Distance and Pace cells for a lap
-without distance. All pass except the trackpad test.
+without distance. All pass, the trackpad test since the fix for
+finding 2.
