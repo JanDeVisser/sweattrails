@@ -170,13 +170,14 @@ None.
     `top_line`; a press on the track above or below the thumb pages.
     Returns whether it took the input, so that a click on the bar doesn't
     also select a row.
-  - `draw(widget, track, range)`: the track and the thumb, only when
-    `count > lines`.
+  - `draw(track, range)`: the track and the thumb, in screen
+    coordinates, only when `count > lines`.
 - `ListBox` keeps a `ScrollRange scroll` in place of `lines` and
   `top_line`, and its keys use it. It gets a `process_input()` that
   feeds the scrollbar and the wheel. `ListBoxTest` and
   `ActivitySelectorTest` move from `lines` and `top_line` to
-  `scroll.lines` and `scroll.top_line`.
+  `scroll.lines` and `scroll.top_line`. `process_input()` calls
+  `handle_scrolling(input)`, which tests call with made-up input.
 
 ### The `Table` widget: `src/Lib/Widget/Table.h`
 
@@ -190,19 +191,25 @@ None.
   `resize()` sets from the font: tests set it by hand, as `ListBox`'s
   tests set `lines`.
 - Column widths are the widest of the header and the cells, measured in
-  `resize()`; there's no wrapping, and the last column takes what's
-  left.
+  `draw()` when the rows are new, since tests have no fonts to measure
+  with; there's no wrapping. `rows_area()` and `track()` work out where
+  the rows and the scrollbar are from the viewport and `row_height`, and
+  `handle_input(input)` takes made-up input, as `Scrollbar::handle()`
+  does.
 - Its height is `SizePolicy::Characters`, the header and five rows. It
   doesn't decide what a click means: `on_click(row)` does.
 
 ### The laps in the app
 
-- **`DisplayedActivity`** gets `std::optional<size_t> lap`.
+- **`DisplayedActivity`** moves from `widget/Activity.h` to
+  `widget/DisplayedActivity.h`, so that tests can reach it without the
+  widgets and raylib, and gets `std::optional<size_t> lap`.
   `select_lap(ix)` sets it and sets `segment` to the lap's records, so
   the map draws it as it draws a dragged range now. `clear_segment()`,
   which a drag in the graph starts with, clears the lap too: that's how a
   drag ends the lap's selection. `next_lap()`, `previous_lap()` and
-  `whole_activity()` do what the keys do.
+  `whole_activity()` do what the keys do, `toggle_lap(ix)` what a click
+  does, and `has_laps()` says whether there's more than one.
 - **`widget/DataFields.h`**:
   - `data_fields(activity, segment, first_record)` picks the fields of
     any segment, the activity's or a lap's, by the activity's sport. It
@@ -211,28 +218,31 @@ None.
   - `lap_table(activity)` returns the table's columns and rows: the
     columns the activity has data for, the cells formatted as the panel
     formats them. This is where the table's logic is, for the tests.
-  - `activity_summary()` gets a segment version for the lap, prefixed
-    with "Lap 3 of 8": the panel shows it in place of the activity's
-    summary line, under the title.
+  - `lap_summary(activity, lap)` is the summary of the lap's segment,
+    prefixed with "Lap 3 of 8": the panel shows it in place of the
+    activity's summary line, under the title.
 - **`ActivityDisplay`** gets a `Table` between the top row and the
   graph, hidden (`SizePolicy::Hide`) for one lap. Its `on_click` selects
-  the lap, or goes back to the whole activity for the selected one.
+  the lap, or goes back to the whole activity for the selected one. In
+  `on_draw()` the table's selection follows the activity's lap, however
+  it was selected, and only scrolls when the lap changed, so that the
+  wheel can scroll away from it.
 - **The strip** is drawn by `ActivityGraph`, under its graph, so that it
   shares the graph's x scale and lines up with it whatever the width.
-  `lap_spans(activity, width)` (in `widget/DataFields.h` or a small
-  `widget/Laps.h`) gives each lap's x range, and `lap_at(spans, x)` the
+  `lap_spans(activity, width)` (in `widget/DisplayedActivity.h`) gives
+  each lap's x range, and `lap_at(spans, x)` the
   lap under the mouse: both testable. The graph also shades the selected
   range, a lap's or a dragged one: it doesn't draw ranges now. With one
   lap, there's no strip, and the graph keeps the height.
 - **Keys**: `st-next-lap` (Down), `st-previous-lap` (Up) and
   `st-whole-activity` (Esc) in SweatTrails.cpp, calling the
-  `DisplayedActivity` functions, and then updating the table and the
-  panel.
+  `DisplayedActivity` functions. The table and the panel follow, as
+  above.
 - **Keys under a modal.** Bindings run after the modal has handled the
   key, so Esc that closes the month's list would find the modal gone,
   and also go back to the whole activity. `Main::process_input()` notes
-  whether a modal was open before the frame's input, and
-  `AppBus::handle_keys()` skips the bindings if one was. The tasks still
+  whether a modal was open before the frame's input, and passes it to
+  `AppBus::handle_keys()`, which skips the bindings if one was. The tasks still
   check for a modal, as they do now, for when they're run otherwise.
 
 ## Test plan
@@ -254,13 +264,13 @@ None.
   offset by its first record), `lap_table()` columns by the activity's
   data and sport, an empty cell for a lap without the data, and the
   lap's summary line.
-- `LapTest` or in `DataFieldsTest`: `lap_spans()` widths by records and
+- `DisplayedActivityTest`: `lap_spans()` widths by records and
   adding up to the width, `lap_at()` at the boundaries; and
   `DisplayedActivity`'s lap selection: `select_lap()` sets the range,
   `clear_segment()` clears the lap, `next_lap()` and `previous_lap()` at
   the ends and with none selected.
-- A test that a binding doesn't run when a modal was open as the key was
-  pressed.
+- `KeyBindingTest`: a binding doesn't run when a modal was open as the
+  key was pressed.
 - By hand: the table, strip, map and graph with a lapped run and ride,
   the keys, the scrollbar in the table and the month's list, a one-lap
   activity, and the window resized.
