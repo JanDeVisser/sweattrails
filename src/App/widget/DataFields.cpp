@@ -211,8 +211,7 @@ void add_elevation_lines(std::vector<DataLine> &lines, Segment const &segment, s
     lines.push_back(DataLine { .left = DataField { "Climbed", std::format("{:.0f} m", segment.climb()) } });
 }
 
-}
-
+// The summary of any segment, the activity's or a lap's.
 std::string segment_summary(Segment const &segment)
 {
     std::vector<std::string> parts;
@@ -228,6 +227,8 @@ std::string segment_summary(Segment const &segment)
         summary += summary.empty() ? part : " · " + part;
     }
     return summary;
+}
+
 }
 
 std::string activity_summary(Activity const &activity)
