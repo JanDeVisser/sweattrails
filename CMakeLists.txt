@@ -151,6 +151,8 @@ add_library(
         src/Lib/Widget/Modal.h
         src/Lib/Widget/Scroll.h
         src/Lib/Widget/Scroll.cpp
+        src/Lib/Widget/Table.h
+        src/Lib/Widget/Table.cpp
         src/Lib/Widget/Widget.h
         src/Lib/Widget/Widget.cpp
 )
@@ -271,6 +273,7 @@ endfunction()
 
 sweattrails_test(listbox_test test/ListBoxTest.cpp)
 sweattrails_test(scroll_test test/ScrollTest.cpp)
+sweattrails_test(table_test test/TableTest.cpp)
 sweattrails_test(zip_test test/ZipTest.cpp)
 sweattrails_test(json_test test/JSONTest.cpp)
 sweattrails_test(cursor_test test/CursorTest.cpp)
