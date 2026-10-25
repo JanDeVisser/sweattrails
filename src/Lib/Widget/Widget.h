@@ -394,8 +394,14 @@ struct AppBus {
             message);
     }
 
-    void handle_keys(std::set<int> pressed_keys)
+    // Runs the bindings of the keys pressed, unless a modal was open when
+    // they were: the modal had them, also the one that closed it, such as
+    // Esc, which shouldn't then also run Esc's binding.
+    void handle_keys(std::set<int> pressed_keys, bool modal_was_open)
     {
+        if (modal_was_open) {
+            return;
+        }
         KeyboardModifier modifier = modifier_current();
         for (auto key : pressed_keys) {
             for (auto const &[combo, task, arguments] : bindings) {
