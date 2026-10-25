@@ -12,25 +12,9 @@
 #include <Map.h>
 #include <storage/Activity.h>
 #include <widget/DataFields.h>
+#include <widget/DisplayedActivity.h>
 
 namespace ST {
-
-struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity> {
-    struct RecordRange {
-        size_t min;
-        size_t max;
-    };
-
-    Activity                   activity;
-    std::optional<size_t>      mark { };
-    std::optional<RecordRange> segment;
-
-    explicit DisplayedActivity(Activity const &activity);
-    void clear_segment();
-    void clear_mark();
-    void set_mark(size_t t);
-    void set_segment(size_t t);
-};
 
 struct ActivityDataDisplay : public Widget {
     // A field that marks a record when it's clicked, where the last draw()

@@ -22,40 +22,6 @@ struct Text {
     Color       color;
 };
 
-DisplayedActivity::DisplayedActivity(Activity const &activity)
-    : activity(activity)
-{
-}
-
-void DisplayedActivity::clear_segment()
-{
-    segment.reset();
-}
-
-void DisplayedActivity::clear_mark()
-{
-    mark.reset();
-}
-
-void DisplayedActivity::set_mark(size_t t)
-{
-    mark = t;
-}
-
-void DisplayedActivity::set_segment(size_t t)
-{
-    if (segment) {
-        if (t < segment->min) {
-            segment->min = t;
-            segment->max = t;
-        } else {
-            segment->max = t;
-        }
-    } else {
-        segment = RecordRange { .min = t, .max = t };
-    }
-}
-
 ActivityDataDisplay::ActivityDataDisplay(pWidget const &parent)
     : Widget(parent, SizePolicy::Stretch, 0.0)
 {
