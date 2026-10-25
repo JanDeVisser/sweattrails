@@ -639,7 +639,9 @@ ActivityDisplay::ActivityDisplay(pWidget const &parent)
 }
 
 // The table only shows for more than one lap: one lap is the whole
-// activity, which the data panel shows.
+// activity, which the data panel shows. The map is fitted to its viewport
+// in set_activity(), so the layout makes room for the table first; after,
+// it lays out again for the map, which hides without a route.
 void ActivityDisplay::set_activity(Activity const &activity)
 {
     this->activity = std::make_shared<DisplayedActivity>(activity);
@@ -651,6 +653,7 @@ void ActivityDisplay::set_activity(Activity const &activity)
         laps->set_rows({ }, { });
         laps->policy = SizePolicy::Hide;
     }
+    resize();
     data_display->set_activity(this->activity);
     map->set_activity(this->activity);
     graph->set_activity(this->activity);
@@ -662,6 +665,7 @@ void ActivityDisplay::clear_activity()
     this->activity = nullptr;
     laps->set_rows({ }, { });
     laps->policy = SizePolicy::Hide;
+    resize();
     data_display->set_activity(nullptr);
     map->set_activity(nullptr);
     graph->set_activity(nullptr);
