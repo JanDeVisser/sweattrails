@@ -63,7 +63,8 @@ void ActivityDataDisplay::draw()
     auto const title_y = top + sz.y + 20;
     render_text(116, title_y, activity->activity.title, FontSize::Large, RAYWHITE);
     auto const summary_y = title_y + line_height;
-    render_text(116, summary_y, activity_summary(activity->activity), FontSize::Large, RAYWHITE);
+    auto const summary = activity->lap ? lap_summary(activity->activity, *activity->lap) : activity_summary(activity->activity);
+    render_text(116, summary_y, summary, FontSize::Large, RAYWHITE);
 
     // The fields start below the icon, which is 96 high, or below the
     // summary, whichever is lower.
@@ -71,14 +72,18 @@ void ActivityDataDisplay::draw()
     draw_fields(std::max(icon_bottom, summary_y + line_height) + 10);
 }
 
-// Draws the fields in two columns. In each column the values start at the
-// same x, past the column's widest label, so that they line up in any font.
+// Draws the fields, the selected lap's or the activity's, in two columns.
+// In each column the values start at the same x, past the column's widest
+// label, so that they line up in any font.
 void ActivityDataDisplay::draw_fields(float y)
 {
-    auto const lines = data_fields(activity->activity);
-    auto const gap = App::the()->char_size(FontSize::Medium).x;
-    auto const line_height = 6.0f * App::measure_text("Mg", FontSize::Medium).y / 5.0f;
-    auto const label_width = [](DataField const &field) {
+    auto const &a = activity->activity;
+    auto const  lines = activity->lap
+        ? data_fields(a, a.laps[*activity->lap].segment, a.laps[*activity->lap].first_record)
+        : data_fields(a);
+    auto const  gap = App::the()->char_size(FontSize::Medium).x;
+    auto const  line_height = 6.0f * App::measure_text("Mg", FontSize::Medium).y / 5.0f;
+    auto const  label_width = [](DataField const &field) {
         return App::measure_text(label_text(field).c_str(), FontSize::Medium).x;
     };
 
@@ -178,12 +183,69 @@ void ActivityGraph::initialize()
 {
 }
 
+namespace {
+
+// The strip's laps alternate between these, so that each boundary shows.
+constexpr Color LapShades[] = { { 70, 70, 70, 255 }, { 110, 110, 110, 255 } };
+constexpr Color SelectedLapShade = RAYWHITE;
+constexpr Color SelectedRangeShade = { 255, 255, 255, 40 };
+
+}
+
+float ActivityGraph::strip_height() const
+{
+    if (!activity || !activity->has_laps()) {
+        return 0.0f;
+    }
+    return std::ceilf(0.6f * App::the()->char_size().y);
+}
+
+Rectangle ActivityGraph::strip_area() const
+{
+    auto const height = strip_height();
+    return Rectangle {
+        .x = viewport.x,
+        .y = viewport.y + viewport.height - height,
+        .width = viewport.width - 20,
+        .height = height,
+    };
+}
+
+// The laps, each as wide as its part of the graph above it.
+void ActivityGraph::draw_strip() const
+{
+    auto const area = strip_area();
+    if (area.height <= 0) {
+        return;
+    }
+    auto const y = area.y - viewport.y;
+    auto const spans = lap_spans(activity->activity, area.width);
+    for (auto ix = 0uz; ix < spans.size(); ++ix) {
+        auto const color = (activity->lap == ix) ? SelectedLapShade : LapShades[ix % 2];
+        draw_rectangle_no_normalize(spans[ix].x0, y, spans[ix].x1 - spans[ix].x0, area.height, color);
+    }
+}
+
+// Shades the selected range, a lap's or one dragged in the graph.
+void ActivityGraph::draw_selected_range() const
+{
+    if (!activity->segment || activity->activity.records.empty()) {
+        return;
+    }
+    auto const dt = (viewport.width - 20) / static_cast<float>(activity->activity.records.size());
+    auto const x0 = static_cast<float>(activity->segment->min) * dt;
+    auto const x1 = static_cast<float>(activity->segment->max + 1) * dt;
+    draw_rectangle_no_normalize(x0, 50, x1 - x0, viewport.height - 50 - strip_height(), SelectedRangeShade);
+}
+
 void ActivityGraph::draw()
 {
     if (!activity) {
         return;
     }
     render_texture(0, 50, texture);
+    draw_selected_range();
+    draw_strip();
     if (activity->mark) {
         auto const  width = this->viewport.width - 20;
         float       dt = static_cast<float>(width) / static_cast<float>(activity->activity.records.size());
@@ -241,6 +303,19 @@ void ActivityGraph::process_input()
     if (!activity || activity->activity.records.empty()) {
         return;
     }
+    // A click in the strip selects the lap, as in the table.
+    auto const strip = strip_area();
+    if (strip.height > 0 && CheckCollisionPointRec(GetMousePosition(), strip)) {
+        auto const lap = lap_at(lap_spans(activity->activity, strip.width), GetMouseX() - strip.x);
+        if (lap) {
+            App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                activity->toggle_lap(*lap);
+            }
+        }
+        dragging = false;
+        return;
+    }
     if (mouse_in()) {
         auto const   width = this->viewport.width - 20;
         auto const   num_records = activity->activity.records.size();
@@ -280,7 +355,7 @@ void ActivityGraph::set_activity(std::shared_ptr<DisplayedActivity> const &activ
 
     auto const          &seg = activity->activity.segment;
     auto const           width = this->viewport.width - 20;
-    auto const           height = this->viewport.height - 50;
+    auto const           height = this->viewport.height - 50 - strip_height();
     float                prev_x = 0.0;
     float                prev_speed = 0.0;
     float                prev_power = 0.0;
@@ -563,9 +638,19 @@ ActivityDisplay::ActivityDisplay(pWidget const &parent)
 {
 }
 
+// The table only shows for more than one lap: one lap is the whole
+// activity, which the data panel shows.
 void ActivityDisplay::set_activity(Activity const &activity)
 {
     this->activity = std::make_shared<DisplayedActivity>(activity);
+    if (this->activity->has_laps()) {
+        auto [columns, rows] = lap_table(this->activity->activity);
+        laps->set_rows(std::move(columns), std::move(rows));
+        laps->policy = SizePolicy::Characters;
+    } else {
+        laps->set_rows({ }, { });
+        laps->policy = SizePolicy::Hide;
+    }
     data_display->set_activity(this->activity);
     map->set_activity(this->activity);
     graph->set_activity(this->activity);
@@ -575,10 +660,23 @@ void ActivityDisplay::set_activity(Activity const &activity)
 void ActivityDisplay::clear_activity()
 {
     this->activity = nullptr;
+    laps->set_rows({ }, { });
+    laps->policy = SizePolicy::Hide;
     data_display->set_activity(nullptr);
     map->set_activity(nullptr);
     graph->set_activity(nullptr);
     resize();
+}
+
+// The table's selection follows the activity's lap, however it was
+// selected: in the table, in the strip, with the keys, or ended by a drag.
+// It only scrolls when the lap changes, so that the wheel can scroll away
+// from the selection.
+void ActivityDisplay::on_draw()
+{
+    if (activity && laps->selection != activity->lap) {
+        laps->select(activity->lap);
+    }
 }
 
 void ActivityDisplay::initialize()
@@ -586,6 +684,13 @@ void ActivityDisplay::initialize()
     auto central = add_widget<Layout>(ContainerOrientation::Horizontal, SizePolicy::Stretch);
     data_display = central->add_widget<ActivityDataDisplay>();
     map = central->add_widget<ActivityMap>();
+    laps = add_widget<Table>(LapTableRows);
+    laps->policy = SizePolicy::Hide;
+    laps->on_click = [this](size_t row) {
+        if (activity) {
+            activity->toggle_lap(row);
+        }
+    };
     graph = add_widget<ActivityGraph>();
 }
 
