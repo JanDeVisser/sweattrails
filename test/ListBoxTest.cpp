@@ -187,6 +187,38 @@ void test_scrollbar_pages(TestList &list)
     CHECK_EQ(list.selection, 0);
 }
 
+// A search that leaves fewer entries than fit takes the scrollbar away:
+// the wheel and the track don't scroll the matches.
+void test_scrolling_after_search(TestList &list)
+{
+    list.setup(numbered(60));
+    place_rows(list);
+    list.key(KEY_PAGE_DOWN, 3);
+    list.handle_scrolling(ScrollInput { .mouse = { .x = 50, .y = 50 } });
+    CHECK_EQ(list.scroll.top_line, 40);
+    list.type("e5");
+    list.handle_scrolling(ScrollInput { .mouse = { .x = 50, .y = 50 }, .wheel = -1 });
+    CHECK(!list.scroll.overflows());
+    CHECK_EQ(list.scroll.top_line, 0);
+    list.handle_scrolling(ScrollInput { .mouse = { .x = 195, .y = 150 }, .pressed = true, .down = true });
+    CHECK_EQ(list.scroll.top_line, 0);
+    CHECK(list.selection_ok());
+}
+
+// Page Down after the wheel scrolled away from the selection brings it
+// back on screen.
+void test_page_down_after_wheel(TestList &list)
+{
+    list.setup(numbered(60));
+    place_rows(list);
+    list.key(KEY_DOWN, 3);
+    list.handle_scrolling(ScrollInput { .mouse = { .x = 50, .y = 50 }, .wheel = -25 });
+    CHECK_EQ(list.scroll.top_line, 25);
+    list.key(KEY_PAGE_DOWN);
+    CHECK_EQ(list.selection, 23);
+    CHECK(list.selection_ok());
+}
+
 void test_empty_list(TestList &list)
 {
     list.setup({ });
@@ -210,6 +242,8 @@ int main()
     test_paging(*list);
     test_wheel_keeps_selection(*list);
     test_scrollbar_pages(*list);
+    test_scrolling_after_search(*list);
+    test_page_down_after_wheel(*list);
     test_empty_list(*list);
     return Test::test_result();
 }

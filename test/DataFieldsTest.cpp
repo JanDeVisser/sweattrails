@@ -796,6 +796,36 @@ void test_lap_table_columns_for_a_ride()
     }
 }
 
+// The other maxima and minima of a lap mark records in the activity too.
+void test_lap_marks()
+{
+    auto records = records_with(30, set_power, 25, u16 { 200 }, u16 { 400 });
+    for (auto ix = 0uz; ix < records.size(); ++ix) {
+        records[ix].altitude = 100.0f + static_cast<float32>(ix);
+    }
+    TestActivity t { sport::Cycling, records, { { 0, 20, 5000, 600 }, { 20, 30, 2500, 300 } } };
+    auto const   max_power = lap_field(t, 1, "Max Power");
+    CHECK(max_power.has_value() && max_power->mark_at == 25uz);
+    auto const min_elevation = lap_field(t, 1, "Min elevation");
+    CHECK(min_elevation.has_value() && min_elevation->mark_at == 20uz);
+    auto const max_elevation = lap_field(t, 1, "Max elevation");
+    CHECK(max_elevation.has_value() && max_elevation->mark_at == 29uz);
+}
+
+// A lap without distance, such as a rest lap on a treadmill, in an
+// activity with distance: empty Distance and Pace cells.
+void test_lap_table_lap_without_distance()
+{
+    TestActivity t { sport::Running, std::vector<record>(20), { { 0, 10, 2000, 600 }, { 10, 20, 0, 60 } } };
+    t.activity.segment.distance = 2000;
+    auto const table = lap_table(t.activity);
+    CHECK(headers(table) == (std::vector<std::string> { "Lap", "Time", "Distance", "Pace" }));
+    if (table.rows.size() == 2) {
+        CHECK(table.rows[0] == (TableRow { "1", "10:00", "2.00 km", "5:00 min/km" }));
+        CHECK(table.rows[1] == (TableRow { "2", "01:00", "", "" }));
+    }
+}
+
 // A column for data the activity has, with an empty cell for a lap without
 // it, such as a lap where the heart rate strap dropped out.
 void test_lap_table_empty_cells()
@@ -868,5 +898,7 @@ int main()
     test_lap_table_columns_for_a_run();
     test_lap_table_columns_for_a_ride();
     test_lap_table_empty_cells();
+    test_lap_marks();
+    test_lap_table_lap_without_distance();
     return ST::Test::test_result();
 }

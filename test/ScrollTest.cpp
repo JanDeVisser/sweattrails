@@ -141,6 +141,18 @@ void test_drag()
     CHECK(!bar.handle(range, Track, Content, on_a_row));
 }
 
+// A trackpad, as on a MacBook, reports the wheel in fractions of a notch,
+// a little each frame. They add up: four quarters scroll a row.
+void test_trackpad_wheel()
+{
+    ScrollRange range { .count = 20, .lines = 5, .top_line = 5 };
+    Scrollbar   bar;
+    for (auto frame = 0; frame < 4; ++frame) {
+        bar.handle(range, Track, Content, wheel(-0.25f));
+    }
+    CHECK_EQ(range.top_line, 6);
+}
+
 void test_nothing_when_everything_fits()
 {
     ScrollRange range { .count = 3, .lines = 5, .top_line = 0 };
@@ -161,6 +173,7 @@ int main()
     test_wheel();
     test_track_pages();
     test_drag();
+    test_trackpad_wheel();
     test_nothing_when_everything_fits();
     return ST::Test::test_result();
 }

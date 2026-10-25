@@ -123,6 +123,42 @@ void test_click_on_scrollbar()
     CHECK_EQ(table->scroll.top_line, 5);
 }
 
+// Dragging the thumb over the rows, and letting go there, isn't a click on
+// a row.
+void test_drag_thumb_over_rows()
+{
+    auto                  table = make_table(12);
+    std::optional<size_t> clicked;
+    table->on_click = [&clicked](size_t row) { clicked = row; };
+    table->handle_input(click_at(295, 75)); // On the thumb, at the top
+    CHECK(table->scrollbar.dragging);
+    table->handle_input(ScrollInput { .mouse = { .x = 150, .y = 130 }, .down = true });
+    table->handle_input(ScrollInput { .mouse = { .x = 150, .y = 130 } });
+    CHECK(!clicked);
+    CHECK(!table->scrollbar.dragging);
+    CHECK(table->scroll.top_line > 0);
+}
+
+// Below the last row of a short table, and above the table, there's no row.
+void test_click_past_the_rows()
+{
+    auto                  table = make_table(2);
+    std::optional<size_t> clicked;
+    table->on_click = [&clicked](size_t row) { clicked = row; };
+    table->handle_input(click_at(150, 115));
+    table->handle_input(click_at(150, 40));
+    CHECK(!clicked);
+    CHECK(!table->row_at(-5));
+}
+
+void test_select_in_an_empty_table()
+{
+    auto table = make_table(0);
+    table->select(0);
+    CHECK(!table->selection);
+    CHECK_EQ(table->scroll.top_line, 0);
+}
+
 void test_wheel()
 {
     auto table = make_table(12);
@@ -154,6 +190,9 @@ int main()
     test_row_at();
     test_click();
     test_click_on_scrollbar();
+    test_drag_thumb_over_rows();
+    test_click_past_the_rows();
+    test_select_in_an_empty_table();
     test_wheel();
     test_no_scrollbar_when_rows_fit();
     return Test::test_result();

@@ -132,6 +132,49 @@ void test_empty_lap()
     CHECK(!d.segment);
 }
 
+// Down and Up go through a lap without records like any other.
+void test_next_over_an_empty_lap()
+{
+    TestActivity t { { 10, 10, 20 } };
+    auto        &d = *t.displayed;
+    d.next_lap();
+    d.next_lap();
+    CHECK_EQ(lap(d.lap), 1);
+    CHECK(!d.segment);
+    d.next_lap();
+    CHECK_EQ(lap(d.lap), 2);
+    CHECK(d.segment.has_value() && d.segment->min == 10 && d.segment->max == 19);
+    d.toggle_lap(1);
+    CHECK_EQ(lap(d.lap), 1);
+    d.toggle_lap(1);
+    CHECK_EQ(lap(d.lap), -1);
+}
+
+// A lap without records has no width in the strip, and can't be clicked:
+// the boundary is the next lap's.
+void test_empty_lap_in_the_strip()
+{
+    TestActivity t { { 10, 10, 20 } };
+    auto const   spans = lap_spans(t.displayed->activity, 200);
+    CHECK_EQ(spans.size(), 3uz);
+    if (spans.size() == 3) {
+        CHECK_EQ(spans[1].x0, spans[1].x1);
+    }
+    CHECK_EQ(lap(lap_at(spans, 100)), 2);
+    CHECK_EQ(lap(lap_at(spans, 99.9f)), 0);
+}
+
+// A lap selected with the keys replaces a range dragged in the graph.
+void test_select_lap_replaces_a_dragged_range()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.set_segment(50);
+    d.set_segment(70);
+    d.next_lap();
+    CHECK(d.segment.has_value() && d.segment->min == 0 && d.segment->max == 9);
+}
+
 void test_lap_spans()
 {
     TestActivity t;
@@ -170,6 +213,9 @@ int main()
     test_next_and_previous();
     test_one_lap();
     test_empty_lap();
+    test_next_over_an_empty_lap();
+    test_empty_lap_in_the_strip();
+    test_select_lap_replaces_a_dragged_range();
     test_lap_spans();
     test_lap_at();
     return ST::Test::test_result();
