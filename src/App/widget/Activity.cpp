@@ -303,41 +303,54 @@ void ActivityGraph::process_input()
     if (!activity || activity->activity.records.empty()) {
         return;
     }
+    // The record under the mouse's x, also when it's dragged past the
+    // graph's ends.
+    auto const mouse = GetMousePosition();
+    auto const record_at = [this, &mouse]() {
+        auto const num_records = activity->activity.records.size();
+        auto const dt = (viewport.width - 20) / static_cast<float>(num_records);
+        auto const x = std::max(0.0f, mouse.x - viewport.x);
+        return std::min(static_cast<size_t>(std::truncf(x / dt)), num_records - 1);
+    };
+
+    // A drag goes on until the button is let go, wherever the mouse goes,
+    // the strip included.
+    if (dragging) {
+        if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            activity->set_segment(record_at());
+        } else {
+            dragging = false;
+        }
+        return;
+    }
+
     // A click in the strip selects the lap, as in the table.
     auto const strip = strip_area();
-    if (strip.height > 0 && CheckCollisionPointRec(GetMousePosition(), strip)) {
-        auto const lap = lap_at(lap_spans(activity->activity, strip.width), GetMouseX() - strip.x);
+    if (strip.height > 0 && CheckCollisionPointRec(mouse, strip)) {
+        auto const lap = lap_at(lap_spans(activity->activity, strip.width), mouse.x - strip.x);
         if (lap) {
             App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
                 activity->toggle_lap(*lap);
             }
         }
-        dragging = false;
         return;
     }
-    if (mouse_in()) {
-        auto const   width = this->viewport.width - 20;
-        auto const   num_records = activity->activity.records.size();
-        float        dt = static_cast<float>(width) / static_cast<float>(num_records);
-        size_t const t = std::min(static_cast<size_t>(std::truncf((GetMouseX() - viewport.x) / dt)), num_records - 1);
-        if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-            if (!dragging) {
-                activity->clear_segment();
-                activity->clear_mark();
-            }
-            dragging = true;
-            activity->set_segment(t);
-        } else {
-            dragging = false;
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-                activity->clear_segment();
-            } else if (IsMouseButtonUp(MOUSE_BUTTON_LEFT)) {
-                activity->set_mark(t);
-            }
-        }
+
+    // A drag starts with a press in the graph, and ends a lap's selection.
+    if (!mouse_in()) {
+        return;
+    }
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        activity->clear_segment();
+        activity->clear_mark();
+        dragging = true;
+        activity->set_segment(record_at());
+    } else if (IsMouseButtonUp(MOUSE_BUTTON_LEFT)) {
+        activity->set_mark(record_at());
     }
 }
+
 void ActivityGraph::set_activity(std::shared_ptr<DisplayedActivity> const &activity)
 {
     // Reset them after unloading: an activity without data to graph doesn't
