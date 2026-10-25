@@ -597,7 +597,8 @@ void SweatTrails::initialize()
     status->background = DARKGRAY;
 
     bus.add_task<SweatTrails>("st-force-quit", self(), cmd_force_quit)
-        .bind(KeyCombo { KEY_Q, KModControl | KModShift });
+        .bind(KeyCombo { KEY_Q, KModControl | KModShift })
+        .run_under_modals();
     bus.add_task<SweatTrails>("st-quit", self(), cmd_quit)
         .bind(KeyCombo { KEY_Q, KModControl });
     bus.add_task<SweatTrails>("st-list-month", self(), cmd_list_month)

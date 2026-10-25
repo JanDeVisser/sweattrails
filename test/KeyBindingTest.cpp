@@ -56,11 +56,27 @@ void test_no_binding_under_a_modal()
     CHECK(bus.messages.empty());
 }
 
+// Force quit gets past a modal, such as "Are you sure you want to quit?".
+void test_binding_under_a_modal()
+{
+    Test::ScopedTestApp app;
+    Bus                 bus;
+    bus.add_task<Widget>("test-force-quit", app.app, [](auto const &, JSONValue const &) { })
+        .bind(KeyCombo { KEY_Q, KModNone })
+        .run_under_modals();
+    bind_key(bus, app.app, "test-escape", KEY_ESCAPE);
+    bus.handle_keys({ KEY_ESCAPE }, true);
+    CHECK(bus.messages.empty());
+    bus.handle_keys({ KEY_Q }, true);
+    CHECK_EQ(bus.messages.size(), 1uz);
+}
+
 }
 
 int main()
 {
     test_binding_runs();
     test_no_binding_under_a_modal();
+    test_binding_under_a_modal();
     return Test::test_result();
 }
