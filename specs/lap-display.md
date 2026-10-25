@@ -1,6 +1,6 @@
 # Lap Display
 
-Status: In progress
+Status: In review
 
 ## Goal
 
