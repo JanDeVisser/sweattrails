@@ -277,4 +277,68 @@ None.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: the map is laid out for the wrong height whenever the lap table
+   shows or hides.** `ActivityDisplay::set_activity()`
+   (`widget/Activity.cpp:643-657`) sets `laps->policy`, then calls
+   `map->set_activity()`, and only then `resize()`. `ActivityMap::set_activity()`
+   fits the map to `viewport.height` (`Activity.cpp:524`) and places the
+   track in screen coordinates, and `ActivityMap::resize()` doesn't redo
+   them (the known TODO). So opening a lapped activity after a one-lap one,
+   or the first activity at startup if it has laps, builds the map for the
+   taller row, after which the row shrinks by the table's height: the
+   bottom of the route is cut off by the scissor. The other way round, the
+   map is fitted to the shorter row and sits off-center in the taller one.
+   Before this feature only the status line caused this; now every switch
+   between a lapped and an unlapped activity does. Fix: set the table's
+   policy and `resize()` before the children's `set_activity()` (and in
+   `clear_activity()` likewise).
+2. **Bug: the trackpad doesn't scroll the table or the month's list.**
+   `Scrollbar::handle()` (`Scroll.cpp:59`) scrolls by
+   `lround(input.wheel)` per frame. A macOS trackpad reports fractions of
+   a notch each frame (0.1, 0.25, ...), which round to 0, so the rows never
+   move, while `handle()` still returns true and swallows the input.
+   `test_trackpad_wheel` in `ScrollTest` fails on this. Fix: keep a
+   `float wheel_accumulated` in `Scrollbar`, add `input.wheel` to it, scroll
+   by its whole part and keep the rest.
+3. **Bug: Ctrl+Shift+Q no longer works while a modal is open.**
+   `AppBus::handle_keys()` (`Widget.h:402`) now skips every binding when a
+   modal was open. `cmd_force_quit` deliberately has no modal check, unlike
+   `cmd_quit`, and was the way out with a query box (or a stuck modal) up;
+   on `main` it ran under a modal. The architecture asks for the blanket
+   skip, but its reason is only that a key the modal handled (Esc) mustn't
+   also run its binding. Fix: skip only the keys the modal's `process_key()`
+   took (e.g. record them in `App::process_input()`), or let a binding opt
+   in to running under a modal.
+4. **Bug: a click in the lap strip that moves up while the button is down
+   ends the lap it just selected.** In `ActivityGraph::process_input()`
+   (`Activity.cpp:324-326`) a drag starts on any frame where the button is
+   down over the graph and `dragging` is false, not only on a press there.
+   Press on a lap in the strip (it's selected), move a few pixels up into
+   the graph before letting go: the graph sees the button down,
+   `clear_segment()` drops the lap, and a range from the mouse starts. The
+   same happens when a drag in the graph dips into the strip and comes
+   back: the range restarts. Fix: start a drag only on
+   `IsMouseButtonPressed` inside the graph area, and while `dragging`,
+   keep extending the range (clamped) even over the strip.
+5. **Bug (minor, spec): Esc acts on an activity with one lap.** The spec
+   says the lap keys "do nothing ... for an activity with one lap", but
+   `cmd_whole_activity` calls `DisplayedActivity::whole_activity()`
+   (`DisplayedActivity.cpp:94`), which doesn't check `has_laps()`: Esc
+   clears a range dragged in the graph of a one-lap activity. Clearing the
+   range may well be wanted (it's also what Esc does in a lapped activity
+   with no lap selected); then the spec should say so. Otherwise, return
+   early without laps, as `next_lap()` does.
+6. **Suggestion: `segment_summary()`** (`DataFields.cpp:216`) is outside
+   the anonymous namespace but not declared in `DataFields.h`, so it has
+   external linkage for no reason. Move it into the anonymous namespace.
+
+Tests added by the Reviewer (commit "Add review tests for the lap display
+and scrolling"): `ScrollTest::test_trackpad_wheel` (fails, finding 2);
+`TableTest`: a thumb dragged over the rows isn't a click, clicks past the
+rows, selecting in an empty table; `ListBoxTest`: no scrolling after a
+search leaves fewer entries than fit, Page Down after the wheel;
+`DisplayedActivityTest`: stepping through and toggling a lap without
+records, its zero width in the strip, a lap from the keys replacing a
+dragged range; `DataFieldsTest`: a lap's Max Power and elevation marks
+offset by its first record, empty Distance and Pace cells for a lap
+without distance. All pass except the trackpad test.
