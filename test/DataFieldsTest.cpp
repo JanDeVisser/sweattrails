@@ -158,17 +158,36 @@ void test_analyze_no_climb_without_altitude()
     CHECK_EQ(segment.computed_climb, 0.0f);
 }
 
-// An activity with the given records, analyzed as when it's loaded.
+// A lap of records [first, end), with the distance and the moving time
+// that the FIT file's lap message has.
+struct TestLap {
+    size_t  first;
+    size_t  end;
+    float32 distance;
+    double  moving;
+};
+
+// An activity with the given records and laps, analyzed as when it's
+// loaded: the laps first, since the activity's analysis smooths the
+// records.
 struct TestActivity {
     Storage  storage { };
     Activity activity { storage, ActivityID { } };
 
-    TestActivity(sport the_sport, std::vector<record> records)
+    TestActivity(sport the_sport, std::vector<record> records, std::vector<TestLap> const &laps = { })
     {
         activity.sport = the_sport;
         activity.segment.moving = Duration { 3000 };
         activity.segment.elapsed = Duration { 3100 };
         activity.records = std::move(records);
+        for (auto const &[first, end, distance, moving] : laps) {
+            Lap lap { .first_record = first, .end_record = end };
+            lap.segment.distance = distance;
+            lap.segment.moving = Duration { moving };
+            lap.segment.elapsed = Duration { moving };
+            lap.segment.analyze(std::span { activity.records }.subspan(first, end - first), false);
+            activity.laps.push_back(lap);
+        }
         activity.segment.analyze(activity.records, true);
     }
 
@@ -703,6 +722,97 @@ void test_pace_of_more_than_a_day()
     CHECK_EQ(t.value("Avg Pace"), "10000:00 min/km");
 }
 
+std::optional<DataField> lap_field(TestActivity const &t, size_t lap, std::string const &label)
+{
+    auto const &l = t.activity.laps[lap];
+    for (auto const &line : data_fields(t.activity, l.segment, l.first_record)) {
+        for (auto const &field : { line.left, line.right }) {
+            if (field && field->label == label) {
+                return field;
+            }
+        }
+    }
+    return { };
+}
+
+// A lap's maximum is relative to the lap; the field marks the record in
+// the activity.
+void test_lap_fields()
+{
+    TestActivity t { sport::Running, records_with(20, set_hr, 15, u8 { 120 }, u8 { 180 }), { { 0, 10, 2000, 600 }, { 10, 20, 2000, 500 } } };
+    auto const   max_hr = lap_field(t, 1, "Max HR");
+    CHECK(max_hr.has_value());
+    if (max_hr) {
+        CHECK_EQ(max_hr->value, "140 bpm");
+        CHECK_EQ(max_hr->mark_at.value_or(TestActivity::NoMark), 15uz);
+    }
+    // The first lap is all 120.
+    auto const first_max = lap_field(t, 0, "Max HR");
+    CHECK(first_max.has_value() && first_max->value == "120 bpm");
+    auto const pace = lap_field(t, 1, "Avg Pace");
+    CHECK(pace.has_value() && pace->value == "4:10 min/km");
+}
+
+void test_lap_summary()
+{
+    TestActivity t { sport::Running, std::vector<record>(20), { { 0, 10, 1000, 300 }, { 10, 20, 1500, 450 } } };
+    CHECK_EQ(lap_summary(t.activity, 1), "Lap 2 of 2 · 1.50 km · 07:30");
+}
+
+std::vector<std::string> headers(LapTable const &table)
+{
+    std::vector<std::string> ret;
+    for (auto const &column : table.columns) {
+        ret.push_back(column.header);
+    }
+    return ret;
+}
+
+void test_lap_table_columns_for_a_run()
+{
+    TestActivity t { sport::Running, records_with(20, set_hr, 0, u8 { 130 }, u8 { 130 }), { { 0, 10, 2000, 600 }, { 10, 20, 2000, 500 } } };
+    t.activity.segment.distance = 4000;
+    auto const table = lap_table(t.activity);
+    CHECK(headers(table) == (std::vector<std::string> { "Lap", "Time", "Distance", "Pace", "Avg HR" }));
+    CHECK_EQ(table.rows.size(), 2uz);
+    if (table.rows.size() == 2) {
+        CHECK(table.rows[1] == (TableRow { "2", "08:20", "2.00 km", "4:10 min/km", "130 bpm" }));
+    }
+}
+
+void test_lap_table_columns_for_a_ride()
+{
+    auto records = records_with(60, set_power, 0, u16 { 200 }, u16 { 200 });
+    for (auto ix = 0uz; ix < records.size(); ++ix) {
+        records[ix].cadence = 85;
+        records[ix].altitude = 100.0f + static_cast<float32>(ix);
+    }
+    TestActivity t { sport::Cycling, records, { { 0, 30, 10000, 1200 }, { 30, 60, 10000, 1200 } } };
+    t.activity.segment.distance = 20000;
+    auto const table = lap_table(t.activity);
+    CHECK(headers(table) == (std::vector<std::string> { "Lap", "Time", "Distance", "Speed", "Avg Power", "Cadence", "Climb" }));
+    if (table.rows.size() == 2) {
+        CHECK(table.rows[0] == (TableRow { "1", "20:00", "10.00 km", "30.0 km/h", "200 W", "85 rpm", "27 m" }));
+    }
+}
+
+// A column for data the activity has, with an empty cell for a lap without
+// it, such as a lap where the heart rate strap dropped out.
+void test_lap_table_empty_cells()
+{
+    auto records = records_with(20, set_hr, 0, u8 { 130 }, u8 { 130 });
+    for (auto ix = 10uz; ix < 20; ++ix) {
+        records[ix].heart_rate.reset();
+    }
+    TestActivity t { sport::Running, records, { { 0, 10, 0, 300 }, { 10, 20, 0, 300 } } };
+    auto const   table = lap_table(t.activity);
+    // No distance in the activity: no Distance or Pace.
+    CHECK(headers(table) == (std::vector<std::string> { "Lap", "Time", "Avg HR" }));
+    if (table.rows.size() == 2) {
+        CHECK_EQ(table.rows[0][2], "130 bpm");
+        CHECK_EQ(table.rows[1][2], "");
+    }
+}
 }
 
 int main()
@@ -753,5 +863,10 @@ int main()
     test_max_speed_with_gaps();
     test_elevation();
     test_pace_of_more_than_a_day();
+    test_lap_fields();
+    test_lap_summary();
+    test_lap_table_columns_for_a_run();
+    test_lap_table_columns_for_a_ride();
+    test_lap_table_empty_cells();
     return ST::Test::test_result();
 }
