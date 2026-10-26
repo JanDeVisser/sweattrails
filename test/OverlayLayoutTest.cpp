@@ -251,6 +251,150 @@ void test_place()
     CHECK_EQ(layout_scale(Vector2 { .x = 1920, .y = 1080 }, Vector2 { .x = 3840, .y = 1080 }), 1.0f);
 }
 
+// The index counts every element, also those of later slices that are
+// skipped, so that it's the one the user finds in the file.
+void test_error_index_counts_skipped()
+{
+    CHECK_EQ(error_of(R"({ "elements": [ { "type": "map" }, { "type": "gauge" }, { "type": "text", "text": "a", "colour": "#fff" } ] })"),
+        "element 3: \"colour\" isn't a property of a text");
+}
+
+// A typo in the defaults or a style is an error too, on the first element
+// that takes it.
+void test_typos_in_defaults_and_styles()
+{
+    CHECK(error_of(R"({ "defaults": { "colour": "#fff" }, "elements": [ { "type": "text", "text": "a" } ] })").contains("\"colour\""));
+    CHECK(error_of(R"({ "styles": { "big": { "fontsize": 64 } }, "elements": [ { "type": "text", "text": "a", "style": "big" } ] })").contains("\"fontsize\""));
+    CHECK_EQ(error_of(with_element(R"({ "type": "text", "text": "a", "style": ["big", 3] })")), "element 1: \"style\" isn't a string");
+    CHECK_EQ(error_of(with_element(R"({ "type": "text", "text": "a", "style": 3 })")), "element 1: \"style\" isn't a name or a list of names");
+    // Later slices' value properties are accepted.
+    CHECK_EQ(error_of(with_element(R"({ "type": "value", "field": "heart_rate", "color_by": { "thresholds": [[0, "#8ecae6"]] } })")), "ok");
+}
+
+// Through decode_layout(), not only cascade(): a style's offset replaces the
+// default's, and the default's shadow color stays.
+void test_cascade_in_layout()
+{
+    auto const layout = decode(R"({
+        "defaults": { "shadow": { "color": "#ff000080", "offset": [2, 2] } },
+        "styles": { "far": { "shadow": { "offset": [5, 6] } } },
+        "elements": [ { "type": "text", "text": "a", "style": "far" } ]
+    })");
+    CHECK(layout.has_value());
+    if (!layout || layout->elements.empty()) {
+        return;
+    }
+    auto const &shadow = std::get<TextElement>(layout->elements[0]).style.shadow;
+    CHECK(shadow.has_value());
+    if (shadow) {
+        CHECK_EQ(shadow->offset.x, 5.0f);
+        CHECK_EQ(shadow->offset.y, 6.0f);
+        CHECK_EQ(show(shadow->color), "255 0 0 128");
+    }
+}
+
+// The unit's style is over the value's, and objects merge there as in the
+// rest of the cascade: a unit_style shadow with only an offset keeps the
+// value's shadow color.
+void test_unit_style_shadow_merges()
+{
+    auto const layout = decode(R"({
+        "defaults": { "shadow": { "color": "#ff000080", "offset": [2, 2] } },
+        "elements": [ { "type": "value", "field": "speed", "unit_style": { "shadow": { "offset": [1, 1] } } } ]
+    })");
+    CHECK(layout.has_value());
+    if (!layout || layout->elements.empty()) {
+        return;
+    }
+    auto const &shadow = std::get<ValueElement>(layout->elements[0]).unit_style.shadow;
+    CHECK(shadow.has_value());
+    if (shadow) {
+        CHECK_EQ(shadow->offset.x, 1.0f);
+        CHECK_EQ(show(shadow->color), "255 0 0 128");
+    }
+}
+
+void test_coordinates()
+{
+    auto const x_of = [](std::string_view x) -> std::string {
+        auto const layout = decode(with_element(std::format(R"({{ "type": "text", "text": "a", "at": {{ "x": {} }} }})", x)));
+        if (!layout) {
+            return layout.error().to_string();
+        }
+        auto const &c = std::get<TextElement>(layout->elements[0]).at.x;
+        return std::format("{}{}", c.value, c.percent ? "%" : "");
+    };
+    CHECK_EQ(x_of("40"), "40");
+    CHECK_EQ(x_of("-40.5"), "-40.5");
+    CHECK_EQ(x_of(R"("50%")"), "50%");
+    CHECK_EQ(x_of(R"("-10%")"), "-10%");
+    CHECK_EQ(x_of(R"("12.5%")"), "12.5%");
+    auto const bad = "element 1: \"x\" isn't a number or a percentage, such as \"50%\"";
+    CHECK_EQ(x_of(R"("%")"), bad);
+    CHECK_EQ(x_of(R"("50 %")"), bad);
+    CHECK_EQ(x_of(R"("50")"), bad);
+    CHECK_EQ(x_of(R"("%50")"), bad);
+    CHECK_EQ(x_of("true"), bad);
+}
+
+// A percentage is of the canvas, whatever the scale; pixels are scaled.
+void test_place_scaled()
+{
+    auto const canvas = Vector2 { .x = 1280, .y = 720 };
+    auto const scale = layout_scale(Vector2 { .x = 1920, .y = 1080 }, canvas);
+    auto const size = Vector2 { .x = 30, .y = 60 };
+    auto const box = place(Placement { .x = { -25, true }, .y = { -60 }, .anchor = Anchor::BottomRight }, size, canvas, scale);
+    CHECK_EQ(box.x, 1280.0f - 320.0f - 30.0f);
+    CHECK_EQ(box.y, 720.0f - 40.0f - 60.0f);
+    // The default anchor is top-left, at 0, 0.
+    CHECK_EQ(show(place(Placement { }, size, canvas, scale)), "0 0 30 60");
+}
+
+void test_value_formats()
+{
+    auto const spec_of = [](std::string_view field, std::string_view format) -> std::string {
+        auto const layout = decode(with_element(std::format(R"({{ "type": "value", "field": "{}", "format": "{}" }})", field, format)));
+        if (!layout) {
+            return layout.error().to_string();
+        }
+        return "spec " + std::get<ValueElement>(layout->elements[0]).spec;
+    };
+    CHECK_EQ(spec_of("speed", "{}"), "spec ");
+    CHECK_EQ(spec_of("speed", "{:}"), "spec ");
+    CHECK_EQ(spec_of("speed", "{:>6.1f}"), "spec >6.1f");
+    CHECK_EQ(spec_of("speed", "{0:.1f}"), "element 1: \"format\": `{0:.1f}` isn't a format such as \"{:.1f}\"");
+    CHECK_EQ(spec_of("speed", "{:.1f} km"), "element 1: \"format\": `{:.1f} km` isn't a format such as \"{:.1f}\"");
+    CHECK_EQ(spec_of("speed", "{:d}"), "element 1: \"format\": `{:d}` isn't a format for speed");
+    CHECK_EQ(spec_of("speed", "{:{}}"), "element 1: \"format\": `{:{}}` isn't a format for speed");
+    // Duration specs come in slice 3, and aren't errors now.
+    CHECK_EQ(spec_of("elapsed", "{:hms}"), "spec hms");
+}
+
+void test_sizes()
+{
+    CHECK_EQ(error_of(with_element(R"({ "type": "text", "text": "a", "font_size": 0 })")), "element 1: \"font_size\" isn't more than 0");
+    CHECK_EQ(error_of(R"({ "design_size": { "width": 0, "height": 1080 } })"), "\"design_size\" isn't more than 0 wide and high");
+    CHECK_EQ(error_of(with_element(R"({ "type": "text", "text": "a", "size": { "width": 400 } })")), "element 1: \"size\" needs a width and a height");
+}
+
+// The characters besides ASCII that the fonts need: in texts, in missing
+// texts, and the "--" of a text's missing fields, which is ASCII.
+void test_codepoints()
+{
+    auto const layout = decode(R"({ "elements": [
+        { "type": "text", "text": "{temperature}°" },
+        { "type": "value", "field": "power", "missing": "—" }
+    ] })");
+    CHECK(layout.has_value());
+    if (!layout) {
+        return;
+    }
+    auto const codepoints = layout_codepoints(*layout);
+    CHECK(codepoints.contains(0xb0));
+    CHECK(codepoints.contains(0x2014));
+    CHECK_EQ(codepoints.size(), 2uz);
+}
+
 }
 
 int main()
@@ -263,5 +407,14 @@ int main()
     test_later_elements();
     test_errors();
     test_place();
+    test_error_index_counts_skipped();
+    test_typos_in_defaults_and_styles();
+    test_cascade_in_layout();
+    test_unit_style_shadow_merges();
+    test_coordinates();
+    test_place_scaled();
+    test_value_formats();
+    test_sizes();
+    test_codepoints();
     return ST::Test::test_result();
 }
