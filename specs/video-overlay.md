@@ -1,6 +1,6 @@
 # Video Overlay: Rendering to Video
 
-Status: Draft
+Status: Ready
 
 The second slice of the video overlay (see the
 [roadmap](overlay-layout.md#roadmap)). The first,
@@ -25,33 +25,50 @@ before most of the elements exist.
 
 ### Rendering
 
-*(Proposals, see Open questions.)*
-
+- **In the app**, not in a process of its own: raylib draws only on the
+  UI thread, which has the OpenGL context, so the app renders a few
+  frames in each of its own frames, and stays usable. A separate
+  `sweattrails render <job>`, which would give command-line and batch
+  rendering, needs the render job file, a second way of starting the
+  app, and progress reported between processes: that's deferred.
 - **Ctrl+E**, the task `st-overlay-render`, renders the activity on
-  display with the layout the preview shows. It opens a box, "Range", with
+  display with the layout the preview shows, or would show: the one picked
+  last, or `cycling-basic`. A layout with an error isn't rendered: the
+  status line says to look at the preview. Like the other keys, Ctrl+E does
+  nothing under a modal, or without an activity. It opens a box, "Range", with
   the part to render, which the user can change:
   - the range selected in the graph, or the selected lap, or else the
     whole activity, as elapsed time: `1:12:00-1:20:30`;
   - or typed as times of day, as read off the camera's file info:
     `@09:44:00-@09:52:30`.
+  A range that doesn't parse, ends before it starts, or isn't in the
+  activity isn't rendered, and the status line says why. A range that only
+  partly is, is cut to the activity.
 - **Resolution, frame rate and folder** come from `settings.json`, under
   `"overlay"`: `{ "resolution": "1080p", "fps": "30000/1001", "folder":
   "~/Movies" }`, which are also the defaults. They change once per Final
-  Cut project, not per render.
+  Cut project, not per render, so the box asks only for the range: there
+  are no form widgets, and asking for each would be four boxes on every
+  render.
 - **The file** is `<folder>/<activity's date>-<range's start>.overlay.mov`,
   such as `2025-06-14-0944.overlay.mov`. An existing file isn't overwritten:
   a number is added.
 - **While it renders**, the app stays usable, and the status line says how
   far it is: `Rendering 2025-06-14-0944.overlay.mov: 34%`. At the end it
-  says where the file is. Ctrl+E during a render asks whether to stop it,
-  and stopping removes the half-written file. Quitting during a render
-  asks too.
+  says where the file is. One render at a time.
+- **Stopping**: Ctrl+E during a render asks whether to stop it, rather
+  than starting another, and stopping removes the half-written file.
+  Quitting during a render asks too. (Esc is already "whole activity".)
+- **ffmpeg failing**, such as with a full disk, stops the render, removes
+  the file, and the status line shows ffmpeg's last line of output.
 - **A long range** (more than 10 minutes) asks first, with the size it
   will be: ProRes 4444 is about 2.5 GB a minute at 1080p.
 - **ffmpeg** does the encoding. It's looked for on the `PATH` and in
   Homebrew's `/opt/homebrew/bin` and `/usr/local/bin`, since an app opened
   from the Finder gets a short `PATH`. If it isn't there, the status line
-  says so, and how to install it. The README lists it.
+  says so, and how to install it (`brew install ffmpeg`). The README lists
+  it. Not libavcodec, linked in: a much bigger dependency, with a much
+  harder API, for the same result.
 
 ### Interpolation
 
@@ -80,14 +97,7 @@ Deferred:
 
 ## Open questions
 
-1. Render inside the app, a few frames per UI frame so that it stays
-   usable, or in a separate `sweattrails render <job>` process, which
-   would also give command-line and batch rendering?
-2. Starting a render: one box for the range, with the rest from
-   `settings.json`, or boxes for the resolution, frame rate and file too?
-3. Stopping a render: Ctrl+E again, with a question, as proposed?
-4. Is ffmpeg as an external requirement OK, or should the app link
-   libavcodec instead?
+None.
 
 ## Technical notes
 
