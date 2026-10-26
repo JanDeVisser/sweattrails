@@ -203,7 +203,7 @@ void OverlayPreview::draw_text(Font const &font, std::string_view text, Vector2 
 void OverlayPreview::draw_element(OverlayElement const &element, OverlayLayout const &layout, Rectangle const &area, float scale)
 {
     auto const canvas_size = Vector2 { .x = area.width, .y = area.height };
-    auto const record = activity ? activity->mark.value_or(0) : 0uz;
+    auto const record = activity ? activity->current_record() : 0uz;
     auto const offset = [&area](Rectangle const &box) { return Vector2 { .x = area.x + box.x, .y = area.y + box.y }; };
 
     if (auto const *text = std::get_if<TextElement>(&element)) {
