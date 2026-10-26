@@ -260,4 +260,105 @@ every frame.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: eviction unloads tiles that are in view.**
+   `ActivityMap::unload_least_recently_drawn()` (ActivityMap.cpp, called
+   from `view_changed()`) evicts by `drawn`, but a tile that was loaded
+   earlier and is in the new view keeps the `drawn` of the last frame it
+   was drawn in: `view_changed()`'s predicate only checks `loaded(tile)`.
+   Scenario: open a long ride, zoom in a few levels and pan along it until
+   more than 150 tiles are loaded, then press `0`. The whole-route tiles
+   were loaded when the activity opened and are now the least recently
+   drawn, so they're the first unloaded, and the whole route shows grey
+   (or the zoomed-in children, scaled down) until the next view change;
+   pressing `0` again doesn't change the view, so it stays that way. The
+   comment "the tiles in view were drawn in this frame, or are about to
+   be" doesn't hold. The same happens when more than 150 tiles share the
+   latest `drawn`, on a very large map. Fix: in `view_changed()`, set
+   `drawn = frame` on every loaded tile of the new view (and the cover
+   pieces it will use) before evicting, or never evict a tile of
+   `navigator.view.tiles()`. Not testable without a window as it stands;
+   pulling the choice of tiles to evict into a pure function of `(tile ->
+   drawn)` and the view's tiles would make it testable.
+
+2. **Bug: failures in a cancelled download aren't recorded, so the tiles
+   are asked for again.** `job_download_tiles()` only sends
+   `MapTilesDone` when the download wasn't cancelled, and
+   `ActivityMap::tiles_done()` only takes `failed` from the current
+   download. The spec says a failed tile isn't asked for again while the
+   activity is open, so that panning over a tile the server refuses
+   doesn't ask for it over and over. Scenario: the server answers 403 or
+   429 for tile T (the usage policy responses that `CURLOPT_FAILONERROR`
+   is there for). A download `[a, T, b, c]` runs; the user drags, the
+   view's tiles change (or see 3), the download is cancelled after T
+   failed, and the next download asks for T again; every reschedule does.
+   Being rate-limited and asking again is what the policy forbids. Fix:
+   send the failed tiles for a cancelled download too (e.g. always send
+   `MapTilesDone`, with a `cancelled` flag), and in `tiles_done()` add
+   them to `failed` whenever `done.download->map == map_id`, keeping the
+   status line report for the current download only.
+
+3. **Bug: the download is replaced on every drag frame after a tile
+   arrives.** `view_changed()` keeps the download only if
+   `download->tiles == missing`. Once one of its tiles has arrived and is
+   loaded, `missing` no longer contains it, so the next drag frame, even
+   one moving a pixel, cancels the download and schedules a new one,
+   although the view needs no tile it didn't have. The spec says such a
+   view change "leaves it be". Effects: the tile being fetched is dropped
+   by `fetch_tiles()` and read again from the cache by the next job; the
+   new job queues behind any other job (a Garmin or Wahoo sync), so tiles
+   stop arriving while one runs; and with 2, a failure in the cancelled
+   download is lost and retried each time. Fix: keep the download when
+   every missing tile is in `download->tiles` (a subset, not equality).
+
+4. **Missing test: the download scheduling decision.** The test plan
+   promises "which tiles a view change asks for, given the loaded and
+   cached ones, as a function of the view and two predicates".
+   `missing_tiles()` takes one predicate and is tested, but the decision
+   that 3 is about (keep, cancel, or schedule) and the handling of
+   `failed` are inline in `ActivityMap::view_changed()`, which needs
+   `SweatTrails::the()` and textures, so they can't be tested. Suggest
+   pulling it into a pure function in `Map.h`, e.g.
+   `std::optional<std::vector<Tile>> next_download(view, have, current)`,
+   which returns nothing when the current download should be left be,
+   and testing it, including the subset case from 3.
+
+5. **Bug (minor): a download is started for a view that's never shown.**
+   `ActivityDisplay::set_activity()` no longer lays out first, so
+   `ActivityMap::set_activity()` fits the route to the stale viewport and
+   `view_changed()` loads that view's cached tiles and schedules a
+   download for it; the `resize()` right after then refits and cancels
+   it. When the lap table shows or hides, the height differs, so the
+   stale view can be at another zoom. The job thread is idle and may have
+   started fetching the first tile already: one request for a tile the
+   user never sees, against "only the current view's tiles are
+   downloaded". The final view is right: the map ends up fitted to its
+   final viewport when the lap table shows or hides, and when it hides
+   for an activity without positions (it isn't resized while hidden, and
+   is refitted if its size changed when it shows again). Fix: in
+   `set_activity()` start the navigator but leave `view_changed()` to the
+   `resize()` that follows (e.g. a `view_pending` flag that `resize()`
+   and `draw()` act on), or call `view_changed()` from `resize()` even
+   when the size didn't change, after a `set_activity()`.
+
+Checked and fine: `world_pixel()`/`world_coordinates()`; `fit()` picks
+the same zoom as `Map::init()` for routes of many sizes and latitudes
+(new test); `zoomed()` keeps the point under the mouse to the pixel at
+zoom 18; `tiles()` at the world's edges and at zoom 0; `cover()` at
+zoom 0, 2 and 18; the navigator's limits, the drag outside the map and
+its end on release, `resize()` refitting only before a move; `tiles.at()`
+for cover pieces (only loaded tiles are returned); tiles from cancelled
+downloads of the same map are loaded and of another map dropped; the
+track's NaN points, and the selected range now drawn to its last record
+inclusive (the old code stopped one short); the map keys' modal check
+and doing nothing without a map.
+
+Tests added (commit e04f1eb, `test/MapTest.cpp`): `fit()` against the
+old `Map::init()` zoom; `tiles()` covering the view exactly, on tile
+boundaries, at the world's bottom right, at zoom 0 and 1 in a viewport
+larger than the world, and at zoom 18; `zoomed()` at street level;
+`cover()` three levels up, at zoom 0 and 2, at zoom 18, and with all four
+children; `MapNavigator`: a click doesn't move the map, the keys zoom
+around the middle, the pan limits north and east and after zooming out
+around a corner, the lowest zoom for a route that fits only at zoom 1,
+the whole route after a drag, and a resize the route doesn't fit. All
+pass, as does the full run (`ctest -E oauth`).
