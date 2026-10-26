@@ -428,9 +428,9 @@ void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &)
     };
 }
 
-// The activity on display, for the lap keys: none under a modal, as in
-// cmd_quit, or without an activity.
-std::shared_ptr<DisplayedActivity> lap_keys_activity(pSweatTrails const &sweattrails)
+// The activity on display, for the keys that act on it, such as the lap
+// keys: none under a modal, as in cmd_quit, or without an activity.
+std::shared_ptr<DisplayedActivity> activity_for_keys(pSweatTrails const &sweattrails)
 {
     if (!sweattrails->modals.empty()) {
         return nullptr;
@@ -440,21 +440,21 @@ std::shared_ptr<DisplayedActivity> lap_keys_activity(pSweatTrails const &sweattr
 
 void cmd_next_lap(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    if (auto activity = lap_keys_activity(sweattrails)) {
+    if (auto activity = activity_for_keys(sweattrails)) {
         activity->next_lap();
     }
 }
 
 void cmd_previous_lap(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    if (auto activity = lap_keys_activity(sweattrails)) {
+    if (auto activity = activity_for_keys(sweattrails)) {
         activity->previous_lap();
     }
 }
 
 void cmd_whole_activity(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    if (auto activity = lap_keys_activity(sweattrails)) {
+    if (auto activity = activity_for_keys(sweattrails)) {
         activity->whole_activity();
     }
 }
@@ -488,6 +488,22 @@ void cmd_map_whole_route(pSweatTrails const &sweattrails, JSONValue const &)
     if (auto map = map_keys_map(sweattrails)) {
         map->show_whole_route();
     }
+}
+
+// Opens a box with the activity's name. A name that can't be saved keeps
+// the title it had, and the status line says why.
+void cmd_rename_activity(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    auto activity = activity_for_keys(sweattrails);
+    if (!activity) {
+        return;
+    }
+    auto save = [activity](pSweatTrails const &st, std::string const &name) {
+        if (auto const renamed = activity->activity.rename(name); !renamed) {
+            st->set_status(std::format("Couldn't save the name: {}", renamed.error().to_string()));
+        }
+    };
+    input_box(sweattrails, "Name", save, activity->activity.title);
 }
 
 void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
@@ -646,6 +662,10 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_UP, KModNone });
     bus.add_task<SweatTrails>("st-whole-activity", self(), cmd_whole_activity)
         .bind(KeyCombo { KEY_ESCAPE, KModNone });
+    // F2 rather than Ctrl+R, which often means reload. A click on the
+    // title in the data panel runs it too.
+    bus.add_task<SweatTrails>("st-rename-activity", self(), cmd_rename_activity)
+        .bind(KeyCombo { KEY_F2, KModNone });
     // + is Shift = on most keyboards.
     bus.add_task<SweatTrails>("st-map-zoom-in", self(), cmd_map_zoom_in)
         .bind(KeyCombo { KEY_EQUAL, KModNone })
