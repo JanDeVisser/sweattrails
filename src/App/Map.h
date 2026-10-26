@@ -189,8 +189,9 @@ struct MapTile {
     std::string   png { };
 };
 
-// Sent to the UI thread when all of a download's tiles have been tried,
-// unless it was cancelled.
+// Sent to the UI thread when a download ends: all its tiles were tried, or
+// it was cancelled. The tiles that failed are in either case, so that the
+// map doesn't ask for them again.
 struct MapTilesDone {
     pTileDownload     download { };
     std::vector<Tile> failed { };

@@ -243,9 +243,7 @@ void SweatTrails::job_download_tiles(Job::Payload const &data)
             SweatTrails::the()->notify<NotificationType::MapTile>(
                 MapTile { download, tile, std::move(png) });
         });
-    if (!download->cancelled) {
-        SweatTrails::the()->notify<NotificationType::MapTilesDone>(MapTilesDone { download, std::move(failed) });
-    }
+    SweatTrails::the()->notify<NotificationType::MapTilesDone>(MapTilesDone { download, std::move(failed) });
 }
 
 void SweatTrails::job_download(Job::Payload const &data)

@@ -156,13 +156,20 @@ void ActivityMap::add_tile(MapTile const &tile)
     load_tile(tile.tile, tile.png);
 }
 
+// The tiles that failed aren't asked for again for this activity, also
+// those of a download the view replaced: a server that refuses a tile, or
+// says we ask too often, shouldn't be asked again on every drag. Only the
+// current download's failures are reported.
 void ActivityMap::tiles_done(MapTilesDone const &done)
 {
+    if (done.download == nullptr || done.download->map != map_id) {
+        return;
+    }
+    failed.insert(done.failed.begin(), done.failed.end());
     if (done.download != download) {
         return;
     }
     download.reset();
-    failed.insert(done.failed.begin(), done.failed.end());
     if (!done.failed.empty()) {
         auto const count = done.failed.size();
         SweatTrails::the()->set_status(std::format("Couldn't download {} map {}", count, (count == 1) ? "tile" : "tiles"));

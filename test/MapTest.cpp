@@ -139,6 +139,23 @@ void test_cancel_while_fetching()
     }
 }
 
+// A tile that failed before the download was cancelled is still a
+// failure: the map doesn't ask for it again.
+void test_failure_before_cancel_is_returned()
+{
+    auto  download = make_download(4);
+    Fetch f;
+    auto  failed = f.run(*download, [&download](Tile const &tile) -> std::expected<std::string, LibCError> {
+        if (tile.x == 0) {
+            return std::unexpected(LibCError { "429 Too Many Requests" });
+        }
+        download->cancelled = true;
+        return png_for(tile);
+    });
+    CHECK(failed.size() == 1 && failed[0].x == 0);
+    CHECK_EQ(f.fetched.size(), 2uz);
+}
+
 void test_empty_download()
 {
     auto  download = make_download(0);
@@ -834,6 +851,7 @@ int main()
     test_nothing_is_fetched_when_cancelled();
     test_cancel_while_fetching();
     test_empty_download();
+    test_failure_before_cancel_is_returned();
     test_cancel_while_fetching_last_tile();
     test_cached_tile();
     test_get_tile_prefers_cache();
