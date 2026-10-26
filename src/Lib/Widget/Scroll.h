@@ -68,18 +68,29 @@ struct ScrollInput {
     bool    pressed { false }; // The left button went down this frame
     bool    down { false };    // The left button is down
     float   wheel { 0 };       // Notches, up positive, as GetMouseWheelMove()
+    double  time { 0 };        // Seconds, as GetTime()
 
     // This frame's input, from raylib.
     static ScrollInput current();
 };
 
-// The mouse wheel's notches. A trackpad reports fractions of a notch each
-// frame: they add up until there's a whole one.
+// The mouse wheel's notches. raylib doesn't report a mouse's click as a
+// whole notch on macOS: a slow click can be 0.1. A trackpad reports
+// fractions of a notch on every frame it's swiped. So the first movement
+// after a pause is a notch however small it is, as a mouse's click is,
+// and the movement that follows it without a pause, as a swipe's, adds
+// up to whole notches.
 struct WheelNotches {
-    float total { 0 }; // The fractions of a notch not used yet
+    // A mouse's clicks, even rolled fast, come further apart than this; a
+    // swipe's movement comes every frame.
+    static constexpr double Pause = 0.05;
 
-    // The whole notches, up positive, with this frame's wheel added.
-    int add(float wheel);
+    float  total { 0 };   // The fractions of a notch not used yet
+    double last { -1e9 }; // When the wheel last moved
+
+    // The whole notches, up positive, with this frame's wheel, at `now`,
+    // added.
+    int add(float wheel, double now);
 };
 
 // A vertical scrollbar along a track, for a ScrollRange. It shows, and

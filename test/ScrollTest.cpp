@@ -143,14 +143,32 @@ void test_drag()
 
 // A trackpad, as on a MacBook, reports the wheel in fractions of a notch,
 // a little each frame. They add up: four quarters scroll a row.
+// A swipe: a quarter notch every frame, at 60 frames a second. The first
+// is a row, the next four add up to another.
 void test_trackpad_wheel()
 {
     ScrollRange range { .count = 20, .lines = 5, .top_line = 5 };
     Scrollbar   bar;
-    for (auto frame = 0; frame < 4; ++frame) {
-        bar.handle(range, Track, Content, wheel(-0.25f));
+    for (auto frame = 0; frame < 5; ++frame) {
+        auto input = wheel(-0.25f);
+        input.time = frame / 60.0;
+        bar.handle(range, Track, Content, input);
     }
-    CHECK_EQ(range.top_line, 6);
+    CHECK_EQ(range.top_line, 7);
+}
+
+// macOS reports a slow click of a mouse's wheel as a tenth of a notch: each
+// is a row all the same.
+void test_mouse_clicks_of_a_tenth()
+{
+    ScrollRange range { .count = 20, .lines = 5, .top_line = 0 };
+    Scrollbar   bar;
+    for (auto click = 0; click < 3; ++click) {
+        auto input = wheel(-0.1f);
+        input.time = click * 0.2;
+        bar.handle(range, Track, Content, input);
+    }
+    CHECK_EQ(range.top_line, 3);
 }
 
 void test_nothing_when_everything_fits()
@@ -165,15 +183,20 @@ void test_nothing_when_everything_fits()
 void test_wheel_notches()
 {
     WheelNotches notches;
-    CHECK_EQ(notches.add(0.4f), 0);
-    CHECK_EQ(notches.add(0.4f), 0);
-    CHECK_EQ(notches.add(0.4f), 1);
-    // A whole notch at once, and the fraction left over still counts.
-    CHECK_EQ(notches.add(1.0f), 1);
-    CHECK_EQ(notches.add(-0.5f), 0);
-    CHECK_EQ(notches.add(-1.0f), -1);
-    // -0.3 left over, so 1.7: one notch.
-    CHECK_EQ(notches.add(2.0f), 1);
+    // The first movement is a notch, however small; a frame later, the
+    // movement adds up.
+    CHECK_EQ(notches.add(0.4f, 1.0), 1);
+    CHECK_EQ(notches.add(0.4f, 1.016), 0);
+    CHECK_EQ(notches.add(0.4f, 1.033), 0);
+    CHECK_EQ(notches.add(0.4f, 1.05), 1);
+    // A frame without movement isn't a pause: 0.2 left over, so -0.8.
+    CHECK_EQ(notches.add(0.0f, 1.066), 0);
+    CHECK_EQ(notches.add(-1.0f, 1.07), 0);
+    // After a pause, the left over fraction is dropped: a new movement.
+    CHECK_EQ(notches.add(0.1f, 2.0), 1);
+    CHECK_EQ(notches.add(-0.1f, 3.0), -1);
+    // A fast spin, after a pause: all its notches.
+    CHECK_EQ(notches.add(3.0f, 4.0), 3);
 }
 
 }
@@ -188,6 +211,7 @@ int main()
     test_track_pages();
     test_drag();
     test_trackpad_wheel();
+    test_mouse_clicks_of_a_tenth();
     test_nothing_when_everything_fits();
     test_wheel_notches();
     return ST::Test::test_result();

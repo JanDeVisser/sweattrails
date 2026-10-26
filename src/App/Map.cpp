@@ -457,7 +457,7 @@ bool MapNavigator::handle(ScrollInput const &input, Rectangle const &viewport)
         return false;
     }
     if (input.wheel != 0) {
-        auto const notches = wheel.add(input.wheel);
+        auto const notches = wheel.add(input.wheel, input.time);
         if (notches != 0) {
             return zoom_by(notches, Vector2 { .x = input.mouse.x - viewport.x, .y = input.mouse.y - viewport.y });
         }

@@ -20,11 +20,22 @@ ScrollInput ScrollInput::current()
         .pressed = IsMouseButtonPressed(MOUSE_BUTTON_LEFT),
         .down = IsMouseButtonDown(MOUSE_BUTTON_LEFT),
         .wheel = GetMouseWheelMove(),
+        .time = GetTime(),
     };
 }
 
-int WheelNotches::add(float wheel)
+int WheelNotches::add(float wheel, double now)
 {
+    if (wheel == 0) {
+        return 0;
+    }
+    auto const after_pause = now - last >= Pause;
+    last = now;
+    if (after_pause) {
+        total = 0;
+        auto const notches = static_cast<int>(std::trunc(wheel));
+        return (notches != 0) ? notches : ((wheel > 0) ? 1 : -1);
+    }
     total += wheel;
     auto const notches = std::trunc(total);
     total -= notches;
@@ -64,7 +75,7 @@ bool Scrollbar::handle(ScrollRange &range, Rectangle track, Rectangle content, S
     }
     if (input.wheel != 0 && (CheckCollisionPointRec(input.mouse, content) || CheckCollisionPointRec(input.mouse, track))) {
         // Up, a positive notch, shows the rows above.
-        range.scroll_by(-wheel.add(input.wheel));
+        range.scroll_by(-wheel.add(input.wheel, input.time));
         return true;
     }
     if (input.pressed && CheckCollisionPointRec(input.mouse, track)) {
