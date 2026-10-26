@@ -37,7 +37,8 @@ constexpr FieldUnit Meters { .name = "m", .factor = 1.0 };
 constexpr FieldUnit Watts { .name = "W" };
 constexpr FieldUnit BeatsPerMinute { .name = "bpm" };
 constexpr FieldUnit RevolutionsPerMinute { .name = "rpm" };
-constexpr FieldUnit StepsPerMinute { .name = "spm" };
+// FIT records the strides of one foot, which runners count as steps.
+constexpr FieldUnit StepsPerMinute { .name = "spm", .factor = 2.0 };
 constexpr FieldUnit NoUnit { };
 
 std::string hours_minutes_seconds(double seconds)
@@ -166,13 +167,8 @@ std::optional<double> field_value(Activity const &activity, size_t record, Overl
         return as_double(r.power);
     case OverlayField::heart_rate:
         return as_double(r.heart_rate);
-    case OverlayField::cadence: {
-        auto const cadence = as_double(r.cadence);
-        if (cadence && activity.sport == sport::Running) {
-            return 2 * *cadence;
-        }
-        return cadence;
-    }
+    case OverlayField::cadence:
+        return as_double(r.cadence);
     case OverlayField::distance:
         return as_double(r.distance);
     case OverlayField::elapsed:

@@ -61,7 +61,8 @@ std::string_view default_spec(OverlayField field);
 bool is_valid_spec(std::string_view spec);
 
 // The field's value at the record, in its base unit. Nothing if the record
-// doesn't have it. Running cadence is in steps, not strides, per minute.
+// doesn't have it. Cadence is as FIT records it, per minute: revolutions,
+// or the strides of one foot, which `spm` doubles to steps.
 std::optional<double> field_value(Activity const &activity, size_t record, OverlayField field);
 
 // What's shown for a value: converted to the unit and formatted with
