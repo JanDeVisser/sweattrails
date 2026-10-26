@@ -351,6 +351,67 @@ void test_rename_that_fails()
     CHECK(!t.activity.rename("Ride").has_value());
     CHECK_EQ(t.activity.title, "Tempo intervals");
 }
+// A name that's the same as before, also with spaces around it, isn't
+// saved: no sidecar is made for it.
+void test_rename_to_the_same_name()
+{
+    ActivityInDir t { "" };
+    CHECK(t.activity.rename("Tempo intervals").has_value());
+    CHECK(t.activity.rename("  Tempo intervals ").has_value());
+    CHECK(t.activity.rename("").has_value());
+    CHECK(!fs::exists(t.activity.sidecar));
+}
+
+// An activity that wasn't loaded from a directory has nowhere to save its
+// name, and keeps the one it has.
+void test_rename_without_a_sidecar_path()
+{
+    Storage  storage { };
+    Activity activity { storage, ActivityID::dummy(ActivityFile::Fit) };
+    activity.title = "Morning Ride";
+    activity.original_title = "Morning Ride";
+    CHECK(!activity.rename("Evening Ride").has_value());
+    CHECK_EQ(activity.title, "Morning Ride");
+}
+
+// The sidecar is written through a .part file, which doesn't stay behind.
+void test_save_leaves_no_part_file()
+{
+    ActivityInDir t { R"({"activityName": "Morning Ride"})" };
+    CHECK(t.activity.rename("Ride to Niagara with Anna").has_value());
+    CHECK(fs::exists(t.activity.sidecar));
+    CHECK(!fs::exists(t.dir / "dummy.json.part"));
+}
+
+// In a directory that can't be written, the name isn't saved, the title
+// stays, and the sidecar is as it was.
+void test_rename_in_a_read_only_directory()
+{
+    ActivityInDir   t { R"({"activityName": "Morning Ride"})" };
+    std::error_code ec { };
+    fs::permissions(t.dir, fs::perms::owner_read | fs::perms::owner_exec, ec);
+    CHECK(!ec);
+    // Root can write anyway: nothing to check then.
+    if (!write_file_by_name((t.dir / "probe").string(), std::string_view { "x" })) {
+        CHECK(!t.activity.rename("Rückweg").has_value());
+        CHECK_EQ(t.activity.title, "Morning Ride");
+        CHECK_EQ(read_json(t.activity.sidecar), R"({"activityName": "Morning Ride"})");
+        CHECK(!fs::exists(t.dir / "dummy.json.part"));
+    }
+    fs::permissions(t.dir, fs::perms::owner_all, ec);
+}
+
+// The user's name, renamed again to the service's: that is a name of the
+// user's too, and loading it again gives the same title.
+void test_rename_back_to_the_services_name_by_typing_it()
+{
+    ActivityInDir t { R"({"activityName": "Morning Ride", "title": "Ride to Niagara"})" };
+    CHECK(t.activity.rename("Morning Ride").has_value());
+    CHECK_EQ(t.activity.title, "Morning Ride");
+    Activity again { t.storage, ActivityID::dummy(ActivityFile::Fit) };
+    CHECK(again.load_from_dir(t.dir).value_or(false));
+    CHECK_EQ(again.title, "Morning Ride");
+}
 }
 
 int main()
@@ -373,5 +434,10 @@ int main()
     test_rename();
     test_rename_back_to_the_workouts_name();
     test_rename_that_fails();
+    test_rename_to_the_same_name();
+    test_rename_without_a_sidecar_path();
+    test_save_leaves_no_part_file();
+    test_rename_in_a_read_only_directory();
+    test_rename_back_to_the_services_name_by_typing_it();
     return ST::Test::test_result();
 }

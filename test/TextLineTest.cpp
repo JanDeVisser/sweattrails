@@ -138,6 +138,43 @@ void test_scroll_keeps_cursor_in_view()
     CHECK_EQ(line.scroll_for(0, 100), 0.0f);
 }
 
+// In the middle of the text, next to a character outside the BMP.
+void test_editing_in_the_middle()
+{
+    TextLine line;
+    line.set("a🚴b");
+    key(line, KEY_LEFT);
+    type(line, L"é");
+    CHECK_EQ(line.utf8(), "a🚴éb");
+    key(line, KEY_HOME);
+    key(line, KEY_RIGHT);
+    key(line, KEY_DELETE);
+    CHECK_EQ(line.utf8(), "aéb");
+    CHECK_EQ(line.cursor, 1uz);
+}
+
+// Other control characters in what's pasted are left out, a lone \r is a
+// space, and an empty clipboard pastes nothing.
+void test_paste_edge_cases()
+{
+    TextLine line;
+    line.paste("a\x01"
+               "b\x7f\r");
+    CHECK_EQ(line.utf8(), "ab ");
+    CHECK_EQ(line.cursor, 3uz);
+    CHECK(line.handle_key(Paste, KEY_V, []() { return std::string { }; }));
+    CHECK(line.handle_key(Paste, KEY_V, { }));
+    CHECK_EQ(line.utf8(), "ab ");
+}
+
+// A new text starts unscrolled.
+void test_set_resets_the_scroll()
+{
+    TextLine line;
+    line.scroll_for(500, 100);
+    line.set("Ride");
+    CHECK_EQ(line.scroll_x, 0.0f);
+}
 }
 
 int main()
@@ -149,5 +186,8 @@ int main()
     test_paste();
     test_keys_it_leaves();
     test_scroll_keeps_cursor_in_view();
+    test_editing_in_the_middle();
+    test_paste_edge_cases();
+    test_set_resets_the_scroll();
     return ST::Test::test_result();
 }
