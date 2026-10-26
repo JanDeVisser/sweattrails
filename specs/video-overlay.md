@@ -55,7 +55,7 @@ render loop simply produces frames as fast as it can.
 
 Estimated size: a few hundred lines for the encoding loop and the child
 process handling. The layout renderer is much bigger (see
-[overlay-layout.md](overlay-layout.md#version-1-scope)).
+[overlay-layout.md](overlay-layout.md#roadmap)).
 
 ## Output settings
 

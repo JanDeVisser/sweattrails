@@ -5,10 +5,12 @@ This defines the file that describes what the transparent overlay video from
 where, in which font, size and color, plus static labels, graphs, and the GPS
 track with an optional OpenStreetMap underlay.
 
-The format below describes the full design. Not all of it is needed for a
-first version; [Version 1 scope](#version-1-scope) lists what is in and what
-is deferred. Deferred features are also marked *(deferred)* where they are
-described.
+This is the design reference for the overlay, not a feature spec: it has
+no Status. The overlay is built in slices, each with a spec of its own that
+says which parts of this reference it builds (see [Roadmap](#roadmap)).
+Decisions made in a slice's spec that change the design are brought back
+here, so that this stays the one description of the format. Features marked
+*(deferred)* aren't in any slice yet.
 
 ## Format: JSON
 
@@ -16,8 +18,9 @@ We use JSON rather than XML:
 
 - `src/Lib/Base/JSON.h` already parses JSON, and `share/settings.json` is
   JSON too.
-- Layouts are small and hand-edited. Comments would be nice, though, so the
-  parser could accept `//` comments in layout files. (Open question.)
+- Layouts are small and hand-edited, so they may have `//` and `/* */`
+  comments. The JSON lexer looks like it skips them already, unless it's
+  asked to keep them; the first slice confirms that with a test. No JSON5.
 
 `decode<T>()` doesn't decode structs generically: it calls a hand-written
 `T::decode(JSONValue const &)` (see `Strava::Config::decode` for an example).
@@ -105,9 +108,15 @@ done by hand in Final Cut (see [video-overlay.md](video-overlay.md)).
 - **`design_size`**: the size the coordinates were designed for. If the
   render job's resolution differs (for example 4K or portrait), every position
   and size is scaled by `min(out_w / design_w, out_h / design_h)`, so one
-  layout works for 1080p and 4K.
-- **`units`**: `metric` or `imperial`. Sets the default unit of each field (see
-  below). Individual elements can override it.
+  layout works for 1080p and 4K. Portrait renders (9:16) don't get anything
+  of their own: anchors keep elements at their edges, and a layout that's
+  too cramped in portrait, such as a map with a profile along the bottom,
+  is better made as a second, portrait layout.
+- **`units`**: `metric` (the default) or `imperial`. Sets the default unit of
+  each field (see below). Individual elements can override it. It's in the
+  layout rather than an app setting, so that a layout looks the same for
+  everyone who uses it; an app setting that layouts without `units` inherit
+  can come later *(deferred)*.
 - **`defaults`** and **`styles`**: style properties that cascade. An element
   takes `defaults`, then each style named in its `"style"` (a string or an
   array, applied in order), then its own properties.
@@ -535,7 +544,8 @@ without GPS) is missing for the whole render. A `map` with no positions and a
 - **Preview**: the same renderer should draw into the activity screen with a
   time scrubber, so layouts can be adjusted without encoding a video. Hot
   reload when the layout file changes would make editing layouts by hand
-  bearable.
+  bearable. That is the way to edit layouts: there's no graphical layout
+  editor.
 
 ## Code prerequisites
 
@@ -566,22 +576,33 @@ Still to do:
 - *(Deferred features only)* an athlete profile with FTP, max HR, weight and
   zones, replacing the `JANS_FTP` constant.
 
-## Version 1 scope
+## Roadmap
 
-In:
+Each slice is a spec of its own, written when its turn comes, and small
+enough for one Developer and one Reviewer. Rendering to video comes second,
+so that a video with only speed and power over the footage is useful early,
+and the parts that could go wrong (alpha, ffmpeg, timecode) are tried before
+most of the elements exist.
 
-- Render job with `resolution`, `fps`, `range` (both elapsed and time of
-  day), `output`, `codec: prores4444`.
-- Layout: `design_size`, `units`, `defaults`, `styles`, positioning,
-  `visible`/`fade`.
-- Elements: `text`, `value` (with `color_by` thresholds), `gauge` (number and
-  `"auto"` limits), `graph`, `profile` (`extent` `all`, fixed and `lap`),
-  `map` (`fit` and `follow`, all clip shapes, OSM tiles with filters), `image`,
-  `group`.
-- All fields in the table, with interpolation, the pause rules, and templates.
-- Hard-offset shadows.
+1. **[overlay-preview.md](overlay-preview.md)**: the layout file (`defaults`,
+   `styles` and the cascade, `design_size`, positioning, colors), the `text`
+   and `value` elements with hard shadows and a few fields, drawn in the app
+   as a preview at the mark, and reloaded when the file changes. One
+   built-in layout, and the fonts it uses.
+2. **Rendering to video** (now [video-overlay.md](video-overlay.md), to be
+   brought into the template): the render job, ffmpeg and ProRes 4444, the
+   alpha blend mode, the timecode, the range, and interpolation between
+   records, which matters between frames.
+3. **Fields**: the other fields in the table, the pause rules, the template
+   specs (`hms`, `ms`, `hm`, `date`), and `color_by` thresholds.
+4. **`gauge` and `graph`**.
+5. **`profile`**.
+6. **`map`**: `fit` and `follow`, clipping through a render texture and a
+   shader, tile filters, the tiles along the track, and the tile code
+   prerequisites. The biggest slice, which may be split again.
+7. **`group`, `image`, and `visible`/`fade`**.
 
-Deferred:
+Deferred, in no slice yet:
 
 - HEVC with alpha.
 - `rotate: "heading"` for maps.
@@ -592,18 +613,4 @@ Deferred:
   `power_wkg`.
 - `f.avg`, `f.max`, `f.lap_avg`.
 - Blurred shadows.
-
-Even version 1 is a few thousand lines: decoders, the element renderers,
-fields and interpolation, and tile handling. Only the encoding loop itself is
-small (see [video-overlay.md](video-overlay.md)).
-
-## Open questions
-
-1. Comments in layout JSON (`//`)? Or JSON5?
-2. Should portrait renders (9:16) need their own layout, or should anchors
-   handle them? Anchors probably cover most cases, but a map plus a profile
-   along the bottom will be cramped.
-3. Should the layout name the units, or should that be an app setting that
-   layouts inherit?
-4. Should there be a graphical layout editor, or is editing JSON by hand with
-   a live preview enough for now?
+- An app setting for `units`.
