@@ -71,11 +71,11 @@ struct TextStyle {
 };
 
 struct TextElement {
-    size_t    number { 0 }; // Its place in the layout's elements, from 1
-    Placement at { };
-    TextStyle style { };
-    Template  text { };
-    Align     align { Align::Left };
+    size_t               number { 0 }; // Its place in the layout's elements, from 1
+    Placement            at { };
+    TextStyle            style { };
+    Template             text { };
+    std::optional<Align> align { }; // As the anchor if none
 };
 
 struct ValueElement {
@@ -118,6 +118,12 @@ float layout_scale(Vector2 design_size, Vector2 canvas);
 
 // The element's box on the canvas, given its size there, in canvas pixels.
 Rectangle place(Placement const &at, Vector2 size, Vector2 canvas, float scale);
+
+// Where content of `size` goes in an element's box: where the anchor is in
+// the box, so that a box anchored bottom-left has it at its bottom left.
+// A text's `align` picks the horizontal place instead. Relative to the
+// box's top left corner.
+Vector2 place_in_box(Vector2 box, Vector2 size, Anchor anchor, std::optional<Align> align = { });
 
 // The element's place in the layout's elements, from 1, counting those
 // that were skipped.

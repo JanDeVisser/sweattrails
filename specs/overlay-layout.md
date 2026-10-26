@@ -188,7 +188,10 @@ each new lap.
 ```
 
 `{field}` placeholders are filled in on every frame. `align` can be `left`,
-`center` or `right`. See [Templates and formatting](#templates-and-formatting)
+`center` or `right`: where the text goes across a box given with `size`.
+Without it, the text sits in its box where its anchor is, as a `value`
+does, so that a box anchored `bottom-left` has its content at its bottom
+left. See [Templates and formatting](#templates-and-formatting)
 for the placeholder syntax.
 
 ### `value`: one data field, formatted

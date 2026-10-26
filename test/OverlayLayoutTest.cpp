@@ -131,6 +131,9 @@ void test_text()
     }
     auto const &text = std::get<TextElement>(layout->elements[0]);
     CHECK(text.align == Align::Right);
+    // Without an align, a text follows its anchor.
+    auto const plain = decode(with_element(R"({ "type": "text", "text": "a" })"));
+    CHECK(plain && !plain->elements.empty() && !std::get<TextElement>(plain->elements[0]).align.has_value());
     CHECK_EQ(text.text.parts.size(), 6uz);
     CHECK_EQ(text.at.x.value, 40.0);
     CHECK(!text.at.x.percent);
@@ -416,6 +419,28 @@ void test_element_numbers()
         CHECK_EQ(element_number(layout->elements[1]), 3uz);
     }
 }
+
+// Content smaller than its box goes where the anchor is in the box; a
+// text's align picks the horizontal place.
+void test_place_in_box()
+{
+    auto const box = Vector2 { .x = 400, .y = 120 };
+    auto const size = Vector2 { .x = 100, .y = 60 };
+    auto const in = [&](Anchor anchor, std::optional<Align> align = { }) {
+        auto const at = place_in_box(box, size, anchor, align);
+        return std::format("{} {}", at.x, at.y);
+    };
+    CHECK_EQ(in(Anchor::TopLeft), "0 0");
+    CHECK_EQ(in(Anchor::BottomLeft), "0 60");
+    CHECK_EQ(in(Anchor::BottomRight), "300 60");
+    CHECK_EQ(in(Anchor::Center), "150 30");
+    CHECK_EQ(in(Anchor::Top), "150 0");
+    CHECK_EQ(in(Anchor::BottomLeft, Align::Right), "300 60");
+    CHECK_EQ(in(Anchor::BottomRight, Align::Left), "0 60");
+    CHECK_EQ(in(Anchor::TopLeft, Align::Center), "150 0");
+    // Content as big as the box fills it.
+    CHECK_EQ(std::format("{}", place_in_box(box, box, Anchor::BottomRight).x), "0");
+}
 }
 
 int main()
@@ -429,6 +454,7 @@ int main()
     test_errors();
     test_place();
     test_element_numbers();
+    test_place_in_box();
     test_error_index_counts_skipped();
     test_typos_in_defaults_and_styles();
     test_cascade_in_layout();

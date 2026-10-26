@@ -209,13 +209,9 @@ void OverlayPreview::draw_element(OverlayElement const &element, OverlayLayout c
         auto const measured = MeasureTextEx(*f, shown.c_str(), static_cast<float>(f->baseSize), 0);
         auto const box_size = text->at.size ? Vector2 { .x = text->at.size->x * scale, .y = text->at.size->y * scale } : measured;
         auto const box = place(text->at, box_size, canvas_size, scale);
-        auto       at = offset(box);
-        if (text->align == Align::Center) {
-            at.x += (box.width - measured.x) / 2;
-        } else if (text->align == Align::Right) {
-            at.x += box.width - measured.x;
-        }
-        draw_text(*f, shown, at, text->style, scale);
+        auto const in_box = place_in_box(box_size, measured, text->at.anchor, text->align);
+        auto const at = offset(box);
+        draw_text(*f, shown, Vector2 { .x = at.x + in_box.x, .y = at.y + in_box.y }, text->style, scale);
         return;
     }
 
@@ -237,8 +233,10 @@ void OverlayPreview::draw_element(OverlayElement const &element, OverlayLayout c
     auto const unit_measured = unit_text.empty() ? Vector2 { } : MeasureTextEx(*unit_font, unit_text.c_str(), static_cast<float>(unit_font->baseSize), 0);
     auto const gap = unit_text.empty() ? 0.0f : value.unit_style.font_size * scale * UnitGap;
     auto const size = Vector2 { .x = measured.x + gap + unit_measured.x, .y = std::max(measured.y, unit_measured.y) };
-    auto const box = place(value.at, value.at.size ? Vector2 { .x = value.at.size->x * scale, .y = value.at.size->y * scale } : size, canvas_size, scale);
-    auto const at = offset(box);
+    auto const box_size = value.at.size ? Vector2 { .x = value.at.size->x * scale, .y = value.at.size->y * scale } : size;
+    auto const box = place(value.at, box_size, canvas_size, scale);
+    auto const in_box = place_in_box(box_size, size, value.at.anchor);
+    auto const at = Vector2 { .x = offset(box).x + in_box.x, .y = offset(box).y + in_box.y };
     // The number and its unit stand on the same line, at the bottom.
     draw_text(*f, shown, Vector2 { .x = at.x, .y = at.y + size.y - measured.y }, value.style, scale);
     if (!unit_text.empty()) {

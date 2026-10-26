@@ -393,6 +393,40 @@ std::expected<JSONValue, LayoutError> cascaded(JSONValue const &element, JSONVal
     return cascade(std::move(ret), element);
 }
 
+// Where the anchor is across an element, from 0 at its left to 1 at its
+// right, and down it.
+float fraction_x(Anchor a)
+{
+    switch (a) {
+    case Anchor::Top:
+    case Anchor::Center:
+    case Anchor::Bottom:
+        return 0.5f;
+    case Anchor::TopRight:
+    case Anchor::Right:
+    case Anchor::BottomRight:
+        return 1.0f;
+    default:
+        return 0.0f;
+    }
+}
+
+float fraction_y(Anchor a)
+{
+    switch (a) {
+    case Anchor::Left:
+    case Anchor::Center:
+    case Anchor::Right:
+        return 0.5f;
+    case Anchor::BottomLeft:
+    case Anchor::Bottom:
+    case Anchor::BottomRight:
+        return 1.0f;
+    default:
+        return 0.0f;
+    }
+}
+
 std::expected<std::optional<OverlayElement>, LayoutError> element(JSONValue const &json, JSONValue const &defaults, JSONValue const &styles)
 {
     if (!json.is_object()) {
@@ -522,34 +556,6 @@ Rectangle place(Placement const &at, Vector2 size, Vector2 canvas, float scale)
         auto const pixels = static_cast<float>(c.percent ? c.value / 100.0 * extent : c.value * scale);
         return (c.value < 0) ? extent + pixels : pixels;
     };
-    auto const fraction_x = [](Anchor a) {
-        switch (a) {
-        case Anchor::Top:
-        case Anchor::Center:
-        case Anchor::Bottom:
-            return 0.5f;
-        case Anchor::TopRight:
-        case Anchor::Right:
-        case Anchor::BottomRight:
-            return 1.0f;
-        default:
-            return 0.0f;
-        }
-    };
-    auto const fraction_y = [](Anchor a) {
-        switch (a) {
-        case Anchor::Left:
-        case Anchor::Center:
-        case Anchor::Right:
-            return 0.5f;
-        case Anchor::BottomLeft:
-        case Anchor::Bottom:
-        case Anchor::BottomRight:
-            return 1.0f;
-        default:
-            return 0.0f;
-        }
-    };
     return Rectangle {
         .x = resolve(at.x, canvas.x) - fraction_x(at.anchor) * size.x,
         .y = resolve(at.y, canvas.y) - fraction_y(at.anchor) * size.y,
@@ -561,6 +567,16 @@ Rectangle place(Placement const &at, Vector2 size, Vector2 canvas, float scale)
 size_t element_number(OverlayElement const &element)
 {
     return std::visit([](auto const &e) { return e.number; }, element);
+}
+
+Vector2 place_in_box(Vector2 box, Vector2 size, Anchor anchor, std::optional<Align> align)
+{
+    auto x = fraction_x(anchor);
+    if (align) {
+        x = (*align == Align::Left) ? 0.0f : (*align == Align::Center) ? 0.5f
+                                                                       : 1.0f;
+    }
+    return Vector2 { .x = x * (box.x - size.x), .y = fraction_y(anchor) * (box.y - size.y) };
 }
 
 std::set<int> layout_codepoints(OverlayLayout const &layout)
