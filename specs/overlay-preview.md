@@ -294,4 +294,86 @@ thin file.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: dragging in the graph shows the first record.**
+   `widget/OverlayPreview.cpp:206` takes `mark.value_or(0)`, but a press in
+   the graph clears the mark (`widget/Activity.cpp:354`) and the drag only
+   sets `segment`. So while a range is dragged, the preview jumps to record
+   0 (`elapsed` 0:00:00) and stays there if the button is let go outside the
+   graph. The spec says dragging moves the moment shown. Fix: fall back to
+   `segment->max` (the drag's end) before record 0, in a small
+   `preview_record(DisplayedActivity const &)` that a test can reach.
+2. **Bug: a missing font's error gives the wrong element.**
+   `widget/OverlayPreview.cpp:85-88` counts `layout->elements`, which leaves
+   out the skipped elements of later slices. With `[ map, text with "font":
+   "Nope.ttf" ]` the canvas says `element 1`, but it's element 2. Fix: keep
+   each element's index in the file in `OverlayLayout` (or in the
+   elements), and use that.
+3. **Bug: a font that's found but can't be loaded disappears silently, and is
+   loaded again on every frame.** `FontCache::get()`
+   (`Lib/Widget/FontCache.cpp:32-36`) doesn't remember a failure, so
+   `draw_element()` (`widget/OverlayPreview.cpp:210`, `:231`) calls
+   `LoadFontEx()` again on every frame, which reads the file each time, and
+   the element isn't drawn and no error is shown. This happens, for example,
+   with a corrupt file, or a `.ttc` from `/System/Library/Fonts`, which
+   `find_font()` finds but raylib doesn't load as a TrueType font. Fix: cache
+   the failure in `FontCache`, and show it on the canvas like a font that
+   isn't found, with the element.
+4. **Bug (test fails): a running cadence in `"unit": "rpm"` is doubled.**
+   `field_value()` (`overlay/Fields.cpp:169-175`) doubles running cadence to
+   steps, and both `rpm` and `spm` have factor 1 (`Fields.cpp:39-40`,
+   `:120`). So a value with `"field": "cadence", "unit": "rpm"` on a run
+   shows 176 rpm for 88 strides per minute. Fix: have `field_value()` give
+   the FIT value (strides or revolutions), with `spm` a factor 2 unit and
+   the running default; or reject `rpm` for a run. Test:
+   `test_running_cadence_in_rpm` in `OverlayFieldsTest.cpp`.
+5. **Bug (test fails): `unit_style`'s shadow doesn't merge.**
+   `text_style()` (`overlay/Layout.cpp:231`) builds a new `Shadow` for every
+   `shadow` object. The JSON cascade has merged it already for the element's
+   own style, but `unit_style` is applied over the value's style later
+   (`Layout.cpp:328`) without that merge. So `"unit_style": { "shadow": {
+   "offset": [1, 1] } }` turns the default `#000000a0` shadow into opaque
+   black. Fix: start from `base.shadow` when there is one, or
+   `cascade()` the value's style JSON with `unit_style` before decoding it.
+   Test: `test_unit_style_shadow_merges` in `OverlayLayoutTest.cpp`.
+6. **Suggestion: check `defaults` and `styles` on their own.** Properties are
+   checked on the merged element (`Layout.cpp:246`, `:295`), so a typo
+   `"colour"` in `defaults` is reported as `element 1: "colour" isn't a
+   property of a text`, which sends the user looking in element 1. And a
+   property of one element type in `defaults`, such as `"align"` or
+   `"missing"`, makes every element of the other type an error. Checking
+   `defaults` and each style against all the element and style properties,
+   with `defaults` or `styles.label` in the message, would point at the
+   right place.
+7. **Suggestion: an explicit `size` on a value is only half used.**
+   `widget/OverlayPreview.cpp:246-251` places the box with `size`, but draws
+   the number at the box's top, from the measured height. With `"anchor":
+   "bottom-left"` and `"size": { "height": 120 }`, a 64 px number floats at
+   the top of the box, not at the anchor's bottom. A text's box has no
+   vertical alignment either. Fix: put the content at the box's bottom (or
+   anchor it within the box), or leave `size` out until groups need it.
+8. **Suggestion: the error message on the canvas is one line, clipped.**
+   `draw_message()` (`widget/OverlayPreview.cpp:168-179`) draws the error
+   on one line inside the scissor. A font error such as
+   `cycling-basic.overlay.json: element 3: the font `X` isn't in any of the
+   font directories` is cut off on a canvas that's narrower than the text,
+   which happens in a small window. Wrap it to the canvas's width.
+9. **Missing test: what the preview shows is only reachable through
+   `draw()`.** Which record it shows, the font lookup and its error, and the
+   value/unit layout are all inside `OverlayPreview`, so 1 and 2 couldn't be
+   tested. Pulling `preview_record()` and the font check (given a
+   `find_font` function) out as plain functions would make them testable,
+   as the spec's architecture intends ("everything up to drawing is plain
+   logic").
+
+Tests added by the Reviewer: in `OverlayLayoutTest.cpp`, the element index
+after skipped elements, typos in defaults and styles, the cascade through
+`decode_layout()`, coordinates and percentages, `place()` on a scaled canvas,
+value formats, sizes, codepoints, and the `unit_style` shadow (fails, 5). In
+`OverlayFieldsTest.cpp`, running cadence in rpm (fails, 4), `elapsed` edge
+cases, no records, template braces and specs, and specs that would throw.
+In `LayoutFileTest.cpp`, a file made after it was looked for, the error's
+wording as in the spec, missing directories, a state file without a name,
+and the built-in layout's unit fonts. In `ColorsTest.cpp`, signs, prefixes
+and spaces. `std::vformat` can't throw at draw time: every spec that reaches
+`format_field()` has gone through `is_valid_spec()` with the same argument
+type, and `elapsed` never reaches `std::vformat`.
