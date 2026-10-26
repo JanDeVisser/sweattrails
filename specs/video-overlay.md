@@ -1,17 +1,101 @@
-# Video Overlay: Transparent Activity Data Overlay
+# Video Overlay: Rendering to Video
 
-Goal: render an activity's data (speed, heart rate, the map, etc.) as a video
-with a transparent background. The user imports it into Final Cut Pro (or
-DaVinci Resolve, Premiere, ...) together with footage recorded during the ride
-or run, stacks the overlay on top, lines the two up by hand, and does the
-trimming, audio and color work there.
+Status: Draft
 
-SweatTrails never touches the footage. The input is just an activity, a layout
-and output settings: "render this activity with this layout at 1080p, 29.97
-fps". What the overlay contains (fields, positions, fonts, map) and the render
-job format are defined in [overlay-layout.md](overlay-layout.md).
+The second slice of the video overlay (see the
+[roadmap](overlay-layout.md#roadmap)). The first,
+[overlay-preview.md](overlay-preview.md), draws a layout in the app; this
+one renders it to a video file. The layout format is in
+[overlay-layout.md](overlay-layout.md).
 
-## Rendering the overlay
+## Goal
+
+The user renders an activity's data as a video with a transparent
+background, to put over footage of the ride in Final Cut Pro (or DaVinci
+Resolve, Premiere, ...): they stack the overlay on the footage, line the
+two up by hand, and do the trimming, audio and color work there.
+
+SweatTrails never touches the footage. The input is an activity, a layout,
+a part of the activity, and output settings. Even with only the preview's
+text and values, a video with speed and power over the footage is useful,
+and it tries the parts that could go wrong (alpha, ffmpeg, the timecode)
+before most of the elements exist.
+
+## Feature
+
+### Rendering
+
+*(Proposals, see Open questions.)*
+
+- **Ctrl+E**, the task `st-overlay-render`, renders the activity on
+  display with the layout the preview shows. It opens a box, "Range", with
+  the part to render, which the user can change:
+  - the range selected in the graph, or the selected lap, or else the
+    whole activity, as elapsed time: `1:12:00-1:20:30`;
+  - or typed as times of day, as read off the camera's file info:
+    `@09:44:00-@09:52:30`.
+- **Resolution, frame rate and folder** come from `settings.json`, under
+  `"overlay"`: `{ "resolution": "1080p", "fps": "30000/1001", "folder":
+  "~/Movies" }`, which are also the defaults. They change once per Final
+  Cut project, not per render.
+- **The file** is `<folder>/<activity's date>-<range's start>.overlay.mov`,
+  such as `2025-06-14-0944.overlay.mov`. An existing file isn't overwritten:
+  a number is added.
+- **While it renders**, the app stays usable, and the status line says how
+  far it is: `Rendering 2025-06-14-0944.overlay.mov: 34%`. At the end it
+  says where the file is. Ctrl+E during a render asks whether to stop it,
+  and stopping removes the half-written file. Quitting during a render
+  asks too.
+- **A long range** (more than 10 minutes) asks first, with the size it
+  will be: ProRes 4444 is about 2.5 GB a minute at 1080p.
+- **ffmpeg** does the encoding. It's looked for on the `PATH` and in
+  Homebrew's `/opt/homebrew/bin` and `/usr/local/bin`, since an app opened
+  from the Finder gets a short `PATH`. If it isn't there, the status line
+  says so, and how to install it. The README lists it.
+
+### Interpolation
+
+Records usually come once a second, and the video has 30 or 60 frames a
+second, so values are **interpolated** linearly between the two records
+around a frame's time, as in
+[Sampling and smoothing](overlay-layout.md#sampling-and-smoothing).
+`elapsed` runs on with the frame's time. Two records more than 5 seconds
+apart (a pause, or a lost signal) aren't interpolated between: the frame
+shows the earlier record. The full pause rules, field by field, come with
+the other fields in slice 3. The preview stays on records: it shows the
+record at the mark.
+
+### Version 1 scope
+
+In: the above, with ProRes 4444, the alpha blend, and the timecode, as in
+the technical notes below.
+
+Deferred:
+
+- The render job file, and rendering from the command line or in batches
+  *(deferred)*: the app builds the job itself.
+- HEVC with alpha *(deferred)*.
+- Choosing the resolution and frame rate in the app, rather than in
+  `settings.json` *(deferred)*.
+
+## Open questions
+
+1. Render inside the app, a few frames per UI frame so that it stays
+   usable, or in a separate `sweattrails render <job>` process, which
+   would also give command-line and batch rendering?
+2. Starting a render: one box for the range, with the rest from
+   `settings.json`, or boxes for the resolution, frame rate and file too?
+3. Stopping a render: Ctrl+E again, with a question, as proposed?
+4. Is ffmpeg as an external requirement OK, or should the app link
+   libavcodec instead?
+
+## Technical notes
+
+From the first version of this spec. They hold for the Developer, except
+where the Feature section above says otherwise: the range and the output
+settings come from the app, not a render job file.
+
+### Rendering the overlay
 
 - raylib needs an OpenGL context even for off-screen rendering. In the app
   there already is one. For command-line rendering, call
@@ -57,7 +141,7 @@ Estimated size: a few hundred lines for the encoding loop and the child
 process handling. The layout renderer is much bigger (see
 [overlay-layout.md](overlay-layout.md#roadmap)).
 
-## Output settings
+### Output settings
 
 - **Resolution:** pick the resolution of the Final Cut project, not
   necessarily that of the footage. A preset (`1080p`, `4k`, ...) or explicit
@@ -73,7 +157,7 @@ process handling. The layout renderer is much bigger (see
   `@09:52:30` in time of day. With no range the whole activity is rendered,
   after a warning about the expected size.
 
-## Codec
+### Codec
 
 - **ProRes 4444** (default) is the standard intermediate codec with alpha,
   and every NLE imports it. Files are big: about 2.5 GB per minute at 1080p
@@ -95,7 +179,7 @@ process handling. The layout renderer is much bigger (see
 
 The render job's `codec` field (`prores4444` or `hevc-alpha`) picks one.
 
-## Alpha
+### Alpha
 
 raylib's default blend mode (`BLEND_ALPHA`) applies
 `src × alpha + dst × (1 − alpha)` to the alpha channel as well as the colors.
@@ -121,7 +205,7 @@ holds and what editors assume. If edges still look dark or fringed in Final
 Cut, check the clip's alpha handling setting (in the Info inspector, as far as
 we know; not verified) and set it to "Straight".
 
-## Timecode
+### Timecode
 
 The overlay's start timecode is the local time of day of its first frame:
 the activity start time plus `range.from`, converted with
@@ -141,7 +225,7 @@ range from `1:12:00`) gets a timecode starting at 09:44:00.
   since the timecode is only a guide for lining things up by hand.
 - **Integer frame rates** (24, 25, 30, 60) simply use `HH:MM:SS:FF`.
 
-## Lining up the overlay in Final Cut
+### Lining up the overlay in Final Cut
 
 The overlay is just a clip on the timeline. The user slides it until the data
 matches the footage, for example by finding a moment that's easy to spot in
@@ -158,3 +242,15 @@ Lining up automatically (from the footage's creation date or a GoPro's GPS
 telemetry) would need the video as input again. That's deliberately left out
 for now. It can be added later as an optional convenience if lining up by hand
 turns out to be tedious.
+
+## Architecture
+
+*Filled in by the Developer.*
+
+## Test plan
+
+*Filled in by the Developer.*
+
+## Review notes
+
+*Filled in by the Reviewer.*
