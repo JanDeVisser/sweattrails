@@ -170,6 +170,76 @@ void test_template_errors()
     CHECK_EQ(t.fill("speed}"), "error: a `}` without a `{`");
 }
 
+// An explicit unit for running cadence: rpm is the strides of one foot, as
+// in the FIT file, so it's half the steps.
+void test_running_cadence_in_rpm()
+{
+    TestActivity t { sport::Running };
+    auto const   rpm = field_unit(OverlayField::cadence, "rpm");
+    auto const   spm = field_unit(OverlayField::cadence, "spm");
+    CHECK(rpm.has_value() && spm.has_value());
+    if (rpm && spm) {
+        auto const value = field_value(t.activity, 0, OverlayField::cadence);
+        CHECK_EQ(format_field(OverlayField::cadence, value, *spm, ".0f", "--"), "176");
+        CHECK_EQ(format_field(OverlayField::cadence, value, *rpm, ".0f", "--"), "88");
+    }
+    CHECK_EQ(t.fill("{cadence} {cadence.unit}"), "176 spm");
+}
+
+void test_elapsed()
+{
+    TestActivity t;
+    // Before the start: not negative.
+    t.activity.records.push_back(record { .timestamp = DateTime { .timestamp = Start - 5 } });
+    // Ten hours and more.
+    t.activity.records.push_back(record { .timestamp = DateTime { .timestamp = Start + 36'061 } });
+    CHECK_EQ(shown(t, OverlayField::elapsed, 2), "0:00:00");
+    CHECK_EQ(shown(t, OverlayField::elapsed, 3), "10:01:01");
+    // A record past the end has no time either.
+    CHECK_EQ(shown(t, OverlayField::elapsed, 4), "--");
+    // Whatever the spec, until slice 3.
+    CHECK_EQ(t.fill("{elapsed:ms}"), "1:05:09");
+    CHECK_EQ(format_field(OverlayField::elapsed, 3909.0, FieldUnit { }, "hms", "--"), "1:05:09");
+}
+
+// An activity without records: everything is missing.
+void test_no_records()
+{
+    TestActivity t;
+    t.activity.records.clear();
+    CHECK_EQ(shown(t, OverlayField::speed, 0), "--");
+    CHECK_EQ(shown(t, OverlayField::elapsed, 0), "--");
+    CHECK_EQ(t.fill("{speed} {speed.unit}"), "-- km/h");
+}
+
+void test_template_braces()
+{
+    TestActivity t;
+    CHECK_EQ(t.fill("{{{speed}}}"), "{36.0}");
+    CHECK_EQ(t.fill("{speed}}}"), "36.0}");
+    CHECK_EQ(t.fill("}}{{"), "}{");
+    CHECK_EQ(t.fill("{speed:}"), "36.0");
+    CHECK_EQ(t.fill("{speed:>7.2f}|"), "  36.00|");
+    CHECK_EQ(t.fill("{heart_rate}"), "142");
+    CHECK_EQ(t.fill("{}"), "error: `` isn't a field");
+    CHECK_EQ(t.fill("{speed:{}}"), "error: `{` isn't a format for `speed`");
+    CHECK_EQ(t.fill("{speed.units}"), "error: `speed.units` isn't a field");
+    CHECK_EQ(t.fill("{ speed }"), "error: ` speed ` isn't a field");
+    // A later field's unit is empty, and its spec isn't checked yet.
+    CHECK_EQ(t.fill("[{lap.unit}]"), "[]");
+    CHECK_EQ(t.fill("{time_of_day:hm}"), "--");
+}
+
+// Specs that would make std::vformat throw at draw time are caught.
+void test_specs_that_throw()
+{
+    CHECK(!is_valid_spec("{}"));
+    CHECK(!is_valid_spec("{0}"));
+    CHECK(!is_valid_spec("s"));
+    CHECK(!is_valid_spec("}"));
+    CHECK(is_valid_spec("+08.3e"));
+}
+
 }
 
 int main()
@@ -184,5 +254,10 @@ int main()
     test_templates();
     test_later_fields();
     test_template_errors();
+    test_running_cadence_in_rpm();
+    test_elapsed();
+    test_no_records();
+    test_template_braces();
+    test_specs_that_throw();
     return ST::Test::test_result();
 }
