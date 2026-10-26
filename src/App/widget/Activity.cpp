@@ -61,7 +61,8 @@ void ActivityDataDisplay::draw()
     // The title, and the summary under it in the same font.
     auto const line_height = 6.0f * App::measure_text("Mg", FontSize::Large).y / 5.0f;
     auto const title_y = top + sz.y + 20;
-    render_text(116, title_y, activity->activity.title, FontSize::Large, RAYWHITE);
+    auto const title_size = render_text(116, title_y, activity->activity.title, FontSize::Large, RAYWHITE);
+    title_area = Rectangle { .x = viewport.x + 116, .y = viewport.y + title_y, .width = title_size.x, .height = title_size.y };
     auto const summary_y = title_y + line_height;
     auto const summary = activity->lap ? lap_summary(activity->activity, *activity->lap) : activity_summary(activity->activity);
     render_text(116, summary_y, summary, FontSize::Large, RAYWHITE);
@@ -135,14 +136,21 @@ void ActivityDataDisplay::resize()
 {
 }
 
-// Clicking a maximum marks the record where it happened, as hovering over
-// the graph does.
+// Clicking the title renames the activity, as F2 does. Clicking a maximum
+// marks the record where it happened, as hovering over the graph does.
 void ActivityDataDisplay::process_input()
 {
     if (activity == nullptr) {
         return;
     }
     auto const mouse = GetMousePosition();
+    if (CheckCollisionPointRec(mouse, title_area)) {
+        App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            SweatTrails::the()->bus.submit("st-rename-activity", JSONValue { });
+        }
+        return;
+    }
     for (auto const &[area, mark_at] : clickable) {
         if (CheckCollisionPointRec(mouse, area)) {
             App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);

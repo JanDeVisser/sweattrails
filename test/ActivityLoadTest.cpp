@@ -254,6 +254,170 @@ void test_sidecar_without_a_title()
     }
 }
 
+std::string read_json(fs::path const &file)
+{
+    return read_file_by_name(file.string()).value_or("<none>");
+}
+
+// The user's name wins over the service's, which stays as it came.
+void test_own_title_wins()
+{
+    ActivityInDir t { R"({"activityName": "Morning Ride", "title": "Ride to Niagara"})" };
+    CHECK(t.loaded);
+    CHECK_EQ(t.activity.title, "Ride to Niagara");
+    CHECK_EQ(t.activity.original_title, "Morning Ride");
+    ActivityInDir empty { R"({"name": "Morning Ride", "title": ""})" };
+    CHECK_EQ(empty.activity.title, "Morning Ride");
+}
+
+void test_save_keeps_the_rest_of_the_sidecar()
+{
+    ActivityInDir t { R"({"activityId": 24790584050, "activityName": "Morning Ride", "distance": 30123.5})" };
+    auto const    sidecar = t.dir / "dummy.json";
+    CHECK(save_sidecar_title(sidecar, "Café ride").has_value());
+    auto const json = JSONValue::deserialize(read_json(sidecar));
+    CHECK(json.has_value());
+    if (json) {
+        CHECK_EQ(json->try_get<std::string>("title").value_or(""), "Café ride");
+        CHECK_EQ(json->try_get<std::string>("activityName").value_or(""), "Morning Ride");
+        CHECK_EQ(json->try_get<double>("distance").value_or(0), 30123.5);
+        CHECK_EQ(json->size(), 4uz);
+    }
+    CHECK_EQ(sidecar_own_title(sidecar).value_or(""), "Café ride");
+    // An empty name takes the user's out again.
+    CHECK(save_sidecar_title(sidecar, "").has_value());
+    CHECK(!sidecar_own_title(sidecar).has_value());
+    CHECK_EQ(sidecar_title(sidecar).value_or(""), "Morning Ride");
+}
+
+// A FIT file copied in by hand has no sidecar: renaming makes one, and
+// taking the name out again removes it.
+void test_save_without_a_sidecar()
+{
+    ActivityInDir t { "" };
+    auto const    sidecar = t.dir / "dummy.json";
+    CHECK(save_sidecar_title(sidecar, "Ålesund loop").has_value());
+    auto const json = JSONValue::deserialize(read_json(sidecar));
+    CHECK(json.has_value() && json->size() == 1);
+    CHECK_EQ(sidecar_own_title(sidecar).value_or(""), "Ålesund loop");
+    CHECK(save_sidecar_title(sidecar, "").has_value());
+    CHECK(!fs::exists(sidecar));
+    // Nothing to take out, and nothing there: still nothing.
+    CHECK(save_sidecar_title(sidecar, "").has_value());
+    CHECK(!fs::exists(sidecar));
+}
+
+void test_save_refuses_a_sidecar_that_isnt_an_object()
+{
+    for (auto const *contents : { "not JSON", "[1, 2]", "12" }) {
+        ActivityInDir t { contents };
+        auto const    sidecar = t.dir / "dummy.json";
+        CHECK(!save_sidecar_title(sidecar, "Ride").has_value());
+        CHECK_EQ(read_json(sidecar), contents);
+    }
+}
+
+void test_rename()
+{
+    ActivityInDir t { R"({"name": "Morning ride"})" };
+    CHECK(t.activity.rename("  Rückweg  ").has_value());
+    CHECK_EQ(t.activity.title, "Rückweg");
+    CHECK_EQ(sidecar_own_title(t.activity.sidecar).value_or(""), "Rückweg");
+    // Loaded again, it has the name.
+    Activity again { t.storage, ActivityID::dummy(ActivityFile::Fit) };
+    again.depth = LoadingDepth::Deep;
+    CHECK(again.load_from_dir(t.dir).value_or(false));
+    CHECK_EQ(again.title, "Rückweg");
+    // Only spaces: the original name again.
+    CHECK(t.activity.rename("   ").has_value());
+    CHECK_EQ(t.activity.title, "Morning ride");
+    CHECK(!sidecar_own_title(t.activity.sidecar).has_value());
+}
+
+// Without a sidecar or a service's name, the original is the workout's.
+void test_rename_back_to_the_workouts_name()
+{
+    ActivityInDir t { "" };
+    CHECK(t.activity.rename("Hill repeats").has_value());
+    // The rename made a sidecar, and the name is there after a reload.
+    CHECK(fs::exists(t.dir / "dummy.json"));
+    Activity again { t.storage, ActivityID::dummy(ActivityFile::Fit) };
+    again.depth = LoadingDepth::Deep;
+    CHECK(again.load_from_dir(t.dir).value_or(false));
+    CHECK_EQ(again.title, "Hill repeats");
+    CHECK(t.activity.rename("").has_value());
+    CHECK_EQ(t.activity.title, "Tempo intervals");
+    CHECK(!fs::exists(t.activity.sidecar));
+}
+
+// A sidecar that can't be written leaves the title as it was.
+void test_rename_that_fails()
+{
+    ActivityInDir t { "not JSON" };
+    CHECK(!t.activity.rename("Ride").has_value());
+    CHECK_EQ(t.activity.title, "Tempo intervals");
+}
+// A name that's the same as before, also with spaces around it, isn't
+// saved: no sidecar is made for it.
+void test_rename_to_the_same_name()
+{
+    ActivityInDir t { "" };
+    CHECK(t.activity.rename("Tempo intervals").has_value());
+    CHECK(t.activity.rename("  Tempo intervals ").has_value());
+    CHECK(t.activity.rename("").has_value());
+    CHECK(!fs::exists(t.activity.sidecar));
+}
+
+// An activity that wasn't loaded from a directory has nowhere to save its
+// name, and keeps the one it has.
+void test_rename_without_a_sidecar_path()
+{
+    Storage  storage { };
+    Activity activity { storage, ActivityID::dummy(ActivityFile::Fit) };
+    activity.title = "Morning Ride";
+    activity.original_title = "Morning Ride";
+    CHECK(!activity.rename("Evening Ride").has_value());
+    CHECK_EQ(activity.title, "Morning Ride");
+}
+
+// The sidecar is written through a .part file, which doesn't stay behind.
+void test_save_leaves_no_part_file()
+{
+    ActivityInDir t { R"({"activityName": "Morning Ride"})" };
+    CHECK(t.activity.rename("Ride to Niagara with Anna").has_value());
+    CHECK(fs::exists(t.activity.sidecar));
+    CHECK(!fs::exists(t.dir / "dummy.json.part"));
+}
+
+// In a directory that can't be written, the name isn't saved, the title
+// stays, and the sidecar is as it was.
+void test_rename_in_a_read_only_directory()
+{
+    ActivityInDir   t { R"({"activityName": "Morning Ride"})" };
+    std::error_code ec { };
+    fs::permissions(t.dir, fs::perms::owner_read | fs::perms::owner_exec, ec);
+    CHECK(!ec);
+    // Root can write anyway: nothing to check then.
+    if (!write_file_by_name((t.dir / "probe").string(), std::string_view { "x" })) {
+        CHECK(!t.activity.rename("Rückweg").has_value());
+        CHECK_EQ(t.activity.title, "Morning Ride");
+        CHECK_EQ(read_json(t.activity.sidecar), R"({"activityName": "Morning Ride"})");
+        CHECK(!fs::exists(t.dir / "dummy.json.part"));
+    }
+    fs::permissions(t.dir, fs::perms::owner_all, ec);
+}
+
+// The user's name, renamed again to the service's: that is a name of the
+// user's too, and loading it again gives the same title.
+void test_rename_back_to_the_services_name_by_typing_it()
+{
+    ActivityInDir t { R"({"activityName": "Morning Ride", "title": "Ride to Niagara"})" };
+    CHECK(t.activity.rename("Morning Ride").has_value());
+    CHECK_EQ(t.activity.title, "Morning Ride");
+    Activity again { t.storage, ActivityID::dummy(ActivityFile::Fit) };
+    CHECK(again.load_from_dir(t.dir).value_or(false));
+    CHECK_EQ(again.title, "Morning Ride");
+}
 }
 
 int main()
@@ -269,5 +433,17 @@ int main()
     test_title_from_the_sidecar();
     test_title_from_a_wahoo_sidecar();
     test_sidecar_without_a_title();
+    test_own_title_wins();
+    test_save_keeps_the_rest_of_the_sidecar();
+    test_save_without_a_sidecar();
+    test_save_refuses_a_sidecar_that_isnt_an_object();
+    test_rename();
+    test_rename_back_to_the_workouts_name();
+    test_rename_that_fails();
+    test_rename_to_the_same_name();
+    test_rename_without_a_sidecar_path();
+    test_save_leaves_no_part_file();
+    test_rename_in_a_read_only_directory();
+    test_rename_back_to_the_services_name_by_typing_it();
     return ST::Test::test_result();
 }

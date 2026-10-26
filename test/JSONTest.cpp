@@ -91,6 +91,19 @@ void test_not_numbers()
     }
 }
 
+void test_erase()
+{
+    auto json = MUST_EVAL(JSONValue::deserialize(R"({"title": "Ride", "name": "Morning Ride"})"));
+    json.erase("title");
+    CHECK(!json.has("title"));
+    CHECK_EQ(json.try_get<std::string>("name").value_or(""), "Morning Ride");
+    // A key that isn't there, and a value that isn't an object.
+    json.erase("title");
+    CHECK_EQ(json.size(), 1uz);
+    auto number = MUST_EVAL(JSONValue::deserialize("12"));
+    number.erase("title");
+    CHECK_EQ(number.serialize(), "12");
+}
 }
 
 int main()
@@ -100,5 +113,6 @@ int main()
     test_decimals();
     test_in_objects_and_arrays();
     test_not_numbers();
+    test_erase();
     return ST::Test::test_result();
 }

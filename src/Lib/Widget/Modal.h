@@ -13,6 +13,7 @@
 
 #include <App.h>
 #include <Scroll.h>
+#include <TextLine.h>
 #include <Widget.h>
 
 namespace ST {
@@ -371,19 +372,17 @@ void input_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
 {
     using pC = std::shared_ptr<C>;
     struct InputBox : public Modal {
-        pC          target;
-        std::string text;
-        size_t      cursor { 0 };
-        Submit      submit_fnc;
-        Dismiss     dismiss_fnc;
+        pC       target;
+        TextLine line { };
+        Submit   submit_fnc;
+        Dismiss  dismiss_fnc;
 
-        InputBox(pC target, std::string_view const &prompt, Submit submit, Dismiss dismiss = nullptr)
+        InputBox(pC target, std::string_view const &prompt, Submit submit, Dismiss dismiss)
             : Modal(prompt)
             , target(target)
             , submit_fnc(submit)
             , dismiss_fnc(dismiss)
         {
-            assert(submit_fnc != nullptr);
             background = BLACK; // Theme::the().bg();
         }
 
@@ -394,23 +393,19 @@ void input_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
 
         void submit() override
         {
-            submit_fnc(target, text);
+            submit_fnc(target, line.utf8());
         }
 
         void dismiss() override
         {
             if constexpr (!std::is_same<Dismiss, std::nullptr_t>::value) {
-                dismiss(target);
+                dismiss_fnc(target);
             }
         }
 
         bool character(int ch) override
         {
-            if (cursor < text.length()) {
-                text.insert(cursor, 1, static_cast<char>(ch));
-            } else {
-                text.append(1, static_cast<char>(ch));
-            }
+            line.insert(static_cast<rune>(ch));
             return true;
         }
 
@@ -421,6 +416,13 @@ void input_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
             }
 
             auto handle = [this, modifier, key]() -> bool {
+                auto const clipboard = []() -> std::string {
+                    auto const *text = GetClipboardText();
+                    return (text != nullptr) ? std::string { text } : std::string { };
+                };
+                if (line.handle_key(modifier, key, clipboard)) {
+                    return true;
+                }
                 if (modifier != KModNone) {
                     return false;
                 }
@@ -434,25 +436,6 @@ void input_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
                 case KEY_KP_ENTER: {
                     status = ModalStatus::Submitted;
                     submit();
-                    return true;
-                }
-                case KEY_LEFT: {
-                    if (cursor > 0) {
-                        --cursor;
-                    }
-                    return true;
-                }
-                case KEY_RIGHT: {
-                    if (cursor < text.length()) {
-                        ++cursor;
-                    }
-                    return true;
-                }
-                case KEY_BACKSPACE: {
-                    if (cursor > 0) {
-                        text.erase(cursor - 1, 1);
-                        --cursor;
-                    }
                     return true;
                 }
                 default:
@@ -486,15 +469,38 @@ void input_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
             draw_outline(2, 2, -2.0, -2.0, RAYWHITE);
             render_text(8, 8, prompt, FontSize::Medium, RAYWHITE);
             draw_line(2, App::the()->cell().y + 10, -2, App::the()->cell().y + 10, RAYWHITE);
-            render_text(10, App::the()->cell().y + 14, text, FontSize::Medium, RAYWHITE);
+            draw_text();
+        }
+
+        // The text, scrolled sideways so that the cursor is in the box, and
+        // the cursor after the text before it, as the font measures it.
+        void draw_text()
+        {
+            auto const font = App::the()->font(FontSize::Medium);
+            if (!font) {
+                return;
+            }
+            auto const left = 10.0f;
+            auto const width = viewport.width - 2 * left;
+            auto const y = App::the()->cell().y + 14;
+            auto const before = to_utf8(rune_view { line.text }.substr(0, line.cursor)).value_or(std::string { });
+            auto const cursor_x = App::measure_text(before.c_str(), FontSize::Medium).x;
+            auto const text_width = App::measure_text(line.utf8().c_str(), FontSize::Medium).x;
+            auto const scroll = line.scroll_for(cursor_x, text_width, width - 2);
+
+            BeginScissorMode(viewport.x + left, viewport.y + y - 2, width, App::the()->cell().y + 4);
+            assert(sizeof(rune) == sizeof(int));
+            DrawTextCodepoints(*font, reinterpret_cast<int const *>(line.text.c_str()), static_cast<int>(line.text.length()),
+                Vector2 { viewport.x + left - scroll, viewport.y + y }, static_cast<float>(font->baseSize), 2, RAYWHITE);
             double t = GetTime();
             if ((t - floor(t)) < 0.5) {
-                draw_rectangle(10 + cursor * App::the()->cell().x, App::the()->cell().y + 12, 2, App::the()->cell().y + 2, RAYWHITE);
+                draw_rectangle_no_normalize(left + cursor_x - scroll, y - 2, 2, App::the()->cell().y + 2, RAYWHITE);
             }
+            EndScissorMode();
         }
     };
     auto const &inputbox = Widget::make<InputBox>(target, prompt, fnc, dismiss);
-    inputbox->text = def;
+    inputbox->line.set(def);
     inputbox->show();
 }
 

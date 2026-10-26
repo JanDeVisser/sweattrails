@@ -564,6 +564,14 @@ public:
         object[std::string(key)] = value;
     }
 
+    // Removes the key from an object, if it's there.
+    void erase(std::string_view const &key)
+    {
+        if (m_type != JSONType::Object)
+            return;
+        std::get<Object>(m_value).erase(std::string(key));
+    }
+
     [[nodiscard]] size_t size() const
     {
         switch (m_type) {

@@ -30,6 +30,7 @@ struct ActivityDataDisplay : public Widget {
     std::shared_ptr<DisplayedActivity> activity;
     Texture2D                          sport_icon;
     std::vector<ClickableField>        clickable { };
+    Rectangle                          title_area { }; // Where draw() drew the title, in screen coordinates
 
     explicit ActivityDataDisplay(pWidget const &parent);
     ~ActivityDataDisplay();

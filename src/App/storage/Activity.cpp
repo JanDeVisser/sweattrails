@@ -169,9 +169,16 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
         if (!TRY_EVAL(load_fit_file_by_name(dir / std::format("{}.fit", id.name)))) {
             return false;
         }
-        // After the FIT file, so that it wins over the workout's name.
-        if (auto const name = sidecar_title(dir / std::format("{}.json", id.name)); name) {
-            title = *name;
+        // After the FIT file, so that the service's name wins over the
+        // workout's, and the user's over both.
+        sidecar = dir / std::format("{}.json", id.name);
+        auto const names = sidecar_titles(sidecar);
+        if (names.service) {
+            title = *names.service;
+        }
+        original_title = title;
+        if (names.own) {
+            title = *names.own;
         }
         // if (id.files.contains(ActivityFile::Strava)) {
         //     if (!TRY_EVAL(load_strava_file(dir))) {
@@ -183,7 +190,12 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
     return true;
 }
 
-std::optional<std::string> sidecar_title(fs::path const &sidecar)
+namespace {
+
+// SweatTrails' own key in the sidecar, for the name the user gave it.
+constexpr char const OwnTitleKey[] = "title";
+
+std::optional<JSONValue> read_sidecar(fs::path const &sidecar)
 {
     std::error_code ec { };
     if (!fs::exists(sidecar, ec)) {
@@ -195,17 +207,97 @@ std::optional<std::string> sidecar_title(fs::path const &sidecar)
         trace(Storage, "Ignoring sidecar `{}`: {}", sidecar.string(), contents.error().to_string());
         return { };
     }
-    auto const json = JSONValue::deserialize(*contents);
+    auto json = JSONValue::deserialize(*contents);
     if (!json) {
         trace(Storage, "Ignoring sidecar `{}`: it isn't JSON", sidecar.string());
         return { };
     }
+    return std::move(*json);
+}
+
+std::optional<std::string> non_empty_string(JSONValue const &json, std::string_view key)
+{
+    if (auto name = json.try_get<std::string>(key); name && !name->empty()) {
+        return *name;
+    }
+    return { };
+}
+
+std::optional<std::string> service_title(JSONValue const &json)
+{
     // Garmin Connect calls it `activityName`, Wahoo `name`.
     for (auto const *field : { "activityName", "name" }) {
-        if (auto name = json->try_get<std::string>(field); name && !name->empty()) {
-            return *name;
+        if (auto name = non_empty_string(json, field); name) {
+            return name;
         }
     }
+    return { };
+}
+
+}
+
+SidecarTitles sidecar_titles(fs::path const &sidecar)
+{
+    auto const json = read_sidecar(sidecar);
+    if (!json) {
+        return { };
+    }
+    return SidecarTitles { .service = service_title(*json), .own = non_empty_string(*json, OwnTitleKey) };
+}
+
+std::optional<std::string> sidecar_title(fs::path const &sidecar)
+{
+    return sidecar_titles(sidecar).service;
+}
+
+std::optional<std::string> sidecar_own_title(fs::path const &sidecar)
+{
+    return sidecar_titles(sidecar).own;
+}
+
+std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::string_view title)
+{
+    std::error_code ec { };
+    auto const      exists = fs::exists(sidecar, ec);
+    if (ec) {
+        return std::unexpected(LibCError { ec });
+    }
+    auto json = JSONValue::object();
+    if (exists) {
+        auto const contents = TRY_EVAL(read_file_by_name(sidecar.string()));
+        auto       read = JSONValue::deserialize(contents);
+        if (!read || !read->is_object()) {
+            return std::unexpected(LibCError { "`{}` isn't a JSON object", sidecar.string() });
+        }
+        json = std::move(*read);
+    }
+    if (title.empty()) {
+        json.erase(OwnTitleKey);
+    } else {
+        json.set(OwnTitleKey, JSONValue { std::string { title } });
+    }
+    // Nothing left: the app made it, for the name, and it can go.
+    if (json.empty()) {
+        if (exists && !fs::remove(sidecar, ec)) {
+            return std::unexpected(LibCError { ec });
+        }
+        return { };
+    }
+    return write_file_atomically(sidecar, json.serialize());
+}
+
+std::expected<void, LibCError> Activity::rename(std::string_view name)
+{
+    auto const trimmed = std::string { strip(name) };
+    auto const new_title = trimmed.empty() ? original_title : trimmed;
+    if (new_title == title) {
+        return { };
+    }
+    if (sidecar.empty()) {
+        return std::unexpected(LibCError { "`{}` can't be renamed: it wasn't loaded from the store", id.name });
+    }
+    TRY(save_sidecar_title(sidecar, trimmed));
+    title = new_title;
     return { };
 }
 
