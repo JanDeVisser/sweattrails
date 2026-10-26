@@ -15,6 +15,7 @@
 #include <expected>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,8 @@
 #include <Error.h>
 #include <Expected.h>
 #include <Logging.h>
+
+#include <Scroll.h>
 
 #include <Coordinates.h>
 
@@ -55,6 +58,115 @@ struct Tile {
     [[nodiscard]] std::expected<std::string, LibCError> get_tile(Storage const &storage) const;
 
     bool operator==(Tile const &) const = default;
+};
+
+// The map zooms in to this OSM level, street level. GPS isn't more precise,
+// and OSM's server stops at 19.
+constexpr u8 MaxMapZoom = 18;
+
+// The whole route is shown at this level at most, as before zooming.
+constexpr u8 MaxFitZoom = 16;
+
+// The map zooms out this many levels past the whole route, for context.
+constexpr u8 ZoomOutPastFit = 2;
+
+// A point's place on the map: its Web Mercator position in pixels, from 0
+// to 256 << zoom. Doubles, since at zoom 18 that's up to 67 million, which a
+// float doesn't hold to the pixel.
+struct WorldPoint {
+    double x { 0 };
+    double y { 0 };
+
+    bool operator==(WorldPoint const &) const = default;
+};
+
+// The width and height of the world, in pixels, at a zoom level.
+double world_size(u8 zoom);
+
+WorldPoint  world_pixel(Coordinates const &coordinates, u8 zoom);
+Coordinates world_coordinates(WorldPoint const &point, u8 zoom);
+
+// A tile, and where it goes, relative to the map's top left corner.
+struct PlacedTile {
+    Tile      tile { };
+    Rectangle screen { };
+};
+
+// What the map shows: the world point at the middle of a viewport of
+// width x height pixels, at a zoom level.
+struct MapView {
+    u8         zoom { 0 };
+    WorldPoint center { };
+    float      width { 0 };
+    float      height { 0 };
+
+    // The whole route, with 10% to spare, at the highest zoom up to
+    // MaxFitZoom where it fits. Nothing if it doesn't fit at any zoom.
+    static std::optional<MapView> fit(Box const &route, float width, float height);
+
+    // Relative to the viewport's top left corner.
+    [[nodiscard]] Vector2    to_screen(WorldPoint const &point) const;
+    [[nodiscard]] WorldPoint to_world(Vector2 const &screen) const;
+
+    // `steps` levels in, or out if negative, keeping the world point under
+    // `around` where it is.
+    [[nodiscard]] MapView zoomed(int steps, Vector2 const &around) const;
+    // The map moved by `delta` on screen, as when dragged.
+    [[nodiscard]] MapView panned(Vector2 const &delta) const;
+    [[nodiscard]] MapView resized(float new_width, float new_height) const;
+
+    // The tiles that cover the view. Tiles past the world's edges are left
+    // out.
+    [[nodiscard]] std::vector<PlacedTile> tiles() const;
+};
+
+// Part of a loaded tile's texture, drawn over part of a tile that isn't
+// loaded. `destination` is relative to the tile, in its 256 x 256 pixels.
+struct TilePiece {
+    Tile      source { };
+    Rectangle source_area { };
+    Rectangle destination { };
+};
+
+using TileLoaded = std::function<bool(Tile const &)>;
+
+// What to draw for a tile that isn't loaded yet: the part of its nearest
+// loaded ancestor, up to three levels up, that covers it, as after zooming
+// in; or else those of its four children that are loaded, as after zooming
+// out. Nothing means grey.
+std::vector<TilePiece> cover(Tile const &tile, TileLoaded const &loaded);
+
+// The map's zooming and panning, with the limits, and the mouse input that
+// drives them. Input is made up in tests, as for Scrollbar.
+struct MapNavigator {
+    Box          route { };
+    MapView      view { };
+    u8           fit_zoom { 0 };  // The whole route's zoom level
+    bool         moved { false }; // The user zoomed or panned
+    bool         dragging { false };
+    Vector2      drag_from { }; // The mouse, in screen coordinates
+    WheelNotches wheel { };
+
+    // Shows the whole route. False if it doesn't fit at any zoom.
+    bool start(Box const &new_route, float width, float height);
+
+    // The wheel over the viewport zooms around the mouse; a press there
+    // starts a drag, which pans until the button is let go. Returns whether
+    // the view changed.
+    bool handle(ScrollInput const &input, Rectangle const &viewport);
+
+    // Zooms around `around`, relative to the viewport, or its middle.
+    bool zoom_by(int steps, std::optional<Vector2> around = { });
+    bool whole_route();
+    // The whole route again at the new size, unless the user moved the
+    // map: then the same center and zoom.
+    bool resize(float width, float height);
+
+    [[nodiscard]] u8 min_zoom() const;
+    [[nodiscard]] u8 max_zoom() const;
+
+private:
+    void clamp_center();
 };
 
 struct Map {
