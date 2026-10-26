@@ -72,14 +72,19 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
             track.push_back(track.empty() ? WorldPoint { .x = none, .y = none } : track.back());
         }
     }
-    view_changed();
+    // The layout gives the map its size for this activity next, which may
+    // be another one: only then load and download the tiles.
+    view_pending = true;
 }
 
 // The layout gives the map another size: it shows the whole route again,
 // unless the user zoomed or panned it.
 void ActivityMap::resize()
 {
-    if (has_map && navigator.resize(viewport.width, viewport.height)) {
+    if (!has_map) {
+        return;
+    }
+    if (navigator.resize(viewport.width, viewport.height) || view_pending) {
         view_changed();
     }
 }
@@ -118,6 +123,7 @@ void ActivityMap::show_whole_route()
 // going, is dropped: only the tile it's fetching finishes.
 void ActivityMap::view_changed()
 {
+    view_pending = false;
     auto const cached_or_failed = [this](Tile const &tile) {
         if (loaded(tile) != nullptr || failed.contains(tile)) {
             return true;
@@ -235,6 +241,9 @@ void ActivityMap::draw()
     ++frame;
     if (!activity || !has_map) {
         return;
+    }
+    if (view_pending) {
+        view_changed();
     }
     DrawRectangleLines(viewport.x - 3, viewport.y - 3, viewport.width + 6, viewport.height + 6, RAYWHITE);
     BeginScissorMode(viewport.x, viewport.y, viewport.width, viewport.height);

@@ -58,7 +58,8 @@ struct ActivityMap : public Widget {
     std::shared_ptr<DisplayedActivity> activity;
     MapNavigator                       navigator { };
     bool                               has_map { false };
-    std::vector<WorldPoint>            track { }; // At zoom 0; NaN without a position
+    bool                               view_pending { false }; // The tiles aren't loaded for the view yet
+    std::vector<WorldPoint>            track { };              // At zoom 0; NaN without a position
     std::map<Tile, LoadedTile>         tiles { };
     std::set<Tile>                     failed { };   // Not tried again for this activity
     pTileDownload                      download { }; // The view's tiles that weren't cached, while they download
