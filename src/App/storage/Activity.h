@@ -71,6 +71,16 @@ std::optional<CadenceStats> cadence_stats(std::span<CadenceSample const> samples
 // before.
 std::optional<std::string> sidecar_title(fs::path const &sidecar);
 
+// The name the user gave the activity, under SweatTrails' own key in the
+// sidecar, `"title"`. It wins over the service's name.
+std::optional<std::string> sidecar_own_title(fs::path const &sidecar);
+
+// Saves the user's name for the activity in its sidecar, keeping the rest
+// of it, or removes it for an empty `title`. Makes the sidecar if there
+// isn't one, and removes it if nothing else is left in it. A sidecar that
+// isn't a JSON object is left as it is, and is an error.
+std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::string_view title);
+
 struct Segment {
     DateTime                    start_time { };
     DateTime                    end_time { };
@@ -121,6 +131,7 @@ struct Activity {
     ST::sport                     sport { ST::sport::Running };
     std::optional<FIT::sub_sport> sub_sport { };
     std::string                   title { };
+    std::string                   original_title { }; // Without the name the user gave it
     std::string                   notes { };
     Segment                       segment { };
     std::vector<record>           records { };
@@ -129,6 +140,11 @@ struct Activity {
     // Local time minus UTC in seconds, from the FIT activity message. Empty
     // if the file doesn't record the local time.
     std::optional<i32> utc_offset { };
+
+    // `<name>.json` next to the FIT file, which load_from_dir() reads the
+    // names from, whether it's there or not. Empty for an activity loaded
+    // otherwise, which can't be renamed.
+    fs::path sidecar { };
 
     Activity(Storage &the_storage, ActivityID the_id)
         : storage(&the_storage)
@@ -154,6 +170,10 @@ struct Activity {
     // Loads `file`, whatever its name, rather than `<id.name>.fit`.
     StorageResult<bool> load_from_file(fs::path const &file);
     StorageResult<bool> load_from_slice(std::string_view const &buffer);
+
+    // Gives the activity the user's name, trimmed, and saves it in the
+    // sidecar. An empty name goes back to the original title.
+    std::expected<void, LibCError> rename(std::string_view name);
 
 private:
     Error<StorageError> analyze();
