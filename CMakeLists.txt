@@ -185,6 +185,7 @@ add_executable(
         src/App/fit/Profile.cpp
         src/App/overlay/Fields.cpp
         src/App/overlay/Layout.cpp
+        src/App/overlay/LayoutFile.cpp
         src/App/overlay/Template.cpp
         src/App/widget/Activity.cpp
         src/App/widget/ActivityMap.cpp
@@ -374,6 +375,24 @@ sweattrails_test(
 )
 target_include_directories(overlay_layout_test PRIVATE src/App)
 target_link_libraries(overlay_layout_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        layout_file_test
+        test/LayoutFileTest.cpp
+        src/App/overlay/Fields.cpp
+        src/App/overlay/Layout.cpp
+        src/App/overlay/LayoutFile.cpp
+        src/App/overlay/Template.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(layout_file_test PRIVATE src/App)
+target_link_libraries(layout_file_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         displayed_activity_test
