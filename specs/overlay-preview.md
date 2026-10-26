@@ -128,11 +128,155 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+The overlay's code goes in a new directory, `src/App/overlay/`, added to the
+App include group in `.clang-format`. Everything up to drawing is plain
+logic, without raylib calls, so that the tests reach it; drawing is one
+thin file.
+
+### In the libraries
+
+- **`JSONValue::merge(JSONValue const &over)`** in `JSON.h`: `over`'s keys
+  replace this object's, and where both are objects, they merge,
+  recursively. This is the style cascade.
+- **Comments** already work: the JSON lexer skips `//` and `/* */` unless
+  it's asked to keep them (checked with a scratch build). A test in
+  `JSONTest` makes sure it stays that way.
+- **`parse_color(std::string_view)`** in a new `src/Lib/Widget/Colors.h`:
+  `#rrggbb` and `#rrggbbaa` to a raylib `Color`, or nothing. In the Widget
+  library, since the themes need it too (their colors are read but never
+  parsed). `Colors.h`, not `Color.h`, so it's not taken for raylib's type.
+- **`FontCache`** in a new `src/Lib/Widget/FontCache.h`: a font file at a
+  pixel size, with a set of codepoints, loaded once with `LoadFontEx`, and
+  unloaded with the cache. `clear()` drops them all, for when the canvas
+  changes size.
+- **`list_box(target, prompt, entries, submit)`** in `Modal.h`, next to
+  `input_box()` and `query_box()`: a ListBox of strings with a payload,
+  whose Enter calls `submit(target, payload)`. The layout list is the first
+  user; there was no helper for "pick one of these".
+
+### The layout: `overlay/Layout.h`
+
+- **`OverlayLayout`**: `design_size`, `units`, the elements, and how many
+  were skipped. `decode_layout(JSONValue const &)` returns it or a
+  **`LayoutError`** (`element` index if any, `property`, and a message),
+  whose `to_string()` is what the canvas shows.
+- Decoding is as in the [reference](overlay-layout.md#format-json): for
+  each element, `defaults` merged with each of its styles and then its own
+  properties, and the merged object decoded by the element type's decoder.
+- **Elements** are a `std::variant<TextElement, ValueElement>`. Both have a
+  `Placement` (`at`, `anchor`, `size`) and a `TextStyle` (`font`, `size`,
+  `color`, `shadow`); `TextElement` a `Template` and `align`;
+  `ValueElement` a field, its format spec, its unit, a `unit_style` and
+  `missing` (default `--`).
+- **Unknown properties are errors, properties of later slices aren't.**
+  Each element type knows all the properties the reference gives it, and
+  all style properties, including those of later slices, such as
+  `background` and `padding`, since `defaults` and styles may hold them.
+  A property that's none of these is a typo, and an error. An element whose
+  `type` is one of a later slice is counted in `skipped`; an unknown `type`
+  is an error.
+- **Placement** (`place()`, pure): the element's box, given its size
+  (`size`, or the measured text), the canvas, and the scale. One rule for
+  `x` and `y`, which fits every example in the reference: **the sign picks
+  the edge**, positive from the left or top, negative from the right or
+  bottom, and percentages likewise of the width or height; **`anchor` is
+  the element's point that's put there**. So `bottom-right` with `-40,
+  -40` puts the element's bottom right corner 40 in from the canvas's, and
+  `bottom` with `"50%", -40` centers it 40 up from the bottom. The
+  reference's "also the canvas corner the coordinates are measured from"
+  goes: under it, `"50%"` with `bottom` would be measured from the middle.
+  The reference is updated to say this.
+- **Formats** are checked when the layout loads, by formatting a number
+  with them, so that a bad spec is a layout error, not a `std::format_error`
+  in the middle of drawing. That's the one place that catches an
+  exception: `std::vformat` has no other way to say a spec is wrong.
+
+### Fields and templates: `overlay/Fields.h`, `overlay/Template.h`
+
+- **`OverlayField`**, an X-macro enum: `speed`, `power`, `heart_rate`,
+  `cadence`, `distance`, `elapsed`.
+- **`field_value(Activity const &, size_t record, OverlayField)`**: the
+  value as a `double`, in the field's base unit (m/s, m, s), or nothing.
+  Running cadence is doubled to steps per minute. `elapsed` is the record's
+  time since the activity's start.
+- **Units**: per field, the units it can be shown in, with their factors
+  (`km/h`, `mph`, `m/s` for speed; `km`, `mi`, `m` for distance), the
+  default for `metric` and `imperial`, and the default spec (`.1f` for
+  speed and distance, `.0f` for the rest). An explicit unit the field
+  doesn't have is a layout error.
+- **`format_field(...)`**: the shown text: the value converted and
+  formatted, `h:mm:ss` for `elapsed`, or the element's `missing`.
+- **`Template`**: `parse_template()` splits a `text` into literal parts and
+  placeholders, `{field}`, `{field:spec}` and `{field.unit}`, with `{{`
+  and `}}` for braces. An unknown field is an error. A field of a later
+  slice, such as `{lap}`, isn't: it shows as missing, in the spirit of
+  skipping later elements.
+
+### The file: `overlay/LayoutFile.h`
+
+- **`LayoutFile`**: a path, the time it was last changed, and the decoded
+  layout or its error. `reload_if_changed()` compares the file's time, and
+  reloads; the preview calls it once a second.
+- **`overlay_layouts(builtin_dir, user_dir)`**: the layouts in both
+  directories, by name (the file name without `.overlay.json`), the user's
+  winning over a built-in one of the same name, sorted by name.
+- **The chosen layout** is kept in `overlay.json` in the user state
+  directory, next to the app state, as `{ "layout": "cycling-basic" }`.
+  Not in `AppState`, which is a fixed array of ints written as raw bytes;
+  turning that into JSON would be its own change.
+
+### Drawing: `widget/OverlayPreview.h`
+
+- **`OverlayPreview`**, a widget: the checkerboard, the canvas, and the
+  elements, each measured, placed with `place()`, and drawn with its shadow
+  first; or the error. Fonts come from a `FontCache`, at
+  `round(size × scale)` pixels, with ASCII and the characters in the
+  layout's texts, units and `missing` texts; a font not in the font
+  directories is a `LayoutError`. When the scale changes, the cache is
+  cleared.
+- **`ActivityDisplay`** gets the preview next to its `central` row (the
+  data panel and the map), hidden; turning the preview on hides `central`
+  and shows the preview, so the map keeps its own Hide/Relative policy.
+- **Tasks** in SweatTrails.cpp: `st-overlay-preview` (Ctrl+O) toggles;
+  `st-overlay-layout` (Ctrl+Shift+O) opens `list_box()` with
+  `overlay_layouts()`, saves the choice, and turns the preview on. Both
+  do nothing under a modal or without an activity, through
+  `activity_for_keys()`.
+
+### Files in `share/`
+
+- `share/overlays/cycling-basic.overlay.json`.
+- `share/fonts/Inter-Regular.ttf`, `Inter-Bold.ttf` and `Inter-OFL.txt`,
+  from Inter's GitHub release. The install step already copies all of
+  `share/`. The README lists Inter and its license.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `JSONTest`: `merge()`, of nested objects, and of an object over a
+  non-object; comments in a document.
+- `ColorsTest` (new): `#rrggbb`, `#rrggbbaa`, upper and lower case, and
+  what isn't a color (no `#`, wrong length, not hex).
+- `OverlayLayoutTest` (new): the cascade (defaults, styles in order, own
+  properties; a style that doesn't exist is an error); decoding `text` and
+  `value`; the errors, with element index and property: unknown property,
+  unknown type, bad color, bad format spec, unknown field, unknown unit;
+  later slices' elements skipped and counted, and their style properties
+  accepted; `place()` for every anchor, negative and percentage
+  coordinates, and scaling.
+- `OverlayFieldsTest` (new): each field from records made in the test, in
+  metric and imperial and explicit units; missing fields; running cadence;
+  `elapsed` as `h:mm:ss`; default specs; templates, with literal text,
+  specs, `.unit`, escaped braces, a later slice's field, and errors.
+- `LayoutFileTest` (new), in a temporary directory: loading, reloading
+  after a change, an error and recovering from it; `overlay_layouts()`
+  with a user layout over a built-in one; the chosen layout saved and read
+  back.
+- The built-in layout loads without errors (a test reads
+  `share/overlays/cycling-basic.overlay.json`).
+- By hand: Ctrl+O and Ctrl+Shift+O, the preview following the mark,
+  editing a layout and seeing it reload, an error and fixing it, the
+  window resized (sharp text at any size), and a layout with a `map`
+  element.
 
 ## Review notes
 
