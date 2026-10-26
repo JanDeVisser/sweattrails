@@ -1,6 +1,6 @@
 # Map Pan and Zoom
 
-Status: In review
+Status: Done
 
 ## Goal
 
