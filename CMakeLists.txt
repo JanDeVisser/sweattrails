@@ -183,6 +183,8 @@ add_executable(
         src/App/Range.h
         src/App/fit/FIT.cpp
         src/App/fit/Profile.cpp
+        src/App/overlay/Fields.cpp
+        src/App/overlay/Template.cpp
         src/App/widget/Activity.cpp
         src/App/widget/ActivityMap.cpp
         src/App/widget/ActivitySelector.cpp
@@ -338,6 +340,22 @@ sweattrails_test(
 )
 target_include_directories(data_fields_test PRIVATE src/App)
 target_link_libraries(data_fields_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        overlay_fields_test
+        test/OverlayFieldsTest.cpp
+        src/App/overlay/Fields.cpp
+        src/App/overlay/Template.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(overlay_fields_test PRIVATE src/App)
+target_link_libraries(overlay_fields_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         displayed_activity_test
