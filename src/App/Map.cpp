@@ -334,6 +334,23 @@ std::vector<PlacedTile> MapView::tiles() const
     return ret;
 }
 
+std::vector<Tile> tiles_to_unload(std::vector<std::pair<Tile, size_t>> loaded, std::set<Tile> const &keep, size_t max)
+{
+    std::ranges::stable_sort(loaded, { }, &std::pair<Tile, size_t>::second);
+    std::vector<Tile> ret;
+    auto              count = loaded.size();
+    for (auto const &[tile, drawn] : loaded) {
+        if (count <= max) {
+            break;
+        }
+        if (!keep.contains(tile)) {
+            ret.push_back(tile);
+            --count;
+        }
+    }
+    return ret;
+}
+
 std::vector<Tile> missing_tiles(MapView const &view, TileLoaded const &have)
 {
     std::vector<Tile> ret;

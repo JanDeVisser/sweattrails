@@ -778,6 +778,25 @@ void test_navigator_resize_too_small()
     CHECK(navigator.view.center == before.center);
     CHECK_EQ(navigator.view.width, 20.0f);
 }
+
+Tile tile_at(u32 x)
+{
+    return Tile { .x = x, .y = 0, .zoom = 10 };
+}
+
+// The least recently drawn go first, but not the ones in use, such as the
+// whole route's tiles after a while zoomed in elsewhere.
+void test_tiles_to_unload()
+{
+    std::vector<std::pair<Tile, size_t>> loaded { { tile_at(0), 5 }, { tile_at(1), 1 }, { tile_at(2), 3 }, { tile_at(3), 2 } };
+    auto                                 unload = tiles_to_unload(loaded, { }, 2);
+    CHECK(unload == (std::vector<Tile> { tile_at(1), tile_at(3) }));
+    unload = tiles_to_unload(loaded, { tile_at(1) }, 2);
+    CHECK(unload == (std::vector<Tile> { tile_at(3), tile_at(2) }));
+    // All in use: they all stay.
+    CHECK(tiles_to_unload(loaded, { tile_at(0), tile_at(1), tile_at(2), tile_at(3) }, 2).empty());
+    CHECK(tiles_to_unload(loaded, { }, 4).empty());
+}
 }
 
 int main()
@@ -797,6 +816,7 @@ int main()
     test_pan_and_resize();
     test_tiles_cover_view();
     test_missing_tiles();
+    test_tiles_to_unload();
     test_cover_with_ancestors();
     test_cover_with_children();
     test_navigator_wheel_zooms_around_mouse();

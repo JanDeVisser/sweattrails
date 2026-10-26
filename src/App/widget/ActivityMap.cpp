@@ -195,19 +195,31 @@ void ActivityMap::unload_tiles()
     tiles.clear();
 }
 
-// The tiles in view were drawn in this frame, or are about to be, so they
-// stay.
+// The view's tiles, and the ones drawn in place of those that aren't
+// loaded yet, stay, whenever they were last drawn.
 void ActivityMap::unload_least_recently_drawn()
 {
-    while (tiles.size() > MaxLoadedTiles) {
-        auto oldest = tiles.begin();
-        for (auto it = tiles.begin(); it != tiles.end(); ++it) {
-            if (it->second.drawn < oldest->second.drawn) {
-                oldest = it;
-            }
+    if (tiles.size() <= MaxLoadedTiles) {
+        return;
+    }
+    std::set<Tile> keep;
+    auto const     is_loaded = [this](Tile const &t) { return loaded(t) != nullptr; };
+    for (auto const &[tile, screen] : navigator.view.tiles()) {
+        if (is_loaded(tile)) {
+            keep.insert(tile);
+            continue;
         }
-        UnloadTexture(oldest->second.texture);
-        tiles.erase(oldest);
+        for (auto const &piece : cover(tile, is_loaded)) {
+            keep.insert(piece.source);
+        }
+    }
+    std::vector<std::pair<Tile, size_t>> drawn;
+    for (auto const &[tile, loaded_tile] : tiles) {
+        drawn.emplace_back(tile, loaded_tile.drawn);
+    }
+    for (auto const &tile : tiles_to_unload(std::move(drawn), keep, MaxLoadedTiles)) {
+        UnloadTexture(tiles.at(tile).texture);
+        tiles.erase(tile);
     }
 }
 

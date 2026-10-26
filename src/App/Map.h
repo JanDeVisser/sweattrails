@@ -16,7 +16,9 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <raylib.h>
@@ -201,6 +203,12 @@ using TileReceiver = std::function<void(Tile const &tile, std::string png)>;
 // arrives to on_tile. Stops when the download is cancelled: a tile that is
 // being fetched then isn't handed on. Returns the tiles that failed.
 std::vector<Tile> fetch_tiles(TileDownload const &download, TileFetcher const &fetch, TileReceiver const &on_tile);
+
+// The loaded tiles to unload to get down to `max`: the least recently
+// drawn, each with the frame it was drawn in, but none of `keep`, the
+// view's tiles and the placeholders it shows. More than `max` stay if they
+// are all kept.
+std::vector<Tile> tiles_to_unload(std::vector<std::pair<Tile, size_t>> loaded, std::set<Tile> const &keep, size_t max);
 
 // The view's tiles that `have` says aren't there yet, for a download.
 std::vector<Tile> missing_tiles(MapView const &view, TileLoaded const &have);
