@@ -47,7 +47,7 @@ private:
     void                draw_checkerboard(Rectangle const &area) const;
     void                draw_message(Rectangle const &area, std::string_view message) const;
     void                draw_element(OverlayElement const &element, OverlayLayout const &layout, Rectangle const &area, float scale);
-    std::optional<Font> font(TextStyle const &style, float scale);
+    std::optional<Font> font(TextStyle const &style, float scale, size_t element);
     void                draw_text(Font const &font, std::string_view text, Vector2 at, TextStyle const &style, float scale) const;
 };
 

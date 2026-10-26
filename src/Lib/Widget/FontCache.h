@@ -29,7 +29,7 @@ struct FontCache {
     FontCache &operator=(FontCache const &) = delete;
 
     // The font at this size, loaded if it isn't yet. Nothing if raylib
-    // can't load it.
+    // can't load it, without trying again until clear().
     std::optional<Font> get(std::filesystem::path const &file, int size);
 
     // The characters besides ASCII that the fonts have. Different ones
@@ -40,6 +40,7 @@ struct FontCache {
 
 private:
     std::map<std::pair<std::string, int>, Font> m_fonts { };
+    std::set<std::pair<std::string, int>>       m_failed { };
     std::set<int>                               m_extra { };
 };
 

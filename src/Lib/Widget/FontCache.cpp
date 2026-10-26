@@ -23,6 +23,9 @@ std::optional<Font> FontCache::get(std::filesystem::path const &file, int size)
     if (auto const it = m_fonts.find(key); it != m_fonts.end()) {
         return it->second;
     }
+    if (m_failed.contains(key)) {
+        return { };
+    }
     std::vector<int> codepoints;
     for (auto ch = 32; ch < 127; ++ch) {
         codepoints.push_back(ch);
@@ -33,6 +36,7 @@ std::optional<Font> FontCache::get(std::filesystem::path const &file, int size)
     // raylib gives its default font when it can't load one, which mustn't
     // be unloaded with the others.
     if (font.baseSize == 0 || font.texture.id == 0 || font.texture.id == GetFontDefault().texture.id) {
+        m_failed.insert(key);
         return { };
     }
     m_fonts.emplace(key, font);
@@ -53,6 +57,7 @@ void FontCache::clear()
         UnloadFont(font);
     }
     m_fonts.clear();
+    m_failed.clear();
 }
 
 }

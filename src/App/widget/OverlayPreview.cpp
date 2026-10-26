@@ -165,13 +165,20 @@ void OverlayPreview::draw_message(Rectangle const &area, std::string_view messag
     EndScissorMode();
 }
 
-std::optional<Font> OverlayPreview::font(TextStyle const &style, float scale)
+// A font that's there but can't be loaded, such as a broken file, is an
+// error on the canvas from the next frame on, as one that isn't there is.
+std::optional<Font> OverlayPreview::font(TextStyle const &style, float scale, size_t element)
 {
     auto const path = font_paths.find(style.font);
     if (path == font_paths.end()) {
         return { };
     }
-    return fonts.get(path->second, std::max(1, static_cast<int>(std::lround(style.font_size * scale))));
+    auto const ret = fonts.get(path->second, std::max(1, static_cast<int>(std::lround(style.font_size * scale))));
+    if (!ret && !font_error && file) {
+        font_error = std::format("{}: element {}: the font `{}` can't be loaded from `{}`",
+            file->path.filename().string(), element, style.font, path->second.string());
+    }
+    return ret;
 }
 
 void OverlayPreview::draw_text(Font const &font, std::string_view text, Vector2 at, TextStyle const &style, float scale) const
@@ -194,7 +201,7 @@ void OverlayPreview::draw_element(OverlayElement const &element, OverlayLayout c
     auto const offset = [&area](Rectangle const &box) { return Vector2 { .x = area.x + box.x, .y = area.y + box.y }; };
 
     if (auto const *text = std::get_if<TextElement>(&element)) {
-        auto const f = font(text->style, scale);
+        auto const f = font(text->style, scale, text->number);
         if (!f || !activity) {
             return;
         }
@@ -213,8 +220,8 @@ void OverlayPreview::draw_element(OverlayElement const &element, OverlayLayout c
     }
 
     auto const &value = std::get<ValueElement>(element);
-    auto const  f = font(value.style, scale);
-    auto const  unit_font = font(value.unit_style, scale);
+    auto const  f = font(value.style, scale, value.number);
+    auto const  unit_font = font(value.unit_style, scale, value.number);
     if (!f || !unit_font || !activity) {
         return;
     }
