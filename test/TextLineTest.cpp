@@ -97,6 +97,20 @@ void test_control_characters_are_not_typed()
     CHECK_EQ(line.utf8(), "a");
 }
 
+// A surrogate, or past the last codepoint, isn't a character: typed in, it
+// would make utf8() empty.
+void test_runes_that_arent_characters_are_not_typed()
+{
+    TextLine line;
+    line.set("Ride");
+    CHECK(!line.insert(0xD800));
+    CHECK(!line.insert(0xDFFF));
+    CHECK(!line.insert(0x110000));
+    CHECK(!line.insert(-1));
+    CHECK(line.insert(0x10FFFF - 2));
+    CHECK_EQ(line.utf8().substr(0, 4), "Ride");
+}
+
 void test_paste()
 {
     TextLine line;
@@ -193,6 +207,7 @@ int main()
     test_set_and_utf8();
     test_moving_and_deleting();
     test_control_characters_are_not_typed();
+    test_runes_that_arent_characters_are_not_typed();
     test_paste();
     test_keys_it_leaves();
     test_scroll_keeps_cursor_in_view();

@@ -483,7 +483,7 @@ void input_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
             auto const left = 10.0f;
             auto const width = viewport.width - 2 * left;
             auto const y = App::the()->cell().y + 14;
-            auto const before = as_utf8(rune_view { line.text }.substr(0, line.cursor));
+            auto const before = to_utf8(rune_view { line.text }.substr(0, line.cursor)).value_or(std::string { });
             auto const cursor_x = App::measure_text(before.c_str(), FontSize::Medium).x;
             auto const text_width = App::measure_text(line.utf8().c_str(), FontSize::Medium).x;
             auto const scroll = line.scroll_for(cursor_x, text_width, width - 2);

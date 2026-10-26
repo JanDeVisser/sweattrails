@@ -34,7 +34,8 @@ struct TextLine {
     [[nodiscard]] std::string utf8() const;
 
     // Types a character at the cursor. Control characters, such as a tab,
-    // aren't typed. Returns whether it was.
+    // aren't typed, nor a rune that isn't a Unicode character, which
+    // wouldn't convert to UTF-8. Returns whether it was.
     bool insert(rune ch);
     // Text at the cursor, with line breaks as spaces: it's one line.
     void paste(std::string_view const &utf8);
