@@ -1,6 +1,6 @@
 # Map Pan and Zoom
 
-Status: Ready
+Status: Done
 
 ## Goal
 
@@ -36,9 +36,10 @@ move the map around, and go back to the whole route, as on any map.
 ### Zooming and panning
 
 - **Zoom** with the mouse wheel, or two fingers on the trackpad, over
-  the map. Each notch is one OSM zoom level, and the zoom is centered on
-  the point under the mouse, which stays where it is. A trackpad reports
-  fractions of a notch, which add up to whole ones, as in the lap table.
+  the map. Each click of a mouse's wheel is one OSM zoom level, and the
+  zoom is centered on the point under the mouse, which stays where it
+  is. A trackpad swipe zooms a level when it starts, and a level for
+  each notch's worth of movement after that, as the lap table scrolls.
   Zoom steps are whole OSM levels so that the tiles stay sharp, as on
   openstreetmap.org.
 - **Pan** by dragging the map. While it's being dragged, the cursor is a
@@ -129,12 +130,266 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### The view: `MapView` in `Map.h`, replacing `Map`
+
+The map stops being one image of a grid of tiles, laid out once. It's a
+view, and the tiles and the track are drawn where the view puts them,
+every frame.
+
+- **World pixels.** A point's place on the map at zoom level `z` is its
+  Web Mercator position in pixels, 0 to `256 << z`. At zoom 18 that's up
+  to 67 million: more than a `float` holds to the pixel, so world pixels
+  are `double`s. `world_pixel(coordinates, zoom)` and its inverse are the
+  projection that `Tile::for_coordinates()` and the track code now each
+  do by hand.
+- **`struct MapView { u8 zoom; double center_x, center_y; float width,
+  height; }`**: the world pixel at the middle of the map's viewport, at a
+  zoom level, for a viewport of a size. Plain arithmetic, no raylib
+  drawing, so that it's all testable:
+  - `fit(route, width, height)`: the whole route, as `Map::init()` picks
+    it now: the highest zoom up to 16 where the route, with 10% to spare,
+    fits, centered on the route.
+  - `to_screen(world point)`, `to_world(screen point)`: relative to the
+    viewport's top left corner.
+  - `zoomed(steps, around)`: one level per step, keeping the world point
+    under `around` (the mouse, or the middle for the keys) where it is.
+  - `panned(dx, dy)`, `resized(width, height)`.
+  - `clamped(route, min_zoom, max_zoom)`: the limits, the zoom to
+    `[fit zoom - 2, 18]`, the center to the route's box.
+  - `tiles()`: the tiles that cover the view, and where on screen each
+    goes. Tiles outside the world, past the poles or the antimeridian,
+    are left out (grey).
+- `Map` and `Map::init()` go; their tests become `MapView` tests.
+
+### Placeholders: `TileTextures`, and `cover()`
+
+- **`ActivityMap` keeps the tiles it has loaded as textures**, one per
+  tile, keyed by `Tile`, rather than one image: panning only moves them,
+  and a zoom can draw the previous level's tiles, scaled, while the new
+  ones download. They're dropped when another activity is opened, and
+  the least recently drawn ones beyond about 150 (some 40 MB of video
+  memory) are unloaded. This is how the spec's "previous view shows in
+  its place" works: it isn't the in-memory tile cache that's deferred,
+  which would keep tiles across activities.
+- **`cover(tile, loaded)`** (in `Map.h`, pure) says what to draw for a
+  tile that isn't loaded: the nearest loaded ancestor, up to three levels
+  up, and the part of it that covers the tile, for zooming in; or else
+  the tile's four children, if they're loaded, for zooming out; or
+  nothing, which is grey.
+- Tiles cached on disk are read when the view first needs them, on the
+  UI thread, as now.
+
+### Downloads
+
+- Every change of the view cancels the waiting download, and schedules
+  one for the visible tiles that are neither loaded nor cached, with the
+  existing `TileDownload`, job and cancelling. A view change whose missing
+  tiles are all in the download that's going on, as when a drag moves
+  less than a tile, leaves it be. `next_download(view, have, current)`
+  (`Map.h`, pure) makes that choice.
+- `MapTile` gets the `Tile` in place of its index in the grid, which no
+  longer exists. `TileDownload` gets the `map` it's for, a number
+  `ActivityMap` counts up for each activity: a tile that arrives from a
+  cancelled download of the same activity is still loaded, since it may
+  be in view and is a placeholder; one for another activity is dropped,
+  as now.
+- `fetch_tiles()` returns the tiles that failed, not their number, and
+  `MapTilesDone`, sent for every download, also a cancelled one, carries
+  them: the map doesn't ask for them again while the activity is open,
+  so that panning over a tile the server refuses doesn't ask for it on
+  every frame. The status line reports failures for the current
+  download, as now.
+- Loaded tiles beyond `MaxLoadedTiles` are unloaded as `tiles_to_unload()`
+  (`Map.h`, pure) picks them: the least recently drawn, never the view's
+  tiles or their placeholders.
+- `ActivityMap::set_activity()` only starts the navigator; the tiles are
+  loaded and downloaded once the layout has sized the map.
+
+### Input, keys and resizing
+
+- **`MapNavigator`** (in `Map.h`) holds the route, the `MapView`, whether
+  the user has `moved` it, and the drag, and takes made-up input as
+  `Scrollbar` does: `handle(input, viewport)` zooms around the mouse on
+  the wheel over the map, and starts a drag on a press there, which pans
+  by the mouse's movement until the button is let go, wherever the mouse
+  is. It also has `zoom_by()`, `whole_route()` and `resize()`.
+  `ActivityMap` owns one and draws what it says; its
+  `process_input()` passes it raylib's input. This keeps the input
+  testable without the app, which `ActivityMap` needs. `ActivityMap`'s
+  code moves to `widget/ActivityMap.cpp`, as it grew.
+- **Trackpad fractions**: `Scrollbar`'s `wheel_total` becomes a small
+  `WheelNotches` in `Scroll.h`, which `Scrollbar` and the map share:
+  `int add(float wheel, double now)` returns the whole notches and keeps
+  the rest. Found by hand: on macOS raylib reports a slow click of a
+  mouse's wheel as a tenth of a notch or so, so the first movement after
+  a pause of 50 ms counts as a notch however small it is; only movement
+  that follows without a pause, as a swipe's, adds up. `ScrollInput`
+  gets the frame's `time` for it.
+- **The cursor while dragging is `MOUSE_CURSOR_RESIZE_ALL`**, the
+  four-way arrow: raylib has no grabbing hand.
+- The track is kept as world pixels at zoom 0 (`double`s), and scaled to
+  the view when drawn: 10,000 records a frame is cheap. The selected
+  range and the mark are drawn from it, as now.
+- `ActivityMap::resize()` resizes the view: refitted to the whole route
+  if the user hasn't zoomed or panned (`moved` is false), else
+  `resized()`, keeping the center and zoom. The first layout in
+  `ActivityDisplay::set_activity()`, for the lap table, isn't needed
+  any more and goes.
+- Tasks `st-map-zoom-in` (`=`, Shift `=` for `+`, keypad `+`),
+  `st-map-zoom-out` (`-`, keypad `-`) and `st-map-whole-route` (`0`) in
+  SweatTrails.cpp, calling `ActivityMap::zoom_by()` and
+  `ActivityMap::show_whole_route()`, with the modal check of the lap
+  keys.
+- The attribution is drawn last, in the map's bottom right corner, in the
+  small font on a translucent black.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `MapTest` (`MapView`): `fit()` covers the route with the zoom it picked
+  before, for a few viewport sizes; `to_screen()` and `to_world()` are
+  each other's inverse, also at zoom 18 to the pixel; `zoomed()` keeps
+  the point under the mouse in place, in and out; `clamped()` at both
+  zoom limits and the center on each side of the route's box;
+  `resized()` keeps the center; `tiles()` covers the view exactly, and
+  leaves out tiles past the world's edges; `world_pixel()` against
+  `Tile::for_coordinates()`.
+- `MapTest` (`cover()`): a loaded parent, grandparent and great-grand-
+  parent, and the part of each that's used; none past three levels;
+  children when zooming out; nothing loaded.
+- `ScrollTest`: `WheelNotches` adds up fractions, both ways; the
+  trackpad test still passes.
+- `MapTest` (`MapNavigator`), with made-up input: a wheel notch zooms
+  around the mouse; trackpad fractions add up; a drag pans by its
+  movement and goes on outside the map; a wheel or press elsewhere does
+  nothing; the limits hold; `resize()` refits before the user moved the
+  map and keeps the view after; `whole_route()` clears `moved`.
+- The download scheduling: which tiles a view change asks for, given the
+  loaded and cached ones, as a function of the view and two predicates.
+- By hand: zooming with the wheel, the trackpad and the keys; dragging;
+  the limits; a slow download while zooming (the placeholders); a
+  resize, zoomed and not; another activity while tiles download; the
+  attribution; an activity without a map.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: eviction unloads tiles that are in view.**
+   `ActivityMap::unload_least_recently_drawn()` (ActivityMap.cpp, called
+   from `view_changed()`) evicts by `drawn`, but a tile that was loaded
+   earlier and is in the new view keeps the `drawn` of the last frame it
+   was drawn in: `view_changed()`'s predicate only checks `loaded(tile)`.
+   Scenario: open a long ride, zoom in a few levels and pan along it until
+   more than 150 tiles are loaded, then press `0`. The whole-route tiles
+   were loaded when the activity opened and are now the least recently
+   drawn, so they're the first unloaded, and the whole route shows grey
+   (or the zoomed-in children, scaled down) until the next view change;
+   pressing `0` again doesn't change the view, so it stays that way. The
+   comment "the tiles in view were drawn in this frame, or are about to
+   be" doesn't hold. The same happens when more than 150 tiles share the
+   latest `drawn`, on a very large map. Fix: in `view_changed()`, set
+   `drawn = frame` on every loaded tile of the new view (and the cover
+   pieces it will use) before evicting, or never evict a tile of
+   `navigator.view.tiles()`. Not testable without a window as it stands;
+   pulling the choice of tiles to evict into a pure function of `(tile ->
+   drawn)` and the view's tiles would make it testable.
+
+2. **Bug: failures in a cancelled download aren't recorded, so the tiles
+   are asked for again.** `job_download_tiles()` only sends
+   `MapTilesDone` when the download wasn't cancelled, and
+   `ActivityMap::tiles_done()` only takes `failed` from the current
+   download. The spec says a failed tile isn't asked for again while the
+   activity is open, so that panning over a tile the server refuses
+   doesn't ask for it over and over. Scenario: the server answers 403 or
+   429 for tile T (the usage policy responses that `CURLOPT_FAILONERROR`
+   is there for). A download `[a, T, b, c]` runs; the user drags, the
+   view's tiles change (or see 3), the download is cancelled after T
+   failed, and the next download asks for T again; every reschedule does.
+   Being rate-limited and asking again is what the policy forbids. Fix:
+   send the failed tiles for a cancelled download too (e.g. always send
+   `MapTilesDone`, with a `cancelled` flag), and in `tiles_done()` add
+   them to `failed` whenever `done.download->map == map_id`, keeping the
+   status line report for the current download only.
+
+3. **Bug: the download is replaced on every drag frame after a tile
+   arrives.** `view_changed()` keeps the download only if
+   `download->tiles == missing`. Once one of its tiles has arrived and is
+   loaded, `missing` no longer contains it, so the next drag frame, even
+   one moving a pixel, cancels the download and schedules a new one,
+   although the view needs no tile it didn't have. The spec says such a
+   view change "leaves it be". Effects: the tile being fetched is dropped
+   by `fetch_tiles()` and read again from the cache by the next job; the
+   new job queues behind any other job (a Garmin or Wahoo sync), so tiles
+   stop arriving while one runs; and with 2, a failure in the cancelled
+   download is lost and retried each time. Fix: keep the download when
+   every missing tile is in `download->tiles` (a subset, not equality).
+
+4. **Missing test: the download scheduling decision.** The test plan
+   promises "which tiles a view change asks for, given the loaded and
+   cached ones, as a function of the view and two predicates".
+   `missing_tiles()` takes one predicate and is tested, but the decision
+   that 3 is about (keep, cancel, or schedule) and the handling of
+   `failed` are inline in `ActivityMap::view_changed()`, which needs
+   `SweatTrails::the()` and textures, so they can't be tested. Suggest
+   pulling it into a pure function in `Map.h`, e.g.
+   `std::optional<std::vector<Tile>> next_download(view, have, current)`,
+   which returns nothing when the current download should be left be,
+   and testing it, including the subset case from 3.
+
+5. **Bug (minor): a download is started for a view that's never shown.**
+   `ActivityDisplay::set_activity()` no longer lays out first, so
+   `ActivityMap::set_activity()` fits the route to the stale viewport and
+   `view_changed()` loads that view's cached tiles and schedules a
+   download for it; the `resize()` right after then refits and cancels
+   it. When the lap table shows or hides, the height differs, so the
+   stale view can be at another zoom. The job thread is idle and may have
+   started fetching the first tile already: one request for a tile the
+   user never sees, against "only the current view's tiles are
+   downloaded". The final view is right: the map ends up fitted to its
+   final viewport when the lap table shows or hides, and when it hides
+   for an activity without positions (it isn't resized while hidden, and
+   is refitted if its size changed when it shows again). Fix: in
+   `set_activity()` start the navigator but leave `view_changed()` to the
+   `resize()` that follows (e.g. a `view_pending` flag that `resize()`
+   and `draw()` act on), or call `view_changed()` from `resize()` even
+   when the size didn't change, after a `set_activity()`.
+
+Resolution, agreed with Jan, each in its own commit:
+
+1. Fixed: `tiles_to_unload()` (`Map.h`, pure) picks the least recently
+   drawn tiles to unload, but never the view's tiles nor the ones drawn
+   in place of those not loaded yet. `test_tiles_to_unload`.
+2. Fixed: a download always sends `MapTilesDone` with its failed tiles,
+   also when cancelled, and the map records them for its activity;
+   the status line reports only the current download's.
+   `test_failure_before_cancel_is_returned` covers `fetch_tiles()`'s
+   part; the map's part needs the app.
+3. and 4. Fixed: `next_download(view, have, current)` (`Map.h`, pure)
+   keeps the download going on while it has every tile still missing,
+   and else replaces it, or only cancels it when nothing is missing.
+   `test_next_download`; its case after a tile arrived fails against the
+   old equality check.
+5. Fixed: `ActivityMap::set_activity()` sets `view_pending`, and the
+   tiles are loaded and downloaded by the layout's `resize()` that
+   follows, or the first `draw()` if none does.
+
+Checked and fine: `world_pixel()`/`world_coordinates()`; `fit()` picks
+the same zoom as `Map::init()` for routes of many sizes and latitudes
+(new test); `zoomed()` keeps the point under the mouse to the pixel at
+zoom 18; `tiles()` at the world's edges and at zoom 0; `cover()` at
+zoom 0, 2 and 18; the navigator's limits, the drag outside the map and
+its end on release, `resize()` refitting only before a move; `tiles.at()`
+for cover pieces (only loaded tiles are returned); tiles from cancelled
+downloads of the same map are loaded and of another map dropped; the
+track's NaN points, and the selected range now drawn to its last record
+inclusive (the old code stopped one short); the map keys' modal check
+and doing nothing without a map.
+
+Tests added (commit e04f1eb, `test/MapTest.cpp`): `fit()` against the
+old `Map::init()` zoom; `tiles()` covering the view exactly, on tile
+boundaries, at the world's bottom right, at zoom 0 and 1 in a viewport
+larger than the world, and at zoom 18; `zoomed()` at street level;
+`cover()` three levels up, at zoom 0 and 2, at zoom 18, and with all four
+children; `MapNavigator`: a click doesn't move the map, the keys zoom
+around the middle, the pan limits north and east and after zooming out
+around a corner, the lowest zoom for a route that fits only at zoom 1,
+the whole route after a drag, and a resize the route doesn't fit. All
+pass, as does the full run (`ctest -E oauth`).

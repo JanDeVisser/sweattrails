@@ -234,18 +234,16 @@ void SweatTrails::job_download_tiles(Job::Payload const &data)
 {
     auto const &download = std::get<pTileDownload>(data);
     auto const &storage = SweatTrails::the()->storage;
-    auto const  failed = fetch_tiles(
+    auto        failed = fetch_tiles(
         *download,
         [&storage](Tile const &tile) {
             return tile.get_tile(storage);
         },
-        [&download](size_t index, std::string png) {
+        [&download](Tile const &tile, std::string png) {
             SweatTrails::the()->notify<NotificationType::MapTile>(
-                MapTile { download, index, std::move(png) });
+                MapTile { download, tile, std::move(png) });
         });
-    if (!download->cancelled) {
-        SweatTrails::the()->notify<NotificationType::MapTilesDone>(MapTilesDone { download, failed });
-    }
+    SweatTrails::the()->notify<NotificationType::MapTilesDone>(MapTilesDone { download, std::move(failed) });
 }
 
 void SweatTrails::job_download(Job::Payload const &data)
@@ -461,6 +459,37 @@ void cmd_whole_activity(pSweatTrails const &sweattrails, JSONValue const &)
     }
 }
 
+// The map, for the map keys: none under a modal, as for the lap keys.
+// ActivityMap does nothing without a map of its own.
+std::shared_ptr<ActivityMap> map_keys_map(pSweatTrails const &sweattrails)
+{
+    if (!sweattrails->modals.empty()) {
+        return nullptr;
+    }
+    return sweattrails->activity_display->map;
+}
+
+void cmd_map_zoom_in(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (auto map = map_keys_map(sweattrails)) {
+        map->zoom_by(1);
+    }
+}
+
+void cmd_map_zoom_out(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (auto map = map_keys_map(sweattrails)) {
+        map->zoom_by(-1);
+    }
+}
+
+void cmd_map_whole_route(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (auto map = map_keys_map(sweattrails)) {
+        map->show_whole_route();
+    }
+}
+
 void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
 {
     if (!sweattrails->modals.empty()) {
@@ -617,6 +646,16 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_UP, KModNone });
     bus.add_task<SweatTrails>("st-whole-activity", self(), cmd_whole_activity)
         .bind(KeyCombo { KEY_ESCAPE, KModNone });
+    // + is Shift = on most keyboards.
+    bus.add_task<SweatTrails>("st-map-zoom-in", self(), cmd_map_zoom_in)
+        .bind(KeyCombo { KEY_EQUAL, KModNone })
+        .bind(KeyCombo { KEY_EQUAL, KModShift })
+        .bind(KeyCombo { KEY_KP_ADD, KModNone });
+    bus.add_task<SweatTrails>("st-map-zoom-out", self(), cmd_map_zoom_out)
+        .bind(KeyCombo { KEY_MINUS, KModNone })
+        .bind(KeyCombo { KEY_KP_SUBTRACT, KModNone });
+    bus.add_task<SweatTrails>("st-map-whole-route", self(), cmd_map_whole_route)
+        .bind(KeyCombo { KEY_ZERO, KModNone });
 
     // Jobs run one at a time in the order they're scheduled: the newest
     // activity shows before Garmin Connect or Wahoo is asked for anything,

@@ -1,7 +1,9 @@
 #pragma once
 
+#include <map>
 #include <memory>
 #include <ranges>
+#include <set>
 
 #include <raylib.h>
 
@@ -43,28 +45,49 @@ private:
 };
 
 struct ActivityMap : public Widget {
+    // A tile loaded in video memory, and the frame it was last drawn in, to
+    // unload the least recently drawn when there are too many.
+    struct LoadedTile {
+        Texture2D texture { };
+        size_t    drawn { 0 };
+    };
+
+    // At 256 KB a tile, some 40 MB of video memory.
+    static constexpr size_t MaxLoadedTiles = 150;
+
     std::shared_ptr<DisplayedActivity> activity;
-    Map                                map;
-    std::vector<Vector2>               track { };
-    Box                                box;
-    Image                              image { };                    // empty while no map is shown
-    Texture2D                          texture { };                  // empty while no map is shown
-    pTileDownload                      download { };                 // the tiles that weren't cached, while they download
-    bool                               reporting_failures { false }; // the status line says tiles failed
+    MapNavigator                       navigator { };
+    bool                               has_map { false };
+    bool                               view_pending { false }; // The tiles aren't loaded for the view yet
+    std::vector<WorldPoint>            track { };              // At zoom 0; NaN without a position
+    std::map<Tile, LoadedTile>         tiles { };
+    std::set<Tile>                     failed { };   // Not tried again for this activity
+    pTileDownload                      download { }; // The view's tiles that weren't cached, while they download
+    u64                                map_id { 0 }; // Tiles downloaded for another map are dropped
+    size_t                             frame { 0 };
+    bool                               reporting_failures { false }; // The status line says tiles failed
 
     explicit ActivityMap(pWidget const &parent);
     ~ActivityMap();
-    void initialize() override;
     void draw() override;
     void resize() override;
     void process_input() override;
     void set_activity(std::shared_ptr<DisplayedActivity> const &activity);
     void add_tile(MapTile const &tile);
     void tiles_done(MapTilesDone const &done);
+    void zoom_by(int steps);
+    void show_whole_route();
 
 private:
-    void draw_tile(size_t index, std::string const &png);
-    void stop_download();
+    void                            view_changed();
+    [[nodiscard]] LoadedTile const *loaded(Tile const &tile) const;
+    void                            load_tile(Tile const &tile, std::string const &png);
+    void                            unload_tiles();
+    void                            unload_least_recently_drawn();
+    void                            draw_tiles();
+    void                            draw_track() const;
+    void                            draw_attribution() const;
+    void                            stop_download();
 };
 
 struct ActivityGraph : public Widget {

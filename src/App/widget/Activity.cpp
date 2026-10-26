@@ -440,221 +440,14 @@ void ActivityGraph::set_activity(std::shared_ptr<DisplayedActivity> const &activ
     texture = LoadTextureFromImage(image);
 }
 
-ActivityMap::ActivityMap(pWidget const &parent)
-    : Widget(parent, SizePolicy::Relative, 0.33)
-{
-    padding = { 10, 10, 10, 10 };
-}
-
-ActivityMap::~ActivityMap()
-{
-    if (download) {
-        download->cancelled = true;
-    }
-    UnloadTexture(texture);
-    UnloadImage(image);
-}
-
-void ActivityMap::initialize()
-{
-}
-
-void ActivityMap::draw()
-{
-    if (!activity) {
-        return;
-    }
-    DrawRectangleLines(viewport.x - 3, viewport.y - 3, viewport.width + 6, viewport.height + 6, RAYWHITE);
-
-    // The map and track are laid out for the viewport set_activity() saw,
-    // and aren't redone when it changes (see resize()). When it got
-    // smaller, such as when the status line appeared, don't draw the track
-    // over the widgets around the map.
-    BeginScissorMode(viewport.x, viewport.y, viewport.width, viewport.height);
-    render_texture(0, 0, texture, map.rectangle.x, map.rectangle.y, viewport.width, viewport.height, RAYWHITE);
-    constexpr static float thick = 3.0f;
-    auto                   p_prev = track[0];
-    for (auto const &p : track) {
-        if (!std::isnan(p.x) && !std::isnan(p.y) && (std::abs(p_prev.x - p.x) > 1 || std::abs(p_prev.y - p.y) > 1)) {
-            DrawLineEx(p_prev, p, thick, RED);
-            DrawCircleV(p, thick / 2, RED);
-            p_prev = p;
-        }
-        if (std::isnan(p_prev.x) && std::isnan(p_prev.y)) {
-            p_prev = p;
-        }
-    }
-    if (activity->segment) {
-        auto p_prev = track[activity->segment->min];
-        for (size_t i = activity->segment->min + 1; i < activity->segment->max; ++i) {
-            auto const &p = track[i];
-            if (!std::isnan(p.x) && !std::isnan(p.y) && (std::abs(p_prev.x - p.x) > 1 || std::abs(p_prev.y - p.y) > 1)) {
-                DrawLineEx(p_prev, p, thick, BLUE);
-                DrawCircleV(p, thick / 2, BLUE);
-                p_prev = p;
-            }
-        }
-    }
-    if (activity->mark) {
-        DrawCircleV(track[*activity->mark], thick, BLACK);
-    }
-    EndScissorMode();
-}
-
-// TODO: The map is built for the viewport set_activity() sees, and isn't
-// rebuilt when the viewport changes. For example, an activity opened while
-// the status line shows keeps a smaller map after the status line hides.
-void ActivityMap::resize()
-{
-}
-
-void ActivityMap::process_input()
-{
-}
-
-void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activity)
-{
-    stop_download();
-    // Reset them after unloading: an activity without a map doesn't make
-    // new ones, and the next activity mustn't unload the old ones again.
-    // Unloading empty ones does nothing.
-    UnloadTexture(texture);
-    UnloadImage(image);
-    texture = { };
-    image = { };
-    this->activity = activity;
-    if (!this->activity) {
-        return;
-    }
-    if (!this->activity->activity.segment.box) {
-        policy = SizePolicy::Hide;
-        return;
-    }
-    policy = SizePolicy::Relative;
-
-    auto const route_area = *activity->activity.segment.box;
-
-    auto map_maybe = Map::init(route_area, viewport.width, viewport.height);
-    if (!map_maybe) {
-        std::println("Could not load map: {}", map_maybe.error().to_string());
-        policy = SizePolicy::Hide;
-        return;
-    }
-    map = std::move(map_maybe.value());
-
-    // Cached tiles are drawn right away. The others are grey until they've
-    // been downloaded in the background, see add_tile().
-    image = GenImageColor(map.columns * 256, map.rows * 256, LIGHTGRAY);
-    auto missing = std::make_shared<TileDownload>();
-    for (size_t ix = 0; ix < map.num_tiles; ++ix) {
-        auto const tile = map.tile(ix);
-        if (auto png = tile.get_cached_tile(SweatTrails::the()->storage); png) {
-            draw_tile(ix, *png);
-        } else {
-            missing->tiles.push_back(MissingTile { .index = ix, .tile = tile });
-        }
-    }
-
-    track.clear();
-    for (auto const &record : activity->activity.records) {
-        if (record.position) {
-            auto const &position = *record.position;
-            if (std::abs(position.lat) > 0.1 && std::abs(position.lon) > 0.1) {
-                auto const n = static_cast<float>(1u << map.zoom);
-                auto const x = ((position.lon + 180.0f) / 360.0f * n - map.x) * 256.0f;
-                auto const y = ((1.0f - std::asinh(std::tan(position.lat * PI / 180.0f)) / PI) / 2.0f * n - map.y) * 256.0f;
-
-                track.emplace_back(
-                    viewport.x + x - map.rectangle.x,
-                    viewport.y + y - map.rectangle.y);
-                continue;
-            }
-        }
-        if (!track.empty()) {
-            track.emplace_back(track.back());
-        } else {
-            track.emplace_back(std::nanf(nullptr), std::nanf(nullptr));
-        }
-    }
-    texture = LoadTextureFromImage(image);
-
-    if (!missing->tiles.empty()) {
-        download = missing;
-        SweatTrails::the()->schedule<JobType::DownloadTiles>(download);
-    }
-}
-
-void ActivityMap::add_tile(MapTile const &tile)
-{
-    if (tile.download != download) {
-        // Downloaded for a map that is no longer shown.
-        return;
-    }
-    draw_tile(tile.index, tile.png);
-    UpdateTexture(texture, image.data);
-}
-
-void ActivityMap::tiles_done(MapTilesDone const &done)
-{
-    if (done.download != download) {
-        return;
-    }
-    download.reset();
-    if (done.failed > 0) {
-        SweatTrails::the()->set_status(
-            std::format("Couldn't download {} map {}", done.failed, (done.failed == 1) ? "tile" : "tiles"));
-        reporting_failures = true;
-    }
-}
-
-// Draws a tile into the map's image, at its place in the grid.
-void ActivityMap::draw_tile(size_t index, std::string const &png)
-{
-    auto tile = LoadImageFromMemory(".png", reinterpret_cast<unsigned char const *>(png.data()), static_cast<int>(png.size()));
-    ImageDrawImagePro(
-        &image,
-        tile,
-        Rectangle {
-            .x = 0,
-            .y = 0,
-            .width = 256,
-            .height = 256,
-        },
-        Rectangle {
-            .x = static_cast<float>((index % map.columns) * 256),
-            .y = static_cast<float>((index / map.columns) * 256),
-            .width = 256,
-            .height = 256,
-        },
-        Vector2 { 0, 0 },
-        0.0f,
-        WHITE);
-    UnloadImage(tile);
-}
-
-// Drops the tiles still waiting to be downloaded for the map shown now, and
-// the status line message about the ones that failed.
-void ActivityMap::stop_download()
-{
-    if (download) {
-        download->cancelled = true;
-        download.reset();
-    }
-    if (reporting_failures) {
-        SweatTrails::the()->set_status("");
-        reporting_failures = false;
-    }
-}
-
 ActivityDisplay::ActivityDisplay(pWidget const &parent)
     : Layout(parent, ContainerOrientation::Vertical)
 {
 }
 
 // The table only shows for more than one lap: one lap is the whole
-// activity, which the data panel shows. The map is fitted to its viewport
-// in set_activity(), so the layout makes room for the table first; after,
-// it lays out again for the map, which hides without a route.
+// activity, which the data panel shows. The map fits the route to its new
+// size when the layout resizes it.
 void ActivityDisplay::set_activity(Activity const &activity)
 {
     this->activity = std::make_shared<DisplayedActivity>(activity);
@@ -666,7 +459,6 @@ void ActivityDisplay::set_activity(Activity const &activity)
         laps->set_rows({ }, { });
         laps->policy = SizePolicy::Hide;
     }
-    resize();
     data_display->set_activity(this->activity);
     map->set_activity(this->activity);
     graph->set_activity(this->activity);
@@ -678,7 +470,6 @@ void ActivityDisplay::clear_activity()
     this->activity = nullptr;
     laps->set_rows({ }, { });
     laps->policy = SizePolicy::Hide;
-    resize();
     data_display->set_activity(nullptr);
     map->set_activity(nullptr);
     graph->set_activity(nullptr);
