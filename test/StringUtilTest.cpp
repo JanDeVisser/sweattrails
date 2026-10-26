@@ -32,11 +32,27 @@ void test_base64url_uses_the_url_safe_alphabet()
     CHECK_EQ(base64url(std::string { "\xFB\xFF" }), "-_8");
 }
 
+// Only ASCII whitespace is stripped: "à" ends in the byte 0xA0, which is a
+// space in Latin-1.
+void test_strip()
+{
+    CHECK_EQ(strip("  Rückweg \t\n"), "Rückweg");
+    CHECK_EQ(strip("Voilà"), "Voilà");
+    CHECK_EQ(strip("\xA0Voilà\xA0"), "\xA0Voilà\xA0");
+    CHECK_EQ(strip("   "), "");
+    CHECK_EQ(strip(""), "");
+    CHECK_EQ(lstrip("  a  "), "a  ");
+    CHECK_EQ(rstrip("  a  "), "  a");
+    CHECK_EQ(rstrip("   "), "");
+    CHECK_EQ(rstrip(""), "");
+}
+
 }
 
 int main()
 {
     test_base64url();
     test_base64url_uses_the_url_safe_alphabet();
+    test_strip();
     return ST::Test::test_result();
 }

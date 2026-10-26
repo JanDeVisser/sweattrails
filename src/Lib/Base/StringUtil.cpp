@@ -150,34 +150,29 @@ StringList split_by_whitespace(std::string_view const &s)
     return ret;
 }
 
+namespace {
+
+// ASCII whitespace only: std::isspace() is undefined for the negative chars
+// of UTF-8, and in a UTF-8 locale counts e.g. 0xA0, the last byte of "à".
+constexpr std::string_view Whitespace = " \t\n\v\f\r";
+
+}
+
 std::string_view strip(std::string_view const &s)
 {
-    size_t start;
-    for (start = 0; (start < s.length()) && std::isspace(s[start]); start++)
-        ;
-    if (start == s.length()) {
-        return { s.data(), 0 };
-    }
-    size_t end;
-    for (end = s.length() - 1; std::isspace(s[end]); end--)
-        ;
-    return s.substr(start, end - start + 1);
+    return lstrip(rstrip(s));
 }
 
 std::string_view rstrip(std::string_view const &s)
 {
-    size_t end;
-    for (end = s.length() - 1; std::isspace(s[end]); end--)
-        ;
-    return s.substr(0, end + 1);
+    auto const end = s.find_last_not_of(Whitespace);
+    return (end == std::string_view::npos) ? s.substr(0, 0) : s.substr(0, end + 1);
 }
 
 std::string_view lstrip(std::string_view const &s)
 {
-    size_t start;
-    for (start = 0; (start < s.length()) && std::isspace(s[start]); start++)
-        ;
-    return s.substr(start, s.length() - start);
+    auto const start = s.find_first_not_of(Whitespace);
+    return (start == std::string_view::npos) ? s.substr(s.length()) : s.substr(start);
 }
 
 std::vector<std::pair<std::string, std::string>> parse_pairs(std::string const &s, char pair_sep, char name_value_sep)
