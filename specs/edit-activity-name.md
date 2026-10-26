@@ -1,6 +1,6 @@
 # Edit an Activity's Name
 
-Status: In progress
+Status: In review
 
 ## Goal
 
@@ -139,7 +139,10 @@ None.
 - **`input_box()`** keeps its interface, and its `InputBox` uses a
   `TextLine`: `character()` and `process_key()` pass on to it, `draw()`
   measures the text before the cursor, and the box's Enter hands
-  `utf8()` to the submit function.
+  `utf8()` to the submit function. It had never been instantiated, and
+  didn't compile once it was: it asserted that its submit function, a
+  lambda, wasn't null, and its `dismiss()` called itself rather than the
+  dismiss function. Both are fixed.
 - A `static_assert` that `rune` is 32 bits: on Windows, where `wchar_t`
   is 16, a character wouldn't be one `rune`, and the README says
   Windows isn't supported.
@@ -159,13 +162,18 @@ None.
   `write_file_atomically()`. A sidecar left without keys, which only the
   app made, is removed rather than written as `{}`.
 - **`Activity::rename(name)`**: trims the name, does nothing if it's the
-  same, saves it to `<dir>/<id.name>.json`, and sets `title`, to the
-  name or to `original_title`. Returns an error for the status line.
+  same, saves it to the sidecar, and sets `title`, to the name or to
+  `original_title`. Returns an error for the status line.
+  `load_from_dir()` keeps the sidecar's path in `Activity::sidecar`, so
+  that an activity loaded from another directory, as in the tests, saves
+  where it was loaded from; one loaded otherwise, such as from the inbox,
+  has none, and can't be renamed.
 
 ### Renaming in the app
 
 - The task `st-rename-activity` (F2) in SweatTrails.cpp: not under a
-  modal, nor without an activity on display, as the lap keys. It opens
+  modal, nor without an activity on display, as the lap keys, with the
+  helper they share, now `activity_for_keys()`. It opens
   `input_box()` with the prompt "Name" and the title, and its submit
   function calls `rename()` on the displayed activity's `Activity`, and
   sets the status line if it fails.
