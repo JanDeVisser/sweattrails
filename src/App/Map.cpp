@@ -362,6 +362,18 @@ std::vector<Tile> missing_tiles(MapView const &view, TileLoaded const &have)
     return ret;
 }
 
+std::optional<std::vector<Tile>> next_download(MapView const &view, TileLoaded const &have, std::vector<Tile> const *current)
+{
+    auto       missing = missing_tiles(view, have);
+    auto const in_current = [current](Tile const &tile) {
+        return current != nullptr && std::ranges::find(*current, tile) != current->end();
+    };
+    if (!missing.empty() && std::ranges::all_of(missing, in_current)) {
+        return { };
+    }
+    return missing;
+}
+
 std::vector<TilePiece> cover(Tile const &tile, TileLoaded const &loaded)
 {
     for (u8 up = 1; up <= 3 && up <= tile.zoom; ++up) {

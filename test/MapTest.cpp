@@ -797,6 +797,34 @@ void test_tiles_to_unload()
     CHECK(tiles_to_unload(loaded, { tile_at(0), tile_at(1), tile_at(2), tile_at(3) }, 2).empty());
     CHECK(tiles_to_unload(loaded, { }, 4).empty());
 }
+
+// The view of test_missing_tiles(), without tile x 3: y 7 and 8.
+void test_next_download()
+{
+    MapView const view { .zoom = 10, .center = { .x = 1000, .y = 2000 }, .width = 600, .height = 400 };
+    auto const    have = [](Tile const &t) { return t.x != 3; };
+    Tile const    t7 { .x = 3, .y = 7, .zoom = 10 };
+    Tile const    t8 { .x = 3, .y = 8, .zoom = 10 };
+    // None going on: a new one.
+    auto next = next_download(view, have, nullptr);
+    CHECK(next.has_value() && next->size() == 2);
+    // One going on with these tiles, or more, as after one of its tiles
+    // arrived: it goes on.
+    std::vector<Tile> const current { t7, t8, Tile { .x = 9, .y = 9, .zoom = 10 } };
+    CHECK(!next_download(view, have, &current).has_value());
+    std::vector<Tile> const after_arrival { t7, t8 };
+    CHECK(!next_download(view, [&](Tile const &t) { return t != t8; }, &after_arrival).has_value());
+    // One going on without them, as after zooming: replaced.
+    std::vector<Tile> const other { Tile { .x = 6, .y = 14, .zoom = 11 } };
+    next = next_download(view, have, &other);
+    CHECK(next.has_value() && next->size() == 2);
+    // Nothing missing: one going on is cancelled, and none started.
+    auto const all = [](Tile const &) { return true; };
+    next = next_download(view, all, &other);
+    CHECK(next.has_value() && next->empty());
+    next = next_download(view, all, nullptr);
+    CHECK(next.has_value() && next->empty());
+}
 }
 
 int main()
@@ -817,6 +845,7 @@ int main()
     test_tiles_cover_view();
     test_missing_tiles();
     test_tiles_to_unload();
+    test_next_download();
     test_cover_with_ancestors();
     test_cover_with_children();
     test_navigator_wheel_zooms_around_mouse();

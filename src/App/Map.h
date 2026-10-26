@@ -213,6 +213,12 @@ std::vector<Tile> tiles_to_unload(std::vector<std::pair<Tile, size_t>> loaded, s
 // The view's tiles that `have` says aren't there yet, for a download.
 std::vector<Tile> missing_tiles(MapView const &view, TileLoaded const &have);
 
+// What a change of the view does to the download going on, of `current`
+// (none if null): nothing, if it has all the view's missing tiles, as when
+// a drag moves less than a tile; else it's replaced by a download of the
+// missing tiles. If there are none, that only cancels the one going on.
+std::optional<std::vector<Tile>> next_download(MapView const &view, TileLoaded const &have, std::vector<Tile> const *current);
+
 }
 
 template<>

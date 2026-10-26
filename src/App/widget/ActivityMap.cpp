@@ -128,20 +128,20 @@ void ActivityMap::view_changed()
         }
         return false;
     };
-    auto missing = missing_tiles(navigator.view, cached_or_failed);
+    auto next = next_download(navigator.view, cached_or_failed, download ? &download->tiles : nullptr);
     unload_least_recently_drawn();
-    if (download && download->tiles == missing) {
+    if (!next) {
         return;
     }
     if (download) {
         download->cancelled = true;
         download.reset();
     }
-    if (missing.empty()) {
+    if (next->empty()) {
         return;
     }
     download = std::make_shared<TileDownload>();
-    download->tiles = std::move(missing);
+    download->tiles = std::move(*next);
     download->map = map_id;
     SweatTrails::the()->schedule<JobType::DownloadTiles>(download);
 }
