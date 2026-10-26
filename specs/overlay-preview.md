@@ -172,6 +172,10 @@ thin file.
   `color`, `shadow`); `TextElement` a `Template` and `align`;
   `ValueElement` a field, its format spec, its unit, a `unit_style` and
   `missing` (default `--`).
+- **Defaults and styles are checked on their own**, for any element's
+  properties, also later slices', and an element only for its own, so
+  that a typo is reported where it is, and a text's `align` in the
+  defaults isn't an error on a value.
 - **Unknown properties are errors, properties of later slices aren't.**
   Each element type knows all the properties the reference gives it, and
   all style properties, including those of later slices, such as
@@ -207,7 +211,8 @@ thin file.
   `cadence`, `distance`, `elapsed`.
 - **`field_value(Activity const &, size_t record, OverlayField)`**: the
   value as a `double`, in the field's base unit (m/s, m, s), or nothing.
-  Running cadence is doubled to steps per minute. `elapsed` is the record's
+  Cadence is as FIT records it; `spm`, the running default, doubles the
+  strides of one foot to steps. `elapsed` is the record's
   time since the activity's start.
 - **Units**: per field, the units it can be shown in, with their factors
   (`km/h`, `mph`, `m/s` for speed; `km`, `mi`, `m` for distance), the
@@ -247,6 +252,18 @@ thin file.
   `load_font()` now uses too; a font not in the font directories is an
   error on the canvas, with the element. When the scale changes, the
   cache is cleared.
+- **The record shown** is `DisplayedActivity::current_record()`: the mark,
+  or else the end of the range a drag in the graph is selecting, which
+  clears the mark, or else the first.
+- **Fonts** are found by `layout_fonts(layout, find)` in `LayoutFile.h`,
+  out of the widget, so that a test reaches it; elements know their place
+  in the file (`element_number()`), also after skipped ones, for the
+  error. `FontCache` remembers a font it couldn't load, and the canvas
+  says so.
+- **In its box**, a text or a value sits where its anchor is
+  (`place_in_box()`); a text's `align`, if given, picks the horizontal
+  place. Errors on the canvas are wrapped with `wrap_words()` in
+  `StringUtil`.
 - **`ActivityDisplay`** gets the preview, `previewing()` and
   `show_preview()`, next to its `central` row (the
   data panel and the map), hidden; turning the preview on hides `central`
@@ -377,3 +394,28 @@ and the built-in layout's unit fonts. In `ColorsTest.cpp`, signs, prefixes
 and spaces. `std::vformat` can't throw at draw time: every spec that reaches
 `format_field()` has gone through `is_valid_spec()` with the same argument
 type, and `elapsed` never reaches `std::vformat`.
+
+### Resolutions
+
+All fixed, as Jan agreed, each in its own commit:
+
+1. `c10b680`: `DisplayedActivity::current_record()`, the mark, else the
+   drag's end, else the first record; `test_current_record`.
+2. `c35d6e5`: elements keep their place in the file, and `layout_fonts()`,
+   now outside the widget, names it; `test_layout_fonts`.
+3. `c13597e`: `FontCache` remembers a failure until it's cleared, and the
+   canvas names the element whose font can't be loaded. Checked by
+   reading: loading fonts needs raylib.
+4. `092b00a`: `field_value()` gives cadence as FIT records it, and `spm`
+   has a factor of 2; `test_running_cadence_in_rpm` passes.
+5. `0d1a9f5`: a shadow starts from the one it's applied over;
+   `test_unit_style_shadow_merges` passes.
+6. `8af27cd`: defaults and styles are checked on their own, and elements
+   only for their own properties; the checks in
+   `test_typos_in_defaults_and_styles` name the defaults or the style.
+7. `df77f3b`: `place_in_box()` puts the content where the anchor is in the
+   box, and a text's `align` is optional; the reference says so too;
+   `test_place_in_box`.
+8. `8db8096`: `wrap_words()` in `StringUtil`; `test_wrap_words`.
+9. With 1 and 2: `current_record()` and `layout_fonts()` are tested
+   without a window.
