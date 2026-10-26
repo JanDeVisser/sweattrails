@@ -1,6 +1,6 @@
 # Overlay Preview: Text and Values
 
-Status: Draft
+Status: Ready
 
 The first slice of the video overlay (see the
 [roadmap](overlay-layout.md#roadmap)). The format is described in
@@ -23,10 +23,12 @@ file, the style cascade, positioning, colors, and fonts at the right size.
 
 ### The preview
 
-- **Ctrl+O**, the task `st-overlay-preview`, turns the preview on and off.
-  With the preview on, the canvas takes the place of the data panel and the
-  map. The lap table and the graph stay, so that clicking or dragging in the
-  graph moves the moment the preview shows.
+- **Ctrl+O**, the task `st-overlay-preview`, turns the preview on and off:
+  Ctrl and a letter, like the app's other keys. With the preview on, the
+  canvas takes the place of the data panel and the map, both rather than
+  only the map, so that it's large enough to judge font sizes by. The lap
+  table and the graph stay, so that clicking or dragging in the graph moves
+  the moment the preview shows.
 - The canvas has the aspect ratio of the layout's `design_size`, as large as
   fits, centered. Its background is a dark checkerboard, the usual way to
   show that the overlay is transparent there.
@@ -42,7 +44,8 @@ file, the style cascade, positioning, colors, and fonts at the right size.
   directory (`~/Library/Application Support/sweattrails/overlays/` on
   macOS). A user's layout with the same name as a built-in one comes first.
   The choice is kept in the app state, so it's there after a restart.
-  Picking a layout turns the preview on.
+  Picking a layout turns the preview on. Before a layout has been picked,
+  the preview shows the built-in `cycling-basic`.
 - **Reloading**: when the layout file changes on disk, the preview reloads
   it, within a second, so that saving in an editor shows the result.
 - **Errors**: a layout that doesn't parse, or has a property that's wrong
@@ -50,7 +53,8 @@ file, the style cascade, positioning, colors, and fonts at the right size.
   shows the error, with the file and, where there is one, the element's
   index and the property, such as
   `cycling-basic.overlay.json: element 3: "colour" isn't a property of a
-  value`. Fixing the file and saving it shows the layout again.
+  value`. A font that isn't in any of the font directories is an error too.
+  Fixing the file and saving it shows the layout again.
 
 ### What's built of the layout format
 
@@ -83,7 +87,8 @@ The other elements (`gauge`, `graph`, `profile`, `map`, `image`, `group`)
 and `visible`/`fade` come in later slices. A layout that has them isn't an
 error: they're skipped, and the canvas says once, in a corner, how many
 elements it couldn't show yet, so that a layout written for a later slice
-can be tried now.
+can be tried now, and fills in slice by slice. Their properties aren't
+checked until their slice.
 
 ### Fields
 
@@ -119,12 +124,7 @@ the other fields and specs, `color_by`, the other elements, and
 
 ## Open questions
 
-1. Is Ctrl+O the right key, and should the preview replace the data panel
-   and the map, or only the map?
-2. Should the layout list (Ctrl+Shift+O) be in this slice, or is one
-   built-in layout plus the user's `overlays/` directory, with the first
-   found shown, enough for now?
-3. Skipping elements of later slices rather than refusing the layout: OK?
+None.
 
 ## Architecture
 
