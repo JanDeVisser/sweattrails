@@ -288,6 +288,9 @@ process is kept thin.
   activity; `format_range()` writes the one the box starts with, from the
   graph's selection, the lap, or the whole activity. Time of day is local
   to where the activity was, by `utc_offset`, or the system's time zone.
+  `@9:44` is `@09:44:00`. A time of day more than 12 hours before the
+  start is after midnight, for a ride through it; a little before the
+  start is cut to the start.
 - **Frames**: frame `n`'s time is `from + n × den / num`, from integers,
   not added up. The count is `floor((to − from) × num / den)`.
 - **`timecode(seconds since midnight, fps)`**: `HH:MM:SS:FF`, or drop
