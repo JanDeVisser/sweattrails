@@ -1,6 +1,6 @@
 # Overlay Preview: Text and Values
 
-Status: In progress
+Status: In review
 
 The first slice of the video overlay (see the
 [roadmap](overlay-layout.md#roadmap)). The format is described in
@@ -146,10 +146,14 @@ thin file.
   pixel size, with a set of codepoints, loaded once with `LoadFontEx`, and
   unloaded with the cache. `clear()` drops them all, for when the canvas
   changes size.
-- **`list_box(target, prompt, entries, submit)`** in `Modal.h`, next to
-  `input_box()` and `query_box()`: a ListBox of strings with a payload,
-  whose Enter calls `submit(target, payload)`. The layout list is the first
-  user; there was no helper for "pick one of these".
+- **`list_box(target, prompt, entries, submit, initial)`** in `Modal.h`,
+  next to `input_box()` and `query_box()`: a `PickBox`, a ListBox of texts
+  with payloads, whose Enter calls `submit(target, payload)`, with the
+  entry `initial` selected. The layout list is the first user; there was
+  no helper for "pick one of these". `PickBox` is a named template, not a
+  local class, so that a test can make one without opening it. The
+  payloads have to compare, since ListBox sorts its entries: the layout
+  list's are the layouts' names.
 
 ### The layout: `overlay/Layout.h`
 
@@ -190,6 +194,8 @@ thin file.
   reference used `size` for both the font and the element's box, and an
   element's box then replaced its style's font size in the cascade. The
   reference is updated.
+- **A value's `format`** is `"{:spec}"`, as in the reference, and only
+  that: one placeholder and nothing around it, whose spec is kept.
 - **Formats** are checked when the layout loads, by formatting a number
   with them, so that a bad spec is a layout error, not a `std::format_error`
   in the middle of drawing. That's the one place that catches an
@@ -218,9 +224,10 @@ thin file.
 
 ### The file: `overlay/LayoutFile.h`
 
-- **`LayoutFile`**: a path, the time it was last changed, and the decoded
-  layout or its error. `reload_if_changed()` compares the file's time, and
-  reloads; the preview calls it once a second.
+- **`LayoutFile`**: a path, the time it was last changed (none if it
+  wasn't there), and the decoded layout or its error, which starts with
+  the file's name. `reload_if_changed()` compares the file's time, and
+  reloads; the preview calls it once a second, while it's shown.
 - **`overlay_layouts(builtin_dir, user_dir)`**: the layouts in both
   directories, by name (the file name without `.overlay.json`), the user's
   winning over a built-in one of the same name, sorted by name.
@@ -235,10 +242,13 @@ thin file.
   elements, each measured, placed with `place()`, and drawn with its shadow
   first; or the error. Fonts come from a `FontCache`, at
   `round(size × scale)` pixels, with ASCII and the characters in the
-  layout's texts, units and `missing` texts; a font not in the font
-  directories is a `LayoutError`. When the scale changes, the cache is
-  cleared.
-- **`ActivityDisplay`** gets the preview next to its `central` row (the
+  layout's texts, units and `missing` texts. The fonts are looked up
+  once per load of the layout, with `SweatTrails::find_font()`, which
+  `load_font()` now uses too; a font not in the font directories is an
+  error on the canvas, with the element. When the scale changes, the
+  cache is cleared.
+- **`ActivityDisplay`** gets the preview, `previewing()` and
+  `show_preview()`, next to its `central` row (the
   data panel and the map), hidden; turning the preview on hides `central`
   and shows the preview, so the map keeps its own Hide/Relative policy.
 - **Tasks** in SweatTrails.cpp: `st-overlay-preview` (Ctrl+O) toggles;
