@@ -7,6 +7,7 @@
 #include <cassert>
 #include <cctype>
 #include <cstring>
+#include <format>
 
 #include <StringUtil.h>
 
@@ -156,6 +157,28 @@ namespace {
 // of UTF-8, and in a UTF-8 locale counts e.g. 0xA0, the last byte of "à".
 constexpr std::string_view Whitespace = " \t\n\v\f\r";
 
+}
+
+std::vector<std::string> wrap_words(std::string_view text, float width, std::function<float(std::string_view)> const &measure)
+{
+    std::vector<std::string> ret;
+    std::string              line;
+    for (auto const &word : split(text, ' ')) {
+        if (word.empty()) {
+            continue;
+        }
+        auto const longer = line.empty() ? std::string { word } : std::format("{} {}", line, word);
+        if (!line.empty() && measure(longer) > width) {
+            ret.push_back(std::move(line));
+            line = std::string { word };
+        } else {
+            line = longer;
+        }
+    }
+    if (!line.empty()) {
+        ret.push_back(std::move(line));
+    }
+    return ret;
 }
 
 std::string_view strip(std::string_view const &s)

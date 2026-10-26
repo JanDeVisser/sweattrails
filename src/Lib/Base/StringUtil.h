@@ -7,6 +7,7 @@
 #pragma once
 
 #include <algorithm>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -39,8 +40,12 @@ StringList  split_by_whitespace(std::string_view const &s);
 // std::string c_escape(std::string const& s);
 // std::string join(StringList const& collection, char sep);
 std::string_view strip(std::string_view const &s);
-std::string_view rstrip(std::string_view const &s);
-std::string_view lstrip(std::string_view const &s);
+
+// The text in lines no wider than `width`, as `measure` measures them,
+// broken between words. A word wider than that is a line of its own.
+std::vector<std::string> wrap_words(std::string_view text, float width, std::function<float(std::string_view)> const &measure);
+std::string_view         rstrip(std::string_view const &s);
+std::string_view         lstrip(std::string_view const &s);
 
 // Base64 with the URL-safe alphabet (`-` and `_` for `+` and `/`), without
 // padding, as OAuth's PKCE wants it.

@@ -158,10 +158,16 @@ void OverlayPreview::draw_message(Rectangle const &area, std::string_view messag
     if (!font) {
         return;
     }
+    auto const size = static_cast<float>(App::the()->font_sizes[static_cast<size_t>(FontSize::Medium)]);
+    auto const measure = [&font, size](std::string_view text) {
+        return MeasureTextEx(*font, std::string { text }.c_str(), size, 2).x;
+    };
     BeginScissorMode(static_cast<int>(area.x), static_cast<int>(area.y), static_cast<int>(area.width), static_cast<int>(area.height));
-    auto const text = std::string { message };
-    DrawTextEx(*font, text.c_str(), Vector2 { .x = area.x + 10, .y = area.y + 10 },
-        static_cast<float>(App::the()->font_sizes[static_cast<size_t>(FontSize::Medium)]), 2, RAYWHITE);
+    auto y = area.y + 10;
+    for (auto const &line : wrap_words(message, area.width - 20, measure)) {
+        DrawTextEx(*font, line.c_str(), Vector2 { .x = area.x + 10, .y = y }, size, 2, RAYWHITE);
+        y += App::the()->cell(FontSize::Medium).y;
+    }
     EndScissorMode();
 }
 
