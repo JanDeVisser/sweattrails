@@ -211,7 +211,7 @@ void OverlayPreview::draw_element(OverlayElement const &element, OverlayLayout c
         if (!f || !activity) {
             return;
         }
-        auto const shown = fill_template(text->text, activity->activity, record, layout.units, "--");
+        auto const shown = fill_template(text->text, values_at_record(activity->activity, record), layout.units, "--");
         auto const measured = MeasureTextEx(*f, shown.c_str(), static_cast<float>(f->baseSize), 0);
         auto const box_size = text->at.size ? Vector2 { .x = text->at.size->x * scale, .y = text->at.size->y * scale } : measured;
         auto const box = place(text->at, box_size, canvas_size, scale);

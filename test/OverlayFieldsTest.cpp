@@ -7,6 +7,7 @@
  * templates.
  */
 
+#include <format>
 #include <string>
 #include <vector>
 
@@ -52,7 +53,7 @@ struct TestActivity {
         if (!parsed) {
             return "error: " + parsed.error();
         }
-        return fill_template(*parsed, activity, record, units, "--");
+        return fill_template(*parsed, values_at_record(activity, record), units, "--");
     }
 };
 
@@ -240,6 +241,67 @@ void test_specs_that_throw()
     CHECK(is_valid_spec("+08.3e"));
 }
 
+std::string value_of(FieldValues const &values, OverlayField field)
+{
+    auto const value = values[field];
+    return value ? std::format("{}", *value) : std::string { "none" };
+}
+
+// Records at 0, 1 and 10 seconds: the last two are more than MaxGap apart.
+struct InterpolatedActivity {
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+
+    InterpolatedActivity()
+    {
+        activity.segment.start_time.timestamp = Start;
+        activity.records.push_back(record { .timestamp = DateTime { .timestamp = Start }, .heart_rate = 140, .speed = 10.0f, .power = 200 });
+        activity.records.push_back(record { .timestamp = DateTime { .timestamp = Start + 1 }, .speed = 12.0f, .power = 300 });
+        activity.records.push_back(record { .timestamp = DateTime { .timestamp = Start + 10 }, .heart_rate = 150, .speed = 20.0f, .power = 100 });
+    }
+};
+
+void test_values_at_time()
+{
+    InterpolatedActivity t;
+    auto const           half = values_at_time(t.activity, 0.5);
+    CHECK_EQ(value_of(half, OverlayField::speed), "11");
+    CHECK_EQ(value_of(half, OverlayField::power), "250");
+    // The later record has no heart rate: the earlier's.
+    CHECK_EQ(value_of(half, OverlayField::heart_rate), "140");
+    CHECK_EQ(value_of(half, OverlayField::elapsed), "0.5");
+    CHECK_EQ(value_of(half, OverlayField::cadence), "none");
+    CHECK_EQ(value_of(values_at_time(t.activity, 0), OverlayField::speed), "10");
+    CHECK_EQ(value_of(values_at_time(t.activity, 1), OverlayField::speed), "12");
+    // Over the gap: the earlier record.
+    CHECK_EQ(value_of(values_at_time(t.activity, 5), OverlayField::speed), "12");
+    CHECK_EQ(value_of(values_at_time(t.activity, 9.9), OverlayField::power), "300");
+    CHECK_EQ(value_of(values_at_time(t.activity, 10), OverlayField::speed), "20");
+    // Past the ends: the first and the last record, with the time running on.
+    CHECK_EQ(value_of(values_at_time(t.activity, -3), OverlayField::speed), "10");
+    auto const after = values_at_time(t.activity, 20);
+    CHECK_EQ(value_of(after, OverlayField::speed), "20");
+    CHECK_EQ(value_of(after, OverlayField::elapsed), "20");
+}
+
+void test_values_without_records()
+{
+    InterpolatedActivity t;
+    t.activity.records.clear();
+    auto const values = values_at_time(t.activity, 7);
+    CHECK_EQ(value_of(values, OverlayField::speed), "none");
+    CHECK_EQ(value_of(values, OverlayField::elapsed), "7");
+}
+
+void test_values_at_record()
+{
+    TestActivity t { sport::Running };
+    auto const   values = values_at_record(t.activity, 0);
+    CHECK(values.sport == sport::Running);
+    CHECK_EQ(value_of(values, OverlayField::power), "251");
+    CHECK_EQ(value_of(values, OverlayField::elapsed), "3909");
+    CHECK_EQ(value_of(values_at_record(t.activity, 1), OverlayField::power), "none");
+}
 }
 
 int main()
@@ -259,5 +321,8 @@ int main()
     test_no_records();
     test_template_braces();
     test_specs_that_throw();
+    test_values_at_time();
+    test_values_without_records();
+    test_values_at_record();
     return ST::Test::test_result();
 }
