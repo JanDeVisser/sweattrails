@@ -228,7 +228,9 @@ std::expected<TextStyle, LayoutError> text_style(JSONValue const &json, TextStyl
             return error("\"shadow\" isn't an object with a color and an offset");
         } else {
             TRY(check_properties(*shadow, "\"shadow\"", { { "color", "offset" } }));
-            Shadow s { };
+            // Over the base's shadow, as the cascade merges objects: a
+            // unit_style can change only the offset.
+            auto s = ret.shadow.value_or(Shadow { });
             if (auto const c = shadow->get("color"); c) {
                 s.color = TRY_EVAL(color(*c, "shadow.color"));
             }
