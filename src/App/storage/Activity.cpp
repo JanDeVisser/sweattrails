@@ -172,12 +172,13 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
         // After the FIT file, so that the service's name wins over the
         // workout's, and the user's over both.
         sidecar = dir / std::format("{}.json", id.name);
-        if (auto const name = sidecar_title(sidecar); name) {
-            title = *name;
+        auto const names = sidecar_titles(sidecar);
+        if (names.service) {
+            title = *names.service;
         }
         original_title = title;
-        if (auto const name = sidecar_own_title(sidecar); name) {
-            title = *name;
+        if (names.own) {
+            title = *names.own;
         }
         // if (id.files.contains(ActivityFile::Strava)) {
         //     if (!TRY_EVAL(load_strava_file(dir))) {
@@ -222,27 +223,36 @@ std::optional<std::string> non_empty_string(JSONValue const &json, std::string_v
     return { };
 }
 
-}
-
-std::optional<std::string> sidecar_title(fs::path const &sidecar)
+std::optional<std::string> service_title(JSONValue const &json)
 {
-    auto const json = read_sidecar(sidecar);
-    if (!json) {
-        return { };
-    }
     // Garmin Connect calls it `activityName`, Wahoo `name`.
     for (auto const *field : { "activityName", "name" }) {
-        if (auto name = non_empty_string(*json, field); name) {
+        if (auto name = non_empty_string(json, field); name) {
             return name;
         }
     }
     return { };
 }
 
-std::optional<std::string> sidecar_own_title(fs::path const &sidecar)
+}
+
+SidecarTitles sidecar_titles(fs::path const &sidecar)
 {
     auto const json = read_sidecar(sidecar);
-    return json ? non_empty_string(*json, OwnTitleKey) : std::nullopt;
+    if (!json) {
+        return { };
+    }
+    return SidecarTitles { .service = service_title(*json), .own = non_empty_string(*json, OwnTitleKey) };
+}
+
+std::optional<std::string> sidecar_title(fs::path const &sidecar)
+{
+    return sidecar_titles(sidecar).service;
+}
+
+std::optional<std::string> sidecar_own_title(fs::path const &sidecar)
+{
+    return sidecar_titles(sidecar).own;
 }
 
 std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::string_view title)

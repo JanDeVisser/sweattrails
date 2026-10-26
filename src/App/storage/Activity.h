@@ -75,6 +75,14 @@ std::optional<std::string> sidecar_title(fs::path const &sidecar);
 // sidecar, `"title"`. It wins over the service's name.
 std::optional<std::string> sidecar_own_title(fs::path const &sidecar);
 
+// Both names, from one read of the sidecar.
+struct SidecarTitles {
+    std::optional<std::string> service { }; // sidecar_title()
+    std::optional<std::string> own { };     // sidecar_own_title()
+};
+
+SidecarTitles sidecar_titles(fs::path const &sidecar);
+
 // Saves the user's name for the activity in its sidecar, keeping the rest
 // of it, or removes it for an empty `title`. Makes the sidecar if there
 // isn't one, and removes it if nothing else is left in it. A sidecar that
