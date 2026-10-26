@@ -395,6 +395,17 @@ void test_codepoints()
     CHECK_EQ(codepoints.size(), 2uz);
 }
 
+// Each element knows its place in the file, counting the skipped ones.
+void test_element_numbers()
+{
+    auto const layout = decode(R"({ "elements": [
+        { "type": "text", "text": "a" }, { "type": "gauge" }, { "type": "value", "field": "speed" } ] })");
+    CHECK(layout.has_value());
+    if (layout && layout->elements.size() == 2) {
+        CHECK_EQ(element_number(layout->elements[0]), 1uz);
+        CHECK_EQ(element_number(layout->elements[1]), 3uz);
+    }
+}
 }
 
 int main()
@@ -407,6 +418,7 @@ int main()
     test_later_elements();
     test_errors();
     test_place();
+    test_element_numbers();
     test_error_index_counts_skipped();
     test_typos_in_defaults_and_styles();
     test_cascade_in_layout();

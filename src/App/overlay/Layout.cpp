@@ -457,6 +457,7 @@ std::expected<OverlayLayout, LayoutError> decode_layout(JSONValue const &json)
             return std::unexpected(err);
         }
         if (*decoded) {
+            std::visit([ix](auto &el) { el.number = ix; }, **decoded);
             ret.elements.push_back(std::move(**decoded));
         } else {
             ++ret.skipped;
@@ -510,6 +511,11 @@ Rectangle place(Placement const &at, Vector2 size, Vector2 canvas, float scale)
         .width = size.x,
         .height = size.y,
     };
+}
+
+size_t element_number(OverlayElement const &element)
+{
+    return std::visit([](auto const &e) { return e.number; }, element);
 }
 
 std::set<int> layout_codepoints(OverlayLayout const &layout)

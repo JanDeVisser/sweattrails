@@ -71,25 +71,12 @@ void OverlayPreview::layout_loaded()
     if (!file || !file->layout) {
         return;
     }
-    auto const find = [this](std::string const &name, size_t ix) {
-        if (font_paths.contains(name) || font_error) {
-            return;
-        }
-        if (auto const path = SweatTrails::the()->find_font(name); path) {
-            font_paths[name] = *path;
-        } else {
-            font_error = std::format("{}: element {}: the font `{}` isn't in any of the font directories",
-                file->path.filename().string(), ix, name);
-        }
-    };
-    auto ix = 0uz;
-    for (auto const &element : file->layout->elements) {
-        ++ix;
-        std::visit([&](auto const &e) { find(e.style.font, ix); }, element);
-        if (auto const *value = std::get_if<ValueElement>(&element)) {
-            find(value->unit_style.font, ix);
-        }
+    auto paths = layout_fonts(*file->layout, [](std::string_view name) { return SweatTrails::the()->find_font(name); });
+    if (!paths) {
+        font_error = std::format("{}: {}", file->path.filename().string(), paths.error().to_string());
+        return;
     }
+    font_paths = std::move(*paths);
     fonts.set_codepoints(layout_codepoints(*file->layout));
 }
 

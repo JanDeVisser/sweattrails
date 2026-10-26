@@ -11,8 +11,10 @@
 #include <filesystem>
 #include <string>
 #include <variant>
+#include <vector>
 
 #include <IO.h>
+#include <JSON.h>
 
 #include <overlay/LayoutFile.h>
 
@@ -214,6 +216,50 @@ void test_builtin_unit_fonts()
     }
 }
 
+OverlayLayout decoded(std::string_view json)
+{
+    return MUST_EVAL(decode_layout(MUST_EVAL(JSONValue::deserialize(json))));
+}
+
+// The fonts are looked up once each, and a missing one names the element
+// that uses it, counting the elements of later slices that were skipped.
+void test_layout_fonts()
+{
+    auto const               layout = decoded(R"({ "elements": [
+        { "type": "map" },
+        { "type": "text", "text": "a", "font": "A.ttf" },
+        { "type": "value", "field": "speed", "font": "A.ttf", "unit_style": { "font": "B.ttf" } }
+    ] })");
+    std::vector<std::string> asked;
+    auto const               find_all = [&asked](std::string_view name) -> std::optional<fs::path> {
+        asked.emplace_back(name);
+        return fs::path { "/fonts" } / name;
+    };
+    auto const fonts = layout_fonts(layout, find_all);
+    CHECK(fonts.has_value());
+    if (fonts) {
+        CHECK_EQ(fonts->size(), 2uz);
+        CHECK(fonts->at("B.ttf") == fs::path { "/fonts/B.ttf" });
+    }
+    CHECK_EQ(asked.size(), 2uz);
+
+    auto const only_a = [](std::string_view name) -> std::optional<fs::path> {
+        if (name == "A.ttf") {
+            return fs::path { "/fonts/A.ttf" };
+        }
+        return { };
+    };
+    auto const missing = layout_fonts(layout, only_a);
+    CHECK(!missing.has_value());
+    if (!missing) {
+        CHECK_EQ(missing.error().to_string(), "element 3: the font `B.ttf` isn't in any of the font directories");
+    }
+    auto const none = layout_fonts(layout, [](std::string_view) -> std::optional<fs::path> { return { }; });
+    CHECK(!none.has_value());
+    if (!none) {
+        CHECK_EQ(none.error().to_string(), "element 2: the font `A.ttf` isn't in any of the font directories");
+    }
+}
 }
 
 int main()
@@ -223,6 +269,7 @@ int main()
     test_overlay_layouts();
     test_chosen_layout();
     test_builtin_layout();
+    test_layout_fonts();
     test_missing_file();
     test_error_names_file_element_and_property();
     test_no_layout_directories();

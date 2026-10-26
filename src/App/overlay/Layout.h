@@ -71,6 +71,7 @@ struct TextStyle {
 };
 
 struct TextElement {
+    size_t    number { 0 }; // Its place in the layout's elements, from 1
     Placement at { };
     TextStyle style { };
     Template  text { };
@@ -78,6 +79,7 @@ struct TextElement {
 };
 
 struct ValueElement {
+    size_t                   number { 0 }; // Its place in the layout's elements, from 1
     Placement                at { };
     TextStyle                style { };
     TextStyle                unit_style { };
@@ -116,6 +118,10 @@ float layout_scale(Vector2 design_size, Vector2 canvas);
 
 // The element's box on the canvas, given its size there, in canvas pixels.
 Rectangle place(Placement const &at, Vector2 size, Vector2 canvas, float scale);
+
+// The element's place in the layout's elements, from 1, counting those
+// that were skipped.
+size_t element_number(OverlayElement const &element);
 
 // The characters the layout draws besides ASCII, such as `·`, for loading
 // the fonts with.

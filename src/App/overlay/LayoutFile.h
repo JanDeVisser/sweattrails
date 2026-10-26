@@ -11,6 +11,8 @@
 
 #include <expected>
 #include <filesystem>
+#include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -39,6 +41,13 @@ struct LayoutFile {
     // or isn't a layout gives an error, starting with the file's name.
     bool reload_if_changed();
 };
+
+using FontFinder = std::function<std::optional<fs::path>(std::string_view name)>;
+
+// The font files the layout's elements use, by the layout's names for them,
+// as `find` finds them. A font it doesn't find is an error, with the first
+// element that uses it.
+std::expected<std::map<std::string, fs::path>, LayoutError> layout_fonts(OverlayLayout const &layout, FontFinder const &find);
 
 struct LayoutEntry {
     std::string name { };

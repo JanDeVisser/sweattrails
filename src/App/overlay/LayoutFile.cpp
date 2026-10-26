@@ -51,6 +51,31 @@ bool LayoutFile::reload_if_changed()
     return true;
 }
 
+std::expected<std::map<std::string, fs::path>, LayoutError> layout_fonts(OverlayLayout const &layout, FontFinder const &find)
+{
+    std::map<std::string, fs::path> ret;
+    for (auto const &element : layout.elements) {
+        std::vector<std::string> names { std::visit([](auto const &e) { return e.style.font; }, element) };
+        if (auto const *value = std::get_if<ValueElement>(&element)) {
+            names.push_back(value->unit_style.font);
+        }
+        for (auto const &name : names) {
+            if (ret.contains(name)) {
+                continue;
+            }
+            auto const path = find(name);
+            if (!path) {
+                return std::unexpected(LayoutError {
+                    .element = element_number(element),
+                    .message = std::format("the font `{}` isn't in any of the font directories", name),
+                });
+            }
+            ret[name] = *path;
+        }
+    }
+    return ret;
+}
+
 std::vector<LayoutEntry> overlay_layouts(fs::path const &builtin_dir, fs::path const &user_dir)
 {
     std::map<std::string, fs::path> found;
