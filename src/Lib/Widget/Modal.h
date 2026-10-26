@@ -485,7 +485,8 @@ void input_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
             auto const y = App::the()->cell().y + 14;
             auto const before = as_utf8(rune_view { line.text }.substr(0, line.cursor));
             auto const cursor_x = App::measure_text(before.c_str(), FontSize::Medium).x;
-            auto const scroll = line.scroll_for(cursor_x, width - 2);
+            auto const text_width = App::measure_text(line.utf8().c_str(), FontSize::Medium).x;
+            auto const scroll = line.scroll_for(cursor_x, text_width, width - 2);
 
             BeginScissorMode(viewport.x + left, viewport.y + y - 2, width, App::the()->cell().y + 4);
             assert(sizeof(rune) == sizeof(int));

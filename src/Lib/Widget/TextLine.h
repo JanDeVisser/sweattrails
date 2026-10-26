@@ -50,9 +50,10 @@ struct TextLine {
     bool handle_key(KeyboardModifier modifier, int key, Clipboard const &clipboard);
 
     // Scrolls just far enough to have the cursor in a box `width` wide,
-    // given where the cursor is in the whole text, as the font measures
-    // it. Returns the new scroll_x.
-    float scroll_for(float cursor_x, float width);
+    // given where the cursor is in the whole text, and how wide that is, as
+    // the font measures them. Never further than the end of the text needs,
+    // so that a text getting shorter scrolls back. Returns the new scroll_x.
+    float scroll_for(float cursor_x, float text_width, float width);
 };
 
 }

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <algorithm>
 #include <cwctype>
 
 #include <raylib.h>
@@ -139,13 +140,14 @@ bool TextLine::handle_key(KeyboardModifier modifier, int key, Clipboard const &c
     }
 }
 
-float TextLine::scroll_for(float cursor_x, float width)
+float TextLine::scroll_for(float cursor_x, float text_width, float width)
 {
     if (cursor_x < scroll_x) {
         scroll_x = cursor_x;
     } else if (cursor_x > scroll_x + width) {
         scroll_x = cursor_x - width;
     }
+    scroll_x = std::clamp(scroll_x, 0.0f, std::max(0.0f, text_width - width));
     return scroll_x;
 }
 

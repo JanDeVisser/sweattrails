@@ -127,15 +127,25 @@ void test_keys_it_leaves()
 void test_scroll_keeps_cursor_in_view()
 {
     TextLine line;
-    // A box 100 wide: the cursor at 60 needs no scrolling.
-    CHECK_EQ(line.scroll_for(60, 100), 0.0f);
+    // A box 100 wide, a text 200 wide: the cursor at 60 needs no scrolling.
+    CHECK_EQ(line.scroll_for(60, 200, 100), 0.0f);
     // At 150, the text scrolls 50 to the left, and stays there while the
     // cursor is in view.
-    CHECK_EQ(line.scroll_for(150, 100), 50.0f);
-    CHECK_EQ(line.scroll_for(120, 100), 50.0f);
+    CHECK_EQ(line.scroll_for(150, 200, 100), 50.0f);
+    CHECK_EQ(line.scroll_for(120, 200, 100), 50.0f);
     // Before the box: back to the cursor.
-    CHECK_EQ(line.scroll_for(20, 100), 20.0f);
-    CHECK_EQ(line.scroll_for(0, 100), 0.0f);
+    CHECK_EQ(line.scroll_for(20, 200, 100), 20.0f);
+    CHECK_EQ(line.scroll_for(0, 200, 100), 0.0f);
+}
+
+// Backspace at the end of a long text: the text scrolls back, so that the
+// box shows as much of it as fits, never the empty space after it.
+void test_scroll_back_as_the_text_gets_shorter()
+{
+    TextLine line;
+    CHECK_EQ(line.scroll_for(900, 900, 400), 500.0f);
+    CHECK_EQ(line.scroll_for(600, 600, 400), 200.0f);
+    CHECK_EQ(line.scroll_for(300, 300, 400), 0.0f);
 }
 
 // In the middle of the text, next to a character outside the BMP.
@@ -171,7 +181,7 @@ void test_paste_edge_cases()
 void test_set_resets_the_scroll()
 {
     TextLine line;
-    line.scroll_for(500, 100);
+    line.scroll_for(500, 500, 100);
     line.set("Ride");
     CHECK_EQ(line.scroll_x, 0.0f);
 }
@@ -186,6 +196,7 @@ int main()
     test_paste();
     test_keys_it_leaves();
     test_scroll_keeps_cursor_in_view();
+    test_scroll_back_as_the_text_gets_shorter();
     test_editing_in_the_middle();
     test_paste_edge_cases();
     test_set_resets_the_scroll();
