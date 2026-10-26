@@ -92,13 +92,13 @@ done by hand in Final Cut (see [video-overlay.md](video-overlay.md)).
   "units": "metric",
   "defaults": {
     "font": "Inter-Bold.ttf",
-    "size": 48,
+    "font_size": 48,
     "color": "#ffffff",
     "shadow": { "color": "#00000080", "offset": [2, 2] }
   },
   "styles": {
-    "label": { "size": 22, "color": "#ffffffb0", "font": "Inter-Regular.ttf" },
-    "value": { "size": 64 },
+    "label": { "font_size": 22, "color": "#ffffffb0", "font": "Inter-Regular.ttf" },
+    "value": { "font_size": 64 },
     "panel": { "background": "#00000060", "radius": 16, "padding": 16 }
   },
   "elements": [ ... ]
@@ -144,13 +144,19 @@ Every element has a box:
 "size": { "width": 400, "height": 120 }
 ```
 
-- `x` and `y` are design pixels, or percentages such as `"50%"`. Negative
-  values count from the right or bottom edge.
-- `anchor` is the point of the element that is placed at (x, y), and also the
-  canvas corner the coordinates are measured from: `top-left`, `top`,
-  `top-right`, `left`, `center`, `right`, `bottom-left`, `bottom`,
-  `bottom-right`. This keeps a bottom-right element in place when the aspect
-  ratio changes.
+- `x` and `y` are design pixels, or percentages such as `"50%"` of the
+  canvas's width or height. The sign picks the edge: positive values count
+  from the left or top edge, negative ones from the right or bottom edge.
+- `anchor` is the point of the element that is placed at (x, y):
+  `top-left` (the default), `top`, `top-right`, `left`, `center`, `right`,
+  `bottom-left`, `bottom`, `bottom-right`. So `bottom-right` at `-40, -40`
+  puts the element's bottom right corner 40 pixels in from the canvas's,
+  which keeps it in place when the aspect ratio changes, and `bottom` at
+  `"50%", -40` centers it, 40 pixels up from the bottom. (An earlier
+  version also measured the coordinates from the anchor's corner of the
+  canvas, which put `"50%"` with `bottom` at the right edge.)
+- `size` is the element's box. The font's size is `font_size`, so that
+  the two don't overwrite each other in the cascade.
 - Elements are drawn in array order, so later elements are drawn on top.
 
 ### Visibility over time
@@ -193,7 +199,7 @@ next to it.
 ```json
 { "type": "value", "field": "speed", "format": "{:.1f}",
   "unit": "auto", "style": "value",
-  "unit_style": { "size": 28 },
+  "unit_style": { "font_size": 28 },
   "missing": "--",
   "at": { "x": 40, "y": -40, "anchor": "bottom-left" } }
 ```
@@ -341,7 +347,7 @@ Data and rendering:
     "opacity": 0.8,
     "filter": "grayscale"
   },
-  "attribution": { "style": "label", "size": 14 },
+  "attribution": { "style": "label", "font_size": 14 },
   "track": {
     "done":      { "color": "#ffb703", "width": 6 },
     "remaining": { "color": "#ffffff80", "width": 4 },
@@ -401,7 +407,7 @@ Paths are relative to the layout file, then to `share/overlays/`.
   children.
 - Children are positioned inside the group's box minus `padding`. A child's
   `anchor` and negative coordinates refer to that inner box, not the canvas.
-- Children inherit only text properties from the group: `font`, `size`,
+- Children inherit only text properties from the group: `font`, `font_size`,
   `color` and `shadow`. Box properties (`background`, `radius`, `padding`,
   `border`) are not inherited, so the panel isn't drawn again behind every
   child.

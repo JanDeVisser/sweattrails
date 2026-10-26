@@ -69,7 +69,7 @@ From [Layout structure](overlay-layout.md#layout-structure):
   with the canvas, by `min(canvas_w / design_w, canvas_h / design_h)`.
 - Colors: `#rrggbb` and `#rrggbbaa`.
 - Comments, `//` and `/* */`, in the layout file.
-- Style properties: `font`, `size`, `color`, `shadow` (a color and an offset;
+- Style properties: `font`, `font_size`, `color`, `shadow` (a color and an offset;
   a hard shadow, not blurred).
 
 The elements, from [Element types](overlay-layout.md#element-types):
@@ -164,7 +164,7 @@ thin file.
   appends arrays, as the settings want: a style's `"offset": [3, 3]` has to
   replace the default's `[2, 2]`, not be added to it.
 - **Elements** are a `std::variant<TextElement, ValueElement>`. Both have a
-  `Placement` (`at`, `anchor`, `size`) and a `TextStyle` (`font`, `size`,
+  `Placement` (`at`, `anchor`, `size`) and a `TextStyle` (`font`, `font_size`,
   `color`, `shadow`); `TextElement` a `Template` and `align`;
   `ValueElement` a field, its format spec, its unit, a `unit_style` and
   `missing` (default `--`).
@@ -186,6 +186,10 @@ thin file.
   reference's "also the canvas corner the coordinates are measured from"
   goes: under it, `"50%"` with `bottom` would be measured from the middle.
   The reference is updated to say this.
+- **`font_size`, not `size`, is the font's size**, as Jan decided: the
+  reference used `size` for both the font and the element's box, and an
+  element's box then replaced its style's font size in the cascade. The
+  reference is updated.
 - **Formats** are checked when the layout loads, by formatting a number
   with them, so that a bad spec is a layout error, not a `std::format_error`
   in the middle of drawing. That's the one place that catches an
