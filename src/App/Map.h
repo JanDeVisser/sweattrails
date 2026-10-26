@@ -57,7 +57,7 @@ struct Tile {
     // between threads.
     [[nodiscard]] std::expected<std::string, LibCError> get_tile(Storage const &storage) const;
 
-    bool operator==(Tile const &) const = default;
+    auto operator<=>(Tile const &) const = default;
 };
 
 // The map zooms in to this OSM level, street level. GPS isn't more precise,
@@ -169,34 +169,13 @@ private:
     void clamp_center();
 };
 
-struct Map {
-    u8        zoom { 0 };
-    u32       x { 0 };
-    u32       y { 0 };
-    u16       width { 0 };
-    u16       height { 0 };
-    u16       columns { 0 };
-    u16       rows { 0 };
-    Rectangle rectangle;
-    u16       num_tiles { 0 };
-
-    static std::expected<Map, LibCError> init(Box const &b, u16 width, u16 height);
-
-    [[nodiscard]] Tile        tile(size_t ix) const;
-    [[nodiscard]] Tile        tile_xy(u32 x, u32 y) const;
-    [[nodiscard]] Coordinates coordinates(float32 x, float32 y) const;
-};
-
-struct MissingTile {
-    size_t index { 0 }; // in the map's grid, as for Map::tile()
-    Tile   tile { };
-};
-
 // The tiles of a map that weren't cached, for the job thread to download.
-// The UI thread sets `cancelled` when it shows another map.
+// The UI thread sets `cancelled` when the map shows another view, or
+// another activity. `map` says which activity's map it's for.
 struct TileDownload {
-    std::vector<MissingTile> tiles { };
-    std::atomic<bool>        cancelled { false };
+    std::vector<Tile> tiles { };
+    u64               map { 0 };
+    std::atomic<bool> cancelled { false };
 };
 
 using pTileDownload = std::shared_ptr<TileDownload>;
@@ -204,25 +183,27 @@ using pTileDownload = std::shared_ptr<TileDownload>;
 // Sent to the UI thread for each tile that downloaded.
 struct MapTile {
     pTileDownload download { };
-    size_t        index { 0 };
+    Tile          tile { };
     std::string   png { };
 };
 
 // Sent to the UI thread when all of a download's tiles have been tried,
 // unless it was cancelled.
 struct MapTilesDone {
-    pTileDownload download { };
-    size_t        failed { 0 };
+    pTileDownload     download { };
+    std::vector<Tile> failed { };
 };
 
 using TileFetcher = std::function<std::expected<std::string, LibCError>(Tile const &)>;
-using TileReceiver = std::function<void(size_t index, std::string png)>;
+using TileReceiver = std::function<void(Tile const &tile, std::string png)>;
 
 // Fetches the download's tiles one at a time, and hands each one that
 // arrives to on_tile. Stops when the download is cancelled: a tile that is
-// being fetched then isn't handed on. Returns the number of tiles that
-// failed.
-size_t fetch_tiles(TileDownload const &download, TileFetcher const &fetch, TileReceiver const &on_tile);
+// being fetched then isn't handed on. Returns the tiles that failed.
+std::vector<Tile> fetch_tiles(TileDownload const &download, TileFetcher const &fetch, TileReceiver const &on_tile);
+
+// The view's tiles that `have` says aren't there yet, for a download.
+std::vector<Tile> missing_tiles(MapView const &view, TileLoaded const &have);
 
 }
 

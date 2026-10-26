@@ -234,17 +234,17 @@ void SweatTrails::job_download_tiles(Job::Payload const &data)
 {
     auto const &download = std::get<pTileDownload>(data);
     auto const &storage = SweatTrails::the()->storage;
-    auto const  failed = fetch_tiles(
+    auto        failed = fetch_tiles(
         *download,
         [&storage](Tile const &tile) {
             return tile.get_tile(storage);
         },
-        [&download](size_t index, std::string png) {
+        [&download](Tile const &tile, std::string png) {
             SweatTrails::the()->notify<NotificationType::MapTile>(
-                MapTile { download, index, std::move(png) });
+                MapTile { download, tile, std::move(png) });
         });
     if (!download->cancelled) {
-        SweatTrails::the()->notify<NotificationType::MapTilesDone>(MapTilesDone { download, failed });
+        SweatTrails::the()->notify<NotificationType::MapTilesDone>(MapTilesDone { download, std::move(failed) });
     }
 }
 

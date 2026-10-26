@@ -197,10 +197,10 @@ std::string Tile::to_string() const
     return std::format("zoom {}/x: {} y: {}/box: `{}`", zoom, x, y, box());
 }
 
-size_t fetch_tiles(TileDownload const &download, TileFetcher const &fetch, TileReceiver const &on_tile)
+std::vector<Tile> fetch_tiles(TileDownload const &download, TileFetcher const &fetch, TileReceiver const &on_tile)
 {
-    size_t failed = 0;
-    for (auto const &[index, tile] : download.tiles) {
+    std::vector<Tile> failed;
+    for (auto const &tile : download.tiles) {
         if (download.cancelled) {
             break;
         }
@@ -210,94 +210,12 @@ size_t fetch_tiles(TileDownload const &download, TileFetcher const &fetch, TileR
         }
         if (!png) {
             info(Map, "Could not get tile {}: {}", tile, png.error().to_string());
-            ++failed;
+            failed.push_back(tile);
             continue;
         }
-        on_tile(index, std::move(png.value()));
+        on_tile(tile, std::move(png.value()));
     }
     return failed;
-}
-
-/**
- * Initializes a Map to display by calculating its zoom level and the grid
- * of OSM tiles that covers it. Getting the tiles is up to the caller.
- *
- * @param b Bounding box in real world map coordinates of the map to be
- * displayed.
- * @param width Width in pixels of the Map image area
- * @param height Height in pixels of the Map image area
- */
-std::expected<Map, LibCError> Map::init(Box const &b, u16 width, u16 height)
-{
-    auto const mid = b.center();
-    trace(Map, "middle of the box is `{}`", mid);
-    for (u8 zoom = 16; zoom > 0; --zoom) {
-        auto const mid_tile = Tile::for_coordinates(mid, zoom);
-        auto const tile_box = mid_tile.box();
-        if ((256 * (b.width() * 1.1f) / tile_box.width() > width) || (256 * (b.height() * 1.1f) / tile_box.height() > height)) {
-            trace(Map, "Mid tile `{}` does not fit", mid_tile);
-            continue;
-        }
-
-        trace(Map, "Mid tile `{}` DOES fit", mid_tile);
-
-        auto const n = tile_count(zoom);
-        auto const fx = (mid.lon + 180.0f) / 360.0f * n;
-        auto const fy = (1.0f - std::asinh(std::tan(degrees_to_radians(mid.lat))) / PI) / 2.0f * n;
-        auto const left = fx - width / 512.0f; // in tile units
-        auto const top = fy - height / 512.0f;
-        u32 const  x0 = static_cast<u32>(std::floor(left));
-        u32 const  y0 = static_cast<u32>(std::floor(top));
-        u16 const  columns = static_cast<u16>(std::ceil(fx + width / 512.0f) - x0);
-        u16 const  rows = static_cast<u16>(std::ceil(fy + height / 512.0f) - y0);
-
-        Rectangle rect {
-            .x = (left - x0) * 256.0f,
-            .y = (top - y0) * 256.0f,
-            .width = static_cast<float>(width),
-            .height = static_cast<float>(height),
-        };
-        trace(Map, "Rectangle {}x{}@{},{}", rect.width, rect.height, rect.x, rect.y);
-        return Map {
-            .zoom = zoom,
-            .x = x0,
-            .y = y0,
-            .width = width,
-            .height = height,
-            .columns = columns,
-            .rows = rows,
-            .rectangle = rect,
-            .num_tiles = static_cast<u16>(columns * rows),
-        };
-    }
-    return std::unexpected(LibCError { "Could not find a zoom level for the requested box" });
-}
-
-Tile Map::tile(size_t ix) const
-{
-    // trace(Map, "tile({})", ix);
-    assert(ix < num_tiles);
-    return tile_xy(static_cast<u32>(ix % columns), static_cast<u32>(ix / columns));
-}
-
-Tile Map::tile_xy(u32 tile_x, u32 tile_y) const
-{
-    // trace(Map, "tile_xy({}, {})", tile_x, tile_y);
-    assert(tile_x < columns && tile_y < rows);
-    return Tile { .x = x + tile_x, .y = y + tile_y, .zoom = zoom };
-}
-
-Coordinates Map::coordinates(float32 map_x, float32 map_y) const
-{
-    // trace(Map, "coordinates({}, {})", map_x, map_y);
-    assert(map_x >= 0 && map_x <= static_cast<float32>(columns * 256));
-    assert(map_y >= 0 && map_y <= static_cast<float32>(rows * 256));
-    auto const t = tile_xy(static_cast<u32>(std::trunc(map_x)), static_cast<u32>(std::trunc(map_y)));
-    auto const b = t.box();
-    return Coordinates {
-        .lat = b.sw.lat + (1 - (map_y - std::trunc(map_y))) * (b.ne.lat - b.sw.lat),
-        .lon = b.sw.lon + (map_x - std::trunc(map_x)) * (b.ne.lon - b.sw.lon),
-    };
 }
 
 double world_size(u8 zoom)
@@ -411,6 +329,17 @@ std::vector<PlacedTile> MapView::tiles() const
                     .height = 256,
                 },
             });
+        }
+    }
+    return ret;
+}
+
+std::vector<Tile> missing_tiles(MapView const &view, TileLoaded const &have)
+{
+    std::vector<Tile> ret;
+    for (auto const &placed : view.tiles()) {
+        if (!have(placed.tile)) {
+            ret.push_back(placed.tile);
         }
     }
     return ret;

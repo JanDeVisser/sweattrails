@@ -180,6 +180,7 @@ add_executable(
         src/App/fit/FIT.cpp
         src/App/fit/Profile.cpp
         src/App/widget/Activity.cpp
+        src/App/widget/ActivityMap.cpp
         src/App/widget/ActivitySelector.cpp
         src/App/widget/DataFields.cpp
         src/App/widget/DisplayedActivity.cpp

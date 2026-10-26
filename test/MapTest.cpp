@@ -3,9 +3,10 @@
  *
  * SPDX-License-Identifier: MIT
  *
- * Tests the map code that needs neither a window nor the network: the grid
- * of tiles Map::init() picks for a route, and fetch_tiles(), the loop the
- * job thread runs to download the tiles a map is missing. A fake fetcher
+ * Tests the map code that needs neither a window nor the network: the view
+ * (MapView), its zooming and panning (MapNavigator), the placeholders for
+ * tiles that aren't loaded (cover()), and fetch_tiles(), the loop the job
+ * thread runs to download the tiles a view is missing. A fake fetcher
  * stands in for the download.
  */
 
@@ -29,15 +30,12 @@ using namespace ST;
 
 namespace {
 
-// A download of `count` tiles, with index i for the tile at x = i.
+// A download of `count` tiles, the i'th at x = i.
 pTileDownload make_download(size_t count)
 {
     auto download = std::make_shared<TileDownload>();
     for (size_t ix = 0; ix < count; ++ix) {
-        download->tiles.push_back(MissingTile {
-            .index = ix,
-            .tile = Tile { .x = static_cast<u32>(ix), .y = 0, .zoom = 10 },
-        });
+        download->tiles.push_back(Tile { .x = static_cast<u32>(ix), .y = 0, .zoom = 10 });
     }
     return download;
 }
@@ -48,7 +46,7 @@ std::string png_for(Tile const &tile)
 }
 
 struct Received {
-    size_t      index;
+    size_t      index; // The tile's x
     std::string png;
 };
 
@@ -56,7 +54,7 @@ struct Fetch {
     std::vector<u32>      fetched { };
     std::vector<Received> received { };
 
-    size_t run(TileDownload const &download, TileFetcher const &fetch)
+    std::vector<Tile> run(TileDownload const &download, TileFetcher const &fetch)
     {
         return fetch_tiles(
             download,
@@ -64,8 +62,8 @@ struct Fetch {
                 fetched.push_back(tile.x);
                 return fetch(tile);
             },
-            [this](size_t index, std::string png) {
-                received.push_back(Received { index, std::move(png) });
+            [this](Tile const &tile, std::string png) {
+                received.push_back(Received { tile.x, std::move(png) });
             });
     }
 };
@@ -80,11 +78,11 @@ void test_all_tiles_arrive()
     auto  download = make_download(3);
     Fetch f;
     auto  failed = f.run(*download, fetch_ok);
-    CHECK_EQ(failed, 0uz);
+    CHECK_EQ(failed.size(), 0uz);
     CHECK_EQ(f.received.size(), 3uz);
     for (size_t ix = 0; ix < f.received.size(); ++ix) {
         CHECK_EQ(f.received[ix].index, ix);
-        CHECK_EQ(f.received[ix].png, png_for(download->tiles[ix].tile));
+        CHECK_EQ(f.received[ix].png, png_for(download->tiles[ix]));
     }
 }
 
@@ -98,7 +96,8 @@ void test_failed_tiles_are_counted_and_not_sent()
         }
         return png_for(tile);
     });
-    CHECK_EQ(failed, 2uz);
+    CHECK_EQ(failed.size(), 2uz);
+    CHECK(failed.size() == 2 && failed[0].x == 1 && failed[1].x == 2);
     CHECK_EQ(f.fetched.size(), 4uz);
     CHECK_EQ(f.received.size(), 2uz);
     if (f.received.size() == 2) {
@@ -113,7 +112,7 @@ void test_nothing_is_fetched_when_cancelled()
     download->cancelled = true;
     Fetch f;
     auto  failed = f.run(*download, fetch_ok);
-    CHECK_EQ(failed, 0uz);
+    CHECK_EQ(failed.size(), 0uz);
     CHECK(f.fetched.empty());
     CHECK(f.received.empty());
 }
@@ -130,7 +129,7 @@ void test_cancel_while_fetching()
         }
         return png_for(tile);
     });
-    CHECK_EQ(failed, 0uz);
+    CHECK_EQ(failed.size(), 0uz);
     CHECK_EQ(f.fetched.size(), 2uz);
     CHECK_EQ(f.received.size(), 1uz);
     if (!f.received.empty()) {
@@ -143,7 +142,7 @@ void test_empty_download()
     auto  download = make_download(0);
     Fetch f;
     auto  failed = f.run(*download, fetch_ok);
-    CHECK_EQ(failed, 0uz);
+    CHECK_EQ(failed.size(), 0uz);
     CHECK(f.fetched.empty());
     CHECK(f.received.empty());
 }
@@ -161,59 +160,13 @@ void test_cancel_while_fetching_last_tile()
         }
         return png_for(tile);
     });
-    CHECK_EQ(failed, 0uz);
+    CHECK_EQ(failed.size(), 0uz);
     CHECK_EQ(f.fetched.size(), 3uz);
     CHECK_EQ(f.received.size(), 2uz);
 }
 
 // A ride around Toronto's waterfront, on a map of 600x400 pixels.
 Box const route { .sw = { .lat = 43.62f, .lon = -79.45f }, .ne = { .lat = 43.67f, .lon = -79.35f } };
-
-void test_map_grid_covers_route()
-{
-    auto map = Map::init(route, 600, 400);
-    CHECK(map.has_value());
-    if (!map) {
-        return;
-    }
-    CHECK(map->zoom > 0 && map->zoom <= 16);
-    CHECK_EQ(map->num_tiles, map->columns * map->rows);
-    CHECK_EQ(map->tile(0), (Tile { .x = map->x, .y = map->y, .zoom = map->zoom }));
-
-    auto const last = map->tile(map->num_tiles - 1);
-    CHECK_EQ(last, (Tile { .x = map->x + map->columns - 1, .y = map->y + map->rows - 1, .zoom = map->zoom }));
-
-    auto const first = map->tile(0);
-    CHECK(first.north() >= route.north());
-    CHECK(first.west() <= route.west());
-    CHECK(last.south() <= route.south());
-    CHECK(last.east() >= route.east());
-}
-
-// ActivityMap draws tile `ix` at column ix % columns and row ix / columns
-// of its image, so Map::tile(ix) has to be the tile at that place.
-void test_tile_index_matches_image_position()
-{
-    for (auto const [width, height] : { std::pair<u16, u16> { 600, 400 }, { 300, 700 }, { 1000, 250 } }) {
-        auto map = Map::init(route, width, height);
-        CHECK(map.has_value());
-        if (!map) {
-            continue;
-        }
-        CHECK(map->columns > 0 && map->rows > 0);
-        CHECK_EQ(map->num_tiles, map->columns * map->rows);
-        for (size_t ix = 0; ix < map->num_tiles; ++ix) {
-            auto const column = static_cast<u32>(ix % map->columns);
-            auto const row = static_cast<u32>(ix / map->columns);
-            CHECK_EQ(map->tile(ix), (Tile { .x = map->x + column, .y = map->y + row, .zoom = map->zoom }));
-        }
-        // The image is columns x rows tiles, and has to cover the visible
-        // rectangle.
-        CHECK(map->rectangle.x >= 0 && map->rectangle.y >= 0);
-        CHECK(map->rectangle.x + map->rectangle.width <= map->columns * 256.0f);
-        CHECK(map->rectangle.y + map->rectangle.height <= map->rows * 256.0f);
-    }
-}
 
 // A cache in a fresh temporary directory, removed again when it goes.
 struct TileCache {
@@ -271,12 +224,6 @@ void test_get_tile_prefers_cache()
     }
 }
 
-void test_map_without_zoom_level()
-{
-    Box const world { .sw = { .lat = -80.0f, .lon = -179.0f }, .ne = { .lat = 80.0f, .lon = 179.0f } };
-    CHECK(!Map::init(world, 100, 100).has_value());
-}
-
 bool near(double a, double b, double tolerance = 1e-6)
 {
     return std::abs(a - b) <= tolerance;
@@ -303,17 +250,23 @@ void test_world_pixel()
     CHECK(near(world_pixel(Coordinates { }, 0).y, 128.0));
 }
 
-// The zoom MapView::fit() picks is the one Map::init() picked.
+// The whole route, centered, at the highest zoom where it fits.
 void test_fit_covers_route()
 {
     for (auto const [width, height] : { std::pair<u16, u16> { 600, 400 }, { 300, 700 }, { 1000, 250 } }) {
         auto const view = MapView::fit(route, width, height);
-        auto const map = Map::init(route, width, height);
-        CHECK(view.has_value() && map.has_value());
-        if (!view || !map) {
+        CHECK(view.has_value());
+        if (!view) {
             continue;
         }
-        CHECK_EQ(view->zoom, map->zoom);
+        CHECK(view->zoom > 0 && view->zoom <= MaxFitZoom);
+        auto const extent = [](u8 zoom) {
+            auto const nw = world_pixel(Coordinates { .lat = route.north(), .lon = route.west() }, zoom);
+            auto const se = world_pixel(Coordinates { .lat = route.south(), .lon = route.east() }, zoom);
+            return std::pair { se.x - nw.x, se.y - nw.y };
+        };
+        auto const [w, h] = extent(view->zoom + 1);
+        CHECK(view->zoom == MaxFitZoom || w * 1.1 > width || h * 1.1 > height);
         auto const nw = view->to_screen(world_pixel(Coordinates { .lat = route.north(), .lon = route.west() }, view->zoom));
         auto const se = view->to_screen(world_pixel(Coordinates { .lat = route.south(), .lon = route.east() }, view->zoom));
         CHECK(nw.x >= 0 && nw.y >= 0);
@@ -381,6 +334,17 @@ void test_tiles_cover_view()
     for (auto const &placed : in_world) {
         CHECK(placed.screen.x >= 300 && placed.screen.y >= 200);
     }
+}
+
+void test_missing_tiles()
+{
+    MapView const view { .zoom = 10, .center = { .x = 1000, .y = 2000 }, .width = 600, .height = 400 };
+    auto const    missing = missing_tiles(view, [](Tile const &t) { return t.x != 3; });
+    CHECK_EQ(missing.size(), 2uz); // x 3, y 7 and 8
+    for (auto const &tile : missing) {
+        CHECK_EQ(tile.x, 3u);
+    }
+    CHECK(missing_tiles(view, [](Tile const &) { return true; }).empty());
 }
 
 void test_cover_with_ancestors()
@@ -543,17 +507,15 @@ int main()
     test_cancel_while_fetching();
     test_empty_download();
     test_cancel_while_fetching_last_tile();
-    test_map_grid_covers_route();
-    test_tile_index_matches_image_position();
     test_cached_tile();
     test_get_tile_prefers_cache();
-    test_map_without_zoom_level();
     test_world_pixel();
     test_fit_covers_route();
     test_screen_and_world();
     test_zoom_keeps_point_under_mouse();
     test_pan_and_resize();
     test_tiles_cover_view();
+    test_missing_tiles();
     test_cover_with_ancestors();
     test_cover_with_children();
     test_navigator_wheel_zooms_around_mouse();
