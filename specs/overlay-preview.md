@@ -1,6 +1,6 @@
 # Overlay Preview: Text and Values
 
-Status: Ready
+Status: In progress
 
 The first slice of the video overlay (see the
 [roadmap](overlay-layout.md#roadmap)). The format is described in
