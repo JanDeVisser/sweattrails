@@ -377,7 +377,7 @@ void input_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
         Submit   submit_fnc;
         Dismiss  dismiss_fnc;
 
-        InputBox(pC target, std::string_view const &prompt, Submit submit, Dismiss dismiss = nullptr)
+        InputBox(pC target, std::string_view const &prompt, Submit submit, Dismiss dismiss)
             : Modal(prompt)
             , target(target)
             , submit_fnc(submit)

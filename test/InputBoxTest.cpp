@@ -35,17 +35,13 @@ auto const submit = [](pTarget const &target, std::string const &text) {
     ++target->submits;
 };
 
-// A function rather than a lambda: InputBox's constructor defaults its
-// dismiss function to nullptr, which a lambda can't be made from, so a
-// lambda doesn't compile (see the spec's review notes).
-void dismiss(pTarget const &target)
-{
+auto const dismiss = [](pTarget const &target) {
     ++target->dismissals;
-}
+};
 
 pWidget open_box(Test::ScopedTestApp &scoped, pTarget const &target, std::string_view def)
 {
-    input_box(target, "Name", submit, def, &dismiss);
+    input_box(target, "Name", submit, def, dismiss);
     CHECK_EQ(scoped.app->modals.size(), 1uz);
     return scoped.app->modals.empty() ? nullptr : scoped.app->modals.back();
 }
