@@ -1,6 +1,6 @@
 # Video Overlay: Rendering to Video
 
-Status: Ready
+Status: In progress
 
 The second slice of the video overlay (see the
 [roadmap](overlay-layout.md#roadmap)). The first,
