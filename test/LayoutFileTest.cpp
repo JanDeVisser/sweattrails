@@ -148,6 +148,72 @@ void test_builtin_layout()
     }
 }
 
+// A file that isn't there yet: an error, once, until it's made.
+void test_missing_file()
+{
+    Test::TempDir dir { "layout-file-missing" };
+    auto const    path = dir.path / "later.overlay.json";
+    LayoutFile    file { path };
+    CHECK(file.reload_if_changed());
+    CHECK(error_of(file).starts_with("later.overlay.json: "));
+    CHECK(!file.reload_if_changed());
+    put(path, OneText);
+    CHECK(file.reload_if_changed());
+    CHECK_EQ(error_of(file), "ok");
+}
+
+// The error names the file, the element and the property, as in the spec.
+void test_error_names_file_element_and_property()
+{
+    Test::TempDir dir { "layout-file-message" };
+    auto const    path = dir.path / "cycling-basic.overlay.json";
+    put(path, R"({ "elements": [
+        // A comment, as layouts have them.
+        { "type": "text", "text": "a" },
+        { "type": "map" },
+        { "type": "value", "field": "speed", "colour": "#ffffff" }
+    ] })");
+    LayoutFile file { path };
+    CHECK(file.reload_if_changed());
+    CHECK_EQ(error_of(file), "cycling-basic.overlay.json: element 3: \"colour\" isn't a property of a value");
+}
+
+void test_no_layout_directories()
+{
+    Test::TempDir dir { "layouts-none" };
+    CHECK(overlay_layouts(dir.path / "a", dir.path / "b").empty());
+    // A directory without layout files has none.
+    CHECK(overlay_layouts(dir.path, dir.path / "b").empty());
+}
+
+void test_chosen_layout_not_a_name()
+{
+    Test::TempDir dir { "chosen-layout-bad" };
+    auto const    state = dir.path / "overlay.json";
+    put(state, R"({ "layout": "" })");
+    CHECK(!read_chosen_layout(state).has_value());
+    put(state, R"({ "other": "alps" })");
+    CHECK(!read_chosen_layout(state).has_value());
+    put(state, "[]");
+    CHECK(!read_chosen_layout(state).has_value());
+}
+
+// The built-in layout's unit styles also use shipped fonts.
+void test_builtin_unit_fonts()
+{
+    LayoutFile file { fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays" / "cycling-basic.overlay.json" };
+    file.reload_if_changed();
+    if (!file.layout) {
+        CHECK(false);
+        return;
+    }
+    for (auto const &element : file.layout->elements) {
+        if (auto const *value = std::get_if<ValueElement>(&element)) {
+            CHECK(fs::exists(fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "fonts" / value->unit_style.font));
+        }
+    }
+}
+
 }
 
 int main()
@@ -157,5 +223,10 @@ int main()
     test_overlay_layouts();
     test_chosen_layout();
     test_builtin_layout();
+    test_missing_file();
+    test_error_names_file_element_and_property();
+    test_no_layout_directories();
+    test_chosen_layout_not_a_name();
+    test_builtin_unit_fonts();
     return ST::Test::test_result();
 }
