@@ -203,4 +203,72 @@ None.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: `input_box()` doesn't compile with a lambda as dismiss
+   function** (`src/Lib/Widget/Modal.h:380`). `InputBox`'s constructor
+   defaults `Dismiss dismiss = nullptr`. `InputBox` is a local class, so
+   its default arguments are instantiated together with `input_box()`,
+   and a lambda can't be made from `nullptr`:
+   `input_box(target, "Name", submit, "", [](auto const &) {})` fails with
+   "no viable conversion from 'std::nullptr_t'". The Architecture says the
+   `dismiss()` fix is done, but it was never compiled with a dismiss
+   function, and a lambda is how every other caller passes functions.
+   Fix: drop the default from the constructor, since `input_box()` always
+   passes `dismiss`, or default to `Dismiss { }`. `InputBoxTest` uses a
+   function pointer for now; switch it to a lambda once this is fixed.
+2. **Bug: a long name looks cleared while most of it is still there**
+   (`src/Lib/Widget/TextLine.cpp:142`, `scroll_for()`). The scroll only
+   moves when the cursor leaves the box, and never goes back as the text
+   gets shorter. Take a name wider than the box, with the cursor at its
+   end, and hold Backspace, which the spec gives as the way to clear a long
+   name. The right part of the box empties first. Once the cursor reaches
+   the left edge, `scroll_x` follows the cursor, so the cursor stays at
+   the left edge with nothing after it, and the box looks empty while
+   everything before the cursor is still in the name. Enter then saves a
+   name the user can't see. With numbers: `scroll_for(900, 400)` gives
+   500, then `scroll_for(300, 400)` gives 300, and the 300 px of text
+   before the cursor are out of view. Fix: also pass the width of the
+   whole text, and clamp
+   `scroll_x` to `max(0, text_width - width)`, so that the end of the text
+   stays at the right edge while there is text to show on the left.
+3. **Suggestion: F2 opens the box for an activity that can't be renamed**
+   (`src/App/SweatTrails.cpp:495`, `src/App/storage/Activity.cpp:286`).
+   An activity without a `sidecar` path, such as one loaded from a file
+   (the inbox), opens the box, and only after the user has typed a name
+   does Enter say "can't be renamed". Check `activity->activity.sidecar`
+   in `cmd_rename_activity()`, and set the status line instead of opening
+   the box. Don't show the pointing hand over the title for such an
+   activity either.
+4. **Suggestion: a rune that isn't a valid codepoint brings the app down
+   in `draw_text()`** (`src/Lib/Widget/Modal.h:486`,
+   `src/Lib/Widget/TextLine.cpp:39`). `insert()` takes any non-control
+   `rune`, including surrogates (0xD800 to 0xDFFF) and values above
+   0x10FFFF. `as_utf8()` is `MUST_EVAL(to_utf8())`, so the next frame
+   aborts, and `utf8()` (line 34) turns the whole text into "", which on
+   Enter removes the user's name without a word. GLFW doesn't report
+   such codepoints on macOS or Linux, so it's defensive. Fix: have
+   `insert()` refuse them, and use `utf8()` rather than
+   `as_utf8()` in `draw_text()`.
+5. **Suggestion: `strip()` passes negative `char`s to `std::isspace`**
+   (`src/Lib/Base/StringUtil.cpp:156` and `:162`). `rename()` now sends
+   it non-ASCII names. "Café" ends in byte 0xA9, which is a negative
+   `char`, and that's undefined behavior. It's harmless today because the
+   app runs in the "C" locale. Casting to `unsigned char` alone isn't
+   enough: under a UTF-8 locale on macOS, `isspace(0xA0)` is true, and
+   that would chop the last byte off "Voilà" (C3 A0). Fix: trim ASCII
+   whitespace only.
+6. **Suggestion: `load_from_dir()` reads and parses the sidecar twice**
+   (`src/App/storage/Activity.cpp:175-179`), once for the service's name
+   and once for `"title"`, for every activity each time the month's list
+   opens. Read it once with `read_sidecar()` and take both names from
+   the same `JSONValue`.
+
+Tests added by the Reviewer: `test/InputBoxTest.cpp`
+(`input_box_test`: Enter and keypad Enter submit the UTF-8 text, Esc
+dismisses with and without a dismiss function, the editing keys, F2 and
+keys with unknown modifiers go on to the app). In `ActivityLoadTest`: a
+rename to the same name makes no sidecar, no rename without a sidecar
+path, no `.part` file left behind, a rename in a read-only directory, and
+typing the service's name over the user's. In `TextLineTest`: editing
+next to a character outside the BMP, control characters and a lone `\r`
+in a paste, an empty clipboard, and `set()` resetting the scroll. They
+all pass. The full run (`ctest -E oauth`) passes, 22 of 22.
