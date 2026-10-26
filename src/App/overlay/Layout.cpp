@@ -35,6 +35,38 @@ constexpr Names ValueProperties { "field", "format", "unit", "unit_style", "miss
 
 constexpr Names LaterTypes { "gauge", "graph", "profile", "map", "image", "group" };
 
+// The properties of later slices' elements, from the design. Defaults and
+// styles may have them, for those elements.
+constexpr Names LaterProperties {
+    "shape",
+    "min",
+    "max",
+    "track",
+    "fill",
+    "thickness", // gauge
+    "x_axis",
+    "window",
+    "line",
+    "cursor", // graph
+    "extent",
+    "done",
+    "remaining",
+    "marker",
+    "marker_label",
+    "scale",
+    "axis_labels",
+    "laps", // profile
+    "clip",
+    "view",
+    "zoom",
+    "rotate",
+    "tiles",
+    "attribution", // map
+    "src",
+    "tint",     // image
+    "children", // group
+};
+
 constexpr Names LayoutProperties { "version", "design_size", "units", "defaults", "styles", "elements" };
 
 using Error = std::unexpected<LayoutError>;
@@ -245,7 +277,6 @@ std::expected<TextStyle, LayoutError> text_style(JSONValue const &json, TextStyl
 
 std::expected<TextElement, LayoutError> text_element(JSONValue const &json)
 {
-    TRY(check_properties(json, "a text", { ElementProperties, TextStyleProperties, BoxStyleProperties, TextProperties }));
     TextElement ret { .at = TRY_EVAL(placement(json)), .style = TRY_EVAL(text_style(json)) };
     auto const  text = json.get("text");
     if (!text) {
@@ -294,7 +325,6 @@ std::expected<std::string, LayoutError> value_spec(JSONValue const &json, Overla
 
 std::expected<ValueElement, LayoutError> value_element(JSONValue const &json)
 {
-    TRY(check_properties(json, "a value", { ElementProperties, TextStyleProperties, BoxStyleProperties, ValueProperties }));
     ValueElement ret { .at = TRY_EVAL(placement(json)), .style = TRY_EVAL(text_style(json)) };
     auto const   field = json.get("field");
     if (!field) {
@@ -376,12 +406,16 @@ std::expected<std::optional<OverlayElement>, LayoutError> element(JSONValue cons
     if (contains(LaterTypes, name)) {
         return std::optional<OverlayElement> { };
     }
-    auto const merged = TRY_EVAL(cascaded(json, defaults, styles));
+    // A typo is in the element's own properties: those it takes from the
+    // defaults and its styles were checked with them, and may be for
+    // elements of another type, such as a text's align.
     if (name == "text") {
-        return std::optional<OverlayElement> { TRY_EVAL(text_element(merged)) };
+        TRY(check_properties(json, "a text", { ElementProperties, TextStyleProperties, BoxStyleProperties, TextProperties }));
+        return std::optional<OverlayElement> { TRY_EVAL(text_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
     }
     if (name == "value") {
-        return std::optional<OverlayElement> { TRY_EVAL(value_element(merged)) };
+        TRY(check_properties(json, "a value", { ElementProperties, TextStyleProperties, BoxStyleProperties, ValueProperties }));
+        return std::optional<OverlayElement> { TRY_EVAL(value_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
     }
     return error(std::format("\"type\": `{}` isn't an element type", name));
 }
@@ -442,6 +476,17 @@ std::expected<OverlayLayout, LayoutError> decode_layout(JSONValue const &json)
     }
     if (!styles.is_object()) {
         return error("\"styles\" isn't an object");
+    }
+    // What defaults and styles may hold: any element's properties but its
+    // type and style.
+    auto const style_properties = { TextStyleProperties, BoxStyleProperties, TextProperties, ValueProperties, LaterProperties,
+        Names { "at", "size", "visible", "fade", "when", "smooth", "interpolate" } };
+    TRY(check_properties(defaults, "the defaults", style_properties));
+    for (auto it = styles.obj_begin(); it != styles.obj_end(); ++it) {
+        if (!it->second.is_object()) {
+            return error(std::format("the style `{}` isn't an object", it->first));
+        }
+        TRY(check_properties(it->second, std::format("the style `{}`", it->first), style_properties));
     }
     auto const elements = json.get_with_default("elements", JSONType::Array);
     if (!elements.is_array()) {

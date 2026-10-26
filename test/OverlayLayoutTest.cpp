@@ -259,14 +259,24 @@ void test_error_index_counts_skipped()
         "element 3: \"colour\" isn't a property of a text");
 }
 
-// A typo in the defaults or a style is an error too, on the first element
-// that takes it.
+// A typo in the defaults or a style is an error there, not in the first
+// element that takes it.
 void test_typos_in_defaults_and_styles()
 {
-    CHECK(error_of(R"({ "defaults": { "colour": "#fff" }, "elements": [ { "type": "text", "text": "a" } ] })").contains("\"colour\""));
-    CHECK(error_of(R"({ "styles": { "big": { "fontsize": 64 } }, "elements": [ { "type": "text", "text": "a", "style": "big" } ] })").contains("\"fontsize\""));
+    CHECK_EQ(error_of(R"({ "defaults": { "colour": "#fff" }, "elements": [ { "type": "text", "text": "a" } ] })"),
+        "\"colour\" isn't a property of the defaults");
+    CHECK_EQ(error_of(R"({ "styles": { "big": { "fontsize": 64 } }, "elements": [ { "type": "text", "text": "a", "style": "big" } ] })"),
+        "\"fontsize\" isn't a property of the style `big`");
+    // Also in a style nothing uses.
+    CHECK_EQ(error_of(R"({ "styles": { "big": { "fontsize": 64 } } })"), "\"fontsize\" isn't a property of the style `big`");
+    CHECK_EQ(error_of(R"({ "styles": { "big": 64 } })"), "the style `big` isn't an object");
     CHECK_EQ(error_of(with_element(R"({ "type": "text", "text": "a", "style": ["big", 3] })")), "element 1: \"style\" isn't a string");
     CHECK_EQ(error_of(with_element(R"({ "type": "text", "text": "a", "style": 3 })")), "element 1: \"style\" isn't a name or a list of names");
+    // A text's property in the defaults doesn't make a value an error, nor
+    // a value's a text, nor a later element's either.
+    CHECK_EQ(error_of(R"({ "defaults": { "align": "right", "missing": "-", "line": { "width": 3 } },
+        "elements": [ { "type": "text", "text": "a" }, { "type": "value", "field": "speed" } ] })"),
+        "ok");
     // Later slices' value properties are accepted.
     CHECK_EQ(error_of(with_element(R"({ "type": "value", "field": "heart_rate", "color_by": { "thresholds": [[0, "#8ecae6"]] } })")), "ok");
 }
