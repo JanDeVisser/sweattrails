@@ -10,6 +10,7 @@
 #include <chrono>
 #include <filesystem>
 #include <string>
+#include <variant>
 
 #include <IO.h>
 
@@ -126,6 +127,27 @@ void test_chosen_layout()
     CHECK(!read_chosen_layout(state).has_value());
 }
 
+// The layout the preview shows first loads, and only uses fonts that are
+// shipped.
+void test_builtin_layout()
+{
+    LayoutFile file { fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays" / "cycling-basic.overlay.json" };
+    CHECK(file.reload_if_changed());
+    CHECK_EQ(error_of(file), "ok");
+    if (!file.layout) {
+        return;
+    }
+    CHECK_EQ(file.layout->elements.size(), 10uz);
+    CHECK_EQ(file.layout->skipped, 0uz);
+    for (auto const &element : file.layout->elements) {
+        std::visit(
+            [](auto const &e) {
+                CHECK(fs::exists(fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "fonts" / e.style.font));
+            },
+            element);
+    }
+}
+
 }
 
 int main()
@@ -134,5 +156,6 @@ int main()
     test_errors_and_recovering();
     test_overlay_layouts();
     test_chosen_layout();
+    test_builtin_layout();
     return ST::Test::test_result();
 }

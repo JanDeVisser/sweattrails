@@ -396,6 +396,7 @@ sweattrails_test(
         src/App/Map.cpp
 )
 target_include_directories(layout_file_test PRIVATE src/App)
+target_compile_definitions(layout_file_test PRIVATE SWEATTRAILS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 target_link_libraries(layout_file_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
