@@ -41,16 +41,18 @@ month's list, and stays after the app restarts.
 
 ### Renaming
 
-- **F2**, the task `st-rename-activity`, or **clicking the title** in
+- **F2** or **Cmd+Shift+R** (Ctrl+Shift+R off macOS), the task
+  `st-rename-activity`, or **clicking the title** in
   the data panel opens a box, "Name", with the activity's name in it, the
   cursor at its end. Over the title, the mouse cursor is a pointing
   hand, as over the maxima that mark a record. F2 rather than Ctrl+R,
-  which often means reload.
+  which often means reload. Cmd+Shift+R is for keyboards whose function
+  keys don't reach the app, as Jan found when testing by hand.
 - **Enter** saves the name; **Esc** closes the box and leaves the name as
   it was. A name that's the same as before isn't saved.
 - The data panel shows the new name right away. The month's list shows
   it the next time it opens, since it loads the activities every time.
-- Like the other keys, F2 does nothing under a modal, and nothing
+- Like the other keys, F2 and Cmd+Shift+R do nothing under a modal, and nothing
   without an activity on display.
 - **A box rather than editing the title in place** in the data panel: it
   needs no text field in the panel's layout, for a feature that's used
@@ -174,7 +176,7 @@ None.
 
 ### Renaming in the app
 
-- The task `st-rename-activity` (F2) in SweatTrails.cpp: not under a
+- The task `st-rename-activity` (F2, Cmd+Shift+R) in SweatTrails.cpp: not under a
   modal, nor without an activity on display, as the lap keys, with the
   helper they share, now `activity_for_keys()`. It opens
   `input_box()` with the prompt "Name" and the title, and its submit

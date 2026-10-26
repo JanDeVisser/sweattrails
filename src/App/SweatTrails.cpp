@@ -662,10 +662,17 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_UP, KModNone });
     bus.add_task<SweatTrails>("st-whole-activity", self(), cmd_whole_activity)
         .bind(KeyCombo { KEY_ESCAPE, KModNone });
-    // F2 rather than Ctrl+R, which often means reload. A click on the
-    // title in the data panel runs it too.
+    // F2 rather than Ctrl+R, which often means reload, and Cmd+Shift+R
+    // (Ctrl+Shift+R off macOS) for keyboards without function keys. A
+    // click on the title in the data panel runs it too.
+#ifdef __APPLE__
+    auto const command = KModSuper;
+#else
+    auto const command = KModControl;
+#endif
     bus.add_task<SweatTrails>("st-rename-activity", self(), cmd_rename_activity)
-        .bind(KeyCombo { KEY_F2, KModNone });
+        .bind(KeyCombo { KEY_F2, KModNone })
+        .bind(KeyCombo { KEY_R, command | KModShift });
     // + is Shift = on most keyboards.
     bus.add_task<SweatTrails>("st-map-zoom-in", self(), cmd_map_zoom_in)
         .bind(KeyCombo { KEY_EQUAL, KModNone })
