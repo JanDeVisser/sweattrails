@@ -255,11 +255,104 @@ turns out to be tedious.
 
 ## Architecture
 
-*Filled in by the Developer.*
+The code goes in `src/App/overlay/`, next to the preview's. As there, the
+logic is plain functions the tests reach; what needs raylib or a child
+process is kept thin.
+
+### Drawing: one renderer for the preview and the video
+
+- **`OverlayRenderer`** in `overlay/Renderer.h`: the preview's drawing
+  (fonts by `layout_fonts()`, a `FontCache`, measuring, `place()`,
+  `place_in_box()`, shadows) moves out of `OverlayPreview` into it, and
+  draws a layout's elements for a frame's field values into a rectangle,
+  on screen or in a render texture. The preview and the render each have
+  one, since their fonts are at different sizes.
+- **`FieldValues`** in `Fields.h`: the values of all the fields for one
+  frame, with the activity's sport. `values_at_record()` is what the
+  preview shows; `values_at_time(activity, seconds)` interpolates for the
+  video. `fill_template()` and the renderer take a `FieldValues` instead
+  of an activity and a record.
+- **Interpolation**: the records around the time, found by their
+  timestamps; linear between them where both have a value, else the
+  earlier record's; the earlier record's alone when they're more than 5 s
+  apart. `elapsed` is the time itself.
+
+### The render: `overlay/Render.h`
+
+- **`RenderSettings`**, decoded from `settings.json`'s `"overlay"`:
+  resolution (the presets and their `-portrait` variants, or a width and
+  height), frame rate as a rational (`30000/1001`, or an integer), and the
+  folder, `~` expanded. Errors say which setting is wrong.
+- **`RenderRange`**, seconds since the activity's start: `parse_range()`
+  reads `1:12:00-1:20:30` and `@09:44:00-@09:52:30`, and cuts it to the
+  activity; `format_range()` writes the one the box starts with, from the
+  graph's selection, the lap, or the whole activity. Time of day is local
+  to where the activity was, by `utc_offset`, or the system's time zone.
+- **Frames**: frame `n`'s time is `from + n × den / num`, from integers,
+  not added up. The count is `floor((to − from) × num / den)`.
+- **`timecode(seconds since midnight, fps)`**: `HH:MM:SS:FF`, or drop
+  frame, `HH:MM:SS;FF`, for 29.97 and 59.94, by the standard algorithm.
+- **`output_path(folder, date, start, exists)`**: the file's name, with a
+  number added while `exists()` says it's taken.
+- **`find_program(name, path, extra_dirs)`**: ffmpeg on the `PATH`, or in
+  `/opt/homebrew/bin` and `/usr/local/bin`.
+- **`unpremultiply()`**: straight alpha for a frame's pixels, as the
+  technical notes say.
+
+### ffmpeg: `overlay/Encoder.h`
+
+- **`Encoder`** starts ffmpeg with `posix_spawnp`, writes frames to its
+  stdin, and sends its stderr to a log file in the temporary directory,
+  whose last line is the error when it fails. **Not `Process.h`**: it
+  writes through `std::format`, which would mangle pixels with a `{` in
+  them; it can't close the child's stdin before waiting, and ffmpeg only
+  finishes when its stdin closes; and its reading threads are detached
+  with a pointer to the process, so they can outlive it. Reading stderr
+  into a file instead of a pipe also means ffmpeg can never block on it.
+- Frames are written on a **thread of the encoder's own**, from a queue
+  of two frames, so that the UI thread doesn't wait for ffmpeg; the queue
+  being full is what slows the rendering down to ffmpeg's speed. That
+  thread also unpremultiplies.
+- `SIGPIPE` is ignored, as `OAuth.cpp` does already, so that ffmpeg
+  exiting early is an `EPIPE` from `write()`, not the end of the app.
+- **`stop()`** kills ffmpeg and removes the file; **`finish()`** closes
+  its stdin and waits for it. Tests use `/bin/sh` as a stand-in for ffmpeg.
+
+### In the app
+
+- **`OverlayRender`**, owned by `SweatTrails` while a render runs: a
+  `RenderTexture2D` at the output size, the renderer, the encoder, and the
+  frame it's at. `SweatTrails::process_input()` gives it a step each UI
+  frame: it renders frames, with the separate alpha blend mode, and reads
+  each back with `glReadPixels` into one buffer per queue slot, until about
+  10 ms have gone, or the queue is full. The status line shows the percentage.
+- **Ctrl+E** (`st-overlay-render`): the layout as the preview would show
+  it, the settings, `input_box()` for the range, a `query_box()` for a
+  long one, then the render. During a render it asks whether to stop.
+  `cmd_quit` asks first, too, while one runs.
+- README: ffmpeg in the requirements, and rendering in the overlay
+  section.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `OverlayFieldsTest`: `values_at_time()` between records, at and past the
+  ends, over a gap of more than 5 s, with a field one record lacks;
+  `values_at_record()`; templates on `FieldValues`.
+- `OverlayRenderTest` (new): `RenderSettings` (presets, portrait, explicit
+  sizes, rational and integer rates, errors); `parse_range()` and
+  `format_range()` (elapsed, time of day with and without `utc_offset`,
+  cut to the activity, errors); frame times and counts over a long range,
+  without drift; `timecode()` for 25, 30, 29.97 (including the skipped
+  labels at minutes that aren't tens) and 59.94; `output_path()` with
+  taken names; `find_program()` in temporary directories;
+  `unpremultiply()`.
+- `EncoderTest` (new): with `/bin/sh -c 'cat > file'`, the frames arrive
+  whole and in order; with `/bin/sh -c 'exit 3'` writing fails, and the
+  error has the log's last line; `stop()` removes the file.
+- By hand, with ffmpeg installed: a render of a few minutes at 1080p and
+  29.97 imported in Final Cut, its alpha and timecode, values gliding
+  between records, Ctrl+E to stop, quitting during a render, a long range's
+  question, and ffmpeg missing.
 
 ## Review notes
 
