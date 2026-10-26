@@ -182,10 +182,10 @@ every frame.
 
 - Every change of the view cancels the waiting download, and schedules
   one for the visible tiles that are neither loaded nor cached, with the
-  existing `TileDownload`, job and cancelling. A view change that needs
-  the same tiles as the download that's going on, as when a drag moves
-  less than a tile, leaves it be. `missing_tiles(view, have)` is the
-  choice of tiles, testable.
+  existing `TileDownload`, job and cancelling. A view change whose missing
+  tiles are all in the download that's going on, as when a drag moves
+  less than a tile, leaves it be. `next_download(view, have, current)`
+  (`Map.h`, pure) makes that choice.
 - `MapTile` gets the `Tile` in place of its index in the grid, which no
   longer exists. `TileDownload` gets the `map` it's for, a number
   `ActivityMap` counts up for each activity: a tile that arrives from a
@@ -193,10 +193,16 @@ every frame.
   be in view and is a placeholder; one for another activity is dropped,
   as now.
 - `fetch_tiles()` returns the tiles that failed, not their number, and
-  `MapTilesDone` carries them: the map doesn't ask for them again while
-  the activity is open, so that panning over a tile the server refuses
-  doesn't ask for it on every frame. The status line reports failures
-  for the current download, as now.
+  `MapTilesDone`, sent for every download, also a cancelled one, carries
+  them: the map doesn't ask for them again while the activity is open,
+  so that panning over a tile the server refuses doesn't ask for it on
+  every frame. The status line reports failures for the current
+  download, as now.
+- Loaded tiles beyond `MaxLoadedTiles` are unloaded as `tiles_to_unload()`
+  (`Map.h`, pure) picks them: the least recently drawn, never the view's
+  tiles or their placeholders.
+- `ActivityMap::set_activity()` only starts the navigator; the tiles are
+  loaded and downloaded once the layout has sized the map.
 
 ### Input, keys and resizing
 
@@ -339,6 +345,25 @@ every frame.
    `resize()` that follows (e.g. a `view_pending` flag that `resize()`
    and `draw()` act on), or call `view_changed()` from `resize()` even
    when the size didn't change, after a `set_activity()`.
+
+Resolution, agreed with Jan, each in its own commit:
+
+1. Fixed: `tiles_to_unload()` (`Map.h`, pure) picks the least recently
+   drawn tiles to unload, but never the view's tiles nor the ones drawn
+   in place of those not loaded yet. `test_tiles_to_unload`.
+2. Fixed: a download always sends `MapTilesDone` with its failed tiles,
+   also when cancelled, and the map records them for its activity;
+   the status line reports only the current download's.
+   `test_failure_before_cancel_is_returned` covers `fetch_tiles()`'s
+   part; the map's part needs the app.
+3. and 4. Fixed: `next_download(view, have, current)` (`Map.h`, pure)
+   keeps the download going on while it has every tile still missing,
+   and else replaces it, or only cancels it when nothing is missing.
+   `test_next_download`; its case after a tile arrived fails against the
+   old equality check.
+5. Fixed: `ActivityMap::set_activity()` sets `view_pending`, and the
+   tiles are loaded and downloaded by the layout's `resize()` that
+   follows, or the first `draw()` if none does.
 
 Checked and fine: `world_pixel()`/`world_coordinates()`; `fit()` picks
 the same zoom as `Map::init()` for routes of many sizes and latitudes
