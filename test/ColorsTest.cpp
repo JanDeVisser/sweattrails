@@ -41,6 +41,12 @@ void test_not_colors()
     CHECK_EQ(show(parse_color("#ff ff ")), "none");
     CHECK_EQ(show(parse_color("#+fffff")), "none");
     CHECK_EQ(show(parse_color("white")), "none");
+    // Signs, prefixes and a non-hex digit in the alpha.
+    CHECK_EQ(show(parse_color("#-1ffff")), "none");
+    CHECK_EQ(show(parse_color("#0x0000")), "none");
+    CHECK_EQ(show(parse_color("#ffffffzz")), "none");
+    CHECK_EQ(show(parse_color(" #ffffff")), "none");
+    CHECK_EQ(show(parse_color("#FFFFFFFF")), "255 255 255 255");
 }
 
 }
