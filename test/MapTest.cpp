@@ -10,11 +10,13 @@
  * stands in for the download.
  */
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <expected>
 #include <filesystem>
 #include <fstream>
+#include <print>
 #include <string>
 #include <vector>
 
@@ -497,6 +499,285 @@ void test_navigator_resize()
     CHECK(!navigator.moved);
     CHECK(!navigator.whole_route());
 }
+
+// The zoom Map::init() picked before MapView: the highest up to 16 where the
+// route, with 10% to spare, fits, measured with the middle tile's box.
+u8 zoom_before_map_view(Box const &b, u16 width, u16 height)
+{
+    auto const mid = b.center();
+    for (u8 zoom = 16; zoom > 0; --zoom) {
+        auto const tile_box = Tile::for_coordinates(mid, zoom).box();
+        if ((256 * (b.width() * 1.1f) / tile_box.width() > width) || (256 * (b.height() * 1.1f) / tile_box.height() > height)) {
+            continue;
+        }
+        return zoom;
+    }
+    return 0;
+}
+
+// fit() picks the zoom the map had before zooming, for routes of all sizes
+// and latitudes, and viewports of all shapes.
+void test_fit_zoom_as_before()
+{
+    std::vector<Box> const routes {
+        route,
+        Box { .sw = { .lat = 43.0f, .lon = -80.5f }, .ne = { .lat = 44.2f, .lon = -78.9f } },   // A long ride
+        Box { .sw = { .lat = 69.60f, .lon = 18.85f }, .ne = { .lat = 69.70f, .lon = 19.05f } }, // Tromsø
+        Box { .sw = { .lat = 40.0f, .lon = 2.0f }, .ne = { .lat = 48.0f, .lon = 3.0f } },       // North to south
+        Box { .sw = { .lat = -33.95f, .lon = 18.40f }, .ne = { .lat = -33.90f, .lon = 18.45f } },
+        Box { .sw = { .lat = 52.37f, .lon = 4.89f }, .ne = { .lat = 52.37f, .lon = 4.89f } }, // One point
+    };
+    std::vector<std::pair<u16, u16>> const sizes { { 600, 400 }, { 300, 700 }, { 1000, 250 }, { 431, 517 }, { 1280, 900 } };
+    for (auto const &r : routes) {
+        for (auto const [width, height] : sizes) {
+            auto const before = zoom_before_map_view(r, width, height);
+            auto const view = MapView::fit(r, width, height);
+            CHECK(view.has_value());
+            if (!view) {
+                continue;
+            }
+            if (view->zoom != before) {
+                std::println(stderr, "fit({}, {}x{}): zoom {}, before {}", r, width, height, view->zoom, before);
+            }
+            CHECK_EQ(view->zoom, before);
+        }
+    }
+}
+
+// Every pixel of the view that's in the world is on exactly one of the
+// view's tiles, and every tile is in view; pixels outside the world are on
+// none.
+void check_tiles_cover_exactly(MapView const &view)
+{
+    auto const tiles = view.tiles();
+    auto const size = world_size(view.zoom);
+    for (auto const &placed : tiles) {
+        auto const &s = placed.screen;
+        CHECK(s.x < view.width && s.y < view.height && s.x + s.width > 0 && s.y + s.height > 0);
+        CHECK_EQ(placed.tile.zoom, view.zoom);
+        // Where the view puts the tile is where it is in the world.
+        auto const world = view.to_world(Vector2 { .x = s.x, .y = s.y });
+        CHECK(near(world.x, placed.tile.x * 256.0, 1e-2) && near(world.y, placed.tile.y * 256.0, 1e-2));
+    }
+    for (float y = 0.5f; y < view.height; y += 37.0f) {
+        for (float x = 0.5f; x < view.width; x += 37.0f) {
+            auto const world = view.to_world(Vector2 { .x = x, .y = y });
+            auto const in_world = world.x >= 0 && world.y >= 0 && world.x < size && world.y < size;
+            auto const on = std::ranges::count_if(tiles, [x, y](PlacedTile const &placed) {
+                return CheckCollisionPointRec(Vector2 { .x = x, .y = y }, placed.screen);
+            });
+            CHECK_EQ(static_cast<int>(on), in_world ? 1 : 0);
+        }
+    }
+}
+
+void test_tiles_cover_view_exactly()
+{
+    check_tiles_cover_exactly(MapView { .zoom = 10, .center = { .x = 1000, .y = 2000 }, .width = 600, .height = 400 });
+    // On tile boundaries.
+    check_tiles_cover_exactly(MapView { .zoom = 10, .center = { .x = 1024 + 300, .y = 2048 + 200 }, .width = 600, .height = 400 });
+    // The world's bottom right corner.
+    check_tiles_cover_exactly(MapView { .zoom = 3, .center = { .x = world_size(3), .y = world_size(3) }, .width = 600, .height = 400 });
+    // The whole world at zoom 0 and 1 in a larger viewport.
+    MapView const zoom0 { .zoom = 0, .center = { .x = 128, .y = 128 }, .width = 900, .height = 700 };
+    check_tiles_cover_exactly(zoom0);
+    CHECK_EQ(zoom0.tiles().size(), 1uz);
+    MapView const zoom1 { .zoom = 1, .center = { .x = 256, .y = 256 }, .width = 900, .height = 700 };
+    check_tiles_cover_exactly(zoom1);
+    CHECK_EQ(zoom1.tiles().size(), 4uz);
+    // Zoom 18, far from the origin, to the pixel.
+    auto const center = world_pixel(Coordinates { .lat = 43.65f, .lon = -79.38f }, 18);
+    check_tiles_cover_exactly(MapView { .zoom = 18, .center = center, .width = 777, .height = 555 });
+    // Zoom 18 at the world's last tile.
+    check_tiles_cover_exactly(MapView { .zoom = 18, .center = { .x = world_size(18) - 10, .y = world_size(18) - 10 }, .width = 600, .height = 400 });
+}
+
+// zoomed() keeps the point under the mouse to the pixel, also at zoom 18
+// far from the origin.
+void test_zoom_at_street_level()
+{
+    auto const    center = world_pixel(Coordinates { .lat = 43.65f, .lon = -79.38f }, 17);
+    MapView const view { .zoom = 17, .center = center, .width = 600, .height = 400 };
+    Vector2 const mouse { .x = 17, .y = 391 };
+    auto const    in = view.zoomed(1, mouse);
+    CHECK_EQ(in.zoom, u8 { 18 });
+    auto const before = view.to_world(mouse);
+    auto const after = in.to_world(mouse);
+    CHECK(near(after.x, before.x * 2, 1e-3) && near(after.y, before.y * 2, 1e-3));
+    auto const back = in.zoomed(-1, mouse);
+    CHECK(near(back.center.x, view.center.x, 1e-3) && near(back.center.y, view.center.y, 1e-3));
+}
+
+void test_cover_great_grandparent_and_edges()
+{
+    // Three levels up: an eighth of the great-grandparent, 32 pixels.
+    Tile const tile { .x = 13, .y = 6, .zoom = 10 };
+    auto const great = Tile { .x = 1, .y = 0, .zoom = 7 };
+    auto const pieces = cover(tile, [&](Tile const &t) { return t == great; });
+    CHECK_EQ(pieces.size(), 1uz);
+    if (!pieces.empty()) {
+        CHECK_EQ(pieces[0].source, great);
+        // 13 & 7 = 5, 6 & 7 = 6.
+        CHECK_EQ(pieces[0].source_area.x, 160.0f);
+        CHECK_EQ(pieces[0].source_area.y, 192.0f);
+        CHECK_EQ(pieces[0].source_area.width, 32.0f);
+        CHECK_EQ(pieces[0].source_area.height, 32.0f);
+        CHECK_EQ(pieces[0].destination.x, 0.0f);
+        CHECK_EQ(pieces[0].destination.height, 256.0f);
+    }
+    // The world's tile has no ancestors: only its children.
+    Tile const world { .x = 0, .y = 0, .zoom = 0 };
+    CHECK(cover(world, [](Tile const &t) { return t.zoom == 0; }).empty());
+    CHECK_EQ(cover(world, [](Tile const &t) { return t.zoom == 1; }).size(), 4uz);
+    // At zoom 2 the world's tile is two levels up, and there is no third.
+    Tile const low { .x = 3, .y = 1, .zoom = 2 };
+    auto const from_world = cover(low, [](Tile const &t) { return t.zoom == 0; });
+    CHECK_EQ(from_world.size(), 1uz);
+    if (!from_world.empty()) {
+        CHECK_EQ(from_world[0].source_area.x, 192.0f);
+        CHECK_EQ(from_world[0].source_area.y, 64.0f);
+        CHECK_EQ(from_world[0].source_area.width, 64.0f);
+    }
+    // Street level, the last tile of the world, from its parent.
+    Tile const street { .x = (1u << 18) - 1, .y = (1u << 18) - 2, .zoom = 18 };
+    auto const parent = Tile { .x = street.x / 2, .y = street.y / 2, .zoom = 17 };
+    auto const from_parent = cover(street, [&](Tile const &t) { return t == parent; });
+    CHECK(from_parent.size() == 1 && from_parent[0].source_area.x == 128.0f && from_parent[0].source_area.y == 0.0f);
+}
+
+// Zoomed out: each of the four children goes in its own quarter.
+void test_cover_with_all_children()
+{
+    Tile const tile { .x = 5, .y = 2, .zoom = 4 };
+    auto const pieces = cover(tile, [](Tile const &t) { return t.zoom == 5; });
+    CHECK_EQ(pieces.size(), 4uz);
+    for (auto const &piece : pieces) {
+        CHECK_EQ(piece.source_area.width, 256.0f);
+        CHECK_EQ(piece.destination.width, 128.0f);
+        CHECK_EQ(piece.destination.height, 128.0f);
+        CHECK_EQ(piece.destination.x, (piece.source.x - 10) * 128.0f);
+        CHECK_EQ(piece.destination.y, (piece.source.y - 4) * 128.0f);
+    }
+    // An ancestor goes before the children.
+    auto const ancestor_first = cover(tile, [](Tile const &t) { return t.zoom == 5 || t.zoom == 3; });
+    CHECK(ancestor_first.size() == 1 && ancestor_first[0].source.zoom == 3);
+}
+
+// A click on the map, without moving the mouse, doesn't move it: a resize
+// still fits the whole route.
+void test_navigator_click_does_nothing()
+{
+    auto       navigator = started();
+    auto const before = navigator.view;
+    auto       press = mouse_at(300, 200);
+    press.pressed = true;
+    press.down = true;
+    CHECK(!navigator.handle(press, MapArea));
+    auto hold = mouse_at(300, 200);
+    hold.down = true;
+    CHECK(!navigator.handle(hold, MapArea));
+    CHECK(!navigator.handle(mouse_at(300, 200), MapArea));
+    CHECK(!navigator.dragging);
+    CHECK(!navigator.moved);
+    CHECK(navigator.view.center == before.center);
+    CHECK(navigator.resize(300, 200));
+    CHECK_EQ(navigator.view.zoom, MapView::fit(route, 300, 200)->zoom);
+}
+
+// The keys zoom around the middle, which stays where it is.
+void test_navigator_keys_zoom_around_middle()
+{
+    auto       navigator = started();
+    auto const middle = world_coordinates(navigator.view.center, navigator.view.zoom);
+    CHECK(navigator.zoom_by(1));
+    auto const in = world_coordinates(navigator.view.center, navigator.view.zoom);
+    CHECK(near(in.lat, middle.lat, 1e-5) && near(in.lon, middle.lon, 1e-5));
+    CHECK(navigator.zoom_by(-2));
+    auto const out = world_coordinates(navigator.view.center, navigator.view.zoom);
+    CHECK(near(out.lat, middle.lat, 1e-5) && near(out.lon, middle.lon, 1e-5));
+    CHECK(navigator.moved);
+}
+
+// The center stays on the route's box on its north and east sides too, and
+// when zooming out around a corner.
+void test_navigator_pan_limits_north_east()
+{
+    auto navigator = started();
+    navigator.zoom_by(3);
+    auto press = mouse_at(300, 200);
+    press.pressed = true;
+    press.down = true;
+    navigator.handle(press, MapArea);
+    auto drag = mouse_at(300 - 100'000, 200 + 100'000);
+    drag.down = true;
+    navigator.handle(drag, MapArea);
+    auto const middle = world_coordinates(navigator.view.center, navigator.view.zoom);
+    CHECK(near(middle.lon, route.east(), 1e-4));
+    CHECK(near(middle.lat, route.north(), 1e-4));
+    navigator.handle(mouse_at(0, 0), MapArea);
+
+    // The wheel at the viewport's corner, zoomed in: the point under the
+    // mouse is off the route's box, and the center stays on it.
+    auto wheel = mouse_at(MapArea.x + 1, MapArea.y + 1);
+    wheel.wheel = -1;
+    navigator.handle(wheel, MapArea);
+    auto const nw = world_pixel(Coordinates { .lat = route.north(), .lon = route.west() }, navigator.view.zoom);
+    auto const se = world_pixel(Coordinates { .lat = route.south(), .lon = route.east() }, navigator.view.zoom);
+    CHECK(navigator.view.center.x >= nw.x - 1e-6 && navigator.view.center.x <= se.x + 1e-6);
+    CHECK(navigator.view.center.y >= nw.y - 1e-6 && navigator.view.center.y <= se.y + 1e-6);
+}
+
+// A route that only fits at zoom 1 zooms out to 0, not past it.
+void test_navigator_zoom_limits_low()
+{
+    Box const    continent { .sw = { .lat = 30.0f, .lon = -120.0f }, .ne = { .lat = 50.0f, .lon = -60.0f } };
+    MapNavigator navigator;
+    CHECK(navigator.start(continent, 300, 300));
+    CHECK(navigator.view.zoom <= ZoomOutPastFit);
+    CHECK_EQ(navigator.min_zoom(), u8 { 0 });
+    navigator.zoom_by(-5);
+    CHECK_EQ(navigator.view.zoom, u8 { 0 });
+    CHECK_EQ(navigator.view.tiles().size(), 1uz);
+}
+
+// Back to the whole route after a drag: not moved any more, and a resize
+// fits the route again.
+void test_navigator_whole_route_after_drag()
+{
+    auto navigator = started();
+    navigator.zoom_by(2);
+    auto press = mouse_at(300, 200);
+    press.pressed = true;
+    press.down = true;
+    navigator.handle(press, MapArea);
+    auto drag = mouse_at(350, 260);
+    drag.down = true;
+    CHECK(navigator.handle(drag, MapArea));
+    navigator.handle(mouse_at(350, 260), MapArea);
+    CHECK(navigator.moved);
+    CHECK(navigator.whole_route());
+    CHECK(!navigator.moved);
+    auto const fit = MapView::fit(route, MapArea.width, MapArea.height);
+    CHECK(fit && navigator.view.zoom == fit->zoom && navigator.view.center == fit->center);
+    CHECK(navigator.resize(300, 200));
+    CHECK_EQ(navigator.view.zoom, MapView::fit(route, 300, 200)->zoom);
+    // The zoom limits follow the new whole-route zoom.
+    CHECK_EQ(navigator.min_zoom(), static_cast<u8>(navigator.view.zoom - ZoomOutPastFit));
+}
+
+// Not moved, and resized to where the route doesn't fit at any zoom: the
+// view keeps its center and zoom rather than going.
+void test_navigator_resize_too_small()
+{
+    Box const    continent { .sw = { .lat = 30.0f, .lon = -120.0f }, .ne = { .lat = 50.0f, .lon = -60.0f } };
+    MapNavigator navigator;
+    CHECK(navigator.start(continent, 600, 600));
+    auto const before = navigator.view;
+    CHECK(navigator.resize(20, 20));
+    CHECK_EQ(navigator.view.zoom, before.zoom);
+    CHECK(navigator.view.center == before.center);
+    CHECK_EQ(navigator.view.width, 20.0f);
+}
 }
 
 int main()
@@ -523,5 +804,16 @@ int main()
     test_navigator_drag_pans();
     test_navigator_pan_limits();
     test_navigator_resize();
+    test_fit_zoom_as_before();
+    test_tiles_cover_view_exactly();
+    test_zoom_at_street_level();
+    test_cover_great_grandparent_and_edges();
+    test_cover_with_all_children();
+    test_navigator_click_does_nothing();
+    test_navigator_keys_zoom_around_middle();
+    test_navigator_pan_limits_north_east();
+    test_navigator_zoom_limits_low();
+    test_navigator_whole_route_after_drag();
+    test_navigator_resize_too_small();
     return ST::Test::test_result();
 }
