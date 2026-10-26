@@ -126,16 +126,18 @@ None.
   (`utf8()`) or set (`set(std::string_view)`). Plain logic, no raylib,
   for the tests.
   - `insert(rune)`, which leaves out control characters;
+    `insert()` also leaves out runes that aren't Unicode characters;
     `paste(std::string_view utf8)`, with line breaks as spaces;
     `backspace()`, `del()`, `left()`, `right()`, `home()`, `end()`.
   - `handle_key(modifier, key, clipboard)`: the keys, with Cmd+V
     (`KModSuper`) on macOS and Ctrl+V elsewhere pasting what
     `clipboard()` returns, which is `GetClipboardText()` in the box and
     made up in tests. Returns whether it took the key.
-  - `scroll_for(cursor_x, width)`: the sideways scroll that keeps the
-    cursor in view, given where the cursor is in the whole text, as the
-    font measures it: kept in `scroll_x`, so that it only moves when
-    the cursor would leave the box.
+  - `scroll_for(cursor_x, text_width, width)`: the sideways scroll that
+    keeps the cursor in view, given where the cursor is in the whole
+    text, and how wide that is, as the font measures them: kept in
+    `scroll_x`, so that it only moves when the cursor would leave the
+    box, or when the text gets shorter and there's room on the right.
 - **`input_box()`** keeps its interface, and its `InputBox` uses a
   `TextLine`: `character()` and `process_key()` pass on to it, `draw()`
   measures the text before the cursor, and the box's Enter hands
@@ -155,7 +157,8 @@ None.
   sidecar, as now, into `title`, keeps that as `original_title`, and then
   takes `"title"` if there is one. `original_title` is what an empty name
   goes back to. `sidecar_title()` keeps its meaning, the service's name,
-  and a new `sidecar_own_title()` reads `"title"`.
+  and a new `sidecar_own_title()` reads `"title"`. `load_from_dir()`
+  takes both from `sidecar_titles()`, which reads the sidecar once.
 - **Writing**: `save_sidecar_title(sidecar, title)` (free function, for
   the tests): reads the sidecar if there is one, refuses if it isn't a
   JSON object, sets or erases `"title"`, and writes it with
@@ -272,3 +275,27 @@ typing the service's name over the user's. In `TextLineTest`: editing
 next to a character outside the BMP, control characters and a lone `\r`
 in a paste, an empty clipboard, and `set()` resetting the scroll. They
 all pass. The full run (`ctest -E oauth`) passes, 22 of 22.
+
+### Resolutions
+
+1. Fixed (`8ad08e8`): the constructor has no default, and `InputBoxTest`
+   uses a lambda.
+2. Fixed (`f4b0e8a`): `scroll_for()` takes the width of the text and
+   clamps to it; `test_scroll_back_as_the_text_gets_shorter`.
+3. Not changed, at Jan's call: renaming an activity without a sidecar
+   should make one, and it does. Every activity on display is loaded with
+   `load_from_dir()`, which always sets the sidecar's path, whether the
+   file exists or not; only the inbox's import, which never displays, has
+   none. `test_rename_back_to_the_workouts_name` now checks that the
+   rename makes the sidecar and that the name is there after a reload
+   (`72b28d4`).
+4. Fixed (`1d99e54`): `insert()` refuses surrogates and runes outside
+   0 to 0x10FFFF, and `draw_text()` converts with `to_utf8()`, without
+   aborting; `test_runes_that_arent_characters_are_not_typed`.
+5. Fixed (`23b0058`): `strip()`, `lstrip()` and `rstrip()` trim ASCII
+   whitespace only, with `find_first_not_of()`; this also fixes
+   `rstrip()` reading before an empty or all-blank string. `split()`
+   still uses `isspace()`, but no name goes through it. `test_strip` in
+   `StringUtilTest`.
+6. Fixed (`0b66017`): `sidecar_titles()` reads the sidecar once, for
+   both names; the two functions that read one name use it.
