@@ -1,6 +1,6 @@
 # Edit an Activity's Name
 
-Status: In review
+Status: Done
 
 ## Goal
 
