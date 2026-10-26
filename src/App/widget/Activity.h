@@ -16,6 +16,7 @@
 #include <storage/Activity.h>
 #include <widget/DataFields.h>
 #include <widget/DisplayedActivity.h>
+#include <widget/OverlayPreview.h>
 
 namespace ST {
 
@@ -118,16 +119,20 @@ struct ActivityDisplay : public Layout {
     static constexpr int LapTableRows = 5;
 
     std::shared_ptr<DisplayedActivity>   activity;
+    std::shared_ptr<Layout>              central; // The data panel and the map
     std::shared_ptr<ActivityDataDisplay> data_display;
     std::shared_ptr<ActivityMap>         map;
+    std::shared_ptr<OverlayPreview>      preview; // In the place of `central` when it's on
     std::shared_ptr<Table>               laps;
     std::shared_ptr<ActivityGraph>       graph;
 
     explicit ActivityDisplay(pWidget const &parent);
-    void set_activity(Activity const &activity);
-    void clear_activity();
-    void initialize() override;
-    void on_draw() override;
+    void               set_activity(Activity const &activity);
+    void               clear_activity();
+    [[nodiscard]] bool previewing() const;
+    void               show_preview(bool on);
+    void               initialize() override;
+    void               on_draw() override;
 };
 
 }

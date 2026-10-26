@@ -25,6 +25,7 @@
 #include <Http.h>
 #include <OAuth.h>
 #include <SweatTrails.h>
+#include <overlay/LayoutFile.h>
 #include <storage/Activity.h>
 #include <storage/Garmin.h>
 #include <storage/Storage.h>
@@ -506,6 +507,88 @@ void cmd_rename_activity(pSweatTrails const &sweattrails, JSONValue const &)
     input_box(sweattrails, "Name", save, activity->activity.title);
 }
 
+// The layout the preview shows before the user picks one.
+constexpr char const DefaultOverlayLayout[] = "cycling-basic";
+
+fs::path overlay_state_file(pSweatTrails const &sweattrails)
+{
+    return user_state_dir(sweattrails->app_name) / "overlay.json";
+}
+
+// The built-in layouts, and the user's in the data directory.
+std::vector<LayoutEntry> overlay_layouts(pSweatTrails const &sweattrails)
+{
+    return overlay_layouts(fs::path { SWEATTRAILS_DATADIR } / "overlays", sweattrails->storage.data_dir / "overlays");
+}
+
+std::optional<LayoutEntry> overlay_layout(pSweatTrails const &sweattrails, std::string_view name)
+{
+    for (auto const &layout : overlay_layouts(sweattrails)) {
+        if (layout.name == name) {
+            return layout;
+        }
+    }
+    return { };
+}
+
+// The layout picked last, or the default if there's none, or it's gone.
+std::optional<LayoutEntry> chosen_overlay_layout(pSweatTrails const &sweattrails)
+{
+    if (auto const chosen = read_chosen_layout(overlay_state_file(sweattrails)); chosen) {
+        if (auto layout = overlay_layout(sweattrails, *chosen); layout) {
+            return layout;
+        }
+    }
+    return overlay_layout(sweattrails, DefaultOverlayLayout);
+}
+
+void cmd_overlay_preview(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (!activity_for_keys(sweattrails)) {
+        return;
+    }
+    auto const &display = sweattrails->activity_display;
+    if (display->previewing()) {
+        display->show_preview(false);
+        return;
+    }
+    if (!display->preview->file) {
+        if (auto const layout = chosen_overlay_layout(sweattrails); layout) {
+            display->preview->set_layout(layout->path);
+        }
+    }
+    display->show_preview(true);
+}
+
+// Picking a layout shows it, and it's the one shown after a restart.
+void cmd_overlay_layout(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (!activity_for_keys(sweattrails)) {
+        return;
+    }
+    std::vector<std::pair<std::string, std::string>> entries;
+    for (auto const &layout : overlay_layouts(sweattrails)) {
+        entries.emplace_back(layout.name, layout.name);
+    }
+    if (entries.empty()) {
+        sweattrails->set_status("There are no overlay layouts");
+        return;
+    }
+    auto const current = chosen_overlay_layout(sweattrails);
+    auto       pick = [](pSweatTrails const &st, std::string const &name) {
+        auto const layout = overlay_layout(st, name);
+        if (!layout) {
+            return;
+        }
+        if (auto const saved = save_chosen_layout(overlay_state_file(st), name); !saved) {
+            st->set_status(std::format("Couldn't keep the choice of layout: {}", saved.error().to_string()));
+        }
+        st->activity_display->preview->set_layout(layout->path);
+        st->activity_display->show_preview(true);
+    };
+    list_box(sweattrails, "Overlay layout", entries, pick, current ? current->name : "");
+}
+
 void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
 {
     if (!sweattrails->modals.empty()) {
@@ -673,6 +756,10 @@ void SweatTrails::initialize()
     bus.add_task<SweatTrails>("st-rename-activity", self(), cmd_rename_activity)
         .bind(KeyCombo { KEY_F2, KModNone })
         .bind(KeyCombo { KEY_R, command | KModShift });
+    bus.add_task<SweatTrails>("st-overlay-preview", self(), cmd_overlay_preview)
+        .bind(KeyCombo { KEY_O, KModControl });
+    bus.add_task<SweatTrails>("st-overlay-layout", self(), cmd_overlay_layout)
+        .bind(KeyCombo { KEY_O, KModControl | KModShift });
     // + is Shift = on most keyboards.
     bus.add_task<SweatTrails>("st-map-zoom-in", self(), cmd_map_zoom_in)
         .bind(KeyCombo { KEY_EQUAL, KModNone })
@@ -807,22 +894,27 @@ void SweatTrails::load_font()
     font_sizes[static_cast<size_t>(FontSize::XLarge)] = font_size * 2;
     info(ST, "font: {}", font_name);
 
-    StringList dirs = get_font_dirs();
-    auto       find_font = [this, &dirs](auto const &font) -> bool {
-        return std::any_of(dirs.begin(), dirs.end(), [this, font](auto const &dir) -> bool {
-            if (fs::exists(dir) && fs::is_directory(dir)) {
-                if (auto const path = fs::path { dir } / font; fs::exists(path) && !fs::is_directory(path)) {
-                    set_fonts(path.string());
-                    return true;
-                }
-            }
-            return false;
-        });
+    auto const load = [this](std::string_view font) -> bool {
+        if (auto const path = find_font(font); path) {
+            set_fonts(path->string());
+            return true;
+        }
+        return false;
     };
-
-    if (!find_font(font_name) && (font_name != default_font)) {
-        assert(find_font(default_font));
+    if (!load(font_name) && (font_name != default_font)) {
+        assert(load(default_font));
     }
+}
+
+std::optional<fs::path> SweatTrails::find_font(std::string_view name)
+{
+    for (auto const &dir : get_font_dirs()) {
+        std::error_code ec { };
+        if (auto const path = fs::path { dir } / name; fs::is_regular_file(path, ec)) {
+            return path;
+        }
+    }
+    return { };
 }
 
 void SweatTrails::set_message(std::string_view const &text)

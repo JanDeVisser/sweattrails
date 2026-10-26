@@ -194,6 +194,7 @@ add_executable(
         src/App/widget/ActivitySelector.cpp
         src/App/widget/DataFields.cpp
         src/App/widget/DisplayedActivity.cpp
+        src/App/widget/OverlayPreview.cpp
         src/App/widget/SportIcon.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Download.cpp
