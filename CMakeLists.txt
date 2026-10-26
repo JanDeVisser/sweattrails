@@ -188,6 +188,7 @@ add_executable(
         src/App/overlay/Fields.cpp
         src/App/overlay/Layout.cpp
         src/App/overlay/LayoutFile.cpp
+        src/App/overlay/Renderer.cpp
         src/App/overlay/Template.cpp
         src/App/widget/Activity.cpp
         src/App/widget/ActivityMap.cpp

@@ -1,0 +1,56 @@
+/*
+ * Copyright (c) 2026, Jan de Visser <jan@finiandarcy.com>
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Draws an overlay layout's elements for one frame's values: on the screen
+ * for the preview, or into a render texture for the video.
+ */
+
+#pragma once
+
+#include <map>
+#include <optional>
+#include <string>
+
+#include <raylib.h>
+
+#include <FontCache.h>
+
+#include <overlay/Fields.h>
+#include <overlay/LayoutFile.h>
+
+namespace ST {
+
+struct OverlayRenderer {
+    explicit OverlayRenderer(FontFinder find);
+
+    // The layout to draw, from the file called `file_name`, which starts the
+    // errors. Finds its fonts: one that isn't there is the error.
+    void set_layout(OverlayLayout const &layout, std::string_view file_name);
+    void clear();
+
+    [[nodiscard]] OverlayLayout const *layout() const { return m_layout ? &*m_layout : nullptr; }
+    // What keeps the layout from being drawn: a font that isn't there, or
+    // that raylib couldn't load.
+    [[nodiscard]] std::optional<std::string> const &error() const { return m_error; }
+
+    // Draws the elements into `area`, in screen or render texture
+    // coordinates, scaled to fit it.
+    void draw(FieldValues const &values, Rectangle const &area);
+
+private:
+    FontFinder                                   m_find;
+    std::optional<OverlayLayout>                 m_layout { };
+    std::string                                  m_file_name { };
+    std::optional<std::string>                   m_error { };
+    FontCache                                    m_fonts { };
+    float                                        m_scale { 0 };
+    std::map<std::string, std::filesystem::path> m_font_paths { }; // By the layout's name for them
+
+    void                draw_element(OverlayElement const &element, FieldValues const &values, Rectangle const &area);
+    std::optional<Font> font(TextStyle const &style, size_t element);
+    void                draw_text(Font const &font, std::string_view text, Vector2 at, TextStyle const &style) const;
+};
+
+}
