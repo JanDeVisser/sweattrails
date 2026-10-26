@@ -73,6 +73,15 @@ struct ScrollInput {
     static ScrollInput current();
 };
 
+// The mouse wheel's notches. A trackpad reports fractions of a notch each
+// frame: they add up until there's a whole one.
+struct WheelNotches {
+    float total { 0 }; // The fractions of a notch not used yet
+
+    // The whole notches, up positive, with this frame's wheel added.
+    int add(float wheel);
+};
+
 // A vertical scrollbar along a track, for a ScrollRange. It shows, and
 // takes input, only when the rows overflow.
 struct Scrollbar {
@@ -80,9 +89,9 @@ struct Scrollbar {
     // thousand rows.
     static constexpr float MinThumbHeight = 12.0f;
 
-    bool  dragging { false };
-    float drag_offset { 0 }; // From the thumb's top to where it was grabbed
-    float wheel_total { 0 }; // The fractions of a notch not scrolled yet
+    bool         dragging { false };
+    float        drag_offset { 0 }; // From the thumb's top to where it was grabbed
+    WheelNotches wheel { };
 
     // The thumb: as high as the share of rows in view, where top_line is.
     [[nodiscard]] static Rectangle thumb(Rectangle track, ScrollRange const &range);

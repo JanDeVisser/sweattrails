@@ -23,6 +23,14 @@ ScrollInput ScrollInput::current()
     };
 }
 
+int WheelNotches::add(float wheel)
+{
+    total += wheel;
+    auto const notches = std::trunc(total);
+    total -= notches;
+    return static_cast<int>(notches);
+}
+
 Rectangle Scrollbar::thumb(Rectangle track, ScrollRange const &range)
 {
     if (!range.overflows()) {
@@ -55,12 +63,8 @@ bool Scrollbar::handle(ScrollRange &range, Rectangle track, Rectangle content, S
         return true;
     }
     if (input.wheel != 0 && (CheckCollisionPointRec(input.mouse, content) || CheckCollisionPointRec(input.mouse, track))) {
-        // Up, a positive notch, shows the rows above. A trackpad reports
-        // fractions of a notch: they add up until there's a whole one.
-        wheel_total += input.wheel;
-        auto const notches = std::trunc(wheel_total);
-        wheel_total -= notches;
-        range.scroll_by(-static_cast<int>(notches));
+        // Up, a positive notch, shows the rows above.
+        range.scroll_by(-wheel.add(input.wheel));
         return true;
     }
     if (input.pressed && CheckCollisionPointRec(input.mouse, track)) {

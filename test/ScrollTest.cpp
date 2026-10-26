@@ -162,6 +162,20 @@ void test_nothing_when_everything_fits()
     CHECK_EQ(range.top_line, 0);
 }
 
+void test_wheel_notches()
+{
+    WheelNotches notches;
+    CHECK_EQ(notches.add(0.4f), 0);
+    CHECK_EQ(notches.add(0.4f), 0);
+    CHECK_EQ(notches.add(0.4f), 1);
+    // A whole notch at once, and the fraction left over still counts.
+    CHECK_EQ(notches.add(1.0f), 1);
+    CHECK_EQ(notches.add(-0.5f), 0);
+    CHECK_EQ(notches.add(-1.0f), -1);
+    // -0.3 left over, so 1.7: one notch.
+    CHECK_EQ(notches.add(2.0f), 1);
+}
+
 }
 
 int main()
@@ -175,5 +189,6 @@ int main()
     test_drag();
     test_trackpad_wheel();
     test_nothing_when_everything_fits();
+    test_wheel_notches();
     return ST::Test::test_result();
 }
