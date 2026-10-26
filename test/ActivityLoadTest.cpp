@@ -339,6 +339,12 @@ void test_rename_back_to_the_workouts_name()
 {
     ActivityInDir t { "" };
     CHECK(t.activity.rename("Hill repeats").has_value());
+    // The rename made a sidecar, and the name is there after a reload.
+    CHECK(fs::exists(t.dir / "dummy.json"));
+    Activity again { t.storage, ActivityID::dummy(ActivityFile::Fit) };
+    again.depth = LoadingDepth::Deep;
+    CHECK(again.load_from_dir(t.dir).value_or(false));
+    CHECK_EQ(again.title, "Hill repeats");
     CHECK(t.activity.rename("").has_value());
     CHECK_EQ(t.activity.title, "Tempo intervals");
     CHECK(!fs::exists(t.activity.sidecar));
