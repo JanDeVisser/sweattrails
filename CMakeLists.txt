@@ -147,6 +147,10 @@ add_library(
         STATIC
         src/Lib/Widget/App.h
         src/Lib/Widget/App.cpp
+        src/Lib/Widget/Colors.h
+        src/Lib/Widget/Colors.cpp
+        src/Lib/Widget/FontCache.h
+        src/Lib/Widget/FontCache.cpp
         src/Lib/Widget/Layout.cpp
         src/Lib/Widget/Modal.h
         src/Lib/Widget/Scroll.h
@@ -181,11 +185,16 @@ add_executable(
         src/App/Range.h
         src/App/fit/FIT.cpp
         src/App/fit/Profile.cpp
+        src/App/overlay/Fields.cpp
+        src/App/overlay/Layout.cpp
+        src/App/overlay/LayoutFile.cpp
+        src/App/overlay/Template.cpp
         src/App/widget/Activity.cpp
         src/App/widget/ActivityMap.cpp
         src/App/widget/ActivitySelector.cpp
         src/App/widget/DataFields.cpp
         src/App/widget/DisplayedActivity.cpp
+        src/App/widget/OverlayPreview.cpp
         src/App/widget/SportIcon.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Download.cpp
@@ -279,6 +288,8 @@ sweattrails_test(listbox_test test/ListBoxTest.cpp)
 sweattrails_test(scroll_test test/ScrollTest.cpp)
 sweattrails_test(table_test test/TableTest.cpp)
 sweattrails_test(text_line_test test/TextLineTest.cpp)
+sweattrails_test(colors_test test/ColorsTest.cpp)
+sweattrails_test(pick_box_test test/PickBoxTest.cpp)
 sweattrails_test(input_box_test test/InputBoxTest.cpp)
 sweattrails_test(key_binding_test test/KeyBindingTest.cpp)
 sweattrails_test(zip_test test/ZipTest.cpp)
@@ -335,6 +346,58 @@ sweattrails_test(
 )
 target_include_directories(data_fields_test PRIVATE src/App)
 target_link_libraries(data_fields_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        overlay_fields_test
+        test/OverlayFieldsTest.cpp
+        src/App/overlay/Fields.cpp
+        src/App/overlay/Template.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(overlay_fields_test PRIVATE src/App)
+target_link_libraries(overlay_fields_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        overlay_layout_test
+        test/OverlayLayoutTest.cpp
+        src/App/overlay/Fields.cpp
+        src/App/overlay/Layout.cpp
+        src/App/overlay/Template.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(overlay_layout_test PRIVATE src/App)
+target_link_libraries(overlay_layout_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        layout_file_test
+        test/LayoutFileTest.cpp
+        src/App/overlay/Fields.cpp
+        src/App/overlay/Layout.cpp
+        src/App/overlay/LayoutFile.cpp
+        src/App/overlay/Template.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(layout_file_test PRIVATE src/App)
+target_compile_definitions(layout_file_test PRIVATE SWEATTRAILS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+target_link_libraries(layout_file_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         displayed_activity_test

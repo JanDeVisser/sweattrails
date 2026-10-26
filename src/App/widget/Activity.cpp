@@ -469,6 +469,7 @@ void ActivityDisplay::set_activity(Activity const &activity)
     }
     data_display->set_activity(this->activity);
     map->set_activity(this->activity);
+    preview->set_activity(this->activity);
     graph->set_activity(this->activity);
     resize();
 }
@@ -480,7 +481,22 @@ void ActivityDisplay::clear_activity()
     laps->policy = SizePolicy::Hide;
     data_display->set_activity(nullptr);
     map->set_activity(nullptr);
+    preview->set_activity(nullptr);
     graph->set_activity(nullptr);
+    resize();
+}
+
+bool ActivityDisplay::previewing() const
+{
+    return preview->policy != SizePolicy::Hide;
+}
+
+// The preview takes the place of the data panel and the map, which keeps
+// its own policy, Hide for an activity without a route.
+void ActivityDisplay::show_preview(bool on)
+{
+    central->policy = on ? SizePolicy::Hide : SizePolicy::Stretch;
+    preview->policy = on ? SizePolicy::Stretch : SizePolicy::Hide;
     resize();
 }
 
@@ -497,9 +513,10 @@ void ActivityDisplay::on_draw()
 
 void ActivityDisplay::initialize()
 {
-    auto central = add_widget<Layout>(ContainerOrientation::Horizontal, SizePolicy::Stretch);
+    central = add_widget<Layout>(ContainerOrientation::Horizontal, SizePolicy::Stretch);
     data_display = central->add_widget<ActivityDataDisplay>();
     map = central->add_widget<ActivityMap>();
+    preview = add_widget<OverlayPreview>();
     laps = add_widget<Table>(LapTableRows);
     laps->policy = SizePolicy::Hide;
     laps->on_click = [this](size_t row) {

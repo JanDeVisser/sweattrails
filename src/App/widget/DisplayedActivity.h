@@ -35,6 +35,11 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     void set_mark(size_t t);
     void set_segment(size_t t);
 
+    // The record the overlay preview shows: the marked one, or else where a
+    // drag in the graph is, the end of the range it's selecting, or else
+    // the first.
+    [[nodiscard]] size_t current_record() const;
+
     // Whether there are laps to select: one lap is the whole activity.
     [[nodiscard]] bool has_laps() const;
     void               select_lap(size_t ix);

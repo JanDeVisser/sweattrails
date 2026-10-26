@@ -138,12 +138,29 @@ on Wahoo becomes its title. A ride recorded on a Wahoo and a Garmin at the
 same time shows up twice. If you don't use SweatTrails for 60 days, Wahoo
 forgets the login, and Ctrl+G asks you to log in again.
 
+## Overlay preview
+
+SweatTrails is growing a video overlay: an activity's data, drawn over the
+footage of the ride, with a transparent background. For now it previews
+it: Ctrl+O shows the overlay in place of the data panel and the map, at
+the moment marked in the graph, and Ctrl+Shift+O picks the layout. A
+layout is a JSON file that says what's shown where; the built-in one is
+`share/overlays/cycling-basic.overlay.json`, a good start for your own.
+Put those in `overlays/` in SweatTrails' data folder
+(`~/Library/Application Support/sweattrails/overlays` on macOS), named
+`<name>.overlay.json`: the preview shows a change as soon as it's saved.
+The format is in `specs/overlay-layout.md`.
+
 How the app is developed, from specs, is in `CLAUDE.md`; the coding style
 is in `STYLE.md`, and how to write tests in `test/README.md`.
 
 ## Credits
 
 The sport icons are by [Icons8](https://icons8.com).
+
+The overlay's font is [Inter](https://rsms.me/inter/), by The Inter
+Project Authors, under the SIL Open Font License 1.1
+(`share/fonts/Inter-OFL.txt`).
 
 The map tiles are from [OpenStreetMap](https://www.openstreetmap.org),
 © OpenStreetMap contributors.

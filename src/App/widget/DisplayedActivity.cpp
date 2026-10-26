@@ -46,6 +46,17 @@ void DisplayedActivity::set_segment(size_t t)
     }
 }
 
+size_t DisplayedActivity::current_record() const
+{
+    if (mark) {
+        return *mark;
+    }
+    if (segment) {
+        return segment->max;
+    }
+    return 0;
+}
+
 bool DisplayedActivity::has_laps() const
 {
     return activity.laps.size() > 1;

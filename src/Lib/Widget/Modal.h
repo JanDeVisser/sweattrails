@@ -540,6 +540,55 @@ void query_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
     qbox->show();
 }
 
+// A list of entries to pick one of, each a text and a payload. Enter calls
+// `submit(target, payload)` with the selected one's. The entry `initial`,
+// if there's one with that text, is selected when the box opens.
+template<typename C, typename Payload, typename Submit>
+struct PickBox : public ListBox<Payload> {
+    using pC = std::shared_ptr<C>;
+    using Entries = std::vector<std::pair<std::string, Payload>>;
+
+    pC     target;
+    Submit submit_fnc;
+
+    PickBox(pC target, std::string_view prompt, Entries const &entries, Submit submit)
+        : ListBox<Payload>(prompt)
+        , target(std::move(target))
+        , submit_fnc(std::move(submit))
+    {
+        for (auto const &[text, payload] : entries) {
+            this->entries.emplace_back(text, payload);
+        }
+    }
+
+    // Selects the entry with this text, if there is one.
+    void select(std::string_view text)
+    {
+        auto const &shown = this->shown();
+        for (auto ix = 0uz; ix < shown.size(); ++ix) {
+            if (shown[ix].text == text) {
+                this->selection = static_cast<int>(ix);
+                this->scroll_to_selection();
+                return;
+            }
+        }
+    }
+
+    void submit() override
+    {
+        submit_fnc(target, this->selected().payload);
+    }
+};
+
+template<typename C, typename Payload, typename Submit>
+void list_box(std::shared_ptr<C> target, std::string_view const &prompt, std::vector<std::pair<std::string, Payload>> const &entries, Submit fnc, std::string_view initial = "")
+{
+    auto const &box = Widget::make<PickBox<C, Payload, Submit>>(target, prompt, entries, fnc);
+    // After show(), which selects the first entry.
+    box->show();
+    box->select(initial);
+}
+
 inline static void message_box(std::string_view const &prompt, QueryOption options = QueryOptionOK)
 {
     auto dummy = [](auto const &, auto) {

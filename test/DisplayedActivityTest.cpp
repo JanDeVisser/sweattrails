@@ -45,6 +45,28 @@ int lap(std::optional<size_t> lap)
     return lap ? static_cast<int>(*lap) : -1;
 }
 
+// A drag in the graph clears the mark, and selects a range up to where the
+// mouse is: the preview follows that, rather than jumping to the start.
+void test_current_record()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.clear_segment();
+    CHECK_EQ(d.current_record(), 0uz);
+    d.set_mark(17);
+    CHECK_EQ(d.current_record(), 17uz);
+    // A drag from 12 to 25, and back to 5.
+    d.clear_mark();
+    d.set_segment(12);
+    d.set_segment(25);
+    CHECK_EQ(d.current_record(), 25uz);
+    d.set_segment(5);
+    CHECK_EQ(d.current_record(), 5uz);
+    // Let go: the mark wins.
+    d.set_mark(30);
+    CHECK_EQ(d.current_record(), 30uz);
+}
+
 void test_select_lap()
 {
     TestActivity t;
@@ -207,6 +229,7 @@ void test_lap_at()
 
 int main()
 {
+    test_current_record();
     test_select_lap();
     test_drag_ends_the_lap();
     test_toggle_lap();

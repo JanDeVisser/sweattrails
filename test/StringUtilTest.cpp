@@ -47,6 +47,24 @@ void test_strip()
     CHECK_EQ(rstrip(""), "");
 }
 
+// A character is 10 wide.
+void test_wrap_words()
+{
+    auto const measure = [](std::string_view text) { return 10.0f * static_cast<float>(text.length()); };
+    auto const wrapped = [&](std::string_view text, float width) {
+        std::string ret;
+        for (auto const &line : wrap_words(text, width, measure)) {
+            ret += (ret.empty() ? "" : "|") + line;
+        }
+        return ret;
+    };
+    CHECK_EQ(wrapped("element 3: the font isn't there", 100), "element 3:|the font|isn't|there");
+    CHECK_EQ(wrapped("element 3: the font isn't there", 1000), "element 3: the font isn't there");
+    // A word that doesn't fit is a line of its own.
+    CHECK_EQ(wrapped("a cycling-basic.overlay.json b", 50), "a|cycling-basic.overlay.json|b");
+    CHECK_EQ(wrapped("  two  spaces ", 1000), "two spaces");
+    CHECK_EQ(wrapped("", 100), "");
+}
 }
 
 int main()
@@ -54,5 +72,6 @@ int main()
     test_base64url();
     test_base64url_uses_the_url_safe_alphabet();
     test_strip();
+    test_wrap_words();
     return ST::Test::test_result();
 }
