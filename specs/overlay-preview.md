@@ -135,9 +135,6 @@ thin file.
 
 ### In the libraries
 
-- **`JSONValue::merge(JSONValue const &over)`** in `JSON.h`: `over`'s keys
-  replace this object's, and where both are objects, they merge,
-  recursively. This is the style cascade.
 - **Comments** already work: the JSON lexer skips `//` and `/* */` unless
   it's asked to keep them (checked with a scratch build). A test in
   `JSONTest` makes sure it stays that way.
@@ -163,6 +160,9 @@ thin file.
 - Decoding is as in the [reference](overlay-layout.md#format-json): for
   each element, `defaults` merged with each of its styles and then its own
   properties, and the merged object decoded by the element type's decoder.
+  The merge is `cascade(base, over)` here, not `JSONValue::merge()`, which
+  appends arrays, as the settings want: a style's `"offset": [3, 3]` has to
+  replace the default's `[2, 2]`, not be added to it.
 - **Elements** are a `std::variant<TextElement, ValueElement>`. Both have a
   `Placement` (`at`, `anchor`, `size`) and a `TextStyle` (`font`, `size`,
   `color`, `shadow`); `TextElement` a `Template` and `align`;
@@ -252,12 +252,12 @@ thin file.
 
 ## Test plan
 
-- `JSONTest`: `merge()`, of nested objects, and of an object over a
-  non-object; comments in a document.
+- `JSONTest`: comments in a document.
 - `ColorsTest` (new): `#rrggbb`, `#rrggbbaa`, upper and lower case, and
   what isn't a color (no `#`, wrong length, not hex).
 - `OverlayLayoutTest` (new): the cascade (defaults, styles in order, own
-  properties; a style that doesn't exist is an error); decoding `text` and
+  properties, nested objects merged and arrays replaced; a style that
+  doesn't exist is an error); decoding `text` and
   `value`; the errors, with element index and property: unknown property,
   unknown type, bad color, bad format spec, unknown field, unknown unit;
   later slices' elements skipped and counted, and their style properties

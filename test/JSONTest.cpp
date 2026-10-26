@@ -104,6 +104,20 @@ void test_erase()
     number.erase("title");
     CHECK_EQ(number.serialize(), "12");
 }
+
+// Layout files have comments: the lexer skips them.
+void test_comments()
+{
+    auto const json = JSONValue::deserialize(R"({ // the speed
+        "a": 1, /* and
+        more */ "b": "// not a comment"
+    })");
+    CHECK(json.has_value());
+    if (json) {
+        CHECK_EQ(json->try_get<int>("a").value_or(0), 1);
+        CHECK_EQ(json->try_get<std::string>("b").value_or(""), "// not a comment");
+    }
+}
 }
 
 int main()
@@ -114,5 +128,6 @@ int main()
     test_in_objects_and_arrays();
     test_not_numbers();
     test_erase();
+    test_comments();
     return ST::Test::test_result();
 }
