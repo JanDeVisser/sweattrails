@@ -1,6 +1,6 @@
 # Map Pan and Zoom
 
-Status: In progress
+Status: In review
 
 ## Goal
 
@@ -182,12 +182,21 @@ every frame.
 
 - Every change of the view cancels the waiting download, and schedules
   one for the visible tiles that are neither loaded nor cached, with the
-  existing `TileDownload`, job and cancelling.
+  existing `TileDownload`, job and cancelling. A view change that needs
+  the same tiles as the download that's going on, as when a drag moves
+  less than a tile, leaves it be. `missing_tiles(view, have)` is the
+  choice of tiles, testable.
 - `MapTile` gets the `Tile` in place of its index in the grid, which no
-  longer exists. A tile that arrives from a cancelled download of the
-  same activity is still loaded, since it's cached and may be in view;
-  one from another activity's download is dropped, as now.
-- `MapTilesDone` reports failures only for the current download, as now.
+  longer exists. `TileDownload` gets the `map` it's for, a number
+  `ActivityMap` counts up for each activity: a tile that arrives from a
+  cancelled download of the same activity is still loaded, since it may
+  be in view and is a placeholder; one for another activity is dropped,
+  as now.
+- `fetch_tiles()` returns the tiles that failed, not their number, and
+  `MapTilesDone` carries them: the map doesn't ask for them again while
+  the activity is open, so that panning over a tile the server refuses
+  doesn't ask for it on every frame. The status line reports failures
+  for the current download, as now.
 
 ### Input, keys and resizing
 
@@ -199,7 +208,8 @@ every frame.
   is. It also has `zoom_by()`, `whole_route()` and `resize()`.
   `ActivityMap` owns one and draws what it says; its
   `process_input()` passes it raylib's input. This keeps the input
-  testable without the app, which `ActivityMap` needs.
+  testable without the app, which `ActivityMap` needs. `ActivityMap`'s
+  code moves to `widget/ActivityMap.cpp`, as it grew.
 - **Trackpad fractions**: `Scrollbar`'s `wheel_total` becomes a small
   `WheelNotches` in `Scroll.h`, which `Scrollbar` and the map share:
   `int add(float wheel)` returns the whole notches and keeps the rest.
