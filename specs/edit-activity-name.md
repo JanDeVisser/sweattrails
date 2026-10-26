@@ -1,6 +1,6 @@
 # Edit an Activity's Name
 
-Status: Ready
+Status: In progress
 
 ## Goal
 
@@ -117,11 +117,81 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### Editing a line of text: `TextLine` in `src/Lib/Widget/TextLine.h`
+
+- **`struct TextLine`**: the text as a `rune_string` (`wchar_t`, 32 bits
+  on macOS and Linux, so a codepoint each) and the cursor as an index
+  into it. That makes moving and deleting a character at a time plain
+  indexing, and the text goes to UTF-8 only when it's read
+  (`utf8()`) or set (`set(std::string_view)`). Plain logic, no raylib,
+  for the tests.
+  - `insert(rune)`, which leaves out control characters;
+    `paste(std::string_view utf8)`, with line breaks as spaces;
+    `backspace()`, `del()`, `left()`, `right()`, `home()`, `end()`.
+  - `handle_key(modifier, key, clipboard)`: the keys, with Cmd+V
+    (`KModSuper`) on macOS and Ctrl+V elsewhere pasting what
+    `clipboard()` returns, which is `GetClipboardText()` in the box and
+    made up in tests. Returns whether it took the key.
+  - `scroll_for(cursor_x, width)`: the sideways scroll that keeps the
+    cursor in view, given where the cursor is in the whole text, as the
+    font measures it: kept in `scroll_x`, so that it only moves when
+    the cursor would leave the box.
+- **`input_box()`** keeps its interface, and its `InputBox` uses a
+  `TextLine`: `character()` and `process_key()` pass on to it, `draw()`
+  measures the text before the cursor, and the box's Enter hands
+  `utf8()` to the submit function.
+- A `static_assert` that `rune` is 32 bits: on Windows, where `wchar_t`
+  is 16, a character wouldn't be one `rune`, and the README says
+  Windows isn't supported.
+
+### The sidecar: `storage/Activity.h`
+
+- **`JSONValue::erase(key)`** in `JSON.h`, which there isn't yet, to
+  remove `"title"`.
+- **Reading**: `load_from_dir()` takes the service's name from the
+  sidecar, as now, into `title`, keeps that as `original_title`, and then
+  takes `"title"` if there is one. `original_title` is what an empty name
+  goes back to. `sidecar_title()` keeps its meaning, the service's name,
+  and a new `sidecar_own_title()` reads `"title"`.
+- **Writing**: `save_sidecar_title(sidecar, title)` (free function, for
+  the tests): reads the sidecar if there is one, refuses if it isn't a
+  JSON object, sets or erases `"title"`, and writes it with
+  `write_file_atomically()`. A sidecar left without keys, which only the
+  app made, is removed rather than written as `{}`.
+- **`Activity::rename(name)`**: trims the name, does nothing if it's the
+  same, saves it to `<dir>/<id.name>.json`, and sets `title`, to the
+  name or to `original_title`. Returns an error for the status line.
+
+### Renaming in the app
+
+- The task `st-rename-activity` (F2) in SweatTrails.cpp: not under a
+  modal, nor without an activity on display, as the lap keys. It opens
+  `input_box()` with the prompt "Name" and the title, and its submit
+  function calls `rename()` on the displayed activity's `Activity`, and
+  sets the status line if it fails.
+- **The click on the title**: `ActivityDataDisplay` keeps where it drew
+  the title, as it does for the clickable fields, asks for the pointing
+  hand over it, and on a click submits `st-rename-activity` to the bus,
+  so that the key and the click are one code path.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `TextLineTest` (new): typing ASCII and "Café", "Rückweg", "Ålesund",
+  and an emoji; the cursor, Backspace and Delete a character at a time;
+  Home and End; control characters left out; pasting, with line breaks
+  as spaces, at the cursor; Cmd+V and Ctrl+V; `utf8()` and `set()`
+  round trips; `scroll_for()` keeping the cursor in view both ways.
+- `JSONTest`: `erase()`, of a key that's there and one that isn't.
+- `ActivityLoadTest`: `"title"` wins over `activityName` and `name`;
+  `save_sidecar_title()` into a Garmin sidecar keeps its other keys,
+  makes a sidecar without one, erases `"title"` for an empty name and
+  removes a sidecar left empty, and refuses one that isn't JSON, leaving
+  it as it was; `rename()` trims, and an empty name brings back the
+  original title.
+- By hand: F2 and clicking the title, typing and pasting non-ASCII, a
+  long name scrolling in the box, Esc, the month's list after a rename,
+  a rename that fails (a read-only directory), and F2 under the month's
+  list.
 
 ## Review notes
 
