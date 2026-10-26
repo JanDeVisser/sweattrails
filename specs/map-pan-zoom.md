@@ -36,9 +36,10 @@ move the map around, and go back to the whole route, as on any map.
 ### Zooming and panning
 
 - **Zoom** with the mouse wheel, or two fingers on the trackpad, over
-  the map. Each notch is one OSM zoom level, and the zoom is centered on
-  the point under the mouse, which stays where it is. A trackpad reports
-  fractions of a notch, which add up to whole ones, as in the lap table.
+  the map. Each click of a mouse's wheel is one OSM zoom level, and the
+  zoom is centered on the point under the mouse, which stays where it
+  is. A trackpad swipe zooms a level when it starts, and a level for
+  each notch's worth of movement after that, as the lap table scrolls.
   Zoom steps are whole OSM levels so that the tiles stay sharp, as on
   openstreetmap.org.
 - **Pan** by dragging the map. While it's being dragged, the cursor is a
@@ -218,7 +219,12 @@ every frame.
   code moves to `widget/ActivityMap.cpp`, as it grew.
 - **Trackpad fractions**: `Scrollbar`'s `wheel_total` becomes a small
   `WheelNotches` in `Scroll.h`, which `Scrollbar` and the map share:
-  `int add(float wheel)` returns the whole notches and keeps the rest.
+  `int add(float wheel, double now)` returns the whole notches and keeps
+  the rest. Found by hand: on macOS raylib reports a slow click of a
+  mouse's wheel as a tenth of a notch or so, so the first movement after
+  a pause of 50 ms counts as a notch however small it is; only movement
+  that follows without a pause, as a swipe's, adds up. `ScrollInput`
+  gets the frame's `time` for it.
 - **The cursor while dragging is `MOUSE_CURSOR_RESIZE_ALL`**, the
   four-way arrow: raylib has no grabbing hand.
 - The track is kept as world pixels at zoom 0 (`double`s), and scaled to
