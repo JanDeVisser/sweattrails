@@ -853,6 +853,17 @@ void test_title_when_made()
     CHECK_EQ(values_at_record(OverlaySource { t.activity }, 0).title, "Renamed");
 }
 
+// The date has no zone: specs that show one are refused.
+void test_date_without_zone()
+{
+    CHECK(!is_valid_spec(OverlayField::date, "%d %b %Y %Z"));
+    CHECK(!is_valid_spec(OverlayField::date, "%z"));
+    CHECK(!is_valid_spec(OverlayField::date, "%Ez"));
+    CHECK(is_valid_spec(OverlayField::date, "100%% %d"));
+    CHECK(is_valid_spec(OverlayField::date, "%%Z"));
+    CHECK(is_valid_spec(OverlayField::date, "%d %b"));
+}
+
 }
 
 int main()
@@ -900,5 +911,6 @@ int main()
     test_grade_with_an_altitude_step_in_a_pause();
     test_pause_after_a_dropout();
     test_title_when_made();
+    test_date_without_zone();
     return ST::Test::test_result();
 }

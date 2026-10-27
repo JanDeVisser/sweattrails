@@ -74,6 +74,29 @@ std::string clock(double seconds_since_midnight, std::string_view spec)
     return std::format("{:02}:{:02}", total / 3600, (total / 60) % 60);
 }
 
+// Whether a date spec asks for the zone: %z, %Z, %Ez or %Oz. The date is
+// local time without one, so they'd say UTC.
+bool has_zone(std::string_view spec)
+{
+    for (auto ix = 0uz; ix + 1 < spec.length(); ++ix) {
+        if (spec[ix] != '%') {
+            continue;
+        }
+        auto next = ix + 1;
+        if (spec[next] == '%') {
+            ix = next;
+            continue;
+        }
+        if ((spec[next] == 'E' || spec[next] == 'O') && next + 1 < spec.length()) {
+            ++next;
+        }
+        if (spec[next] == 'z' || spec[next] == 'Z') {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::chrono::sys_seconds date_of(double local_seconds)
 {
     return std::chrono::sys_seconds { std::chrono::seconds { std::llround(local_seconds) } };
@@ -293,6 +316,9 @@ bool is_valid_spec(OverlayField field, std::string_view spec)
     case FieldKind::Clock:
         return std::ranges::contains(ClockSpecs, spec);
     case FieldKind::Date:
+        if (has_zone(spec)) {
+            return false;
+        }
         try {
             auto const day = date_of(0);
             (void) std::vformat(std::format("{{:{}}}", spec), std::make_format_args(day));
