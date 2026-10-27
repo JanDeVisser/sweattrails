@@ -1,6 +1,6 @@
 # Overlay gauges and graphs
 
-Status: Draft
+Status: Ready
 
 ## Goal
 
