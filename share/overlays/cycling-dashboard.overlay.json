@@ -1,0 +1,70 @@
+// SweatTrails' built-in dashboard for rides, and an example to copy: put
+// your own layouts in `overlays/` in SweatTrails' data folder, named
+// `<name>.overlay.json`. The format is in specs/overlay-layout.md.
+{
+    "version": 1,
+    "design_size": { "width": 1920, "height": 1080 },
+    "units": "metric",
+    "defaults": {
+        "font": "Inter-Bold.ttf",
+        "font_size": 64,
+        "color": "#ffffff",
+        "shadow": { "color": "#00000080", "offset": [2, 2] }
+    },
+    "styles": {
+        "panel": { "background": "#00000060", "radius": 16,
+                   "border": { "color": "#ffffff30", "width": 1 } },
+        "label": { "font": "Inter-Regular.ttf", "font_size": 22, "color": "#ffffffcc" },
+        "line": { "font_size": 40 },
+        "unit": { "unit_style": { "font": "Inter-Regular.ttf", "font_size": 28 } }
+    },
+    "elements": [
+        // The distance and the times in the top left, in a panel: a text
+        // without text, as big as the panel.
+        { "type": "text", "text": "", "style": "panel",
+          "at": { "x": 40, "y": 40 }, "size": { "width": 320, "height": 170 } },
+        { "type": "text", "text": "{distance:.1f} {distance.unit}", "style": "line",
+          "at": { "x": 64, "y": 56 } },
+        { "type": "text", "text": "{elapsed}", "style": "line",
+          "at": { "x": 64, "y": 106 } },
+        { "type": "text", "text": "{time_of_day:hms}", "style": "label",
+          "at": { "x": 64, "y": 162 } },
+
+        // The last minute of heart rate, ending at the moment.
+        { "type": "graph", "field": "heart_rate", "x_axis": "time", "window": 60,
+          "line": { "color": "#f94144", "width": 3 }, "fill": "#f9414430",
+          "cursor": { "color": "#ffffff", "radius": 6 },
+          "style": "panel", "padding": 16,
+          "at": { "x": 40, "y": -230, "anchor": "bottom-left" },
+          "size": { "width": 760, "height": 140 } },
+
+        // Speed, heart rate and cadence in the bottom left, in a panel.
+        { "type": "text", "text": "", "style": "panel",
+          "at": { "x": 40, "y": -40, "anchor": "bottom-left" }, "size": { "width": 760, "height": 170 } },
+        { "type": "text", "text": "SPEED", "style": "label",
+          "at": { "x": 70, "y": -150, "anchor": "bottom-left" } },
+        { "type": "value", "field": "speed", "style": "unit",
+          "at": { "x": 70, "y": -60, "anchor": "bottom-left" } },
+        { "type": "text", "text": "HEART RATE", "style": "label",
+          "at": { "x": 330, "y": -150, "anchor": "bottom-left" } },
+        { "type": "value", "field": "heart_rate", "style": "unit",
+          "at": { "x": 330, "y": -60, "anchor": "bottom-left" } },
+        { "type": "text", "text": "CADENCE", "style": "label",
+          "at": { "x": 570, "y": -150, "anchor": "bottom-left" } },
+        { "type": "value", "field": "cadence", "style": "unit",
+          "at": { "x": 570, "y": -60, "anchor": "bottom-left" } },
+
+        // Power as an arc in the bottom right, turning from blue to red as
+        // it goes up, with the number in its middle.
+        { "type": "gauge", "field": "power", "shape": "arc", "min": 0, "max": 400,
+          "track": "#ffffff30", "thickness": 18,
+          "color_by": { "thresholds": [[0, "#8ecae6"], [150, "#90be6d"], [220, "#f9c74f"], [300, "#f94144"]] },
+          "style": "panel", "padding": 20,
+          "at": { "x": -40, "y": -40, "anchor": "bottom-right" },
+          "size": { "width": 240, "height": 240 } },
+        { "type": "value", "field": "power", "style": "unit",
+          "at": { "x": -160, "y": -160, "anchor": "center" } },
+        { "type": "text", "text": "POWER", "style": "label",
+          "at": { "x": -160, "y": -92, "anchor": "center" } }
+    ]
+}
