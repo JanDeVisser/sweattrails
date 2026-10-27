@@ -843,6 +843,16 @@ void test_pause_after_a_dropout()
     CHECK_EQ(value_of(values, OverlayField::heart_rate), "none");
 }
 
+// The title is the one the source was made with.
+void test_title_when_made()
+{
+    NewFieldsActivity   t;
+    OverlaySource const source { t.activity };
+    t.activity.title = "Renamed";
+    CHECK_EQ(values_at_time(source, 3909).title, "Rückweg");
+    CHECK_EQ(values_at_record(OverlaySource { t.activity }, 0).title, "Renamed");
+}
+
 }
 
 int main()
@@ -889,5 +899,6 @@ int main()
     test_grade_at_the_ends();
     test_grade_with_an_altitude_step_in_a_pause();
     test_pause_after_a_dropout();
+    test_title_when_made();
     return ST::Test::test_result();
 }

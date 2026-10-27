@@ -320,6 +320,7 @@ i32 local_utc_offset(Activity const &activity)
 OverlaySource::OverlaySource(Activity const &activity)
     : activity(&activity)
     , utc_offset(local_utc_offset(activity))
+    , title(activity.title)
 {
     // An altitude that changed while standing still, such as a barometer
     // drifting during a café stop, is no climb: it comes off everything
@@ -431,7 +432,7 @@ std::optional<double> field_value(OverlaySource const &source, size_t record, Ov
 
 FieldValues values_at_record(OverlaySource const &source, size_t record)
 {
-    FieldValues ret { .sport = source.activity->sport, .title = source.activity->title, .source = &source };
+    FieldValues ret { .sport = source.activity->sport, .title = source.title, .source = &source };
     for (auto ix = 0uz; ix < OverlayFieldCount; ++ix) {
         ret.values[ix] = field_value(source, record, static_cast<OverlayField>(ix));
     }
@@ -449,7 +450,7 @@ FieldValues values_at_time(OverlaySource const &source, double seconds)
     auto const after = std::ranges::upper_bound(records, at, { }, time_of);
     auto const later = static_cast<size_t>(after - records.begin());
 
-    FieldValues ret { .sport = activity.sport, .title = activity.title, .source = &source };
+    FieldValues ret { .sport = activity.sport, .title = source.title, .source = &source };
     if (!records.empty()) {
         auto const earlier = (later == 0) ? 0 : later - 1;
         ret = values_at_record(source, earlier);

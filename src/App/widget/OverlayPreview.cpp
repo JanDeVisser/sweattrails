@@ -106,6 +106,10 @@ void OverlayPreview::draw()
         return;
     }
     auto const &layout = *file->layout;
+    // Renamed since: the preview shows the new title.
+    if (activity && source && source->title != activity->activity.title) {
+        source.emplace(activity->activity);
+    }
     if (activity && source) {
         BeginScissorMode(static_cast<int>(area.x), static_cast<int>(area.y), static_cast<int>(area.width), static_cast<int>(area.height));
         renderer.draw(values_at_record(*source, activity->current_record()), area);

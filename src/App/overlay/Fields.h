@@ -106,6 +106,9 @@ struct OverlaySource {
     Activity const           *activity;
     i32                       utc_offset { 0 }; // Local time minus UTC, in seconds
     std::vector<ProfilePoint> profile { };      // The records with both, in order of distance
+    // As it was when the source was made: renaming the activity during a
+    // render doesn't change the video halfway.
+    std::string title { };
     // The fields any record has: one the activity hasn't at all, such as
     // power without a power meter, is missing throughout, also in a pause.
     std::array<bool, OverlayFieldCount> recorded { };
