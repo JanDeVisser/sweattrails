@@ -686,10 +686,14 @@ void cmd_overlay_render(pSweatTrails const &sweattrails, JSONValue const &)
         return;
     }
     auto const clock = activity_clock(activity->activity);
-    auto const initial = activity->segment
-        ? records_range(activity->activity, activity->segment->min, activity->segment->max)
-        : RenderRange { .from = 0, .to = clock.duration };
-    RenderJob  job {
+    // A selection of one record isn't a range: the whole activity is.
+    auto initial = RenderRange { .from = 0, .to = clock.duration };
+    if (activity->segment) {
+        if (auto const selected = records_range(activity->activity, activity->segment->min, activity->segment->max); selected.to > selected.from) {
+            initial = selected;
+        }
+    }
+    RenderJob job {
         .activity = activity,
         .layout = *file->layout,
         .layout_file = file->path.filename().string(),
