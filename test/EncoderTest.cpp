@@ -12,6 +12,7 @@
 #include <format>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <fcntl.h>
@@ -149,7 +150,11 @@ void test_stop()
     CHECK(!fs::exists(output));
     // Stopping twice, and the destructor after it, do nothing more.
     encoder->stop();
-    CHECK(encoder->finish().has_value());
+    auto const finished = encoder->finish();
+    CHECK(!finished.has_value());
+    if (!finished) {
+        CHECK_EQ(finished.error(), "Stopped");
+    }
 }
 
 void test_stop_by_destructor()
@@ -179,6 +184,25 @@ void test_no_files_inherited()
         CHECK_EQ(finished.error(), "<none>");
     }
     ::close(fd);
+}
+
+// The program finishes on the encoder's thread: close() doesn't wait.
+void test_close_doesnt_wait()
+{
+    Test::TempDir dir { "encoder-close" };
+    auto const    output = dir.path / "out.raw";
+    auto          encoder = started({ "-c", "cat > /dev/null; sleep 1; exec echo done > \"$1\"", "sh", output.string() }, output, 4);
+    CHECK(encoder->write(encoder->buffer()));
+    auto const before = std::chrono::steady_clock::now();
+    encoder->close();
+    CHECK(!encoder->result().has_value());
+    CHECK(std::chrono::steady_clock::now() - before < std::chrono::milliseconds { 500 });
+    while (!encoder->result()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds { 10 });
+    }
+    CHECK(encoder->result()->has_value());
+    CHECK(encoder->finish().has_value());
+    CHECK_EQ(contents(output), "done\n");
 }
 
 void test_no_program()
@@ -283,6 +307,7 @@ int main()
     test_stop();
     test_stop_by_destructor();
     test_no_files_inherited();
+    test_close_doesnt_wait();
     test_no_program();
     test_no_leaks();
     test_stop_while_stuck();

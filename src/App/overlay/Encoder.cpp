@@ -129,7 +129,7 @@ std::expected<std::unique_ptr<Encoder>, std::string> Encoder::start(
         fs::remove(log, ignored);
         ::close(fds[1]);
         encoder->m_pid = -1;
-        encoder->m_done = true;
+        encoder->m_joined = true;
         return std::unexpected(std::format("Can't start {}: {}", program.filename().string(), std::strerror(spawned)));
     }
     encoder->m_stdin = fds[1];
@@ -139,7 +139,7 @@ std::expected<std::unique_ptr<Encoder>, std::string> Encoder::start(
 
 Encoder::~Encoder()
 {
-    if (!m_done) {
+    if (!m_joined) {
         stop();
     }
 }
@@ -180,6 +180,8 @@ bool Encoder::write(Frame frame)
     return true;
 }
 
+// Writes the frames until there are no more, or the program has gone, and
+// then waits for the program, so that the UI thread doesn't.
 void Encoder::write_frames()
 {
     while (true) {
@@ -188,7 +190,7 @@ void Encoder::write_frames()
             std::unique_lock lock { m_mutex };
             m_changed.wait(lock, [this]() { return !m_queue.empty() || m_closing || m_stopping; });
             if (m_queue.empty() || m_stopping) {
-                return;
+                break;
             }
             frame = std::move(m_queue.front());
         }
@@ -203,65 +205,94 @@ void Encoder::write_frames()
         }
         m_changed.notify_all();
         if (m_failed) {
-            return;
+            break;
         }
     }
+    auto const      result = wait();
+    std::error_code ignored;
+    if (!result) {
+        fs::remove(m_output, ignored);
+    }
+    fs::remove(m_log, ignored);
+    std::lock_guard lock { m_mutex };
+    m_result = result;
+}
+
+void Encoder::close()
+{
+    std::lock_guard lock { m_mutex };
+    m_closing = true;
+    m_changed.notify_all();
+}
+
+std::optional<std::expected<void, std::string>> Encoder::result() const
+{
+    std::lock_guard lock { m_mutex };
+    return m_result;
 }
 
 std::expected<void, std::string> Encoder::finish()
 {
-    if (m_done) {
-        return { };
+    if (!m_joined) {
+        close();
+        m_writer.join();
+        m_joined = true;
     }
-    {
-        std::lock_guard lock { m_mutex };
-        m_closing = true;
-        m_changed.notify_all();
-    }
-    m_writer.join();
-    auto            ret = wait();
-    std::error_code ignored;
-    if (!ret) {
-        fs::remove(m_output, ignored);
-    }
-    fs::remove(m_log, ignored);
-    return ret;
+    std::lock_guard lock { m_mutex };
+    return m_result.value_or(std::unexpected("Stopped"));
 }
 
 void Encoder::stop()
 {
-    if (m_done) {
+    if (m_joined) {
         return;
     }
     // The queue is the writer's to empty: it may be writing its front.
+    // Once the program has gone, that write fails.
     {
         std::lock_guard lock { m_mutex };
         m_stopping = true;
+        if (!m_exited) {
+            ::kill(m_pid, SIGKILL);
+        }
         m_changed.notify_all();
     }
-    // The writer may be in the middle of a frame; once the program has
-    // gone that write fails.
-    ::kill(m_pid, SIGKILL);
     m_writer.join();
-    (void) wait();
+    m_joined = true;
     std::error_code ignored;
     fs::remove(m_output, ignored);
-    fs::remove(m_log, ignored);
+    {
+        std::lock_guard lock { m_mutex };
+        m_result = std::unexpected("Stopped");
+    }
 }
 
-// Closes the program's stdin, and waits for it to exit.
+// Closes the program's stdin, and waits for it to exit. It's only reaped
+// once stop() knows it has exited, so that stop() never kills another
+// process that got its pid.
 std::expected<void, std::string> Encoder::wait()
 {
     ::close(m_stdin);
     m_stdin = -1;
-    m_done = true;
+    siginfo_t info { };
+    while (::waitid(P_PID, static_cast<id_t>(m_pid), &info, WEXITED | WNOWAIT) < 0) {
+        if (errno != EINTR) {
+            return std::unexpected(std::format("Can't wait for the encoder: {}", std::strerror(errno)));
+        }
+    }
+    bool failed { false };
+    {
+        std::lock_guard lock { m_mutex };
+        m_exited = true;
+        failed = m_failed;
+    }
     int status { 0 };
     while (::waitpid(m_pid, &status, 0) < 0) {
         if (errno != EINTR) {
             return std::unexpected(std::format("Can't wait for the encoder: {}", std::strerror(errno)));
         }
     }
-    if (WIFEXITED(status) && WEXITSTATUS(status) == 0 && !m_failed) {
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0 && !failed) {
         return { };
     }
     if (auto const line = last_line(read_log(m_log)); !line.empty()) {

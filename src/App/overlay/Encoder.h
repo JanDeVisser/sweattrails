@@ -58,8 +58,13 @@ public:
     // Queues a frame; waits while the queue is full. An error once the
     // program has gone, after which finish() tells why.
     bool write(Frame frame);
-    // The last frame is written: closes the program's stdin and waits for
-    // it. On an error the output is removed.
+    // There are no more frames: once they're written, the program's stdin
+    // is closed, and the encoder waits for it, on its own thread. On an
+    // error the output is removed.
+    void close();
+    // How it went, once the program has finished.
+    [[nodiscard]] std::optional<std::expected<void, std::string>> result() const;
+    // Closes, and waits until the program has finished.
     std::expected<void, std::string> finish();
     // Kills the program and removes the output.
     void stop();
@@ -78,14 +83,17 @@ private:
     int         m_stdin { -1 };
     std::thread m_writer;
 
-    mutable std::mutex      m_mutex;
-    std::condition_variable m_changed;
-    std::deque<Frame>       m_queue;
-    std::vector<Frame>      m_spare;
-    bool                    m_closing { false };  // No more frames come
-    bool                    m_stopping { false }; // Drop the frames left
-    bool                    m_failed { false };
-    bool                    m_done { false };
+    mutable std::mutex                              m_mutex;
+    std::condition_variable                         m_changed;
+    std::deque<Frame>                               m_queue;
+    std::vector<Frame>                              m_spare;
+    bool                                            m_closing { false };  // No more frames come
+    bool                                            m_stopping { false }; // Drop the frames left
+    bool                                            m_failed { false };
+    bool                                            m_exited { false }; // The program has, and may be reaped
+    std::optional<std::expected<void, std::string>> m_result { };
+
+    bool m_joined { false }; // The writer has finished. Only used by the encoder's owner
 };
 
 }

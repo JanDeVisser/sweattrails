@@ -82,9 +82,13 @@ void OverlayRender::step(double budget)
             return;
         }
     }
-    // A frame ffmpeg didn't take, or the last: finish() says how it went.
+    // A frame ffmpeg didn't take, or the last: the encoder waits for
+    // ffmpeg to finish the file, and then says how it went.
     if (m_frame >= m_frames || m_encoder->failed()) {
-        m_result = m_encoder->finish();
+        m_encoder->close();
+        if (m_encoder->result()) {
+            m_result = m_encoder->finish();
+        }
     }
 }
 
