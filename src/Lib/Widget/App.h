@@ -84,6 +84,9 @@ struct App : public Layout {
     void handle_keyboard(pWidget const &focus);
     void push_modal(pWidget const &modal);
     void pop_modal();
+    // Closes `modal`, which needn't be on top: its submit function may have
+    // opened another.
+    void pop_modal(pWidget const &modal);
 
     // A widget that wants another mouse cursor than the default asks for it
     // in process_input(), in every frame that it wants it. In other frames
