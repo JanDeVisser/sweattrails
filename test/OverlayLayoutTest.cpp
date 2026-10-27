@@ -262,7 +262,7 @@ void test_place()
 // skipped, so that it's the one the user finds in the file.
 void test_error_index_counts_skipped()
 {
-    CHECK_EQ(error_of(R"({ "elements": [ { "type": "map" }, { "type": "profile" }, { "type": "text", "text": "a", "colour": "#fff" } ] })"),
+    CHECK_EQ(error_of(R"({ "elements": [ { "type": "map" }, { "type": "image" }, { "type": "text", "text": "a", "colour": "#fff" } ] })"),
         "element 3: \"colour\" isn't a property of a text");
 }
 
@@ -416,7 +416,7 @@ void test_codepoints()
 void test_element_numbers()
 {
     auto const layout = decode(R"({ "elements": [
-        { "type": "text", "text": "a" }, { "type": "profile" }, { "type": "value", "field": "speed" } ] })");
+        { "type": "text", "text": "a" }, { "type": "image" }, { "type": "value", "field": "speed" } ] })");
     CHECK(layout.has_value());
     if (layout && layout->elements.size() == 2) {
         CHECK_EQ(element_number(layout->elements[0]), 1uz);
@@ -897,6 +897,168 @@ void test_graph_window_in_the_defaults()
         "element 1: \"window\" is only for grade");
 }
 
+// A profile as the spec's example has it.
+void test_profile()
+{
+    auto const layout = decode(R"({
+        "styles": { "label": { "font": "Inter-Regular.ttf", "font_size": 22, "color": "#ffffffcc", "background": "#000000" } },
+        "elements": [ { "type": "profile", "size": { "width": 900, "height": 140 },
+            "extent": "lap", "smooth": 10, "min": 0, "max": "auto", "min_span": 200,
+            "done": { "line": { "color": "#ffb703", "width": 3 }, "fill": "#ffb70360" },
+            "remaining": { "line": { "color": "#ffffff" }, "fill": "#ffffff30" },
+            "marker": { "shape": "dot", "color": "#ff0000", "radius": 8, "outline": "#ffb703", "drop_line": true },
+            "font": "Inter-Bold.ttf", "font_size": 30,
+            "marker_label": { "text": "{altitude:.0f} {altitude.unit} · {grade:+.1f}%", "style": "label", "font_size": 26 },
+            "axis_labels": { "min_max": true, "distance": true },
+            "laps": { "color": "#ffffff60" },
+            "color_by_grade": { "bands": [] } } ]
+    })");
+    CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
+    if (!layout || layout->elements.size() != 1) {
+        return;
+    }
+    auto const &p = std::get<ProfileElement>(layout->elements[0]);
+    CHECK(p.extent == ProfileExtent::Lap);
+    CHECK_EQ(p.smooth, 10.0);
+    CHECK_EQ(p.min.value_or(-1), 0.0);
+    CHECK(!p.max);
+    CHECK_EQ(p.min_span, 200.0);
+    CHECK_EQ(show(p.done.line.color), "255 183 3 255");
+    CHECK_EQ(p.done.line.width, 3.0f);
+    CHECK_EQ(show(p.done.fill.value_or(BLANK)), "255 183 3 96");
+    // The remaining trace is over the done one: its width is done's.
+    CHECK(p.remaining.has_value());
+    if (p.remaining) {
+        CHECK_EQ(show(p.remaining->line.color), "255 255 255 255");
+        CHECK_EQ(p.remaining->line.width, 3.0f);
+    }
+    CHECK(p.marker.has_value());
+    if (p.marker) {
+        CHECK_EQ(show(p.marker->color), "255 0 0 255");
+        CHECK_EQ(p.marker->radius, 8.0f);
+        CHECK_EQ(show(p.marker->outline.value_or(BLANK)), "255 183 3 255");
+        // `true`: 1 px in the marker's color at half its alpha.
+        CHECK_EQ(show(p.marker->drop_line.value_or(Stroke { }).color), "255 0 0 127");
+        CHECK_EQ(p.marker->drop_line.value_or(Stroke { }).width, 1.0f);
+    }
+    // The label: its own size over its style, over the profile's.
+    CHECK(p.marker_label.has_value());
+    if (p.marker_label) {
+        CHECK_EQ(p.marker_label->style.font, "Inter-Regular.ttf");
+        CHECK_EQ(p.marker_label->style.font_size, 26.0f);
+        CHECK_EQ(show(p.marker_label->style.color), "255 255 255 204");
+        CHECK_EQ(p.marker_label->text.parts.size(), 6uz);
+    }
+    // The axis labels take the profile's own style.
+    CHECK(p.axis_labels.has_value());
+    if (p.axis_labels) {
+        CHECK_EQ(p.axis_labels->font, "Inter-Bold.ttf");
+        CHECK_EQ(p.axis_labels->font_size, 30.0f);
+    }
+    CHECK_EQ(show(p.laps.value_or(Stroke { }).color), "255 255 255 96");
+    CHECK_EQ(p.laps.value_or(Stroke { }).width, 1.0f);
+    CHECK_EQ(element_fonts(layout->elements[0]), (std::vector<std::string> { "Inter-Regular.ttf", "Inter-Bold.ttf" }));
+    auto const codepoints = layout_codepoints(*layout);
+    CHECK(codepoints.contains(0xb7));
+}
+
+// What a profile is without saying: the whole activity, smoothed over
+// 20 m, in its color, 2 px, with a marker in that color, and no labels.
+void test_profile_defaults()
+{
+    auto const plain = decode(R"({ "defaults": { "color": "#00ff00" }, "elements": [
+        { "type": "profile", "size": { "width": 900, "height": 140 } },
+        { "type": "profile", "size": { "width": 900, "height": 140 },
+          "marker_label": { "text": "a" }, "axis_labels": { "min_max": false },
+          "marker": { "drop_line": { "width": 2 } } } ] })");
+    CHECK(plain.has_value());
+    if (!plain || plain->elements.size() != 2) {
+        return;
+    }
+    auto const &p = std::get<ProfileElement>(plain->elements[0]);
+    CHECK(p.extent == ProfileExtent::All);
+    CHECK_EQ(p.smooth, 20.0);
+    CHECK(!p.min);
+    CHECK(!p.max);
+    CHECK_EQ(p.min_span, 100.0);
+    CHECK_EQ(show(p.done.line.color), "0 255 0 255");
+    CHECK_EQ(p.done.line.width, 2.0f);
+    CHECK(!p.done.fill);
+    CHECK(!p.remaining);
+    CHECK(p.marker.has_value());
+    if (p.marker) {
+        CHECK_EQ(show(p.marker->color), "0 255 0 255");
+        CHECK_EQ(p.marker->radius, 6.0f);
+        CHECK(!p.marker->outline);
+        CHECK(!p.marker->drop_line);
+    }
+    CHECK(!p.marker_label);
+    CHECK(!p.axis_labels);
+    CHECK(!p.laps);
+    CHECK(element_fonts(plain->elements[0]).empty());
+
+    // A drop line as a stroke is over the faint one; min_max false is no
+    // labels.
+    auto const &q = std::get<ProfileElement>(plain->elements[1]);
+    CHECK(q.marker && q.marker->drop_line);
+    if (q.marker && q.marker->drop_line) {
+        CHECK_EQ(show(q.marker->drop_line->color), "0 255 0 127");
+        CHECK_EQ(q.marker->drop_line->width, 2.0f);
+    }
+    CHECK(q.marker_label.has_value());
+    CHECK(!q.axis_labels);
+}
+
+// `"marker": null` turns the marker off, also over one in the defaults.
+void test_profile_without_a_marker()
+{
+    auto const layout = decode(R"({ "defaults": { "marker": { "radius": 9 } }, "elements": [
+        { "type": "profile", "size": { "width": 900, "height": 140 } },
+        { "type": "profile", "size": { "width": 900, "height": 140 }, "marker": null } ] })");
+    CHECK(layout.has_value());
+    if (layout && layout->elements.size() == 2) {
+        CHECK_EQ(std::get<ProfileElement>(layout->elements[0]).marker.value_or(Marker { }).radius, 9.0f);
+        CHECK(!std::get<ProfileElement>(layout->elements[1]).marker);
+    }
+}
+
+void test_profile_errors()
+{
+    auto const profile = [](std::string_view rest) {
+        return error_of(with_element(std::format(R"({{ "type": "profile", "size": {{ "width": 900, "height": 140 }}{}{} }})", rest.empty() ? "" : ", ", rest)));
+    };
+    CHECK_EQ(profile(""), "ok");
+    CHECK_EQ(error_of(with_element(R"({ "type": "profile" })")), "element 1: a profile needs a \"size\"");
+    CHECK_EQ(profile(R"("extent": { "from": 12.5, "to": 31 })"),
+        "element 1: \"extent\": a part of the activity isn't there yet, only \"all\" and \"lap\"");
+    CHECK_EQ(profile(R"("extent": "climb")"), "element 1: \"extent\" isn't all or lap");
+    CHECK_EQ(profile(R"("smooth": -1)"), "element 1: \"smooth\" is less than 0");
+    CHECK_EQ(profile(R"("smooth": 0)"), "ok");
+    CHECK_EQ(profile(R"("min_span": 0)"), "element 1: \"min_span\" isn't more than 0");
+    CHECK_EQ(profile(R"("min": 500, "max": 100)"), "element 1: \"min\" isn't less than \"max\"");
+    CHECK_EQ(profile(R"("marker_size": 1)"), "element 1: \"marker_size\" isn't a property of a profile");
+    CHECK_EQ(profile(R"("scale": { "min": "auto" })"), "element 1: \"scale\" isn't a property of a profile");
+    CHECK_EQ(profile(R"("done": "#fff")"),
+        "element 1: \"done\" isn't a line and a fill, such as { \"line\": { \"width\": 3 } }");
+    CHECK_EQ(profile(R"("done": { "colour": "#fff" })"), "element 1: \"colour\" isn't a property of \"done\"");
+    CHECK_EQ(profile(R"("remaining": { "line": { "width": 0 } })"), "element 1: \"remaining.line.width\" isn't more than 0");
+    CHECK_EQ(profile(R"("marker": { "shape": "square" })"), "element 1: \"marker.shape\" isn't dot");
+    CHECK_EQ(profile(R"("marker": { "radius": 0 })"), "element 1: \"marker.radius\" isn't more than 0");
+    CHECK_EQ(profile(R"("marker": { "drop_line": "yes" })"),
+        "element 1: \"marker.drop_line\" isn't a line, such as { \"color\": \"#ffffff\", \"width\": 2 }");
+    CHECK_EQ(profile(R"("marker": 8)"),
+        "element 1: \"marker\" isn't a dot, such as { \"color\": \"#ffffff\", \"radius\": 8 }, or null");
+    CHECK_EQ(profile(R"("marker_label": { "style": "label" })"), "element 1: \"marker_label\" needs a \"text\"");
+    CHECK_EQ(profile(R"("marker_label": { "text": "{altitud}" })"), "element 1: \"marker_label.text\": `altitud` isn't a field");
+    CHECK_EQ(profile(R"("marker_label": { "text": "a", "style": "nope" })"),
+        "element 1: \"marker_label\": \"style\": there's no style `nope`");
+    CHECK_EQ(profile(R"("marker_label": { "text": "a", "align": "left" })"),
+        "element 1: \"align\" isn't a property of \"marker_label\"");
+    CHECK_EQ(profile(R"("axis_labels": { "min_max": "yes" })"), "element 1: \"axis_labels.min_max\" isn't true or false");
+    CHECK_EQ(profile(R"("laps": true)"),
+        "element 1: \"laps\" isn't a line, such as { \"color\": \"#ffffff\", \"width\": 2 }");
+}
+
 int main()
 {
     test_cascade();
@@ -934,5 +1096,9 @@ int main()
     test_panels();
     test_element_fonts();
     test_graph_window_in_the_defaults();
+    test_profile();
+    test_profile_defaults();
+    test_profile_without_a_marker();
+    test_profile_errors();
     return ST::Test::test_result();
 }

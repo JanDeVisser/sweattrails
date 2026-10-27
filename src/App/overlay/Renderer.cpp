@@ -250,4 +250,8 @@ void OverlayRenderer::draw(GraphElement const &graph, FieldValues const &values,
     }
 }
 
+void OverlayRenderer::draw(ProfileElement const &, FieldValues const &, Rectangle const &)
+{
+}
+
 }
