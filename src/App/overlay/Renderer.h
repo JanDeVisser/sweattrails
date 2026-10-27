@@ -49,6 +49,12 @@ private:
     std::map<std::string, std::filesystem::path> m_font_paths { }; // By the layout's name for them
 
     void                draw_element(OverlayElement const &element, FieldValues const &values, Rectangle const &area);
+    void                draw(TextElement const &text, FieldValues const &values, Rectangle const &area);
+    void                draw(ValueElement const &value, FieldValues const &values, Rectangle const &area);
+    void                draw(GaugeElement const &gauge, FieldValues const &values, Rectangle const &area);
+    void                draw(GraphElement const &graph, FieldValues const &values, Rectangle const &area);
+    Rectangle           screen_box(Placement const &at, Vector2 size, Rectangle const &area) const;
+    Rectangle           draw_panel(Panel const &panel, Rectangle const &box) const;
     std::optional<Font> font(TextStyle const &style, size_t element);
     void                draw_text(Font const &font, std::string_view text, Vector2 at, TextStyle const &style) const;
 };

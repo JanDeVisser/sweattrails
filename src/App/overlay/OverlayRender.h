@@ -62,7 +62,8 @@ private:
     OverlaySource                                   m_source;
     OverlayRenderer                                 m_renderer;
     std::unique_ptr<Encoder>                        m_encoder;
-    RenderTexture2D                                 m_target { };
+    RenderTexture2D                                 m_large { };  // Twice the size, for smooth edges
+    RenderTexture2D                                 m_target { }; // The frame, read back
     size_t                                          m_frame { 0 };
     size_t                                          m_frames { 0 };
     std::optional<std::expected<void, std::string>> m_result { };

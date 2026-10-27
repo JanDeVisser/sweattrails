@@ -37,21 +37,14 @@ constexpr Names ValueProperties { "field", "format", "unit", "unit_style", "miss
 constexpr double ShortestWindow = 10;
 constexpr double LongestWindow = 200;
 
-constexpr Names LaterTypes { "gauge", "graph", "profile", "map", "image", "group" };
+constexpr Names GaugeProperties { "field", "unit", "shape", "min", "max", "track", "fill", "thickness", "color_by" };
+constexpr Names GraphProperties { "field", "unit", "x_axis", "window", "min", "max", "line", "fill", "cursor" };
+
+constexpr Names LaterTypes { "profile", "map", "image", "group" };
 
 // The properties of later slices' elements, from the design. Defaults and
 // styles may have them, for those elements.
 constexpr Names LaterProperties {
-    "shape",
-    "min",
-    "max",
-    "track",
-    "fill",
-    "thickness", // gauge
-    "x_axis",
-    "window",
-    "line",
-    "cursor", // graph
     "extent",
     "done",
     "remaining",
@@ -196,6 +189,53 @@ std::expected<Coordinate, LayoutError> coordinate(JSONValue const &json, std::st
     return error(std::format("\"{}\" isn't a number or a percentage, such as \"50%\"", property));
 }
 
+std::expected<double, LayoutError> not_negative(JSONValue const &json, std::string_view property)
+{
+    auto const ret = TRY_EVAL(number(json, property));
+    if (ret < 0) {
+        return error(std::format("\"{}\" is less than 0", property));
+    }
+    return ret;
+}
+
+// `{ "color": "#rrggbbaa", "width": 3 }`, over `base`.
+std::expected<Stroke, LayoutError> stroke(JSONValue const &json, std::string_view property, Stroke base = { })
+{
+    if (!json.is_object()) {
+        return error(std::format("\"{}\" isn't a line, such as {{ \"color\": \"#ffffff\", \"width\": 2 }}", property));
+    }
+    TRY(check_properties(json, std::format("\"{}\"", property), { { "color", "width" } }));
+    auto ret = base;
+    if (auto const c = json.get("color"); c) {
+        ret.color = TRY_EVAL(color(*c, std::format("{}.color", property)));
+    }
+    if (auto const width = json.get("width"); width) {
+        ret.width = static_cast<float>(TRY_EVAL(number(*width, std::format("{}.width", property))));
+        if (ret.width <= 0) {
+            return error(std::format("\"{}.width\" isn't more than 0", property));
+        }
+    }
+    return ret;
+}
+
+std::expected<Panel, LayoutError> panel(JSONValue const &json)
+{
+    Panel ret { };
+    if (auto const background = json.get("background"); background) {
+        ret.background = TRY_EVAL(color(*background, "background"));
+    }
+    if (auto const radius = json.get("radius"); radius) {
+        ret.radius = static_cast<float>(TRY_EVAL(not_negative(*radius, "radius")));
+    }
+    if (auto const padding = json.get("padding"); padding) {
+        ret.padding = static_cast<float>(TRY_EVAL(not_negative(*padding, "padding")));
+    }
+    if (auto const border = json.get("border"); border) {
+        ret.border = TRY_EVAL(stroke(*border, "border"));
+    }
+    return ret;
+}
+
 std::expected<Anchor, LayoutError> anchor(JSONValue const &json)
 {
     static std::map<std::string, Anchor, std::less<>> const anchors {
@@ -281,7 +321,7 @@ std::expected<TextStyle, LayoutError> text_style(JSONValue const &json, TextStyl
 
 std::expected<TextElement, LayoutError> text_element(JSONValue const &json)
 {
-    TextElement ret { .at = TRY_EVAL(placement(json)), .style = TRY_EVAL(text_style(json)) };
+    TextElement ret { .at = TRY_EVAL(placement(json)), .panel = TRY_EVAL(panel(json)), .style = TRY_EVAL(text_style(json)) };
     auto const  text = json.get("text");
     if (!text) {
         return error("a text needs a \"text\"");
@@ -361,9 +401,10 @@ std::expected<std::vector<Threshold>, LayoutError> color_by(JSONValue const &jso
     return ret;
 }
 
-std::expected<ValueElement, LayoutError> value_element(JSONValue const &json)
+// `json` is the element after the cascade, `own` as the file has it.
+std::expected<ValueElement, LayoutError> value_element(JSONValue const &json, JSONValue const &own)
 {
-    ValueElement ret { .at = TRY_EVAL(placement(json)), .style = TRY_EVAL(text_style(json)) };
+    ValueElement ret { .at = TRY_EVAL(placement(json)), .panel = TRY_EVAL(panel(json)), .style = TRY_EVAL(text_style(json)) };
     auto const   field = json.get("field");
     if (!field) {
         return error("a value needs a \"field\"");
@@ -398,10 +439,12 @@ std::expected<ValueElement, LayoutError> value_element(JSONValue const &json)
         ret.missing = TRY_EVAL(string(*missing, "missing"));
         ret.hide_when_missing = ret.missing == "hide";
     }
-    if (auto const window = json.get("window"); window) {
-        if (ret.field != OverlayField::grade) {
-            return error("\"window\" is only for grade");
-        }
+    // A window in the defaults or a style can be for the graphs: only one
+    // the value gives itself has to be for grade.
+    if (own.get("window") && ret.field != OverlayField::grade) {
+        return error("\"window\" is only for grade");
+    }
+    if (auto const window = json.get("window"); window && ret.field == OverlayField::grade) {
         ret.window = TRY_EVAL(number(*window, "window"));
         if (*ret.window < ShortestWindow || *ret.window > LongestWindow) {
             return error(std::format("\"window\" is from {} to {} m", ShortestWindow, LongestWindow));
@@ -409,6 +452,180 @@ std::expected<ValueElement, LayoutError> value_element(JSONValue const &json)
     }
     if (auto const c = json.get("color_by"); c) {
         ret.thresholds = TRY_EVAL(color_by(*c, ret.field));
+    }
+    return ret;
+}
+
+// A gauge's or a graph's field: a number, and in which unit.
+struct ShownField {
+    OverlayField             field { OverlayField::speed };
+    std::optional<FieldUnit> unit { };
+};
+
+std::expected<ShownField, LayoutError> shown_field(JSONValue const &json, std::string_view what)
+{
+    auto const field = json.get("field");
+    if (!field) {
+        return error(std::format("a {} needs a \"field\"", what));
+    }
+    auto const name = TRY_EVAL(string(*field, "field"));
+    auto const f = overlay_field(name);
+    if (!f) {
+        return error(std::format("\"field\": `{}` isn't a field", name));
+    }
+    if (field_kind(*f) != FieldKind::Number) {
+        return error(std::format("\"field\": a {} shows a number, which {} isn't", what, name));
+    }
+    ShownField ret { .field = *f };
+    if (auto const unit = json.get("unit"); unit) {
+        auto const u = TRY_EVAL(string(*unit, "unit"));
+        if (u != "auto") {
+            ret.unit = field_unit(*f, u);
+            if (!ret.unit) {
+                return error(std::format("\"unit\": {} can't be shown in `{}`", name, u));
+            }
+        }
+    }
+    return ret;
+}
+
+// A number, or "auto": none.
+std::expected<std::optional<double>, LayoutError> bound(JSONValue const &json, std::string_view property)
+{
+    if (string_of(json) == "auto") {
+        return std::optional<double> { };
+    }
+    if (auto const n = number_of(json); n) {
+        return std::optional { *n };
+    }
+    return error(std::format("\"{}\" isn't a number or \"auto\"", property));
+}
+
+// `min` and `max`, of which `min` is the lower, if both are numbers.
+std::expected<std::pair<std::optional<double>, std::optional<double>>, LayoutError> bounds(JSONValue const &json)
+{
+    std::optional<double> min { };
+    std::optional<double> max { };
+    if (auto const m = json.get("min"); m) {
+        min = TRY_EVAL(bound(*m, "min"));
+    }
+    if (auto const m = json.get("max"); m) {
+        max = TRY_EVAL(bound(*m, "max"));
+    }
+    if (min && max && *min >= *max) {
+        return error("\"min\" isn't less than \"max\"");
+    }
+    return std::pair { min, max };
+}
+
+// A gauge or a graph has no text to measure.
+std::expected<Placement, LayoutError> sized_placement(JSONValue const &json, std::string_view what)
+{
+    auto ret = TRY_EVAL(placement(json));
+    if (!ret.size) {
+        return error(std::format("a {} needs a \"size\"", what));
+    }
+    return ret;
+}
+
+std::expected<GaugeElement, LayoutError> gauge_element(JSONValue const &json)
+{
+    auto const [field, unit] = TRY_EVAL(shown_field(json, "gauge"));
+    auto const [min, max] = TRY_EVAL(bounds(json));
+    auto const   own = TRY_EVAL(text_style(json)).color;
+    GaugeElement ret {
+        .at = TRY_EVAL(sized_placement(json, "gauge")),
+        .panel = TRY_EVAL(panel(json)),
+        .field = field,
+        .unit = unit,
+        .min = min,
+        .max = max,
+        // The track is the gauge's color, faintly, unless it says.
+        .track = Color { .r = own.r, .g = own.g, .b = own.b, .a = static_cast<unsigned char>(own.a / 5) },
+        .fill = own,
+    };
+    if (auto const shape = json.get("shape"); shape) {
+        auto const name = string_of(*shape).value_or("");
+        if (name == "bar") {
+            ret.shape = GaugeShape::Bar;
+        } else if (name == "vbar") {
+            ret.shape = GaugeShape::VBar;
+        } else if (name == "arc") {
+            ret.shape = GaugeShape::Arc;
+        } else {
+            return error("\"shape\" isn't bar, vbar or arc");
+        }
+    }
+    if (auto const track = json.get("track"); track) {
+        ret.track = TRY_EVAL(color(*track, "track"));
+    }
+    if (auto const fill = json.get("fill"); fill) {
+        ret.fill = TRY_EVAL(color(*fill, "fill"));
+    }
+    if (auto const thickness = json.get("thickness"); thickness) {
+        ret.thickness = static_cast<float>(TRY_EVAL(number(*thickness, "thickness")));
+        if (*ret.thickness <= 0) {
+            return error("\"thickness\" isn't more than 0");
+        }
+    }
+    if (auto const c = json.get("color_by"); c) {
+        ret.thresholds = TRY_EVAL(color_by(*c, ret.field));
+    }
+    return ret;
+}
+
+std::expected<GraphElement, LayoutError> graph_element(JSONValue const &json)
+{
+    auto const [field, unit] = TRY_EVAL(shown_field(json, "graph"));
+    auto const [min, max] = TRY_EVAL(bounds(json));
+    GraphElement ret {
+        .at = TRY_EVAL(sized_placement(json, "graph")),
+        .panel = TRY_EVAL(panel(json)),
+        .field = field,
+        .unit = unit,
+        .min = min,
+        .max = max,
+        .line = Stroke { .color = TRY_EVAL(text_style(json)).color },
+    };
+    if (auto const axis = json.get("x_axis"); axis) {
+        auto const name = string_of(*axis).value_or("");
+        if (name == "time") {
+            ret.axis = GraphAxis::Time;
+        } else if (name == "distance") {
+            ret.axis = GraphAxis::Distance;
+        } else {
+            return error("\"x_axis\" isn't time or distance");
+        }
+    }
+    if (auto const window = json.get("window"); window && string_of(*window) != "all") {
+        auto const w = number_of(*window);
+        if (!w || *w <= 0) {
+            return error("\"window\" isn't more than 0, or \"all\"");
+        }
+        ret.window = *w;
+    }
+    if (auto const line = json.get("line"); line) {
+        ret.line = TRY_EVAL(stroke(*line, "line", ret.line));
+    }
+    if (auto const fill = json.get("fill"); fill) {
+        ret.fill = TRY_EVAL(color(*fill, "fill"));
+    }
+    if (auto const cursor = json.get("cursor"); cursor) {
+        if (!cursor->is_object()) {
+            return error("\"cursor\" isn't a dot, such as { \"color\": \"#ffffff\", \"radius\": 6 }");
+        }
+        TRY(check_properties(*cursor, "\"cursor\"", { { "color", "radius" } }));
+        Cursor c { .color = ret.line.color };
+        if (auto const col = cursor->get("color"); col) {
+            c.color = TRY_EVAL(color(*col, "cursor.color"));
+        }
+        if (auto const radius = cursor->get("radius"); radius) {
+            c.radius = static_cast<float>(TRY_EVAL(number(*radius, "cursor.radius")));
+            if (c.radius <= 0) {
+                return error("\"cursor.radius\" isn't more than 0");
+            }
+        }
+        ret.cursor = c;
     }
     return ret;
 }
@@ -496,7 +713,16 @@ std::expected<std::optional<OverlayElement>, LayoutError> element(JSONValue cons
     }
     if (name == "value") {
         TRY(check_properties(json, "a value", { ElementProperties, TextStyleProperties, BoxStyleProperties, ValueProperties }));
-        return std::optional<OverlayElement> { TRY_EVAL(value_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
+        return std::optional<OverlayElement> { TRY_EVAL(value_element(TRY_EVAL(cascaded(json, defaults, styles)), json)) };
+    }
+    // A gauge's and a graph's color is what they draw in, by default.
+    if (name == "gauge") {
+        TRY(check_properties(json, "a gauge", { ElementProperties, { "color" }, BoxStyleProperties, GaugeProperties }));
+        return std::optional<OverlayElement> { TRY_EVAL(gauge_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
+    }
+    if (name == "graph") {
+        TRY(check_properties(json, "a graph", { ElementProperties, { "color" }, BoxStyleProperties, GraphProperties }));
+        return std::optional<OverlayElement> { TRY_EVAL(graph_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
     }
     return error(std::format("\"type\": `{}` isn't an element type", name));
 }
@@ -560,7 +786,7 @@ std::expected<OverlayLayout, LayoutError> decode_layout(JSONValue const &json)
     }
     // What defaults and styles may hold: any element's properties but its
     // type and style.
-    auto const style_properties = { TextStyleProperties, BoxStyleProperties, TextProperties, ValueProperties, LaterProperties,
+    auto const style_properties = { TextStyleProperties, BoxStyleProperties, TextProperties, ValueProperties, GaugeProperties, GraphProperties, LaterProperties,
         Names { "at", "size", "visible", "fade", "when", "smooth", "interpolate" } };
     TRY(check_properties(defaults, "the defaults", style_properties));
     for (auto it = styles.obj_begin(); it != styles.obj_end(); ++it) {
@@ -609,6 +835,17 @@ Rectangle place(Placement const &at, Vector2 size, Vector2 canvas, float scale)
         .width = size.x,
         .height = size.y,
     };
+}
+
+std::vector<std::string> element_fonts(OverlayElement const &element)
+{
+    if (auto const *text = std::get_if<TextElement>(&element)) {
+        return { text->style.font };
+    }
+    if (auto const *value = std::get_if<ValueElement>(&element)) {
+        return { value->style.font, value->unit_style.font };
+    }
+    return { };
 }
 
 size_t element_number(OverlayElement const &element)

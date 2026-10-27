@@ -372,8 +372,18 @@ OverlaySource::OverlaySource(Activity const &activity)
         previous = &r;
     }
     for (auto ix = 0uz; ix < activity.records.size(); ++ix) {
+        // As for the profile, a distance that goes back is ignored.
+        if (auto const d = activity.records[ix].distance; d && (mileage.empty() || *d >= mileage.back().distance)) {
+            mileage.push_back(Mileage { .distance = *d, .record = ix });
+        }
         for (auto f = 0uz; f < OverlayFieldCount; ++f) {
-            recorded[f] = recorded[f] || field_value(*this, ix, static_cast<OverlayField>(f)).has_value();
+            auto const value = field_value(*this, ix, static_cast<OverlayField>(f));
+            if (!value) {
+                continue;
+            }
+            auto &range = ranges[f];
+            range = range ? Range { .min = std::min(range->min, *value), .max = std::max(range->max, *value) }
+                          : Range { .min = *value, .max = *value };
         }
     }
 }
@@ -439,7 +449,7 @@ std::optional<double> field_value(OverlaySource const &source, size_t record, Ov
     case OverlayField::altitude:
         return as_double(r.altitude);
     case OverlayField::grade:
-        return { };
+        return r.distance ? grade_at(source, static_cast<double>(*r.distance), DefaultGradeWindow) : std::nullopt;
     case OverlayField::temperature:
         return as_double(r.temperature);
     case OverlayField::lr_balance:
@@ -462,7 +472,6 @@ FieldValues values_at_record(OverlaySource const &source, size_t record)
     for (auto ix = 0uz; ix < OverlayFieldCount; ++ix) {
         ret.values[ix] = field_value(source, record, static_cast<OverlayField>(ix));
     }
-    ret.values[static_cast<size_t>(OverlayField::grade)] = ret.grade(DefaultGradeWindow);
     return ret;
 }
 

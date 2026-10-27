@@ -136,6 +136,10 @@ struct App : public Layout {
 
         // raylib logs every texture, font and shader it loads.
         SetTraceLogLevel(LOG_WARNING);
+        // raylib draws shapes without smoothing their edges: multisampling
+        // does, for everything drawn in the window. It has to be asked for
+        // before the window is made.
+        SetConfigFlags(FLAG_MSAA_4X_HINT);
         InitWindow(static_cast<int>(app->viewport.width), static_cast<int>(app->viewport.height), app->window_title());
         app->viewport.width = static_cast<float>(GetScreenWidth());
         app->viewport.height = static_cast<float>(GetScreenHeight());

@@ -262,7 +262,7 @@ void test_place()
 // skipped, so that it's the one the user finds in the file.
 void test_error_index_counts_skipped()
 {
-    CHECK_EQ(error_of(R"({ "elements": [ { "type": "map" }, { "type": "gauge" }, { "type": "text", "text": "a", "colour": "#fff" } ] })"),
+    CHECK_EQ(error_of(R"({ "elements": [ { "type": "map" }, { "type": "profile" }, { "type": "text", "text": "a", "colour": "#fff" } ] })"),
         "element 3: \"colour\" isn't a property of a text");
 }
 
@@ -416,7 +416,7 @@ void test_codepoints()
 void test_element_numbers()
 {
     auto const layout = decode(R"({ "elements": [
-        { "type": "text", "text": "a" }, { "type": "gauge" }, { "type": "value", "field": "speed" } ] })");
+        { "type": "text", "text": "a" }, { "type": "profile" }, { "type": "value", "field": "speed" } ] })");
     CHECK(layout.has_value());
     if (layout && layout->elements.size() == 2) {
         CHECK_EQ(element_number(layout->elements[0]), 1uz);
@@ -695,6 +695,208 @@ void test_value_formats_per_kind()
 
 }
 
+// A gauge's shape, bounds and colors, and what it takes when it says
+// nothing: its color, and the track at a fifth of its alpha.
+void test_gauge()
+{
+    auto const layout = decode(R"({ "elements": [
+        { "type": "gauge", "field": "power", "shape": "arc", "min": 0, "max": 400,
+          "track": "#ffffff30", "fill": "#ffb703", "thickness": 14,
+          "color_by": { "thresholds": [[0, "#8ecae6"], [260, "#f94144"]] },
+          "size": { "width": 200, "height": 200 } },
+        { "type": "gauge", "field": "speed", "unit": "mph", "color": "#ff0000", "max": "auto",
+          "size": { "width": 200, "height": 20 } }
+    ] })");
+    CHECK(layout.has_value());
+    if (!layout || layout->elements.size() != 2) {
+        return;
+    }
+    auto const &arc = std::get<GaugeElement>(layout->elements[0]);
+    CHECK(arc.field == OverlayField::power);
+    CHECK(arc.shape == GaugeShape::Arc);
+    CHECK_EQ(arc.min.value_or(-1), 0.0);
+    CHECK_EQ(arc.max.value_or(-1), 400.0);
+    CHECK_EQ(show(arc.track), "255 255 255 48");
+    CHECK_EQ(show(arc.fill), "255 183 3 255");
+    CHECK_EQ(arc.thickness.value_or(0), 14.0f);
+    CHECK_EQ(arc.thresholds.size(), 2uz);
+    CHECK_EQ(arc.number, 1uz);
+
+    auto const &bar = std::get<GaugeElement>(layout->elements[1]);
+    CHECK(bar.shape == GaugeShape::Bar);
+    CHECK(!bar.min);
+    CHECK(!bar.max);
+    CHECK_EQ(bar.unit ? bar.unit->name : std::string { "none" }, "mph");
+    CHECK_EQ(show(bar.fill), "255 0 0 255");
+    CHECK_EQ(show(bar.track), "255 0 0 51");
+    CHECK(!bar.thickness);
+    CHECK_EQ(bar.number, 2uz);
+}
+
+// A graph's axis, window, stroke and cursor, and its defaults: a 2 px line
+// in its color, all of the activity, no fill and no cursor.
+void test_graph()
+{
+    auto const layout = decode(R"({ "elements": [
+        { "type": "graph", "field": "heart_rate", "x_axis": "time", "window": 60,
+          "line": { "color": "#f94144", "width": 3 }, "fill": "#f9414430",
+          "cursor": { "color": "#ffffff", "radius": 8 }, "min": 80, "max": "auto",
+          "size": { "width": 400, "height": 100 } },
+        { "type": "graph", "field": "altitude", "x_axis": "distance", "window": "all", "color": "#00ff00",
+          "line": { "width": 4 }, "cursor": { }, "size": { "width": 400, "height": 100 } },
+        { "type": "graph", "field": "speed", "color": "#0000ff", "size": { "width": 400, "height": 100 } }
+    ] })");
+    CHECK(layout.has_value());
+    if (!layout || layout->elements.size() != 3) {
+        return;
+    }
+    auto const &hr = std::get<GraphElement>(layout->elements[0]);
+    CHECK(hr.field == OverlayField::heart_rate);
+    CHECK(hr.axis == GraphAxis::Time);
+    CHECK_EQ(hr.window.value_or(0), 60.0);
+    CHECK_EQ(show(hr.line.color), "249 65 68 255");
+    CHECK_EQ(hr.line.width, 3.0f);
+    CHECK_EQ(show(hr.fill.value_or(BLANK)), "249 65 68 48");
+    CHECK(hr.cursor.has_value());
+    if (hr.cursor) {
+        CHECK_EQ(show(hr.cursor->color), "255 255 255 255");
+        CHECK_EQ(hr.cursor->radius, 8.0f);
+    }
+    CHECK_EQ(hr.min.value_or(-1), 80.0);
+    CHECK(!hr.max);
+
+    // A stroke that gives only a width keeps the color; a cursor without a
+    // color is the line's.
+    auto const &altitude = std::get<GraphElement>(layout->elements[1]);
+    CHECK(altitude.axis == GraphAxis::Distance);
+    CHECK(!altitude.window);
+    CHECK_EQ(show(altitude.line.color), "0 255 0 255");
+    CHECK_EQ(altitude.line.width, 4.0f);
+    CHECK_EQ(show(altitude.cursor.value_or(Cursor { }).color), "0 255 0 255");
+
+    auto const &speed = std::get<GraphElement>(layout->elements[2]);
+    CHECK(speed.axis == GraphAxis::Time);
+    CHECK(!speed.window);
+    CHECK_EQ(show(speed.line.color), "0 0 255 255");
+    CHECK_EQ(speed.line.width, 2.0f);
+    CHECK(!speed.fill);
+    CHECK(!speed.cursor);
+    CHECK(!speed.min);
+    CHECK(!speed.max);
+}
+
+void test_gauge_graph_errors()
+{
+    auto const sized = R"("size": { "width": 100, "height": 20 })";
+    auto const gauge = [&sized](std::string_view rest) {
+        return error_of(with_element(std::format(R"({{ "type": "gauge", {}, {} }})", sized, rest)));
+    };
+    auto const graph = [&sized](std::string_view rest) {
+        return error_of(with_element(std::format(R"({{ "type": "graph", {}, {} }})", sized, rest)));
+    };
+    CHECK_EQ(error_of(with_element(R"({ "type": "gauge", "field": "power" })")), "element 1: a gauge needs a \"size\"");
+    CHECK_EQ(error_of(with_element(R"({ "type": "graph", "field": "power" })")), "element 1: a graph needs a \"size\"");
+    CHECK_EQ(gauge(R"("shape": "bar")"), "element 1: a gauge needs a \"field\"");
+    CHECK_EQ(gauge(R"("field": "powr")"), "element 1: \"field\": `powr` isn't a field");
+    CHECK_EQ(gauge(R"("field": "pace")"), "element 1: \"field\": a gauge shows a number, which pace isn't");
+    CHECK_EQ(graph(R"("field": "elapsed")"), "element 1: \"field\": a graph shows a number, which elapsed isn't");
+    CHECK_EQ(gauge(R"("field": "power", "unit": "mph")"), "element 1: \"unit\": power can't be shown in `mph`");
+    CHECK_EQ(gauge(R"("field": "power", "shape": "round")"), "element 1: \"shape\" isn't bar, vbar or arc");
+    CHECK_EQ(gauge(R"("field": "power", "min": 400, "max": 0)"), "element 1: \"min\" isn't less than \"max\"");
+    CHECK_EQ(gauge(R"("field": "power", "min": 100, "max": 100)"), "element 1: \"min\" isn't less than \"max\"");
+    CHECK_EQ(gauge(R"("field": "power", "max": "lots")"), "element 1: \"max\" isn't a number or \"auto\"");
+    CHECK_EQ(gauge(R"("field": "power", "thickness": 0)"), "element 1: \"thickness\" isn't more than 0");
+    CHECK_EQ(gauge(R"("field": "power", "font_size": 20)"), "element 1: \"font_size\" isn't a property of a gauge");
+    CHECK_EQ(gauge(R"("field": "power", "window": 60)"), "element 1: \"window\" isn't a property of a gauge");
+    CHECK_EQ(graph(R"("field": "power", "x_axis": "laps")"), "element 1: \"x_axis\" isn't time or distance");
+    CHECK_EQ(graph(R"("field": "power", "window": 0)"), "element 1: \"window\" isn't more than 0, or \"all\"");
+    CHECK_EQ(graph(R"("field": "power", "window": "some")"), "element 1: \"window\" isn't more than 0, or \"all\"");
+    CHECK_EQ(graph(R"("field": "power", "line": "#fff")"),
+        "element 1: \"line\" isn't a line, such as { \"color\": \"#ffffff\", \"width\": 2 }");
+    CHECK_EQ(graph(R"("field": "power", "line": { "width": 0 })"), "element 1: \"line.width\" isn't more than 0");
+    CHECK_EQ(graph(R"("field": "power", "line": { "colour": "#fff" })"), "element 1: \"colour\" isn't a property of \"line\"");
+    CHECK_EQ(graph(R"("field": "power", "cursor": { "radius": -1 })"), "element 1: \"cursor.radius\" isn't more than 0");
+    CHECK_EQ(graph(R"("field": "power", "shape": "arc")"), "element 1: \"shape\" isn't a property of a graph");
+}
+
+// Every element has a panel: none unless it says, and from a style too.
+void test_panels()
+{
+    auto const layout = decode(R"({
+        "styles": { "panel": { "background": "#00000060", "radius": 16, "padding": 12,
+                               "border": { "color": "#ffffff40", "width": 1 } } },
+        "elements": [
+            { "type": "text", "text": "a", "style": "panel" },
+            { "type": "value", "field": "power", "style": "panel" },
+            { "type": "gauge", "field": "power", "style": "panel", "size": { "width": 100, "height": 20 } },
+            { "type": "graph", "field": "power", "padding": 4, "size": { "width": 100, "height": 20 } },
+            { "type": "text", "text": "b" }
+        ]
+    })");
+    CHECK(layout.has_value());
+    if (!layout || layout->elements.size() != 5) {
+        return;
+    }
+    auto const panel_of = [](OverlayElement const &e) { return std::visit([](auto const &element) { return element.panel; }, e); };
+    for (auto i = 0uz; i < 3; ++i) {
+        auto const panel = panel_of(layout->elements[i]);
+        CHECK(panel.drawn());
+        CHECK_EQ(show(panel.background.value_or(BLANK)), "0 0 0 96");
+        CHECK_EQ(panel.radius, 16.0f);
+        CHECK_EQ(panel.padding, 12.0f);
+        CHECK_EQ(show(panel.border.value_or(Stroke { }).color), "255 255 255 64");
+        CHECK_EQ(panel.border.value_or(Stroke { }).width, 1.0f);
+    }
+    // Padding alone draws nothing, but still insets.
+    auto const graph = panel_of(layout->elements[3]);
+    CHECK(!graph.drawn());
+    CHECK_EQ(graph.padding, 4.0f);
+    CHECK(!panel_of(layout->elements[4]).drawn());
+
+    CHECK_EQ(error_of(with_element(R"({ "type": "text", "text": "a", "radius": -2 })")), "element 1: \"radius\" is less than 0");
+    CHECK_EQ(error_of(with_element(R"({ "type": "text", "text": "a", "padding": "lots" })")), "element 1: \"padding\" isn't a number");
+    CHECK_EQ(error_of(with_element(R"({ "type": "text", "text": "a", "border": { "width": -1 } })")),
+        "element 1: \"border.width\" isn't more than 0");
+}
+
+// Gauges and graphs have no text, so no fonts.
+void test_element_fonts()
+{
+    auto const layout = decode(R"({ "elements": [
+        { "type": "text", "text": "a", "font": "A.ttf" },
+        { "type": "value", "field": "power", "font": "B.ttf", "unit_style": { "font": "C.ttf" } },
+        { "type": "gauge", "field": "power", "size": { "width": 100, "height": 20 } }
+    ] })");
+    CHECK(layout.has_value());
+    if (!layout || layout->elements.size() != 3) {
+        return;
+    }
+    CHECK_EQ(element_fonts(layout->elements[0]), std::vector<std::string> { "A.ttf" });
+    CHECK_EQ(element_fonts(layout->elements[1]), (std::vector<std::string> { "B.ttf", "C.ttf" }));
+    CHECK(element_fonts(layout->elements[2]).empty());
+}
+
+// A graph's window in the defaults is for the graphs: a value of another
+// field than grade doesn't take it, as a text doesn't take a value's
+// format.
+void test_graph_window_in_the_defaults()
+{
+    auto const layout = decode(R"({ "defaults": { "window": 60 }, "elements": [
+        { "type": "graph", "field": "heart_rate", "size": { "width": 400, "height": 100 } },
+        { "type": "value", "field": "speed" },
+        { "type": "value", "field": "grade" }
+    ] })");
+    CHECK_EQ(layout ? std::string { "decoded" } : layout.error().to_string(), "decoded");
+    if (layout && layout->elements.size() == 3) {
+        CHECK_EQ(std::get<GraphElement>(layout->elements[0]).window.value_or(0), 60.0);
+        CHECK(!std::get<ValueElement>(layout->elements[1]).window);
+        CHECK_EQ(std::get<ValueElement>(layout->elements[2]).window.value_or(0), 60.0);
+    }
+    // One a value gives itself is still only for grade.
+    CHECK_EQ(error_of(R"({ "defaults": { "window": 60 }, "elements": [ { "type": "value", "field": "speed", "window": 30 } ] })"),
+        "element 1: \"window\" is only for grade");
+}
+
 int main()
 {
     test_cascade();
@@ -726,5 +928,11 @@ int main()
     test_threshold_at_the_shown_number();
     test_shown_grade_window();
     test_value_formats_per_kind();
+    test_gauge();
+    test_graph();
+    test_gauge_graph_errors();
+    test_panels();
+    test_element_fonts();
+    test_graph_window_in_the_defaults();
     return ST::Test::test_result();
 }

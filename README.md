@@ -152,7 +152,8 @@ footage of the ride, with a transparent background. Ctrl+O previews it in
 place of the data panel and the map, at the moment marked in the graph,
 and Ctrl+Shift+O picks the layout. A layout is a JSON file that says
 what's shown where; the built-in ones,
-`share/overlays/cycling-basic.overlay.json` and `running-basic`, are a good
+`share/overlays/cycling-basic.overlay.json`, `running-basic` and
+`cycling-dashboard`, with a power gauge and a heart rate graph, are a good
 start for your own. Put those in the `overlays` folder in SweatTrails'
 data folder, which the app makes when it starts
 (`~/Library/Application Support/sweattrails/overlays` on macOS), named
@@ -182,6 +183,22 @@ missing. A number can change color with its value, in the unit shown:
 ```json
 { "type": "value", "field": "power",
   "color_by": { "thresholds": [[0, "#8ecae6"], [220, "#f9c74f"], [260, "#f94144"]] } }
+```
+
+A `gauge` shows a number as a `bar`, a `vbar` or an `arc`, and a `graph`
+a field over the last `window` seconds or meters, or over the whole
+activity with `"all"`, with a cursor at the moment. Their `min` and `max`
+are the activity's lowest and highest unless they say. Any element can
+have a panel behind it:
+
+```json
+{ "type": "gauge", "field": "power", "shape": "arc", "min": 0, "max": 400,
+  "track": "#ffffff30", "fill": "#ffb703", "thickness": 14,
+  "at": { "x": -40, "y": -40, "anchor": "bottom-right" }, "size": { "width": 200, "height": 200 } }
+{ "type": "graph", "field": "heart_rate", "x_axis": "time", "window": 60,
+  "line": { "color": "#f94144", "width": 3 }, "fill": "#f9414430", "cursor": { "radius": 6 },
+  "background": "#00000060", "radius": 16, "padding": 16,
+  "at": { "x": 40, "y": -200, "anchor": "bottom-left" }, "size": { "width": 400, "height": 100 } }
 ```
 
 Ctrl+E renders the overlay to a ProRes 4444 movie with alpha, which Final

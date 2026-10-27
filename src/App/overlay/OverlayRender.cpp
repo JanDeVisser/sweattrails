@@ -21,6 +21,14 @@
 
 namespace ST {
 
+namespace {
+
+// A frame is drawn this many times its size, and scaled down, which
+// smooths the edges of shapes and text: raylib draws them without.
+constexpr int Supersampling = 2;
+
+}
+
 OverlayRender::OverlayRender(RenderJob job, FontFinder find)
     : m_job(std::move(job))
     , m_source(m_job.activity->activity)
@@ -45,11 +53,13 @@ std::expected<std::unique_ptr<OverlayRender>, std::string> OverlayRender::start(
         return std::unexpected(encoder.error());
     }
     render->m_encoder = std::move(*encoder);
+    render->m_large = LoadRenderTexture(width * Supersampling, height * Supersampling);
     render->m_target = LoadRenderTexture(width, height);
-    if (render->m_target.id == 0) {
+    if (render->m_large.id == 0 || render->m_target.id == 0) {
         render->stop();
         return std::unexpected(std::format("Can't draw a frame of {}x{}", width, height));
     }
+    SetTextureFilter(render->m_large.texture, TEXTURE_FILTER_BILINEAR);
     return render;
 }
 
@@ -57,6 +67,9 @@ OverlayRender::~OverlayRender()
 {
     if (!over()) {
         stop();
+    }
+    if (m_large.id != 0) {
+        UnloadRenderTexture(m_large);
     }
     if (m_target.id != 0) {
         UnloadRenderTexture(m_target);
@@ -97,14 +110,27 @@ void OverlayRender::render_frame()
 {
     auto const [width, height] = m_job.settings.resolution;
     auto const values = values_at_time(m_source, frame_time(m_job.range, m_job.settings.fps, m_frame));
-    BeginTextureMode(m_target);
+    auto const large = Rectangle { .x = 0, .y = 0, .width = static_cast<float>(width * Supersampling), .height = static_cast<float>(height * Supersampling) };
+    BeginTextureMode(m_large);
     ClearBackground(BLANK);
     // The colors are blended as usual, but the alpha adds up, rather than
     // being blended too: the background is transparent, not black. This
     // leaves the colors premultiplied, which the encoder undoes.
     rlSetBlendFactorsSeparate(RL_SRC_ALPHA, RL_ONE_MINUS_SRC_ALPHA, RL_ONE, RL_ONE_MINUS_SRC_ALPHA, RL_FUNC_ADD, RL_FUNC_ADD);
     BeginBlendMode(BLEND_CUSTOM_SEPARATE);
-    m_renderer.draw(values, Rectangle { .x = 0, .y = 0, .width = static_cast<float>(width), .height = static_cast<float>(height) });
+    m_renderer.draw(values, large);
+    EndBlendMode();
+    EndTextureMode();
+
+    // Bilinear at half the size averages each 2x2 block. Premultiplied
+    // colors average as they should, and onto the cleared frame the
+    // premultiplied blend copies them. A source upside down keeps the
+    // frame as it was before scaling: upside down, as the encoder expects.
+    BeginTextureMode(m_target);
+    ClearBackground(BLANK);
+    BeginBlendMode(BLEND_ALPHA_PREMULTIPLY);
+    DrawTexturePro(m_large.texture, Rectangle { .x = 0, .y = 0, .width = large.width, .height = -large.height },
+        Rectangle { .x = 0, .y = 0, .width = static_cast<float>(width), .height = static_cast<float>(height) }, Vector2 { }, 0, WHITE);
     EndBlendMode();
     rlDrawRenderBatchActive();
     auto frame = m_encoder->buffer();
