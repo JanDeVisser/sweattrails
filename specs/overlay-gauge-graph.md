@@ -1,6 +1,6 @@
 # Overlay gauges and graphs
 
-Status: Ready
+Status: In progress
 
 ## Goal
 
@@ -134,7 +134,9 @@ numbers.
 
 *(Deferred)*, as in the reference: `max` relative to FTP or max heart
 rate, which needs the athlete profile. Also other arc angles, rounded bar
-ends, and min-max bands in graphs.
+ends, and min-max bands in graphs. And gauges and graphs of pace: it's a duration,
+whose `min` and `max` would need the `"4:30"` syntax deferred with pace
+zones, and a pace graph is usually upside down, faster higher up.
 
 ## Open questions
 
@@ -142,11 +144,110 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+The layout's new elements are decoded in `overlay/Layout`, their geometry
+and the graph's sampling are plain functions in a new `overlay/Shapes`,
+and `overlay/Renderer` draws them. Smoothing is in `overlay/OverlayRender`
+for a video, and in the Widget library's `App` for the window.
+
+### The layout
+
+- **`Stroke { color, width }`** and **`Panel { background, radius,
+  padding, border }`**, in design pixels. Every element gets a `panel`,
+  decoded from the box style properties, which every element already
+  accepts and ignores.
+- **`GaugeElement`**: `field`, `unit` (as a value's), `shape` (`Bar`,
+  `VBar`, `Arc`), `min` and `max` (`std::optional<double>`: none is
+  `"auto"`), `track`, `fill`, `thickness` (optional) and `thresholds`, from
+  `color_by` as for a value.
+- **`GraphElement`**: `field`, `unit`, `axis` (`Time`, `Distance`),
+  `window` (`std::optional<double>`: none is `"all"`), `min`, `max`, `line`
+  (a stroke), `fill`, `cursor` (`{ color, radius }`).
+- `OverlayElement` becomes a variant of the four, and `element_number()`
+  and `layout_codepoints()` visit them all. `gauge` and `graph` leave
+  `LaterTypes`, and their properties `LaterProperties`.
+- **Defaults**, for what an element doesn't say: a gauge's `fill` is its
+  `color`, its `track` the color at a fifth of its alpha; a graph's `line`
+  is its `color`, 2 px wide; no graph `fill` and no `cursor` unless asked
+  for.
+- **Errors**: a gauge or a graph needs a `size`; its field has to be a
+  number (as for `color_by`: not pace, see Version 1 scope); `min` has to be below `max`; `window` is
+  more than 0, or `"all"`.
+
+### Shapes and graphs: `overlay/Shapes.h`
+
+No raylib drawing, so that tests reach it all:
+
+- **`content_box(box, padding)`**: the box inset by its padding; and for a
+  text or value without a `size`, the box is the content plus the padding.
+- **`gauge_fraction(shown, min, max)`**: 0 to 1, clamped; none when
+  missing.
+- **`bar_rects(content, shape, thickness, fraction)`**: the track's and
+  the fill's rectangles, centred across, filling from the left or the
+  bottom.
+- **`arc_angles(fraction)`**: in raylib's degrees (0 is to the right,
+  clockwise on screen), from 135°, the bottom left, over 270°.
+- **`graph_columns(source, element, now, columns)`**: one value a pixel
+  column, in the unit shown, or none for a break:
+  - the column's stretch is its share of the window ending at `now`
+    (the frame's `elapsed`, or its `distance` on a distance axis), or of
+    the whole activity for `"all"`; before the start it's empty;
+  - the average of the records in the stretch, or the value at its
+    middle when there are none, as in a pause or a stretch shorter than a
+    record, which is what most rolling windows have.
+- **`graph_y(value, min, max, content)`**: where a value goes, clamped
+  to the box.
+
+### The activity's ranges
+
+- **`OverlaySource::range(field)`**, for `"auto"`: the lowest and highest
+  value over the records, in the base unit, worked out once with the
+  rest of the source. The unit converts both ends, since every unit only
+  multiplies and adds.
+
+### Drawing
+
+- The renderer draws an element's panel first: `DrawRectangleRounded()`
+  and `DrawRectangleRoundedLinesEx()`, with raylib's roundness worked out
+  from the radius, then its content in the content box.
+- Gauges: `DrawRectangleRec()` for bars, `DrawRing()` for the arc. Graphs:
+  the area under each unbroken run as triangles, the run as
+  `DrawSplineLinear()`, which has a width, and the cursor as a circle.
+
+### Smooth edges
+
+- **Video**: `OverlayRender` draws each frame into a render texture twice
+  the output's size, and that, with bilinear filtering, into one of the
+  output's size, which averages each 2×2 block; that's what's read back.
+  The colors are premultiplied, which is what filtering needs; the copy
+  uses raylib's premultiplied blend. The fonts load at the doubled size
+  by themselves, since the renderer scales to its area. At 4K the large
+  texture is 7680×4320, within the 16384 textures can be.
+- **Window**: `App::create()` asks for 4× multisampling before
+  `InitWindow()`. It's for the whole window: the rest of the app's shapes
+  get smoother edges too.
+
+### Built-in layout and README
+
+- `share/overlays/cycling-dashboard.overlay.json`, and the README's
+  overlay section shows a gauge, a graph and a panel.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `OverlayLayoutTest`: decoding gauges and graphs (shapes, `"auto"` and
+  numbers, defaults, `color_by`, `window`, strokes, cursors), panels on
+  every element type, and the errors; `LaterTypes` no longer skipping
+  them.
+- `OverlayShapesTest` (new): `content_box()`, `gauge_fraction()` (in the
+  unit shown, clamped, missing), `bar_rects()` for both shapes and a
+  thickness, `arc_angles()`, and `graph_columns()`: a rolling window at
+  the start, a pause (0 for power, a break for heart rate), a dropout,
+  `"all"` over a long activity averaging, a distance axis through a pause,
+  no distances; `graph_y()` clamping.
+- `OverlayFieldsTest`: `OverlaySource::range()`.
+- `LayoutFileTest`: `cycling-dashboard` decodes with shipped fonts.
+- By hand: the dashboard in the preview and in a render, edges in Final
+  Cut at 1080p, a pause in a heart rate graph, and what the render's
+  speed is with the doubled texture, against before.
 
 ## Review notes
 
