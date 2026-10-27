@@ -95,6 +95,13 @@ bool is_valid_spec(OverlayField field, std::string_view spec);
 // makes one for the activity it shows, a render when it starts. It points
 // to the activity, which has to outlive it.
 struct OverlaySource {
+    // The lowest and the highest value of a field over the activity, in its
+    // base unit.
+    struct Range {
+        double min { 0 };
+        double max { 0 };
+    };
+
     // A point of the activity's profile, for the grade.
     struct ProfilePoint {
         double distance { 0 }; // m
@@ -109,11 +116,14 @@ struct OverlaySource {
     // As it was when the source was made: renaming the activity during a
     // render doesn't change the video halfway.
     std::string title { };
-    // The fields any record has: one the activity hasn't at all, such as
-    // power without a power meter, is missing throughout, also in a pause.
-    std::array<bool, OverlayFieldCount> recorded { };
+    // The range of each field over the records, for a gauge's or a graph's
+    // "auto". None for a field no record has: one the activity hasn't at
+    // all, such as power without a power meter, is missing throughout,
+    // also in a pause.
+    std::array<std::optional<Range>, OverlayFieldCount> ranges { };
 
-    [[nodiscard]] bool has(OverlayField field) const { return recorded[static_cast<size_t>(field)]; }
+    [[nodiscard]] std::optional<Range> range(OverlayField field) const { return ranges[static_cast<size_t>(field)]; }
+    [[nodiscard]] bool                 has(OverlayField field) const { return range(field).has_value(); }
 };
 
 // The grade the layout shows if it doesn't say: over 30 m, so that a short
@@ -131,7 +141,7 @@ std::optional<double> grade_at(OverlaySource const &source, double distance, dou
 i32 local_utc_offset(Activity const &activity);
 
 // The field's value at the record, in its base unit. Nothing if the record
-// doesn't have it. Cadence is as FIT records it, per minute: revolutions,
+// doesn't have it. The grade is over the default window around it. Cadence is as FIT records it, per minute: revolutions,
 // or the strides of one foot, which `spm` doubles to steps. Pace is in s/m,
 // `lr_balance` the right leg's share in %, `time_of_day` seconds since
 // local midnight, `date` local seconds since the epoch. `title` is no

@@ -866,6 +866,32 @@ void test_date_without_zone()
 
 }
 
+std::string range_of(OverlaySource const &source, OverlayField field)
+{
+    auto const range = source.range(field);
+    return range ? std::format("{:.1f} {:.1f}", range->min, range->max) : std::string { "none" };
+}
+
+// The lowest and highest value over the records, for "auto": of the fields
+// any record has, the grade included, and none for the others.
+void test_ranges()
+{
+    TestActivity        t;
+    OverlaySource const source { t.activity };
+    CHECK_EQ(range_of(source, OverlayField::speed), "0.0 10.0");
+    CHECK_EQ(range_of(source, OverlayField::power), "251.0 251.0");
+    CHECK_EQ(range_of(source, OverlayField::distance), "42195.0 42205.0");
+    CHECK_EQ(range_of(source, OverlayField::temperature), "none");
+    CHECK(!source.has(OverlayField::temperature));
+    CHECK(source.has(OverlayField::power));
+
+    Climb               c;
+    OverlaySource const climb { c.activity };
+    CHECK_EQ(range_of(climb, OverlayField::altitude), "0.0 8.0");
+    CHECK_EQ(range_of(climb, OverlayField::grade), "0.0 20.0");
+    CHECK_EQ(range_of(climb, OverlayField::power), "none");
+}
+
 int main()
 {
     test_names();
@@ -912,5 +938,6 @@ int main()
     test_pause_after_a_dropout();
     test_title_when_made();
     test_date_without_zone();
+    test_ranges();
     return ST::Test::test_result();
 }
