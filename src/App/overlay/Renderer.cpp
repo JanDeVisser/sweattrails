@@ -59,6 +59,9 @@ void OverlayRenderer::draw(FieldValues const &values, Rectangle const &area)
         m_fonts.clear();
         m_scale = scale;
     }
+    // The title can have characters the layout doesn't, such as `ü`: the
+    // fonts are loaded again with them, once.
+    m_fonts.add_codepoints(values.title);
     for (auto const &element : m_layout->elements) {
         draw_element(element, values, area);
     }

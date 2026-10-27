@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <Logging.h>
+#include <Utf8.h>
 
 #include <FontCache.h>
 
@@ -49,6 +50,21 @@ void FontCache::set_codepoints(std::set<int> extra)
         clear();
         m_extra = std::move(extra);
     }
+}
+
+bool FontCache::add_codepoints(std::string_view text)
+{
+    auto extra = m_extra;
+    for (auto const ch : to_wstring(text).value_or(std::wstring { })) {
+        if (ch > 126) {
+            extra.insert(static_cast<int>(ch));
+        }
+    }
+    if (extra.size() == m_extra.size()) {
+        return false;
+    }
+    set_codepoints(std::move(extra));
+    return true;
 }
 
 void FontCache::clear()
