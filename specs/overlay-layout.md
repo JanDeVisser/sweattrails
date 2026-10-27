@@ -218,7 +218,11 @@ next to it.
 
   Zones need an athlete profile, which doesn't exist yet (see
   [Code prerequisites](#code-prerequisites)). Until then `color_by` takes
-  explicit thresholds: `{ "thresholds": [[0, "#8ecae6"], [130, "#90be6d"], ...] }`.
+  explicit thresholds: `{ "thresholds": [[0, "#8ecae6"], [130, "#90be6d"], ...] }`,
+  each the color from that value up, in the unit shown. Only the number
+  changes color, not the unit; below the first threshold, and when
+  missing, the element has its own color. Only `value` elements have
+  `color_by`.
 
 ### `gauge`: bar or arc
 
@@ -452,12 +456,15 @@ Notes per field:
 - **`cadence`**: for cycling, rpm as recorded. For running, FIT records strides
   per minute of one foot, so steps per minute is `2 × cadence`.
   (`fractional_cadence` isn't parsed and is ignored.)
-- **`grade`**: computed as the change in smoothed altitude over the change in
-  distance across a 100 m window. `record.grade` is not used: most devices
-  don't record it, and the ones that do are noisy.
+- **`grade`**: computed as the change in altitude over the change in
+  distance across a 30 m window centred on the moment; a `value` element
+  can set `"window"`, 10 to 200 m. (100 m smoothed short, steep ramps
+  away; see [overlay-fields.md](overlay-fields.md).) `record.grade` is not
+  used: most devices don't record it.
 - **`lr_balance`**: the raw value is a bitfield. Bit `0x80` set means the
   value is the right leg's share, bits `0x7F` are the percentage. Display it
-  as left/right, e.g. `48/52`. The raw value `0xFF` means invalid.
+  as left/right, e.g. `48/52`. The raw value `0xFF` means invalid, and
+  without bit `0x80` the side is unknown, so it's missing.
 - **`time_of_day`**: FIT timestamps are UTC. `Activity.utc_offset` (local time
   minus UTC, from the FIT activity message) converts them to the local time
   where the activity happened. If the file has no local timestamp, fall back
@@ -476,7 +483,9 @@ Notes per field:
   power, one decimal for speed and distance).
 - Durations (`elapsed`) take `hms` (`1:05:09`, default) or `ms` (`65:09`).
 - `time_of_day` takes `hm` (`09:44`, default) or `hms` (`09:44:10`).
-- `date` takes `std::chrono` style specs (`{date:%d %b %Y}`).
+- `date` takes `std::chrono` style specs, `%d %b %Y` by default
+  (`14 Jun 2025`), in English.
+- `pace` takes `ms` (`4:35`, default).
 
 ### Sampling and smoothing
 
