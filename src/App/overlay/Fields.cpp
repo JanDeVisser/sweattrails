@@ -372,6 +372,10 @@ OverlaySource::OverlaySource(Activity const &activity)
         previous = &r;
     }
     for (auto ix = 0uz; ix < activity.records.size(); ++ix) {
+        // As for the profile, a distance that goes back is ignored.
+        if (auto const d = activity.records[ix].distance; d && (mileage.empty() || *d >= mileage.back().distance)) {
+            mileage.push_back(Mileage { .distance = *d, .record = ix });
+        }
         for (auto f = 0uz; f < OverlayFieldCount; ++f) {
             auto const value = field_value(*this, ix, static_cast<OverlayField>(f));
             if (!value) {

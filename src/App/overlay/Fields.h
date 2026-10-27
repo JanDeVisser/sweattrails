@@ -102,6 +102,12 @@ struct OverlaySource {
         double max { 0 };
     };
 
+    // A record with a distance, for a graph on a distance axis.
+    struct Mileage {
+        double distance { 0 }; // m
+        size_t record { 0 };
+    };
+
     // A point of the activity's profile, for the grade.
     struct ProfilePoint {
         double distance { 0 }; // m
@@ -113,6 +119,7 @@ struct OverlaySource {
     Activity const           *activity;
     i32                       utc_offset { 0 }; // Local time minus UTC, in seconds
     std::vector<ProfilePoint> profile { };      // The records with both, in order of distance
+    std::vector<Mileage>      mileage { };      // The records with a distance, in order of it
     // As it was when the source was made: renaming the activity during a
     // render doesn't change the video halfway.
     std::string title { };
