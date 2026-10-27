@@ -19,6 +19,11 @@ later, Ninja, and these libraries:
 | zlib | unzipping Garmin Connect downloads | the system's | your distribution |
 | OpenSSL 3 or later | the Wahoo login | Homebrew | your distribution |
 | iconv | text encodings | the system's | glibc's |
+| OpenGL | reading back the overlay's frames | the system's | your distribution |
+
+Rendering the overlay to video runs [ffmpeg](https://ffmpeg.org), which
+the app looks for on the `PATH`, and in `/opt/homebrew/bin` and
+`/usr/local/bin`. It's not needed to build.
 
 ### macOS
 
@@ -27,6 +32,7 @@ and from [Homebrew](https://brew.sh):
 
 ```sh
 brew install cmake ninja pkgconf raylib freetype openssl llvm
+brew install ffmpeg   # for rendering the overlay to video
 ```
 
 `llvm` is for its clang-format, which the pre-commit hook uses (Apple's
@@ -40,7 +46,8 @@ Not tested yet. On Debian or Ubuntu, the packages would be:
 
 ```sh
 sudo apt install clang libc++-dev libc++abi-dev cmake ninja-build pkg-config \
-    libraylib-dev libfreetype-dev libcurl4-openssl-dev zlib1g-dev libssl-dev
+    libraylib-dev libfreetype-dev libcurl4-openssl-dev zlib1g-dev libssl-dev \
+    libgl-dev ffmpeg
 ```
 
 Distributions that don't package raylib need it built from
@@ -138,18 +145,34 @@ on Wahoo becomes its title. A ride recorded on a Wahoo and a Garmin at the
 same time shows up twice. If you don't use SweatTrails for 60 days, Wahoo
 forgets the login, and Ctrl+G asks you to log in again.
 
-## Overlay preview
+## Video overlay
 
-SweatTrails is growing a video overlay: an activity's data, drawn over the
-footage of the ride, with a transparent background. For now it previews
-it: Ctrl+O shows the overlay in place of the data panel and the map, at
-the moment marked in the graph, and Ctrl+Shift+O picks the layout. A
+SweatTrails draws an activity's data as a video overlay, to put over the
+footage of the ride, with a transparent background. Ctrl+O previews it in
+place of the data panel and the map, at the moment marked in the graph,
+and Ctrl+Shift+O picks the layout. A
 layout is a JSON file that says what's shown where; the built-in one is
 `share/overlays/cycling-basic.overlay.json`, a good start for your own.
 Put those in `overlays/` in SweatTrails' data folder
 (`~/Library/Application Support/sweattrails/overlays` on macOS), named
 `<name>.overlay.json`: the preview shows a change as soon as it's saved.
 The format is in `specs/overlay-layout.md`.
+
+Ctrl+E renders the overlay to a ProRes 4444 movie with alpha, which Final
+Cut and other editors import, for the part of the activity selected in the
+graph, the lap, or the whole activity; the box it opens takes elapsed
+times, `1:12:00-1:20:30`, or times of day, `@09:44:00-@09:52:30`. The
+movie's timecode is the time of day, to line it up with the footage. It
+goes to `~/Movies`, at 1080p and 29.97 fps, unless `settings.json` says
+otherwise:
+
+```json
+"overlay": { "resolution": "4k", "fps": "60000/1001", "folder": "~/Footage" }
+```
+
+The resolutions are `720p`, `1080p`, `1440p` and `4k`, each with a
+`-portrait` too, or `{ "width": 1080, "height": 1350 }`. ProRes 4444 is
+big: about 2.5 GB a minute at 1080p. Ctrl+E during a render stops it.
 
 How the app is developed, from specs, is in `CLAUDE.md`; the coding style
 is in `STYLE.md`, and how to write tests in `test/README.md`.
