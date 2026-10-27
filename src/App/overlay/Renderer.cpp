@@ -118,7 +118,11 @@ void OverlayRenderer::draw_element(OverlayElement const &element, FieldValues co
         return;
     }
 
-    auto const &value = std::get<ValueElement>(element);
+    auto const *value_element = std::get_if<ValueElement>(&element);
+    if (value_element == nullptr) {
+        return;
+    }
+    auto const &value = *value_element;
     auto const  f = font(value.style, value.number);
     auto const  unit_font = font(value.unit_style, value.number);
     if (!f || !unit_font) {

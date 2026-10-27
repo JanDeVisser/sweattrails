@@ -55,11 +55,7 @@ std::expected<std::map<std::string, fs::path>, LayoutError> layout_fonts(Overlay
 {
     std::map<std::string, fs::path> ret;
     for (auto const &element : layout.elements) {
-        std::vector<std::string> names { std::visit([](auto const &e) { return e.style.font; }, element) };
-        if (auto const *value = std::get_if<ValueElement>(&element)) {
-            names.push_back(value->unit_style.font);
-        }
-        for (auto const &name : names) {
+        for (auto const &name : element_fonts(element)) {
             if (ret.contains(name)) {
                 continue;
             }

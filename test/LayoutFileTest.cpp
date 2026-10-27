@@ -11,7 +11,6 @@
 #include <filesystem>
 #include <format>
 #include <string>
-#include <variant>
 #include <vector>
 
 #include <IO.h>
@@ -146,9 +145,8 @@ void test_builtin_layout(std::string_view name, size_t elements)
         return fs::exists(fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "fonts" / font);
     };
     for (auto const &element : file.layout->elements) {
-        std::visit([&shipped](auto const &e) { CHECK(shipped(e.style.font)); }, element);
-        if (auto const *value = std::get_if<ValueElement>(&element)) {
-            CHECK(shipped(value->unit_style.font));
+        for (auto const &font : element_fonts(element)) {
+            CHECK(shipped(font));
         }
     }
 }

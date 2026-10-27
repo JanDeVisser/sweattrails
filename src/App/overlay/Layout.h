@@ -70,9 +70,27 @@ struct TextStyle {
     std::optional<Shadow> shadow { };
 };
 
+// A line: a graph's, or a panel's border.
+struct Stroke {
+    Color color { WHITE };
+    float width { 2 }; // In design pixels
+};
+
+// What's behind an element's box, and how far its content is in from the
+// box's edges. In design pixels.
+struct Panel {
+    std::optional<Color>  background { };
+    float                 radius { 0 };
+    float                 padding { 0 };
+    std::optional<Stroke> border { };
+
+    [[nodiscard]] bool drawn() const { return background || border; }
+};
+
 struct TextElement {
     size_t               number { 0 }; // Its place in the layout's elements, from 1
     Placement            at { };
+    Panel                panel { };
     TextStyle            style { };
     Template             text { };
     std::optional<Align> align { }; // As the anchor if none
@@ -87,6 +105,7 @@ struct Threshold {
 struct ValueElement {
     size_t                   number { 0 }; // Its place in the layout's elements, from 1
     Placement                at { };
+    Panel                    panel { };
     TextStyle                style { };
     TextStyle                unit_style { };
     OverlayField             field { OverlayField::speed };
@@ -98,7 +117,53 @@ struct ValueElement {
     std::vector<Threshold>   thresholds { }; // Going up
 };
 
-using OverlayElement = std::variant<TextElement, ValueElement>;
+enum class GaugeShape {
+    Bar,  // Filling from the left
+    VBar, // Filling from the bottom
+    Arc,  // 270°, open at the bottom, filling clockwise
+};
+
+struct GaugeElement {
+    size_t                   number { 0 }; // Its place in the layout's elements, from 1
+    Placement                at { };       // With a size: there's no text to measure
+    Panel                    panel { };
+    OverlayField             field { OverlayField::speed };
+    std::optional<FieldUnit> unit { }; // The layout's units if none
+    GaugeShape               shape { GaugeShape::Bar };
+    std::optional<double>    min { }; // In the unit shown; none is "auto"
+    std::optional<double>    max { };
+    Color                    track { };
+    Color                    fill { WHITE };
+    std::optional<float>     thickness { }; // In design pixels; the box's if none
+    std::vector<Threshold>   thresholds { };
+};
+
+enum class GraphAxis {
+    Time,
+    Distance,
+};
+
+struct Cursor {
+    Color color { WHITE };
+    float radius { 6 }; // In design pixels
+};
+
+struct GraphElement {
+    size_t                   number { 0 }; // Its place in the layout's elements, from 1
+    Placement                at { };       // With a size
+    Panel                    panel { };
+    OverlayField             field { OverlayField::speed };
+    std::optional<FieldUnit> unit { };
+    GraphAxis                axis { GraphAxis::Time };
+    std::optional<double>    window { }; // Seconds or meters, ending at the moment; none is "all"
+    std::optional<double>    min { };    // In the unit shown; none is "auto"
+    std::optional<double>    max { };
+    Stroke                   line { };
+    std::optional<Color>     fill { };
+    std::optional<Cursor>    cursor { };
+};
+
+using OverlayElement = std::variant<TextElement, ValueElement, GaugeElement, GraphElement>;
 
 struct OverlayLayout {
     Vector2                     design_size { .x = 1920, .y = 1080 };
@@ -146,6 +211,10 @@ std::optional<ShownValue> shown_value(ValueElement const &value, FieldValues con
 // The color of the last threshold at or below `shown`; else, or without a
 // value, `own`.
 Color threshold_color(std::vector<Threshold> const &thresholds, std::optional<double> shown, Color own);
+
+// The fonts the element draws with, by the layout's names for them: none
+// for a gauge or a graph.
+std::vector<std::string> element_fonts(OverlayElement const &element);
 
 // The element's place in the layout's elements, from 1, counting those
 // that were skipped.
