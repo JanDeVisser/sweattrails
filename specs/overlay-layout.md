@@ -288,7 +288,7 @@ still to come can be styled differently, the same way the map track is.
               "outline": "#ffb703", "drop_line": true },
   "marker_label": { "text": "{altitude:.0f} {altitude.unit} · {grade:+.1f}%",
                     "style": "label" },
-  "scale": { "min": "auto", "max": "auto", "min_span": 100 },
+  "min": "auto", "max": "auto", "min_span": 100,
   "axis_labels": { "min_max": true, "distance": false, "style": "label" },
   "laps": { "color": "#ffffff60", "width": 1 } }
 ```
@@ -324,7 +324,9 @@ still to come can be styled differently, the same way the map track is.
 - **`marker_label`**: a `text` template drawn next to the marker that moves
   with it. It flips to the left side of the marker near the right edge, so it
   doesn't get cut off.
-- **`scale`**: the elevation range on the y axis. `"auto"` uses the minimum
+- **`min`, `max` and `min_span`**: the elevation range on the y axis, as
+  [overlay-profile.md](overlay-profile.md) has them, rather than in a
+  `scale` object. `"auto"` uses the minimum
   and maximum of the elevation inside `extent`. `min_span` (in m, ft for
   imperial) keeps a flat ride from being stretched until 5 m of rolling road
   looks like the Alps.
@@ -338,8 +340,8 @@ Data and rendering:
 - The elevation comes from `record.altitude`, with `record.distance` on the
   x axis. Records without a distance (for example indoor rides) can't be
   placed on a profile, and the element is hidden when the activity has none.
-- Altitude is smoothed with a centered average over `smooth` seconds (default
-  10) before drawing, because barometric and especially GPS altitude are
+- Altitude is smoothed with a centered average over `smooth` meters (default
+  20, see [overlay-profile.md](overlay-profile.md); this said 10 seconds) before drawing, because barometric and especially GPS altitude are
   jagged. Centered rather than trailing, because the whole shape is known in
   advance and a trailing average would shift the hills.
 - The marker position is interpolated between records, like every other
