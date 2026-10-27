@@ -205,7 +205,10 @@ std::vector<std::optional<double>> graph_columns(OverlaySource const &source, Gr
         if (middle < start || middle > end) {
             continue;
         }
-        auto const stretch = axis.stretch(left, left + width, ix == columns - 1);
+        // The last column ends at the end, not where adding up the widths
+        // gets to, which can be a hair short of it.
+        auto const last = ix == columns - 1;
+        auto const stretch = axis.stretch(left, last ? to : left + width, last);
         auto const value = stretch.has_records ? stretch.average : axis.at(middle);
         if (value) {
             ret[ix] = unit.shown(*value);

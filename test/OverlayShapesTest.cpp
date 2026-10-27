@@ -265,6 +265,70 @@ void test_graph_y()
     CHECK_EQ(graph_y(200, bounds, content), 10.0f);
 }
 
+// The last column takes the activity's last record with "all", also when
+// the columns' widths don't add up to the activity's length exactly: 3 s
+// in 7 columns comes to a hair less than 3.
+void test_all_takes_the_last_record()
+{
+    Storage  storage;
+    Activity activity { storage, ActivityID { } };
+    activity.segment.start_time.timestamp = Start;
+    for (auto t = 0u; t <= 3; ++t) {
+        activity.records.push_back(record {
+            .timestamp = DateTime { .timestamp = Start + t },
+            .power = static_cast<u16>(t == 3 ? 1000 : 100),
+        });
+    }
+    OverlaySource const source { activity };
+    auto const          columns = graph_columns(source, graph(OverlayField::power, { }), unit_of(OverlayField::power), 3, 7);
+    CHECK_EQ(columns.size(), 7uz);
+    CHECK_EQ(columns.back().value_or(-1), 1000.0);
+}
+
+// "all" on a distance axis: the pause takes no width, and the columns
+// share out the distance from the first record's to the last's.
+void test_all_on_a_distance_axis()
+{
+    Ride                t;
+    OverlaySource const source { t.activity };
+    auto const          power = graph(OverlayField::power, { }, GraphAxis::Distance);
+    // 5000 m in 10 columns of 500 m: the dropout is 10 of the first
+    // column's 50 records.
+    CHECK_EQ(show(graph_columns(source, power, unit_of(OverlayField::power), 1000, 10)), show(std::vector<std::optional<double>>(10, 200.0)));
+    auto const hr = graph(OverlayField::heart_rate, { }, GraphAxis::Distance);
+    CHECK_EQ(show(graph_columns(source, hr, unit_of(OverlayField::heart_rate), 1000, 10)), show(std::vector<std::optional<double>>(10, 150.0)));
+}
+
+// A rolling window on a distance axis, at the start: empty to the left of
+// the first record's distance.
+void test_rolling_distance_window_at_the_start()
+{
+    Ride                t;
+    OverlaySource const source { t.activity };
+    auto const          speed = graph(OverlayField::speed, 100, GraphAxis::Distance);
+    CHECK_EQ(show(graph_columns(source, speed, unit_of(OverlayField::speed), 20, 10)), "- - - - - - - - 36 36");
+}
+
+// Grade is graphed as the other fields are, from each record's grade.
+void test_grade_graph()
+{
+    Storage  storage;
+    Activity activity { storage, ActivityID { } };
+    activity.segment.start_time.timestamp = Start;
+    // 10 m a second, climbing 1 m a second: 10 %.
+    for (auto t = 0u; t <= 100; ++t) {
+        activity.records.push_back(record {
+            .timestamp = DateTime { .timestamp = Start + t },
+            .altitude = static_cast<float>(t),
+            .distance = static_cast<float>(t) * 10.0f,
+        });
+    }
+    OverlaySource const source { activity };
+    CHECK(source.has(OverlayField::grade));
+    auto const grade = graph(OverlayField::grade, 20);
+    CHECK_EQ(show(graph_columns(source, grade, unit_of(OverlayField::grade), 50, 4)), "10 10 10 10");
+}
+
 }
 
 int main()
@@ -283,5 +347,9 @@ int main()
     test_graph_now();
     test_graph_position();
     test_graph_y();
+    test_all_takes_the_last_record();
+    test_all_on_a_distance_axis();
+    test_rolling_distance_window_at_the_start();
+    test_grade_graph();
     return ST::Test::test_result();
 }
