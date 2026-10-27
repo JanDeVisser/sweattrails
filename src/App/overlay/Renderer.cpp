@@ -108,15 +108,6 @@ Rectangle OverlayRenderer::screen_box(Placement const &at, Vector2 size, Rectang
     return Rectangle { .x = area.x + box.x, .y = area.y + box.y, .width = box.width, .height = box.height };
 }
 
-Vector2 OverlayRenderer::box_size(Placement const &at, Vector2 content, Panel const &panel) const
-{
-    if (at.size) {
-        return Vector2 { .x = at.size->x * m_scale, .y = at.size->y * m_scale };
-    }
-    auto const padding = 2 * panel.padding * m_scale;
-    return Vector2 { .x = content.x + padding, .y = content.y + padding };
-}
-
 // The panel behind the box, and the box inside its padding.
 Rectangle OverlayRenderer::draw_panel(Panel const &panel, Rectangle const &box) const
 {
@@ -140,7 +131,7 @@ void OverlayRenderer::draw(TextElement const &text, FieldValues const &values, R
     }
     auto const shown = fill_template(text.text, values, m_layout->units, "--");
     auto const measured = MeasureTextEx(*f, shown.c_str(), static_cast<float>(f->baseSize), 0);
-    auto const content = draw_panel(text.panel, screen_box(text.at, box_size(text.at, measured, text.panel), area));
+    auto const content = draw_panel(text.panel, screen_box(text.at, box_size(text.at, measured, text.panel, m_scale), area));
     auto const in_box = place_in_box(Vector2 { .x = content.width, .y = content.height }, measured, text.at.anchor, text.align);
     draw_text(*f, shown, Vector2 { .x = content.x + in_box.x, .y = content.y + in_box.y }, text.style);
 }
@@ -163,7 +154,7 @@ void OverlayRenderer::draw(ValueElement const &value, FieldValues const &values,
     auto const  unit_measured = unit_text.empty() ? Vector2 { } : MeasureTextEx(*unit_font, unit_text.c_str(), static_cast<float>(unit_font->baseSize), 0);
     auto const  gap = unit_text.empty() ? 0.0f : value.unit_style.font_size * m_scale * UnitGap;
     auto const  size = Vector2 { .x = measured.x + gap + unit_measured.x, .y = std::max(measured.y, unit_measured.y) };
-    auto const  content = draw_panel(value.panel, screen_box(value.at, box_size(value.at, size, value.panel), area));
+    auto const  content = draw_panel(value.panel, screen_box(value.at, box_size(value.at, size, value.panel, m_scale), area));
     auto const  in_box = place_in_box(Vector2 { .x = content.width, .y = content.height }, size, value.at.anchor);
     auto const  at = Vector2 { .x = content.x + in_box.x, .y = content.y + in_box.y };
     // The number and its unit stand on the same line, at the bottom.
@@ -180,7 +171,7 @@ void OverlayRenderer::draw(ValueElement const &value, FieldValues const &values,
 // "auto" for a field the activity hasn't got, shows the track only.
 void OverlayRenderer::draw(GaugeElement const &gauge, FieldValues const &values, Rectangle const &area)
 {
-    auto const content = draw_panel(gauge.panel, screen_box(gauge.at, box_size(gauge.at, { }, gauge.panel), area));
+    auto const content = draw_panel(gauge.panel, screen_box(gauge.at, box_size(gauge.at, { }, gauge.panel, m_scale), area));
     auto const unit = gauge.unit.value_or(default_unit(gauge.field, m_layout->units, values.sport));
     auto const value = values[gauge.field];
     auto const shown = value ? std::optional { unit.shown(*value) } : std::nullopt;
@@ -209,7 +200,7 @@ void OverlayRenderer::draw(GaugeElement const &gauge, FieldValues const &values,
 // missing, the area under it, and the cursor at the moment.
 void OverlayRenderer::draw(GraphElement const &graph, FieldValues const &values, Rectangle const &area)
 {
-    auto const content = draw_panel(graph.panel, screen_box(graph.at, box_size(graph.at, { }, graph.panel), area));
+    auto const content = draw_panel(graph.panel, screen_box(graph.at, box_size(graph.at, { }, graph.panel, m_scale), area));
     auto const now = graph_now(graph, values);
     if (!values.source || !now || content.width < 1) {
         return;

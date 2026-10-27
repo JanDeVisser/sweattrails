@@ -30,6 +30,10 @@ constexpr float ArcSweep = 270.0f;
 // The box inset by its padding on every side; never less than nothing.
 Rectangle content_box(Rectangle box, float padding);
 
+// The size of an element's box, in pixels at `scale`: its own size, or
+// else its content's, measured, with the padding around it.
+Vector2 box_size(Placement const &at, Vector2 content, Panel const &panel, float scale);
+
 // The lowest and the highest value a gauge or a graph shows, in the unit
 // shown: the element's own, or the activity's range for "auto".
 struct Bounds {

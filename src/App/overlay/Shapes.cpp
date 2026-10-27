@@ -17,6 +17,15 @@ Rectangle content_box(Rectangle box, float padding)
     return Rectangle { .x = box.x + x, .y = box.y + y, .width = box.width - 2 * x, .height = box.height - 2 * y };
 }
 
+Vector2 box_size(Placement const &at, Vector2 content, Panel const &panel, float scale)
+{
+    if (at.size) {
+        return Vector2 { .x = at.size->x * scale, .y = at.size->y * scale };
+    }
+    auto const padding = 2 * panel.padding * scale;
+    return Vector2 { .x = content.x + padding, .y = content.y + padding };
+}
+
 std::optional<Bounds> shown_bounds(OverlaySource const &source, OverlayField field, FieldUnit const &unit,
     std::optional<double> min, std::optional<double> max)
 {

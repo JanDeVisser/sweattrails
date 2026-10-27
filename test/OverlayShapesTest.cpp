@@ -85,6 +85,20 @@ void test_content_box()
     CHECK_EQ(show(content_box({ 10, 20, 100, 50 }, 40)), "50 45 20 0");
 }
 
+// A box without a size is its content with the padding around it; one
+// with a size keeps it, padding or not. Both scale.
+void test_box_size()
+{
+    auto const  show_size = [](Vector2 v) { return std::format("{} {}", v.x, v.y); };
+    Panel const padded { .padding = 10 };
+    CHECK_EQ(show_size(box_size(Placement { }, { 100, 40 }, padded, 1)), "120 60");
+    CHECK_EQ(show_size(box_size(Placement { }, { 100, 40 }, padded, 2)), "140 80");
+    CHECK_EQ(show_size(box_size(Placement { }, { 100, 40 }, Panel { }, 2)), "100 40");
+    Placement const sized { .size = Vector2 { 300, 50 } };
+    CHECK_EQ(show_size(box_size(sized, { 100, 40 }, padded, 1)), "300 50");
+    CHECK_EQ(show_size(box_size(sized, { 100, 40 }, padded, 2)), "600 100");
+}
+
 void test_shown_bounds()
 {
     Ride                t;
@@ -334,6 +348,7 @@ void test_grade_graph()
 int main()
 {
     test_content_box();
+    test_box_size();
     test_shown_bounds();
     test_gauge_fraction();
     test_bar_rects();
