@@ -654,10 +654,12 @@ void cmd_overlay_render(pSweatTrails const &sweattrails, JSONValue const &)
             return;
         }
         auto const prompt = std::format("Stop rendering {}?", sweattrails->overlay_render->output().filename().string());
-        query_box(sweattrails, prompt, [](pSweatTrails const &st, QueryOption selection) {
+        auto const stop = [](pSweatTrails const &st, QueryOption selection) {
             if (selection == QueryOption::QueryOptionYes) {
                 st->stop_render();
-            } }, QueryOptionYesNo);
+            }
+        };
+        query_box(sweattrails, prompt, stop, QueryOptionYesNo);
         return;
     }
     auto activity = activity_for_keys(sweattrails);
@@ -710,10 +712,12 @@ void cmd_overlay_render(pSweatTrails const &sweattrails, JSONValue const &)
         }
         auto const prompt = std::format("{} will be about {:.0f} GB. Render it?", job.output.filename().string(),
             std::ceil(estimated_gigabytes(job.settings.resolution, *range)));
-        query_box(st, prompt, [job](pSweatTrails const &st, QueryOption selection) {
+        auto const render = [job](pSweatTrails const &st, QueryOption selection) {
             if (selection == QueryOption::QueryOptionYes) {
                 start_render(st, job);
-            } }, QueryOptionYesNo);
+            }
+        };
+        query_box(st, prompt, render, QueryOptionYesNo);
     };
     input_box(sweattrails, "Range", picked, format_range(initial));
 }
