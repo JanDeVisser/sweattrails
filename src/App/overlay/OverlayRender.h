@@ -59,6 +59,7 @@ private:
     void render_frame();
 
     RenderJob                                       m_job;
+    OverlaySource                                   m_source;
     OverlayRenderer                                 m_renderer;
     std::unique_ptr<Encoder>                        m_encoder;
     RenderTexture2D                                 m_target { };

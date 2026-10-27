@@ -68,10 +68,24 @@ std::string_view default_spec(OverlayField field);
 // Whether std::format takes `spec` for a double.
 bool is_valid_spec(std::string_view spec);
 
+// What the overlay needs of an activity, worked out once: the preview
+// makes one for the activity it shows, a render when it starts. It points
+// to the activity, which has to outlive it.
+struct OverlaySource {
+    explicit OverlaySource(Activity const &activity);
+
+    Activity const *activity;
+    i32             utc_offset { 0 }; // Local time minus UTC, in seconds
+};
+
+// Local time minus UTC where the activity was: the activity's own, or else
+// the system's time zone's at its start.
+i32 local_utc_offset(Activity const &activity);
+
 // The field's value at the record, in its base unit. Nothing if the record
 // doesn't have it. Cadence is as FIT records it, per minute: revolutions,
 // or the strides of one foot, which `spm` doubles to steps.
-std::optional<double> field_value(Activity const &activity, size_t record, OverlayField field);
+std::optional<double> field_value(OverlaySource const &source, size_t record, OverlayField field);
 
 // The fields' values for one frame of the overlay, in their base units,
 // and the sport, which picks the cadence's unit.
@@ -90,13 +104,13 @@ struct FieldValues {
 constexpr double MaxGap = 5.0;
 
 // The values at the record, as the preview shows them.
-FieldValues values_at_record(Activity const &activity, size_t record);
+FieldValues values_at_record(OverlaySource const &source, size_t record);
 
 // The values `seconds` after the activity's start, interpolated linearly
 // between the records around it, as a video's frames fall between them.
 // A field one of them doesn't have, and records more than MaxGap apart,
 // give the earlier record's value. `elapsed` is `seconds`.
-FieldValues values_at_time(Activity const &activity, double seconds);
+FieldValues values_at_time(OverlaySource const &source, double seconds);
 
 // What's shown for a value: converted to the unit and formatted with
 // `spec`, which is_valid_spec() has passed; or `missing`. `elapsed` is

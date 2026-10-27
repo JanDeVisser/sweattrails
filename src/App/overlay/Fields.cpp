@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <ctime>
 #include <format>
 
 #include <overlay/Fields.h>
@@ -149,8 +150,26 @@ bool is_valid_spec(std::string_view spec)
     }
 }
 
-std::optional<double> field_value(Activity const &activity, size_t record, OverlayField field)
+i32 local_utc_offset(Activity const &activity)
 {
+    if (activity.utc_offset) {
+        return *activity.utc_offset;
+    }
+    auto const start = static_cast<std::time_t>(activity.segment.start_time.timestamp);
+    std::tm    local { };
+    localtime_r(&start, &local);
+    return static_cast<i32>(local.tm_gmtoff);
+}
+
+OverlaySource::OverlaySource(Activity const &activity)
+    : activity(&activity)
+    , utc_offset(local_utc_offset(activity))
+{
+}
+
+std::optional<double> field_value(OverlaySource const &source, size_t record, OverlayField field)
+{
+    auto const &activity = *source.activity;
     if (record >= activity.records.size()) {
         return { };
     }
@@ -178,17 +197,18 @@ std::optional<double> field_value(Activity const &activity, size_t record, Overl
     return { };
 }
 
-FieldValues values_at_record(Activity const &activity, size_t record)
+FieldValues values_at_record(OverlaySource const &source, size_t record)
 {
-    FieldValues ret { .sport = activity.sport };
+    FieldValues ret { .sport = source.activity->sport };
     for (auto ix = 0uz; ix < OverlayFieldCount; ++ix) {
-        ret.values[ix] = field_value(activity, record, static_cast<OverlayField>(ix));
+        ret.values[ix] = field_value(source, record, static_cast<OverlayField>(ix));
     }
     return ret;
 }
 
-FieldValues values_at_time(Activity const &activity, double seconds)
+FieldValues values_at_time(OverlaySource const &source, double seconds)
 {
+    auto const &activity = *source.activity;
     auto const &records = activity.records;
     auto const  at = static_cast<double>(activity.segment.start_time.timestamp) + seconds;
     auto const  time_of = [](record const &r) { return static_cast<double>(r.timestamp.timestamp); };
@@ -199,12 +219,12 @@ FieldValues values_at_time(Activity const &activity, double seconds)
     FieldValues ret { .sport = activity.sport };
     if (!records.empty()) {
         auto const earlier = (later == 0) ? 0 : later - 1;
-        ret = values_at_record(activity, earlier);
+        ret = values_at_record(source, earlier);
         if (later > 0 && later < records.size()) {
             auto const from = time_of(records[earlier]);
             auto const span = time_of(records[later]) - from;
             if (span > 0 && span <= MaxGap) {
-                auto const next = values_at_record(activity, later);
+                auto const next = values_at_record(source, later);
                 auto const fraction = (at - from) / span;
                 for (auto ix = 0uz; ix < OverlayFieldCount; ++ix) {
                     if (ret.values[ix] && next.values[ix]) {

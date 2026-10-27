@@ -15,6 +15,7 @@
 
 #include <StringUtil.h>
 
+#include <overlay/Fields.h>
 #include <overlay/Render.h>
 
 namespace ST {
@@ -232,14 +233,7 @@ ActivityClock activity_clock(Activity const &activity)
     if (!activity.records.empty()) {
         ret.duration = std::max(0.0, static_cast<double>(static_cast<i64>(activity.records.back().timestamp.timestamp) - start));
     }
-    auto offset = activity.utc_offset.value_or(0);
-    if (!activity.utc_offset) {
-        auto const t = static_cast<std::time_t>(start);
-        std::tm    local { };
-        localtime_r(&t, &local);
-        offset = static_cast<i32>(local.tm_gmtoff);
-    }
-    auto const local = start + offset;
+    auto const local = start + local_utc_offset(activity);
     ret.start_time_of_day = static_cast<int>(((local % SecondsPerDay) + SecondsPerDay) % SecondsPerDay);
     auto const t = static_cast<std::time_t>(local);
     std::tm    day { };

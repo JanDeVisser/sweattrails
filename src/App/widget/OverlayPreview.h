@@ -37,7 +37,9 @@ struct OverlayPreview : public Widget {
 
 private:
     OverlayRenderer renderer;
-    double          checked_at { 0 };
+    // For the activity, made again when it changes.
+    std::optional<OverlaySource> source { };
+    double                       checked_at { 0 };
 
     void      layout_loaded();
     Rectangle canvas() const; // In screen coordinates

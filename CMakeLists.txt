@@ -410,6 +410,7 @@ target_link_libraries(layout_file_test PRIVATE ${CURL_LIBRARIES})
 sweattrails_test(
         overlay_render_test
         test/OverlayRenderTest.cpp
+        src/App/overlay/Fields.cpp
         src/App/overlay/Render.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Storage.cpp
@@ -426,6 +427,7 @@ sweattrails_test(
         encoder_test
         test/EncoderTest.cpp
         src/App/overlay/Encoder.cpp
+        src/App/overlay/Fields.cpp
         src/App/overlay/Render.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Storage.cpp

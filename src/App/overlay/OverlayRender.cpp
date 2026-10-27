@@ -23,6 +23,7 @@ namespace ST {
 
 OverlayRender::OverlayRender(RenderJob job, FontFinder find)
     : m_job(std::move(job))
+    , m_source(m_job.activity->activity)
     , m_renderer(std::move(find))
 {
     m_frames = frame_count(m_job.range, m_job.settings.fps);
@@ -95,7 +96,7 @@ void OverlayRender::step(double budget)
 void OverlayRender::render_frame()
 {
     auto const [width, height] = m_job.settings.resolution;
-    auto const values = values_at_time(m_job.activity->activity, frame_time(m_job.range, m_job.settings.fps, m_frame));
+    auto const values = values_at_time(m_source, frame_time(m_job.range, m_job.settings.fps, m_frame));
     BeginTextureMode(m_target);
     ClearBackground(BLANK);
     // The colors are blended as usual, but the alpha adds up, rather than

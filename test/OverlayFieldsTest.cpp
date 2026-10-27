@@ -53,14 +53,14 @@ struct TestActivity {
         if (!parsed) {
             return "error: " + parsed.error();
         }
-        return fill_template(*parsed, values_at_record(activity, record), units, "--");
+        return fill_template(*parsed, values_at_record(OverlaySource { activity }, record), units, "--");
     }
 };
 
 std::string shown(TestActivity const &t, OverlayField field, size_t record = 0, Units units = Units::Metric)
 {
     auto const unit = default_unit(field, units, t.activity.sport);
-    return format_field(field, field_value(t.activity, record, field), unit, default_spec(field), "--");
+    return format_field(field, field_value(OverlaySource { t.activity }, record, field), unit, default_spec(field), "--");
 }
 
 void test_names()
@@ -100,12 +100,12 @@ void test_explicit_units()
     auto const   mps = field_unit(OverlayField::speed, "m/s");
     CHECK(mps.has_value());
     if (mps) {
-        CHECK_EQ(format_field(OverlayField::speed, field_value(t.activity, 0, OverlayField::speed), *mps, ".2f", "--"), "10.00");
+        CHECK_EQ(format_field(OverlayField::speed, field_value(OverlaySource { t.activity }, 0, OverlayField::speed), *mps, ".2f", "--"), "10.00");
     }
     auto const meters = field_unit(OverlayField::distance, "m");
     CHECK(meters.has_value());
     if (meters) {
-        CHECK_EQ(format_field(OverlayField::distance, field_value(t.activity, 0, OverlayField::distance), *meters, ".0f", "--"), "42195");
+        CHECK_EQ(format_field(OverlayField::distance, field_value(OverlaySource { t.activity }, 0, OverlayField::distance), *meters, ".0f", "--"), "42195");
     }
     CHECK(!field_unit(OverlayField::speed, "km").has_value());
     CHECK(!field_unit(OverlayField::power, "kW").has_value());
@@ -180,7 +180,7 @@ void test_running_cadence_in_rpm()
     auto const   spm = field_unit(OverlayField::cadence, "spm");
     CHECK(rpm.has_value() && spm.has_value());
     if (rpm && spm) {
-        auto const value = field_value(t.activity, 0, OverlayField::cadence);
+        auto const value = field_value(OverlaySource { t.activity }, 0, OverlayField::cadence);
         CHECK_EQ(format_field(OverlayField::cadence, value, *spm, ".0f", "--"), "176");
         CHECK_EQ(format_field(OverlayField::cadence, value, *rpm, ".0f", "--"), "88");
     }
@@ -264,22 +264,22 @@ struct InterpolatedActivity {
 void test_values_at_time()
 {
     InterpolatedActivity t;
-    auto const           half = values_at_time(t.activity, 0.5);
+    auto const           half = values_at_time(OverlaySource { t.activity }, 0.5);
     CHECK_EQ(value_of(half, OverlayField::speed), "11");
     CHECK_EQ(value_of(half, OverlayField::power), "250");
     // The later record has no heart rate: the earlier's.
     CHECK_EQ(value_of(half, OverlayField::heart_rate), "140");
     CHECK_EQ(value_of(half, OverlayField::elapsed), "0.5");
     CHECK_EQ(value_of(half, OverlayField::cadence), "none");
-    CHECK_EQ(value_of(values_at_time(t.activity, 0), OverlayField::speed), "10");
-    CHECK_EQ(value_of(values_at_time(t.activity, 1), OverlayField::speed), "12");
+    CHECK_EQ(value_of(values_at_time(OverlaySource { t.activity }, 0), OverlayField::speed), "10");
+    CHECK_EQ(value_of(values_at_time(OverlaySource { t.activity }, 1), OverlayField::speed), "12");
     // Over the gap: the earlier record.
-    CHECK_EQ(value_of(values_at_time(t.activity, 5), OverlayField::speed), "12");
-    CHECK_EQ(value_of(values_at_time(t.activity, 9.9), OverlayField::power), "300");
-    CHECK_EQ(value_of(values_at_time(t.activity, 10), OverlayField::speed), "20");
+    CHECK_EQ(value_of(values_at_time(OverlaySource { t.activity }, 5), OverlayField::speed), "12");
+    CHECK_EQ(value_of(values_at_time(OverlaySource { t.activity }, 9.9), OverlayField::power), "300");
+    CHECK_EQ(value_of(values_at_time(OverlaySource { t.activity }, 10), OverlayField::speed), "20");
     // Past the ends: the first and the last record, with the time running on.
-    CHECK_EQ(value_of(values_at_time(t.activity, -3), OverlayField::speed), "10");
-    auto const after = values_at_time(t.activity, 20);
+    CHECK_EQ(value_of(values_at_time(OverlaySource { t.activity }, -3), OverlayField::speed), "10");
+    auto const after = values_at_time(OverlaySource { t.activity }, 20);
     CHECK_EQ(value_of(after, OverlayField::speed), "20");
     CHECK_EQ(value_of(after, OverlayField::elapsed), "20");
 }
@@ -288,7 +288,7 @@ void test_values_without_records()
 {
     InterpolatedActivity t;
     t.activity.records.clear();
-    auto const values = values_at_time(t.activity, 7);
+    auto const values = values_at_time(OverlaySource { t.activity }, 7);
     CHECK_EQ(value_of(values, OverlayField::speed), "none");
     CHECK_EQ(value_of(values, OverlayField::elapsed), "7");
 }
@@ -296,11 +296,11 @@ void test_values_without_records()
 void test_values_at_record()
 {
     TestActivity t { sport::Running };
-    auto const   values = values_at_record(t.activity, 0);
+    auto const   values = values_at_record(OverlaySource { t.activity }, 0);
     CHECK(values.sport == sport::Running);
     CHECK_EQ(value_of(values, OverlayField::power), "251");
     CHECK_EQ(value_of(values, OverlayField::elapsed), "3909");
-    CHECK_EQ(value_of(values_at_record(t.activity, 1), OverlayField::power), "none");
+    CHECK_EQ(value_of(values_at_record(OverlaySource { t.activity }, 1), OverlayField::power), "none");
 }
 }
 
