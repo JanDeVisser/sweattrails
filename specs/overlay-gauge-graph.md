@@ -1,6 +1,6 @@
 # Overlay gauges and graphs
 
-Status: In review
+Status: Done
 
 ## Goal
 
