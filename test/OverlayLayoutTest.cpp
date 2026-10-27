@@ -13,6 +13,7 @@
 #include <JSON.h>
 
 #include <overlay/Layout.h>
+#include <storage/Storage.h>
 
 #include <TestApp.h>
 
@@ -570,6 +571,128 @@ void test_shown_value()
     }
 }
 
+// Thresholds on a temperature are in the unit shown, offset included:
+// 20 °C is 68 °F, above 60 °F, but below 60 °C.
+void test_thresholds_in_fahrenheit()
+{
+    auto const layout = decode(R"({ "elements": [
+        { "type": "value", "field": "temperature", "color": "#ffffff",
+          "color_by": { "thresholds": [[60, "#ff0000"]] } },
+        { "type": "value", "field": "temperature", "unit": "°F", "color": "#ffffff",
+          "color_by": { "thresholds": [[60, "#ff0000"]] } }
+    ] })");
+    CHECK(layout.has_value());
+    if (!layout) {
+        return;
+    }
+    FieldValues values { };
+    values.values[static_cast<size_t>(OverlayField::temperature)] = 20.0;
+    auto const &own_units = std::get<ValueElement>(layout->elements[0]);
+    auto const  metric = shown_value(own_units, values, Units::Metric);
+    auto const  imperial = shown_value(own_units, values, Units::Imperial);
+    auto const  explicit_f = shown_value(std::get<ValueElement>(layout->elements[1]), values, Units::Metric);
+    CHECK(metric && imperial && explicit_f);
+    if (metric && imperial && explicit_f) {
+        CHECK_EQ(show(metric->color), "255 255 255 255");
+        CHECK_EQ(imperial->number, "68");
+        CHECK_EQ(imperial->unit, "°F");
+        CHECK_EQ(show(imperial->color), "255 0 0 255");
+        CHECK_EQ(show(explicit_f->color), "255 0 0 255");
+    }
+    // -40 is the same in both: below 0 in either.
+    values.values[static_cast<size_t>(OverlayField::temperature)] = -40.0;
+    auto const cold = shown_value(own_units, values, Units::Imperial);
+    CHECK(cold.has_value());
+    if (cold) {
+        CHECK_EQ(cold->number, "-40");
+    }
+}
+
+// The color goes with the number as it's shown: 259.6 W shows as 260,
+// which a threshold at 260 says is red. Rendering interpolates between
+// records, so this happens on many frames around a threshold.
+void test_threshold_at_the_shown_number()
+{
+    auto const layout = decode(with_element(R"({ "type": "value", "field": "power", "color": "#ffffff",
+        "color_by": { "thresholds": [[220, "#00ff00"], [260, "#ff0000"]] } })"));
+    CHECK(layout.has_value());
+    if (!layout) {
+        return;
+    }
+    FieldValues values { };
+    values.values[static_cast<size_t>(OverlayField::power)] = 259.6;
+    auto const shown = shown_value(std::get<ValueElement>(layout->elements[0]), values, Units::Metric);
+    CHECK(shown.has_value());
+    if (shown) {
+        CHECK_EQ(shown->number, "260");
+        CHECK_EQ(show(shown->color), "255 0 0 255");
+    }
+    // Padded and signed, it still reads as 260.
+    auto const padded = decode(with_element(R"({ "type": "value", "field": "power", "format": "{:>+8.0f}",
+        "color_by": { "thresholds": [[220, "#00ff00"], [260, "#ff0000"]] } })"));
+    CHECK(padded.has_value());
+    if (padded) {
+        auto const p = shown_value(std::get<ValueElement>(padded->elements[0]), values, Units::Metric);
+        CHECK(p.has_value() && p->number == "    +260");
+        CHECK(p.has_value() && show(p->color) == "255 0 0 255");
+    }
+}
+
+// A grade element with its own window uses it, from the frame's source;
+// without a source, as in a FieldValues made by hand, it's missing.
+void test_shown_grade_window()
+{
+    auto const layout = decode(R"({ "elements": [
+        { "type": "value", "field": "grade", "window": 100, "format": "{:.1f}" },
+        { "type": "value", "field": "grade", "format": "{:.1f}" },
+        { "type": "value", "field": "grade", "window": 100, "missing": "hide" }
+    ] })");
+    CHECK(layout.has_value());
+    if (!layout) {
+        return;
+    }
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+    // Flat to 100 m, 20% to 140 m, flat to 300 m.
+    for (auto d = 0u; d <= 300; d += 5) {
+        auto const altitude = (d <= 100) ? 0.0 : (d <= 140) ? (d - 100) * 0.2
+                                                            : 8.0;
+        activity.records.push_back(record { .timestamp = DateTime { .timestamp = d / 5 }, .altitude = static_cast<f32>(altitude), .distance = static_cast<f32>(d) });
+    }
+    OverlaySource const source { activity };
+    auto const          values = values_at_record(source, 24); // 120 m
+    auto const          wide = shown_value(std::get<ValueElement>(layout->elements[0]), values, Units::Metric);
+    auto const          narrow = shown_value(std::get<ValueElement>(layout->elements[1]), values, Units::Metric);
+    CHECK(wide && narrow);
+    if (wide && narrow) {
+        CHECK_EQ(wide->number, "8.0");
+        CHECK_EQ(wide->unit, "%");
+        CHECK_EQ(narrow->number, "20.0");
+    }
+    // Near the start the wide window has no grade, and hides.
+    CHECK(!shown_value(std::get<ValueElement>(layout->elements[2]), values_at_record(source, 4), Units::Metric).has_value());
+    CHECK(!shown_value(std::get<ValueElement>(layout->elements[2]), FieldValues { }, Units::Metric).has_value());
+}
+
+// A value's "format" is checked for the field's kind.
+void test_value_formats_per_kind()
+{
+    auto const value = [](std::string_view field, std::string_view format) {
+        return error_of(with_element(std::format(R"({{ "type": "value", "field": "{}", "format": "{}" }})", field, format)));
+    };
+    CHECK_EQ(value("pace", "{:ms}"), "ok");
+    CHECK_EQ(value("pace", "{:hms}"), "element 1: \"format\": `{:hms}` isn't a format for pace");
+    CHECK_EQ(value("elapsed", "{:ms}"), "ok");
+    CHECK_EQ(value("time_of_day", "{:hms}"), "ok");
+    CHECK_EQ(value("time_of_day", "{:%H:%M}"), "element 1: \"format\": `{:%H:%M}` isn't a format for time_of_day");
+    CHECK_EQ(value("date", "{:%d %b}"), "ok");
+    CHECK_EQ(value("date", "{:%Q}"), "element 1: \"format\": `{:%Q}` isn't a format for date");
+    CHECK_EQ(value("lr_balance", "{:.1f}"), "ok");
+    CHECK_EQ(value("title", "{}"), "ok");
+    CHECK_EQ(value("title", "{:>10}"), "element 1: \"format\": `{:>10}` isn't a format for title");
+    CHECK_EQ(value("altitude", "{:hms}"), "element 1: \"format\": `{:hms}` isn't a format for altitude");
+}
+
 }
 
 int main()
@@ -599,5 +722,9 @@ int main()
     test_color_by_errors();
     test_threshold_color();
     test_shown_value();
+    test_thresholds_in_fahrenheit();
+    test_threshold_at_the_shown_number();
+    test_shown_grade_window();
+    test_value_formats_per_kind();
     return ST::Test::test_result();
 }

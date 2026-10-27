@@ -637,6 +637,26 @@ Color threshold_color(std::vector<Threshold> const &thresholds, std::optional<do
     return ret;
 }
 
+namespace {
+
+// The number as it's shown, rounded by its spec, so that the color goes
+// with what's read: 259.6 W shown as 260 is at a threshold of 260. A spec
+// whose text doesn't read back, such as with a fill, keeps the value.
+double as_shown(std::string_view text, double value)
+{
+    auto const start = text.find_first_not_of(" +");
+    auto const end = text.find_last_not_of(' ');
+    if (start == std::string_view::npos) {
+        return value;
+    }
+    text = text.substr(start, end + 1 - start);
+    double ret { 0 };
+    auto const [rest, error] = std::from_chars(text.data(), text.data() + text.size(), ret);
+    return (error == std::errc { } && rest == text.data() + text.size()) ? ret : value;
+}
+
+}
+
 std::optional<ShownValue> shown_value(ValueElement const &value, FieldValues const &values, Units units)
 {
     // A grade over the element's own window, or the field as it is.
@@ -647,10 +667,12 @@ std::optional<ShownValue> shown_value(ValueElement const &value, FieldValues con
     }
     auto const unit = value.unit.value_or(default_unit(value.field, units, values.sport));
     auto const spec = value.spec.empty() ? default_spec(value.field) : std::string_view { value.spec };
+    auto       text = value.window ? format_field(value.field, number, unit, spec, value.missing) : format_value(values, value.field, unit, spec, value.missing);
+    auto const shown = number ? std::optional { as_shown(text, unit.shown(*number)) } : std::nullopt;
     return ShownValue {
-        .number = value.window ? format_field(value.field, number, unit, spec, value.missing) : format_value(values, value.field, unit, spec, value.missing),
+        .number = std::move(text),
         .unit = has ? std::string { unit.name } : std::string { },
-        .color = threshold_color(value.thresholds, number ? std::optional { unit.shown(*number) } : std::nullopt, value.style.color),
+        .color = threshold_color(value.thresholds, shown, value.style.color),
     };
 }
 
