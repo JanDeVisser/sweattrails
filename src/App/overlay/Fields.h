@@ -13,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <storage/Activity.h>
 
@@ -94,11 +95,28 @@ bool is_valid_spec(OverlayField field, std::string_view spec);
 // makes one for the activity it shows, a render when it starts. It points
 // to the activity, which has to outlive it.
 struct OverlaySource {
+    // A point of the activity's profile, for the grade.
+    struct ProfilePoint {
+        double distance { 0 }; // m
+        double altitude { 0 }; // m
+    };
+
     explicit OverlaySource(Activity const &activity);
 
-    Activity const *activity;
-    i32             utc_offset { 0 }; // Local time minus UTC, in seconds
+    Activity const           *activity;
+    i32                       utc_offset { 0 }; // Local time minus UTC, in seconds
+    std::vector<ProfilePoint> profile { };      // The records with both, in order of distance
 };
+
+// The grade the layout shows if it doesn't say: over 30 m, so that a short
+// steep ramp keeps most of its grade.
+constexpr double DefaultGradeWindow = 30.0;
+
+// The grade at `distance`, in %, over the `window` meters around it: the
+// change in altitude over the change in distance. A pause adds no
+// distance, so the window reaches past it. Nothing within half the window
+// of the ends, or without a profile.
+std::optional<double> grade_at(OverlaySource const &source, double distance, double window);
 
 // Local time minus UTC where the activity was: the activity's own, or else
 // the system's time zone's at its start.
@@ -118,10 +136,19 @@ struct FieldValues {
     std::array<std::optional<double>, OverlayFieldCount> values { };
     sport                                                sport { sport::Cycling };
     std::string                                          title { };
+    OverlaySource const                                 *source { nullptr }; // For grade()
 
     [[nodiscard]] std::optional<double> operator[](OverlayField field) const
     {
         return values[static_cast<size_t>(field)];
+    }
+
+    // The grade over another window than the default's, at the frame's
+    // distance.
+    [[nodiscard]] std::optional<double> grade(double window) const
+    {
+        auto const distance = (*this)[OverlayField::distance];
+        return (source && distance) ? grade_at(*source, *distance, window) : std::nullopt;
     }
 
     // Whether the field has a value: for `title`, that there's a title.

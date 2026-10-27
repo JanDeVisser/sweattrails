@@ -322,6 +322,42 @@ OverlaySource::OverlaySource(Activity const &activity)
     : activity(&activity)
     , utc_offset(local_utc_offset(activity))
 {
+    for (auto const &r : activity.records) {
+        // A device that goes back in distance is ignored there: the
+        // profile has to be in order to be searched.
+        if (r.distance && r.altitude && (profile.empty() || *r.distance >= profile.back().distance)) {
+            profile.push_back(ProfilePoint { .distance = *r.distance, .altitude = *r.altitude });
+        }
+    }
+}
+
+namespace {
+
+// The altitude at `distance`, between the profile's points around it. In a
+// pause, the points have the same distance: the first of them.
+double altitude_at(std::vector<OverlaySource::ProfilePoint> const &profile, double distance)
+{
+    auto const after = std::ranges::lower_bound(profile, distance, { }, &OverlaySource::ProfilePoint::distance);
+    if (after == profile.begin()) {
+        return after->altitude;
+    }
+    auto const &later = *after;
+    auto const &earlier = *(after - 1);
+    auto const  span = later.distance - earlier.distance;
+    return (span > 0) ? earlier.altitude + (distance - earlier.distance) / span * (later.altitude - earlier.altitude) : later.altitude;
+}
+
+}
+
+std::optional<double> grade_at(OverlaySource const &source, double distance, double window)
+{
+    auto const &profile = source.profile;
+    auto const  from = distance - window / 2;
+    auto const  to = distance + window / 2;
+    if (profile.empty() || window <= 0 || from < profile.front().distance || to > profile.back().distance) {
+        return { };
+    }
+    return (altitude_at(profile, to) - altitude_at(profile, from)) / window * 100.0;
 }
 
 std::optional<double> field_value(OverlaySource const &source, size_t record, OverlayField field)
@@ -375,10 +411,11 @@ std::optional<double> field_value(OverlaySource const &source, size_t record, Ov
 
 FieldValues values_at_record(OverlaySource const &source, size_t record)
 {
-    FieldValues ret { .sport = source.activity->sport, .title = source.activity->title };
+    FieldValues ret { .sport = source.activity->sport, .title = source.activity->title, .source = &source };
     for (auto ix = 0uz; ix < OverlayFieldCount; ++ix) {
         ret.values[ix] = field_value(source, record, static_cast<OverlayField>(ix));
     }
+    ret.values[static_cast<size_t>(OverlayField::grade)] = ret.grade(DefaultGradeWindow);
     return ret;
 }
 
@@ -392,7 +429,7 @@ FieldValues values_at_time(OverlaySource const &source, double seconds)
     auto const after = std::ranges::upper_bound(records, at, { }, time_of);
     auto const later = static_cast<size_t>(after - records.begin());
 
-    FieldValues ret { .sport = activity.sport, .title = activity.title };
+    FieldValues ret { .sport = activity.sport, .title = activity.title, .source = &source };
     if (!records.empty()) {
         auto const earlier = (later == 0) ? 0 : later - 1;
         ret = values_at_record(source, earlier);
@@ -413,6 +450,8 @@ FieldValues values_at_time(OverlaySource const &source, double seconds)
             }
         }
     }
+    // At the distance it is now: a pause holds it, and so the grade.
+    ret.values[static_cast<size_t>(OverlayField::grade)] = ret.grade(DefaultGradeWindow);
     // From the speed it is now, not interpolated itself: pace is its inverse.
     ret.values[static_cast<size_t>(OverlayField::pace)] = pace_of(ret[OverlayField::speed]);
     // The clocks run on, also without records.

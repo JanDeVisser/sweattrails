@@ -507,6 +507,84 @@ void test_pause()
     CHECK_EQ(value_of(values_at_time(source, 0), OverlayField::heart_rate), "150");
 }
 
+// A record every 5 m, at 5 m/s: flat to 100 m, a ramp of 20% to 140 m,
+// flat again, to 300 m.
+struct Climb {
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+
+    Climb()
+    {
+        activity.segment.start_time.timestamp = Start;
+        for (auto d = 0u; d <= 300; d += 5) {
+            auto const altitude = (d <= 100) ? 0.0 : (d <= 140) ? (d - 100) * 0.2
+                                                                : 8.0;
+            activity.records.push_back(record {
+                .timestamp = DateTime { .timestamp = Start + d / 5 },
+                .altitude = static_cast<f32>(altitude),
+                .distance = static_cast<f32>(d),
+            });
+        }
+    }
+};
+
+std::string grade_of(std::optional<double> grade)
+{
+    return grade ? std::format("{:.1f}", *grade) : std::string { "none" };
+}
+
+void test_grade()
+{
+    Climb               c;
+    OverlaySource const source { c.activity };
+    CHECK_EQ(grade_of(grade_at(source, 50, 30)), "0.0");
+    // On the ramp, 30 m keeps its 20%; 100 m flattens it.
+    CHECK_EQ(grade_of(grade_at(source, 120, 30)), "20.0");
+    CHECK_EQ(grade_of(grade_at(source, 120, 100)), "8.0");
+    // Half on the ramp.
+    CHECK_EQ(grade_of(grade_at(source, 140, 30)), "10.0");
+    // Within half the window of the ends.
+    CHECK_EQ(grade_of(grade_at(source, 10, 30)), "none");
+    CHECK_EQ(grade_of(grade_at(source, 290, 30)), "none");
+    CHECK_EQ(grade_of(grade_at(source, 15, 30)), "0.0");
+    // The default window, at a record and between them.
+    CHECK_EQ(grade_of(values_at_record(source, 24)[OverlayField::grade]), "20.0");
+    CHECK_EQ(grade_of(values_at_time(source, 24.5)[OverlayField::grade]), "20.0");
+    CHECK_EQ(grade_of(values_at_time(source, 24.5).grade(100)), "8.0");
+}
+
+// A pause on the ramp: the window reaches past it, and during the pause
+// the grade is held.
+void test_grade_through_a_pause()
+{
+    Climb c;
+    auto &records = c.activity.records;
+    // From 120 m on, everything a minute later.
+    for (auto &r : records) {
+        if (*r.distance > 120) {
+            r.timestamp.timestamp += 60;
+        }
+    }
+    OverlaySource const source { c.activity };
+    // 120 m is at 24 s; the next record, at 125 m, at 85 s.
+    CHECK_EQ(grade_of(values_at_time(source, 24)[OverlayField::grade]), "20.0");
+    CHECK_EQ(grade_of(values_at_time(source, 50)[OverlayField::grade]), "20.0");
+    CHECK_EQ(grade_of(values_at_time(source, 85)[OverlayField::grade]), "20.0");
+}
+
+void test_grade_without_altitude()
+{
+    Climb c;
+    for (auto &r : c.activity.records) {
+        r.altitude.reset();
+    }
+    OverlaySource const source { c.activity };
+    CHECK(source.profile.empty());
+    CHECK_EQ(grade_of(grade_at(source, 120, 30)), "none");
+    CHECK_EQ(grade_of(values_at_record(source, 24)[OverlayField::grade]), "none");
+    CHECK_EQ(grade_of(values_at_record(source, 24).grade(50)), "none");
+}
+
 }
 
 int main()
@@ -538,5 +616,8 @@ int main()
     test_time_of_day_without_offset();
     test_new_fields_between_records();
     test_pause();
+    test_grade();
+    test_grade_through_a_pause();
+    test_grade_without_altitude();
     return ST::Test::test_result();
 }
