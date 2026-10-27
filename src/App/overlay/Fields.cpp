@@ -125,6 +125,25 @@ double time_of_day(OverlaySource const &source, double timestamp)
     return (local < 0) ? local + SecondsPerDay : local;
 }
 
+// The values during a pause, or with the signal lost, from the last
+// record's: not moving, and not measuring. Distance, altitude, grade and
+// lap stay as they were, and the clocks are worked out from the time.
+void paused(FieldValues &values)
+{
+    auto const set = [&values](OverlayField field, std::optional<double> value) {
+        values.values[static_cast<size_t>(field)] = value;
+    };
+    // A field the record doesn't have stays missing: no power meter, no 0 W.
+    for (auto const field : { OverlayField::speed, OverlayField::power, OverlayField::cadence }) {
+        if (values[field]) {
+            set(field, 0.0);
+        }
+    }
+    for (auto const field : { OverlayField::heart_rate, OverlayField::temperature, OverlayField::lr_balance }) {
+        set(field, std::nullopt);
+    }
+}
+
 }
 
 std::string_view OverlayField_name(OverlayField field)
@@ -380,7 +399,9 @@ FieldValues values_at_time(OverlaySource const &source, double seconds)
         if (later > 0 && later < records.size()) {
             auto const from = time_of(records[earlier]);
             auto const span = time_of(records[later]) - from;
-            if (span > 0 && span <= MaxGap) {
+            if (span > MaxGap && at > from) {
+                paused(ret);
+            } else if (span > 0 && span <= MaxGap) {
                 auto const next = values_at_record(source, later);
                 auto const fraction = (at - from) / span;
                 for (auto ix = 0uz; ix < OverlayFieldCount; ++ix) {

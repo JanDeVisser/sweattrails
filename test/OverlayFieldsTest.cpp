@@ -274,9 +274,9 @@ void test_values_at_time()
     CHECK_EQ(value_of(half, OverlayField::cadence), "none");
     CHECK_EQ(value_of(values_at_time(OverlaySource { t.activity }, 0), OverlayField::speed), "10");
     CHECK_EQ(value_of(values_at_time(OverlaySource { t.activity }, 1), OverlayField::speed), "12");
-    // Over the gap: the earlier record.
-    CHECK_EQ(value_of(values_at_time(OverlaySource { t.activity }, 5), OverlayField::speed), "12");
-    CHECK_EQ(value_of(values_at_time(OverlaySource { t.activity }, 9.9), OverlayField::power), "300");
+    // Over the gap, a pause: not moving.
+    CHECK_EQ(value_of(values_at_time(OverlaySource { t.activity }, 5), OverlayField::speed), "0");
+    CHECK_EQ(value_of(values_at_time(OverlaySource { t.activity }, 9.9), OverlayField::power), "0");
     CHECK_EQ(value_of(values_at_time(OverlaySource { t.activity }, 10), OverlayField::speed), "20");
     // Past the ends: the first and the last record, with the time running on.
     CHECK_EQ(value_of(values_at_time(OverlaySource { t.activity }, -3), OverlayField::speed), "10");
@@ -465,6 +465,48 @@ void test_new_fields_between_records()
     CHECK_EQ(format_value(values_at_time(source, 3909 + 600), OverlayField::time_of_day, FieldUnit { }, "hms", "--"), "12:21:49");
 }
 
+// During a pause, as the spec's table has it.
+void test_pause()
+{
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+    activity.segment.start_time.timestamp = Start;
+    activity.utc_offset = 0;
+    activity.title = "Stop";
+    activity.records.push_back(record {
+        .timestamp = DateTime { .timestamp = Start },
+        .altitude = 500.0f,
+        .heart_rate = 150,
+        .cadence = 90,
+        .distance = 1000.0f,
+        .speed = 8.0f,
+        .temperature = 18,
+        .left_right_balance = 0x80 | 50,
+    });
+    activity.records.push_back(record { .timestamp = DateTime { .timestamp = Start + 60 }, .distance = 1000.0f, .speed = 8.0f });
+    OverlaySource const source { activity };
+    auto const          values = values_at_time(source, 30);
+    // Not moving: no power meter is still no power.
+    CHECK_EQ(value_of(values, OverlayField::speed), "0");
+    CHECK_EQ(value_of(values, OverlayField::cadence), "0");
+    CHECK_EQ(value_of(values, OverlayField::power), "none");
+    CHECK_EQ(value_of(values, OverlayField::pace), "none");
+    // Not measuring.
+    CHECK_EQ(value_of(values, OverlayField::heart_rate), "none");
+    CHECK_EQ(value_of(values, OverlayField::temperature), "none");
+    CHECK_EQ(value_of(values, OverlayField::lr_balance), "none");
+    // Held.
+    CHECK_EQ(value_of(values, OverlayField::distance), "1000");
+    CHECK_EQ(value_of(values, OverlayField::altitude), "500");
+    CHECK_EQ(value_of(values, OverlayField::lap), "1");
+    CHECK_EQ(values.title, "Stop");
+    // Running on.
+    CHECK_EQ(value_of(values, OverlayField::elapsed), "30");
+    CHECK_EQ(value_of(values, OverlayField::time_of_day), std::format("{}", (Start + 30) % 86400));
+    // At the record before the pause, its own values.
+    CHECK_EQ(value_of(values_at_time(source, 0), OverlayField::heart_rate), "150");
+}
+
 }
 
 int main()
@@ -495,5 +537,6 @@ int main()
     test_date_and_time_of_day();
     test_time_of_day_without_offset();
     test_new_fields_between_records();
+    test_pause();
     return ST::Test::test_result();
 }
