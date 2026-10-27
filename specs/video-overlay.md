@@ -1,6 +1,6 @@
 # Video Overlay: Rendering to Video
 
-Status: Ready
+Status: Done
 
 The second slice of the video overlay (see the
 [roadmap](overlay-layout.md#roadmap)). The first,
@@ -255,12 +255,215 @@ turns out to be tedious.
 
 ## Architecture
 
-*Filled in by the Developer.*
+The code goes in `src/App/overlay/`, next to the preview's. As there, the
+logic is plain functions the tests reach; what needs raylib or a child
+process is kept thin.
+
+### Drawing: one renderer for the preview and the video
+
+- **`OverlayRenderer`** in `overlay/Renderer.h`: the preview's drawing
+  (fonts by `layout_fonts()`, a `FontCache`, measuring, `place()`,
+  `place_in_box()`, shadows) moves out of `OverlayPreview` into it, and
+  draws a layout's elements for a frame's field values into a rectangle,
+  on screen or in a render texture. The preview and the render each have
+  one, since their fonts are at different sizes.
+- **`FieldValues`** in `Fields.h`: the values of all the fields for one
+  frame, with the activity's sport. `values_at_record()` is what the
+  preview shows; `values_at_time(activity, seconds)` interpolates for the
+  video. `fill_template()` and the renderer take a `FieldValues` instead
+  of an activity and a record.
+- **Interpolation**: the records around the time, found by their
+  timestamps; linear between them where both have a value, else the
+  earlier record's; the earlier record's alone when they're more than 5 s
+  apart. `elapsed` is the time itself.
+
+### The render: `overlay/Render.h`
+
+- **`RenderSettings`**, decoded from `settings.json`'s `"overlay"`:
+  resolution (the presets and their `-portrait` variants, or a width and
+  height), frame rate as a rational (`30000/1001`, or an integer), and the
+  folder, `~` expanded. Errors say which setting is wrong.
+- **`RenderRange`**, seconds since the activity's start: `parse_range()`
+  reads `1:12:00-1:20:30` and `@09:44:00-@09:52:30`, and cuts it to the
+  activity; `format_range()` writes the one the box starts with, from the
+  graph's selection, the lap, or the whole activity. Time of day is local
+  to where the activity was, by `utc_offset`, or the system's time zone.
+  `@9:44` is `@09:44:00`. A time of day is on the day closest to the
+  activity, for a ride through midnight or one starting just after it,
+  and an end that's a time of day comes after the start, within a day. A
+  little before the start is cut to the start.
+- **Frames**: frame `n`'s time is `from + n × den / num`, from integers,
+  not added up. The count is `floor((to − from) × num / den)`.
+- **`timecode(seconds since midnight, fps)`**: `HH:MM:SS:FF`, or drop
+  frame, `HH:MM:SS;FF`, for 29.97 and 59.94, by the standard algorithm.
+- **`output_path(folder, date, start, exists)`**: the file's name, with a
+  number added while `exists()` says it's taken.
+- **`find_program(name, path, extra_dirs)`**: ffmpeg on the `PATH`, or in
+  `/opt/homebrew/bin` and `/usr/local/bin`.
+- **`unpremultiply()`**: straight alpha for a frame's pixels, as the
+  technical notes say.
+- **`records_range(activity, first, last)`**: the range the graph's
+  selection or the lap covers, for the box to start with.
+- **`ffmpeg_arguments()`**: as in the technical notes, plus
+  `-hide_banner -loglevel error`, so that the log's last line is the
+  error, and `-n`: ffmpeg would ask about overwriting a file on its
+  stdin, which has the frames.
+
+### ffmpeg: `overlay/Encoder.h`
+
+- **`Encoder`** starts ffmpeg with `posix_spawnp`, writes frames to its
+  stdin, and sends its stderr to a log file in the temporary directory,
+  whose last line is the error when it fails. **Not `Process.h`**: it
+  writes through `std::format`, which would mangle pixels with a `{` in
+  them; it can't close the child's stdin before waiting, and ffmpeg only
+  finishes when its stdin closes; and its reading threads are detached
+  with a pointer to the process, so they can outlive it. Reading stderr
+  into a file instead of a pipe also means ffmpeg can never block on it.
+- Frames are written on a **thread of the encoder's own**, from a queue
+  of two frames, so that the UI thread doesn't wait for ffmpeg; the queue
+  being full is what slows the rendering down to ffmpeg's speed. That
+  thread also unpremultiplies.
+- `SIGPIPE` is ignored, as `OAuth.cpp` does already, so that ffmpeg
+  exiting early is an `EPIPE` from `write()`, not the end of the app.
+- **`stop()`** kills ffmpeg (`SIGKILL`: the file goes anyway) and removes
+  the file; **`close()`** says there are no more frames, after which the
+  writer thread closes ffmpeg's stdin and waits for it, so that the UI
+  doesn't, and `result()` says how it went; **`finish()`** closes and
+  waits, for the tests. ffmpeg is reaped only once `stop()` can see it
+  has exited, so that it never kills a process that got its pid. The log is
+  removed either way, since the error has its last line. Tests use
+  `/bin/sh` as a stand-in for ffmpeg.
+
+### In the app
+
+- **`OverlayRender`** (`overlay/OverlayRender.h`), owned by
+  `SweatTrails` while a render runs: a
+  `RenderTexture2D` at the output size, the renderer, the encoder, and the
+  frame it's at. `SweatTrails::process_input()` gives it a step each UI
+  frame: it renders frames, with the separate alpha blend mode, and reads
+  each back with `glReadPixels` into one buffer per queue slot, until about
+  10 ms have gone, or the queue is full. The status line shows the percentage.
+  The app now links OpenGL itself, for `glReadPixels`.
+- **Ctrl+E** (`st-overlay-render`): the layout as the preview would show
+  it, the settings, `input_box()` for the range, a `query_box()` for a
+  long one, then the render. During a render it asks whether to stop.
+  `cmd_quit` asks first, too, while one runs.
+- **Modals** (Widget library): a box removes itself when it closes,
+  rather than the top modal, so that the range box's submit function can
+  open the question about a long range.
+- README: ffmpeg in the requirements, and rendering in the overlay
+  section.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `OverlayFieldsTest`: `values_at_time()` between records, at and past the
+  ends, over a gap of more than 5 s, with a field one record lacks;
+  `values_at_record()`; templates on `FieldValues`.
+- `OverlayRenderTest` (new): `RenderSettings` (presets, portrait, explicit
+  sizes, rational and integer rates, errors); `parse_range()` and
+  `format_range()` (elapsed, time of day with and without `utc_offset`,
+  cut to the activity, errors); frame times and counts over a long range,
+  without drift; `timecode()` for 25, 30, 29.97 (including the skipped
+  labels at minutes that aren't tens) and 59.94; `output_path()` with
+  taken names; `find_program()` in temporary directories;
+  `unpremultiply()`.
+- `EncoderTest` (new): with `/bin/sh -c 'cat > file'`, the frames arrive
+  whole and in order; with `/bin/sh -c 'exit 3'` writing fails, and the
+  error has the log's last line; `stop()` removes the file.
+- By hand, with ffmpeg installed: a render of a few minutes at 1080p and
+  29.97 imported in Final Cut, its alpha and timecode, values gliding
+  between records, Ctrl+E to stop, quitting during a render, a long range's
+  question, and ffmpeg missing.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: a render that fails to start hangs the app.** If
+   `OverlayRender::start()` returns early, before it has an encoder
+   (`OverlayRender.cpp:36-45`: the layout's font isn't found, or ffmpeg
+   can't be started), the `unique_ptr` destroys the render.
+   `~OverlayRender()` (line 57) sees `!over()`, calls `stop()`, and that
+   calls `m_encoder->stop()` (line 112) on a null `m_encoder`. In a test
+   that's an endless loop in `Encoder::stop()`. In the app: a layout with
+   a font that isn't installed (the preview shows the error, but Ctrl+E
+   only checks `file->layout`), then Ctrl+E, Enter, and the app hangs or
+   crashes instead of showing "Couldn't render the overlay: ...". Fix:
+   `stop()` and the destructor check `m_encoder`, or `start()` sets
+   `m_result` before it returns an error. `overlay_render_start_test`
+   shows it, for both causes.
+2. **Bug: a time of day just before a ride that starts after midnight
+   isn't cut to the start.** `range_point()` (`Render.cpp:150-153`) only
+   moves a time of day that's more than 12 hours *before* the start to the
+   next day, never one more than 12 hours *after* it to the day before. A
+   ride started at 00:10 with `@23:55-@00:20` reads 23:55 as 23:45 after
+   the start, and says "ends before it starts", where the spec says a
+   little before the start is cut to the start. Fix: take the end relative
+   to the start of the range (a day later if it's earlier), and the start
+   as whichever of `t - day`, `t`, `t + day` is closest to the activity.
+   `test_ranges_at_midnight` in `OverlayRenderTest` fails on it.
+3. **Bug: a font that can't be loaded renders a blank movie, reported as
+   done.** `OverlayRenderer::font()` sets `m_error` on the first frame if
+   raylib can't load a font that was found (a broken file), and from then
+   on `draw()` (`Renderer.cpp:54`) draws nothing. `OverlayRender::step()`
+   never looks at `m_renderer.error()`, so every frame is transparent and
+   the status line says "Rendered the overlay to ...". Fix: after
+   `render_frame()`, stop the render with the renderer's error.
+4. **Suggestion: ffmpeg inherits the app's open file descriptors.**
+   `Encoder::start()` (`Encoder.cpp:83-104`) marks only its own pipe's
+   write end close-on-exec, and only after `pipe()`. ffmpeg inherits
+   every descriptor the app has without `FD_CLOEXEC`, such as the Wahoo
+   login's listening socket (`OAuth.cpp` makes it without), which then
+   stays bound for as long as the render runs; and a `Process` forked on
+   a job thread between `pipe()` and `fcntl()`/`close()` (Strava's curl)
+   inherits the encoder's pipe, so ffmpeg wouldn't see the end of its
+   input until curl exits. Fix: `posix_spawnattr_setflags(...,
+   POSIX_SPAWN_CLOEXEC_DEFAULT)` on macOS, which leaves the child only
+   the descriptors the file actions give it, and `FD_CLOEXEC` on both
+   ends.
+5. **Suggestion: the end of a render blocks the UI.** `step()` calls
+   `finish()` on the UI thread (`OverlayRender.cpp:80-82`), which joins
+   the writer while it writes up to two frames (8 MB each at 1080p, 33 MB
+   at 4K) to ffmpeg, and then waits for ffmpeg to encode them and write
+   the file's index. That's a visible stall at the end. It could be done
+   on the writer thread, with `step()` polling for it.
+6. **Suggestion: the range box can start with an empty range.** A graph
+   selection of one record (`segment->min == segment->max`) gives
+   `records_range()` a range of length 0 (`SweatTrails.cpp`, in
+   `cmd_overlay_render`), so the box starts with e.g. `1:00:00-1:00:00`,
+   which, submitted as it is, says "ends before it starts". Falling back
+   to the whole activity for an empty selection would avoid that.
+7. **Suggestion: fit.** `Encoder` and `OverlayRender` are `class` with
+   `public:`/`private:`, where `STYLE.md` says `struct`. In
+   `SweatTrails.cpp:1060`, set_status's comment, "Must be called on the
+   UI thread", now sits above `RenderBudget`, away from `set_status()`.
+8. **Missing tests (added by the Reviewer).** `EncoderTest`: no file
+   descriptors left open and no child left after finishing, failing and
+   stopping; `stop()` while the writer is stuck on a program that doesn't
+   read; a program that exits with 0 before it has all the frames. All
+   pass. `OverlayRenderTest`: every drop-frame label for two hours at
+   29.97 and 59.94 against labels counted one by one, timecodes at
+   midnight, `activity_clock()` without a `utc_offset` (the Test plan's
+   "without `utc_offset`" wasn't tested), and ranges around midnight (one
+   fails: item 2). `OverlayRenderStartTest` (new): starting without
+   ffmpeg, and with a font that isn't there (both fail: item 1).
+
+### Resolution
+
+Jan agreed to all of them; each fix is its own commit.
+
+1. Fixed: `OverlayRender::stop()` checks for an encoder.
+   `OverlayRenderStartTest` passes.
+2. Fixed: a time of day is on the day closest to the activity, and an
+   end that's a time of day comes after the start, within a day.
+   `test_ranges_at_midnight` passes.
+3. Fixed: `step()` stops the render with the renderer's error. No test:
+   loading a font needs raylib.
+4. Fixed: `POSIX_SPAWN_CLOEXEC_DEFAULT` where there is one, and both ends
+   of the pipe close-on-exec (`pipe2` on Linux). `test_no_files_inherited`
+   fails without it.
+5. Fixed: the writer thread closes ffmpeg's stdin and waits for it after
+   the last frame; `step()` polls `Encoder::result()`. ffmpeg is reaped
+   only once `stop()` can see it has exited. `test_close_doesnt_wait`.
+6. Fixed: a selection of one record starts the box with the whole
+   activity.
+7. Fixed: both are structs, and the comment is back above `set_status()`.
+8. Kept, all passing.

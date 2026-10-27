@@ -85,7 +85,7 @@ std::expected<Template, std::string> parse_template(std::string_view text)
     return ret;
 }
 
-std::string fill_template(Template const &text, Activity const &activity, size_t record, Units units, std::string_view missing)
+std::string fill_template(Template const &text, FieldValues const &values, Units units, std::string_view missing)
 {
     std::string ret;
     for (auto const &part : text.parts) {
@@ -99,13 +99,13 @@ std::string fill_template(Template const &text, Activity const &activity, size_t
             continue;
         }
         auto const field = *placeholder.field;
-        auto const unit = default_unit(field, units, activity.sport);
+        auto const unit = default_unit(field, units, values.sport);
         if (placeholder.unit) {
             ret += unit.name;
             continue;
         }
         auto const spec = placeholder.spec.empty() ? default_spec(field) : std::string_view { placeholder.spec };
-        ret += format_field(field, field_value(activity, record, field), unit, spec, missing);
+        ret += format_field(field, values[field], unit, spec, missing);
     }
     return ret;
 }

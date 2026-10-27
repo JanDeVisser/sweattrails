@@ -63,7 +63,7 @@ struct Modal : public Widget {
 
     void hide()
     {
-        App::the()->pop_modal();
+        App::the()->pop_modal(self());
         status = ModalStatus::Dormant;
     }
 };
@@ -311,7 +311,7 @@ struct ListBox : public Modal {
 
         bool ret = handle();
         if (status != ModalStatus::Active) {
-            App::the()->pop_modal();
+            App::the()->pop_modal(self());
         }
         return ret;
     }

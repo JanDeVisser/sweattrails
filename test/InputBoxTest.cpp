@@ -115,6 +115,26 @@ void test_escape_without_a_dismiss_function()
     CHECK(scoped.app->modals.empty());
 }
 
+// A submit function may open another box, such as a question about what
+// was typed: closing the input box leaves that one open.
+void test_submit_opens_another_box()
+{
+    Test::ScopedTestApp scoped;
+    auto                target = std::make_shared<Target>();
+    auto const          ask = [](pTarget const &target, std::string const &) {
+        query_box(target, "Sure?", [](pTarget const &, QueryOption) { }, QueryOptionYesNo);
+    };
+    input_box(target, "Range", ask, "0:00:00-0:20:00");
+    CHECK_EQ(scoped.app->modals.size(), 1uz);
+    if (scoped.app->modals.empty()) {
+        return;
+    }
+    auto const box = scoped.app->modals.back();
+    CHECK(box->process_key(KModNone, KEY_ENTER));
+    CHECK_EQ(scoped.app->modals.size(), 1uz);
+    CHECK(!scoped.app->modals.empty() && scoped.app->modals.back() != box);
+}
+
 // F2, which opened the box, and keys with modifiers the box doesn't know,
 // go on to the app, and leave the box open.
 void test_keys_it_leaves()
@@ -141,6 +161,7 @@ int main()
     test_editing_keys();
     test_escape_dismisses();
     test_escape_without_a_dismiss_function();
+    test_submit_opens_another_box();
     test_keys_it_leaves();
     return ST::Test::test_result();
 }

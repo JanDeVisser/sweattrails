@@ -200,6 +200,11 @@ void App::pop_modal()
     }
 }
 
+void App::pop_modal(pWidget const &modal)
+{
+    std::erase(modals, modal);
+}
+
 // void App::change_font_size(int increment, FontSize size)
 // {
 //     set_font(font_path, font_sizes[static_cast<size_t>(size)] + increment, size);

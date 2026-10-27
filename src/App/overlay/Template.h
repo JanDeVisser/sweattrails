@@ -37,7 +37,7 @@ struct Template {
 // brace that isn't closed or opened.
 std::expected<Template, std::string> parse_template(std::string_view text);
 
-// The text at the record, with the fields in their default units.
-std::string fill_template(Template const &text, Activity const &activity, size_t record, Units units, std::string_view missing);
+// The text for the frame's values, with the fields in their default units.
+std::string fill_template(Template const &text, FieldValues const &values, Units units, std::string_view missing);
 
 }

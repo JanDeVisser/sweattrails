@@ -17,10 +17,10 @@
 
 #include <raylib.h>
 
-#include <FontCache.h>
 #include <Widget.h>
 
 #include <overlay/LayoutFile.h>
+#include <overlay/Renderer.h>
 #include <widget/DisplayedActivity.h>
 
 namespace ST {
@@ -36,19 +36,13 @@ struct OverlayPreview : public Widget {
     void draw() override;
 
 private:
-    FontCache                                    fonts { };
-    float                                        fonts_scale { 0 };
-    double                                       checked_at { 0 };
-    std::map<std::string, std::filesystem::path> font_paths { }; // By the layout's name for them
-    std::optional<std::string>                   font_error { };
+    OverlayRenderer renderer;
+    double          checked_at { 0 };
 
-    void                layout_loaded();
-    Rectangle           canvas() const; // In screen coordinates
-    void                draw_checkerboard(Rectangle const &area) const;
-    void                draw_message(Rectangle const &area, std::string_view message) const;
-    void                draw_element(OverlayElement const &element, OverlayLayout const &layout, Rectangle const &area, float scale);
-    std::optional<Font> font(TextStyle const &style, float scale, size_t element);
-    void                draw_text(Font const &font, std::string_view text, Vector2 at, TextStyle const &style, float scale) const;
+    void      layout_loaded();
+    Rectangle canvas() const; // In screen coordinates
+    void      draw_checkerboard(Rectangle const &area) const;
+    void      draw_message(Rectangle const &area, std::string_view message) const;
 };
 
 }
