@@ -34,8 +34,7 @@ struct RenderJob {
     fs::path                           ffmpeg;
 };
 
-class OverlayRender {
-public:
+struct OverlayRender {
     // Starts ffmpeg; an error if it, or the layout's fonts, can't be had.
     static std::expected<std::unique_ptr<OverlayRender>, std::string> start(RenderJob job, FontFinder find);
 

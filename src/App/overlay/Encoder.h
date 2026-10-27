@@ -36,8 +36,7 @@ std::string last_line(std::string_view log);
 // stdin, and writes `output`. The frames are made straight alpha and
 // written on a thread of the encoder's own, so that rendering doesn't wait
 // for the encoding, until two frames are waiting.
-class Encoder {
-public:
+struct Encoder {
     static constexpr size_t QueueSize = 2;
 
     // `args` are the program's arguments, without the program itself.

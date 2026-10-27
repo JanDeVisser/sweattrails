@@ -1061,7 +1061,6 @@ void SweatTrails::set_message(std::string_view const &text)
     notify<NotificationType::Message>(std::string { text });
 }
 
-// Must be called on the UI thread; jobs send a notification instead.
 // At most this long a UI frame, so that the app stays usable.
 constexpr double RenderBudget = 0.010;
 
@@ -1097,6 +1096,7 @@ void SweatTrails::stop_render()
     overlay_render.reset();
 }
 
+// Must be called on the UI thread; jobs send a notification instead.
 void SweatTrails::set_status(std::string_view const &status_text)
 {
     // A download or the inbox may finish while a login waits.
