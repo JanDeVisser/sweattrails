@@ -59,6 +59,8 @@ std::expected<RenderSettings, std::string> decode_render_settings(std::optional<
 struct RenderRange {
     double from { 0 };
     double to { 0 };
+
+    bool operator==(RenderRange const &) const = default;
 };
 
 // What a range is read against: how long the activity is, from its start
@@ -79,6 +81,9 @@ ActivityClock activity_clock(Activity const &activity);
 std::expected<RenderRange, std::string> parse_range(std::string_view text, ActivityClock const &clock);
 // As elapsed times, for the box to start with.
 std::string format_range(RenderRange const &range);
+// The time records `first` to `last` take up, as the graph's selection or
+// a lap has them.
+RenderRange records_range(Activity const &activity, size_t first, size_t last);
 
 // The frames in the range, and when frame `n` is, from integers rather
 // than added up, so that a long render doesn't drift.
@@ -92,6 +97,11 @@ std::string timecode(double seconds_since_midnight, FrameRate const &rate);
 // `<folder>/<date>-<HHMM>.overlay.mov` for the range's start, with a number
 // added while `exists` says the name is taken.
 fs::path output_path(fs::path const &folder, ActivityClock const &clock, RenderRange const &range, std::function<bool(fs::path const &)> const &exists);
+
+// ffmpeg's arguments, after the program, for frames of RGBA on its stdin,
+// upside down as OpenGL reads them, to ProRes 4444 with the time of day's
+// timecode.
+std::vector<std::string> ffmpeg_arguments(RenderSettings const &settings, ActivityClock const &clock, RenderRange const &range, fs::path const &output);
 
 // The program in one of the `PATH`'s directories, or else in one of
 // `extra`, if it's there and can be run.

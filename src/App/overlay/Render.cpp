@@ -245,6 +245,19 @@ std::string format_range(RenderRange const &range)
     return std::format("{}-{}", clock_text(range.from), clock_text(range.to));
 }
 
+RenderRange records_range(Activity const &activity, size_t first, size_t last)
+{
+    auto const &records = activity.records;
+    if (records.empty()) {
+        return { };
+    }
+    auto const start = static_cast<double>(activity.segment.start_time.timestamp);
+    auto const at = [&records, start](size_t ix) {
+        return static_cast<double>(records[std::min(ix, records.size() - 1)].timestamp.timestamp) - start;
+    };
+    return RenderRange { .from = std::max(0.0, at(first)), .to = std::max(0.0, at(last)) };
+}
+
 size_t frame_count(RenderRange const &range, FrameRate const &rate)
 {
     auto const length = std::max(0.0, range.to - range.from);
@@ -286,6 +299,40 @@ fs::path output_path(fs::path const &folder, ActivityClock const &clock, RenderR
         path = folder / std::format("{}-{}.overlay.mov", stem, n);
     }
     return path;
+}
+
+std::vector<std::string> ffmpeg_arguments(RenderSettings const &settings, ActivityClock const &clock, RenderRange const &range, fs::path const &output)
+{
+    return {
+        // Only errors, so that the log's last line is the one to show.
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgba",
+        "-s",
+        std::format("{}x{}", settings.resolution.width, settings.resolution.height),
+        "-r",
+        settings.fps.to_string(),
+        "-i",
+        "-",
+        "-vf",
+        "vflip",
+        "-c:v",
+        "prores_ks",
+        "-profile:v",
+        "4444",
+        "-pix_fmt",
+        "yuva444p10le",
+        "-timecode",
+        timecode(clock.start_time_of_day + range.from, settings.fps),
+        // Never asks whether to overwrite: it would read the answer from
+        // the frames.
+        "-n",
+        output.string(),
+    };
 }
 
 std::optional<fs::path> find_program(std::string_view name, std::string_view path, std::vector<fs::path> const &extra)

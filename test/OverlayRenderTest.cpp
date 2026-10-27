@@ -132,6 +132,34 @@ void test_activity_clock()
     CHECK_EQ(activity_clock(activity).start_time_of_day, 23 * 3600 + 6 * 60 + 40);
 }
 
+void test_records_range()
+{
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+    CHECK(records_range(activity, 0, 10) == (RenderRange { }));
+    activity.segment.start_time.timestamp = 1'750'000'000;
+    for (u32 t : { 0u, 1u, 2u, 10u, 11u }) {
+        activity.records.push_back(record { .timestamp = DateTime { .timestamp = 1'750'000'000 + t } });
+    }
+    CHECK(records_range(activity, 1, 3) == (RenderRange { .from = 1, .to = 10 }));
+    CHECK(records_range(activity, 0, 4) == (RenderRange { .from = 0, .to = 11 }));
+    // Past the end is the end.
+    CHECK(records_range(activity, 2, 99) == (RenderRange { .from = 2, .to = 11 }));
+}
+
+void test_ffmpeg_arguments()
+{
+    RenderSettings const settings { .resolution = { 1920, 1080 }, .fps = { 30000, 1001 }, .folder = "/m" };
+    auto const           args = ffmpeg_arguments(settings, Clock, RenderRange { .from = 4320, .to = 4830 }, "/m/out.mov");
+    std::string          line;
+    for (auto const &arg : args) {
+        line += (line.empty() ? "" : " ") + arg;
+    }
+    CHECK_EQ(line,
+        "-hide_banner -loglevel error -f rawvideo -pix_fmt rgba -s 1920x1080 -r 30000/1001 -i - -vf vflip "
+        "-c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le -timecode 09:44:00;02 -n /m/out.mov");
+}
+
 void test_frames()
 {
     RenderRange const range { .from = 0, .to = 60 };
@@ -234,6 +262,8 @@ int main()
     test_range_errors();
     test_format_range();
     test_activity_clock();
+    test_records_range();
+    test_ffmpeg_arguments();
     test_frames();
     test_timecodes();
     test_output_path();
