@@ -876,6 +876,27 @@ void test_element_fonts()
     CHECK(element_fonts(layout->elements[2]).empty());
 }
 
+// A graph's window in the defaults is for the graphs: a value of another
+// field than grade doesn't take it, as a text doesn't take a value's
+// format.
+void test_graph_window_in_the_defaults()
+{
+    auto const layout = decode(R"({ "defaults": { "window": 60 }, "elements": [
+        { "type": "graph", "field": "heart_rate", "size": { "width": 400, "height": 100 } },
+        { "type": "value", "field": "speed" },
+        { "type": "value", "field": "grade" }
+    ] })");
+    CHECK_EQ(layout ? std::string { "decoded" } : layout.error().to_string(), "decoded");
+    if (layout && layout->elements.size() == 3) {
+        CHECK_EQ(std::get<GraphElement>(layout->elements[0]).window.value_or(0), 60.0);
+        CHECK(!std::get<ValueElement>(layout->elements[1]).window);
+        CHECK_EQ(std::get<ValueElement>(layout->elements[2]).window.value_or(0), 60.0);
+    }
+    // One a value gives itself is still only for grade.
+    CHECK_EQ(error_of(R"({ "defaults": { "window": 60 }, "elements": [ { "type": "value", "field": "speed", "window": 30 } ] })"),
+        "element 1: \"window\" is only for grade");
+}
+
 int main()
 {
     test_cascade();
@@ -912,5 +933,6 @@ int main()
     test_gauge_graph_errors();
     test_panels();
     test_element_fonts();
+    test_graph_window_in_the_defaults();
     return ST::Test::test_result();
 }

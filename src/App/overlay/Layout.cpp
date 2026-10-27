@@ -401,7 +401,8 @@ std::expected<std::vector<Threshold>, LayoutError> color_by(JSONValue const &jso
     return ret;
 }
 
-std::expected<ValueElement, LayoutError> value_element(JSONValue const &json)
+// `json` is the element after the cascade, `own` as the file has it.
+std::expected<ValueElement, LayoutError> value_element(JSONValue const &json, JSONValue const &own)
 {
     ValueElement ret { .at = TRY_EVAL(placement(json)), .panel = TRY_EVAL(panel(json)), .style = TRY_EVAL(text_style(json)) };
     auto const   field = json.get("field");
@@ -438,10 +439,12 @@ std::expected<ValueElement, LayoutError> value_element(JSONValue const &json)
         ret.missing = TRY_EVAL(string(*missing, "missing"));
         ret.hide_when_missing = ret.missing == "hide";
     }
-    if (auto const window = json.get("window"); window) {
-        if (ret.field != OverlayField::grade) {
-            return error("\"window\" is only for grade");
-        }
+    // A window in the defaults or a style can be for the graphs: only one
+    // the value gives itself has to be for grade.
+    if (own.get("window") && ret.field != OverlayField::grade) {
+        return error("\"window\" is only for grade");
+    }
+    if (auto const window = json.get("window"); window && ret.field == OverlayField::grade) {
         ret.window = TRY_EVAL(number(*window, "window"));
         if (*ret.window < ShortestWindow || *ret.window > LongestWindow) {
             return error(std::format("\"window\" is from {} to {} m", ShortestWindow, LongestWindow));
@@ -710,7 +713,7 @@ std::expected<std::optional<OverlayElement>, LayoutError> element(JSONValue cons
     }
     if (name == "value") {
         TRY(check_properties(json, "a value", { ElementProperties, TextStyleProperties, BoxStyleProperties, ValueProperties }));
-        return std::optional<OverlayElement> { TRY_EVAL(value_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
+        return std::optional<OverlayElement> { TRY_EVAL(value_element(TRY_EVAL(cascaded(json, defaults, styles)), json)) };
     }
     // A gauge's and a graph's color is what they draw in, by default.
     if (name == "gauge") {
