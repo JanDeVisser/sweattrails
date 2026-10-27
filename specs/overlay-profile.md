@@ -1,6 +1,6 @@
 # Overlay elevation profile
 
-Status: Ready
+Status: In progress
 
 ## Goal
 
@@ -117,11 +117,116 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+The profile is decoded in `overlay/Layout`, its geometry and values are
+plain functions in a new `overlay/ElevationProfile`, next to
+`overlay/Shapes`, and `overlay/Renderer` draws it. (Not
+`overlay/Profile`: `fit/Profile` is the FIT profile.)
+
+### The layout
+
+- **`ProfileElement`**: `at`, `panel`, `style` (its own text style, the
+  base of its labels'), `extent` (`All`, `Lap`), `smooth` (m, 20), `min`
+  and `max` (optional: none is `"auto"`), `min_span` (100), `done` and
+  `remaining` (optional), `marker` (optional), `marker_label` (optional),
+  `axis_labels` (optional: none unless `min_max`), `laps` (an optional
+  stroke).
+- **`Trace { Stroke line, std::optional<Color> fill }`**, for `done` and
+  `remaining`. Without `done`, the line is the element's `color`, 2 px,
+  as a graph's is.
+- **`Marker { color, radius, outline, drop_line }`**: `outline` an
+  optional color; `drop_line` an optional stroke, which `true` makes from
+  the marker's color at half its alpha, 1 px. The reference's
+  `"shape": "dot"` is taken, and any other shape is an error. A profile
+  has a marker unless it says `"marker": null`: a profile is hardly one
+  without. By default it's a dot of radius 6 in the `done` line's color,
+  without an outline or a drop line.
+- **`ProfileLabel { Template text, TextStyle style }`**. Its style is the
+  label object cascaded over its named `style` (as an element's is, with
+  `cascaded()`), over the profile's own style. `axis_labels` is a
+  `TextStyle` the same way.
+- `profile` leaves `LaterTypes`, and its properties `LaterProperties`,
+  except the deferred `color_by_grade` and `axis_labels.distance`, which
+  are taken and ignored.
+- `element_fonts()` gives the labels' fonts, and `layout_codepoints()`
+  their templates' characters and the `--` of their missing fields.
+- **Errors**: a profile needs a `size`; `extent` is `"all"` or `"lap"`
+  (a fixed section says it isn't there yet); `smooth` isn't negative;
+  `min_span` is more than 0; `min` below `max`; and a template that
+  doesn't parse.
+
+### Elevation: `OverlaySource`
+
+- **`OverlaySource::profile_area`**: for each profile point, the area under
+  the profile up to it (altitude times distance, by trapezoids), worked
+  out once with the profile.
+- **`average_altitude(source, from, to)`**: the area between two
+  distances over their distance, which is the average of the profile over
+  it, weighted by distance rather than by record, so that the records'
+  spacing doesn't matter. Clamped to the profile's ends.
+- **Smoothing and columns in one**: a column's value is the average over
+  its stretch widened by `smooth / 2` on each side. That's the centred
+  average over `smooth` meters, averaged over the column, and needs no
+  smoothed copy of the profile.
+
+### Geometry: `overlay/ElevationProfile.h`
+
+No raylib drawing, so that tests reach it all:
+
+- **`profile_extent(source, profile, values)`**: from and to, in meters:
+  the profile's ends for `"all"`, the current lap's first and last
+  distances for `"lap"` (the whole activity without laps). None without a
+  profile.
+- **`profile_columns(source, extent, smooth, unit, columns)`**: a value a
+  pixel column, in the unit shown.
+- **`profile_bounds(columns, min, max, min_span)`**: `"auto"` is the
+  columns' lowest and highest, which is what's drawn, so the line fills
+  the box. `min_span` widens an `"auto"` scale up from its bottom; with
+  only one of the two `"auto"`, that one moves.
+- **`profile_points(columns, bounds, content)`** and
+  **`split_at(points, x)`**: the line, and its `done` and `remaining`
+  parts, which share the point at the marker.
+- **`profile_marker(points, extent, distance, content)`**: the marker on
+  the line where the frame's distance is, between two columns' points.
+  None before the first distance, or outside the extent.
+- **`lap_starts(source, extent)`**: the distances where laps start, the
+  first lap's excepted, within the extent.
+- **`label_box(marker, radius, label_size, content)`**: above and to the
+  right of the marker, to its left past the right edge, below it where
+  there's no room above, and inside the content box.
+
+### Drawing
+
+- The graph's line and fill under it become one renderer function,
+  `draw_trace(points, trace, bottom)`, for both. The profile draws its
+  panel, the `remaining` and then the `done` trace, the lap lines, the
+  drop line, the marker with its outline as a ring, the axis labels at the
+  content's top and bottom left, and the marker label.
+- Every frame works the columns out again: an average is two binary
+  searches, so 900 columns are far less than a frame's text. If the
+  render's speed says otherwise, the columns of `"all"` can be kept.
+
+### Built-in layout
+
+- `cycling-dashboard` gets a profile at the top in the middle, 900×120,
+  with the label and the altitude labels.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `OverlayLayoutTest`: decoding profiles (extents, defaults, `done` and
+  `remaining`, markers with `drop_line` as `true` and as a stroke, the
+  labels' style cascade over a named style and the element's), the
+  errors, fonts and codepoints of labels, and the deferred properties
+  being taken.
+- `OverlayFieldsTest`: `average_altitude()` over a known profile, between
+  records, past the ends, and across a stop's drift.
+- `OverlayElevationProfileTest` (new): extents for `"all"` and `"lap"`,
+  and without laps or distances; columns smoothing a sawtooth, and with
+  `smooth: 0`; bounds with `"auto"`, `min_span` and numbers; splitting;
+  the marker between columns, before the first distance and held in a
+  pause; lap starts; the label's four places and clamping.
+- `LayoutFileTest`: `cycling-dashboard` still decodes, with its profile.
+- By hand: the dashboard's profile in the preview and in a render, with
+  `"all"` and `"lap"`, and the render's speed against before.
 
 ## Review notes
 
