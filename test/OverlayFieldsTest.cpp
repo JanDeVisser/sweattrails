@@ -892,6 +892,63 @@ void test_ranges()
     CHECK_EQ(range_of(climb, OverlayField::power), "none");
 }
 
+std::string average_of(OverlaySource const &source, double from, double to)
+{
+    auto const average = average_altitude(source, from, to);
+    return average ? std::format("{:.2f}", *average) : std::string { "none" };
+}
+
+// The average altitude over a stretch, weighted by distance, for the
+// elevation profile.
+void test_average_altitude()
+{
+    Climb               c;
+    OverlaySource const climb { c.activity };
+    CHECK_EQ(average_of(climb, 0, 100), "0.00");
+    CHECK_EQ(average_of(climb, 100, 140), "4.00");
+    // Between records: 18 m of the ramp, at 6.2 m on average, and 18 m
+    // flat at 8 m.
+    CHECK_EQ(average_of(climb, 122, 158), "7.10");
+    // Past the ends, clamped to them; and a stretch of nothing.
+    CHECK_EQ(average_of(climb, -50, 50), "0.00");
+    CHECK_EQ(average_of(climb, 250, 400), "8.00");
+    CHECK_EQ(average_of(climb, 130, 130), "6.00");
+
+    // Records 1 m apart at 0 m, then one 90 m later at 9 m: by record,
+    // the average would be 0.75 m.
+    Storage  storage { };
+    Activity uneven { storage, ActivityID { } };
+    uneven.segment.start_time.timestamp = Start;
+    for (auto d = 0u; d <= 10; ++d) {
+        uneven.records.push_back(record { .timestamp = DateTime { .timestamp = Start + d }, .altitude = 0.0f, .distance = static_cast<f32>(d) });
+    }
+    uneven.records.push_back(record { .timestamp = DateTime { .timestamp = Start + 14 }, .altitude = 9.0f, .distance = 100.0f });
+    CHECK_EQ(average_of(OverlaySource { uneven }, 0, 100), "4.05");
+
+    // Without altitudes, nothing.
+    for (auto &r : c.activity.records) {
+        r.altitude.reset();
+    }
+    CHECK_EQ(average_of(OverlaySource { c.activity }, 0, 100), "none");
+}
+
+// The altimeter's drift during a stop is no hill.
+void test_average_altitude_across_a_step()
+{
+    Storage  storage { };
+    Activity road = flat_road(storage, 300);
+    for (auto &r : road.records) {
+        if (*r.distance > 150) {
+            r.timestamp.timestamp += 600;
+            *r.altitude += 4.0f;
+        }
+    }
+    road.records.insert(road.records.begin() + 31,
+        record { .timestamp = DateTime { .timestamp = Start + 30 + 600 }, .altitude = 104.0f, .distance = 150.0f });
+    OverlaySource const source { road };
+    CHECK_EQ(average_of(source, 100, 200), "100.00");
+}
+
 int main()
 {
     test_names();
@@ -939,5 +996,7 @@ int main()
     test_title_when_made();
     test_date_without_zone();
     test_ranges();
+    test_average_altitude();
+    test_average_altitude_across_a_step();
     return ST::Test::test_result();
 }

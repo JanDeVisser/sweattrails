@@ -371,6 +371,10 @@ OverlaySource::OverlaySource(Activity const &activity)
         profile.push_back(ProfilePoint { .distance = *r.distance, .altitude = *r.altitude - step });
         previous = &r;
     }
+    for (auto ix = 0uz; ix < profile.size(); ++ix) {
+        auto const area = (ix == 0) ? 0.0 : (profile[ix].distance - profile[ix - 1].distance) * (profile[ix].altitude + profile[ix - 1].altitude) / 2;
+        profile_area.push_back((ix == 0) ? 0.0 : profile_area.back() + area);
+    }
     for (auto ix = 0uz; ix < activity.records.size(); ++ix) {
         // As for the profile, a distance that goes back is ignored.
         if (auto const d = activity.records[ix].distance; d && (mileage.empty() || *d >= mileage.back().distance)) {
@@ -404,6 +408,38 @@ double altitude_at(std::vector<OverlaySource::ProfilePoint> const &profile, doub
     return (span > 0) ? earlier.altitude + (distance - earlier.distance) / span * (later.altitude - earlier.altitude) : later.altitude;
 }
 
+}
+
+namespace {
+
+// The area under the profile from its start to `distance`, which is within
+// its ends.
+double area_at(OverlaySource const &source, double distance)
+{
+    auto const &profile = source.profile;
+    auto const  after = std::ranges::lower_bound(profile, distance, { }, &OverlaySource::ProfilePoint::distance);
+    if (after == profile.begin()) {
+        return 0;
+    }
+    auto const  ix = static_cast<size_t>(after - profile.begin()) - 1;
+    auto const &earlier = profile[ix];
+    return source.profile_area[ix] + (distance - earlier.distance) * (earlier.altitude + altitude_at(profile, distance)) / 2;
+}
+
+}
+
+std::optional<double> average_altitude(OverlaySource const &source, double from, double to)
+{
+    auto const &profile = source.profile;
+    if (profile.empty()) {
+        return { };
+    }
+    from = std::clamp(from, profile.front().distance, profile.back().distance);
+    to = std::clamp(to, profile.front().distance, profile.back().distance);
+    if (to - from < 1e-6) {
+        return altitude_at(profile, from);
+    }
+    return (area_at(source, to) - area_at(source, from)) / (to - from);
 }
 
 std::optional<double> grade_at(OverlaySource const &source, double distance, double window)
