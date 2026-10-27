@@ -322,12 +322,28 @@ OverlaySource::OverlaySource(Activity const &activity)
     : activity(&activity)
     , utc_offset(local_utc_offset(activity))
 {
+    // An altitude that changed while standing still, such as a barometer
+    // drifting during a café stop, is no climb: it comes off everything
+    // after the pause, so that the grade across it is the riding's.
+    double        step { 0 };
+    record const *previous { nullptr };
     for (auto const &r : activity.records) {
         // A device that goes back in distance is ignored there: the
         // profile has to be in order to be searched.
-        if (r.distance && r.altitude && (profile.empty() || *r.distance >= profile.back().distance)) {
-            profile.push_back(ProfilePoint { .distance = *r.distance, .altitude = *r.altitude });
+        if (!r.distance || !r.altitude || (!profile.empty() && *r.distance < profile.back().distance)) {
+            continue;
         }
+        if (previous != nullptr) {
+            auto const &p = *previous;
+            auto const  time = static_cast<double>(r.timestamp.timestamp) - static_cast<double>(p.timestamp.timestamp);
+            auto const  moved = static_cast<double>(*r.distance - *p.distance);
+            // Standing: less than 5 s at 1 km/h, however long the pause.
+            if (time > MaxGap && moved < MaxGap * SlowestPace) {
+                step += static_cast<double>(*r.altitude - *p.altitude);
+            }
+        }
+        profile.push_back(ProfilePoint { .distance = *r.distance, .altitude = *r.altitude - step });
+        previous = &r;
     }
 }
 

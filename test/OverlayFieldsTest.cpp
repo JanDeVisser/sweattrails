@@ -7,8 +7,10 @@
  * templates.
  */
 
+#include <algorithm>
 #include <cstdlib>
 #include <ctime>
+#include <exception>
 #include <format>
 #include <string>
 #include <vector>
@@ -585,6 +587,243 @@ void test_grade_without_altitude()
     CHECK_EQ(grade_of(values_at_record(source, 24).grade(50)), "none");
 }
 
+// A pause at the exact record times: the record's own values at either
+// end, the pause table only strictly between them. Distance is held at the
+// earlier record's, also when it grew across the gap (a tunnel).
+void test_pause_at_record_times()
+{
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+    activity.segment.start_time.timestamp = Start;
+    activity.records.push_back(record { .timestamp = DateTime { .timestamp = Start }, .heart_rate = 150, .distance = 1000.0f, .speed = 8.0f, .power = 200 });
+    activity.records.push_back(record { .timestamp = DateTime { .timestamp = Start + 6 }, .heart_rate = 160, .distance = 1500.0f, .speed = 9.0f, .power = 210 });
+    OverlaySource const source { activity };
+    auto const          at_start = values_at_time(source, 0);
+    CHECK_EQ(value_of(at_start, OverlayField::power), "200");
+    CHECK_EQ(value_of(at_start, OverlayField::heart_rate), "150");
+    auto const just_after = values_at_time(source, 0.01);
+    CHECK_EQ(value_of(just_after, OverlayField::power), "0");
+    CHECK_EQ(value_of(just_after, OverlayField::heart_rate), "none");
+    CHECK_EQ(value_of(values_at_time(source, 5.99), OverlayField::distance), "1000");
+    auto const at_end = values_at_time(source, 6);
+    CHECK_EQ(value_of(at_end, OverlayField::power), "210");
+    CHECK_EQ(value_of(at_end, OverlayField::heart_rate), "160");
+    CHECK_EQ(value_of(at_end, OverlayField::distance), "1500");
+    // Exactly MaxGap apart is no pause: interpolated.
+    activity.records[1].timestamp.timestamp = Start + 5;
+    OverlaySource const five { activity };
+    CHECK_EQ(value_of(values_at_time(five, 2.5), OverlayField::power), "205");
+}
+
+// The clock isn't interpolated across midnight, where it goes back to 0;
+// the date stays the start's.
+void test_time_of_day_across_midnight()
+{
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+    activity.utc_offset = 0;
+    // 1'750'032'000 is 2025-06-16 00:00:00 UTC.
+    constexpr u32 Midnight = 1'750'032'000;
+    activity.segment.start_time.timestamp = Midnight - 10;
+    activity.records.push_back(record { .timestamp = DateTime { .timestamp = Midnight - 1 }, .speed = 5.0f });
+    activity.records.push_back(record { .timestamp = DateTime { .timestamp = Midnight + 1 }, .speed = 5.0f });
+    OverlaySource const source { activity };
+    auto const          clock = [&source](double seconds) {
+        return format_value(values_at_time(source, seconds), OverlayField::time_of_day, FieldUnit { }, "hms", "--");
+    };
+    auto const date = [&source](double seconds) {
+        return format_value(values_at_time(source, seconds), OverlayField::date, FieldUnit { }, "%d %b %Y", "--");
+    };
+    CHECK_EQ(clock(9.5), "23:59:59");
+    CHECK_EQ(clock(10.0), "00:00:00");
+    CHECK_EQ(clock(10.5), "00:00:00");
+    CHECK_EQ(date(10.5), "15 Jun 2025");
+    CHECK_EQ(format_value(values_at_record(source, 1), OverlayField::time_of_day, FieldUnit { }, "hms", "--"), "00:00:01");
+}
+
+// Pace is the inverse of the interpolated speed, not interpolated itself:
+// 2 and 4 m/s halfway is 3 m/s, 5:33 min/km, not the average 6:15.
+void test_pace_between_records()
+{
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+    activity.sport = sport::Running;
+    activity.segment.start_time.timestamp = Start;
+    activity.records.push_back(record { .timestamp = DateTime { .timestamp = Start }, .speed = 2.0f });
+    activity.records.push_back(record { .timestamp = DateTime { .timestamp = Start + 1 }, .speed = 4.0f });
+    OverlaySource const source { activity };
+    auto const          values = values_at_time(source, 0.5);
+    CHECK_EQ(format_value(values, OverlayField::pace, default_unit(OverlayField::pace, Units::Metric, sport::Running), "ms", "--"), "5:33");
+    // 3 m/s is 8:56 min/mi.
+    CHECK_EQ(format_value(values, OverlayField::pace, default_unit(OverlayField::pace, Units::Imperial, sport::Running), "ms", "--"), "8:56");
+    CHECK_EQ(format_value(values, OverlayField::pace, *field_unit(OverlayField::pace, "min/mi"), "ms", "--"), "8:56");
+}
+
+// The lap changes at the record that starts it, not before.
+void test_lap_at_its_change()
+{
+    NewFieldsActivity t;
+    t.activity.laps.push_back(Lap { .first_record = 0, .end_record = 2 });
+    t.activity.laps.push_back(Lap { .first_record = 2, .end_record = 3 });
+    OverlaySource const source { t.activity };
+    auto const          lap = [&source](double seconds) {
+        return format_value(values_at_time(source, seconds), OverlayField::lap, FieldUnit { }, ".0f", "--");
+    };
+    CHECK_EQ(lap(3910.0), "1");
+    CHECK_EQ(lap(3910.99), "1");
+    CHECK_EQ(lap(3911.0), "2");
+    CHECK_EQ(lap(5000.0), "2");
+}
+
+// A percentage over 100 isn't a balance.
+void test_balance_out_of_range()
+{
+    NewFieldsActivity t;
+    t.activity.records[0].left_right_balance = 0x80 | 101;
+    CHECK_EQ(t.field(OverlayField::lr_balance), "--");
+    t.activity.records[0].left_right_balance = 0x80 | 100;
+    CHECK_EQ(t.field(OverlayField::lr_balance), "0/100");
+}
+
+// Every date spec that is_valid_spec() lets through formats any date
+// without throwing: a layout can't take the app down while drawing.
+void test_date_specs_format()
+{
+    auto const day = static_cast<double>(Start) + Toronto;
+    for (auto const spec : { "%d %b %Y", "%A", "%a %e", "%F", "%D", "%x", "%j", "%U", "%W", "%V", "%G", "%g", "%u", "%w",
+             "%C", "%y", "%h", "%B", "%m", "%H:%M", "%T", "%R", "%p", "%I", "%r", "%c", "%X", "%Z", "%z", "%Ez", "%Oz",
+             "%Ey", "%EY", "%Od", "%Om", "%n", "%t", "%%", "", ">20%F", "L%A", "%S", "%M" }) {
+        if (!is_valid_spec(OverlayField::date, spec)) {
+            continue;
+        }
+        try {
+            (void) format_field(OverlayField::date, day, FieldUnit { }, spec, "--");
+            (void) format_field(OverlayField::date, -1.0e6, FieldUnit { }, spec, "--");
+        } catch (std::exception const &) {
+            CHECK_EQ(std::string { spec }, "a spec that throws");
+        }
+    }
+    // Duration-like specs aren't dates.
+    CHECK(!is_valid_spec(OverlayField::date, "%Q"));
+    CHECK(!is_valid_spec(OverlayField::date, "hms"));
+    CHECK(!is_valid_spec(OverlayField::date, "%"));
+}
+
+// The specs each kind takes, and refuses.
+void test_specs_per_kind()
+{
+    CHECK(is_valid_spec(OverlayField::elapsed, "hms"));
+    CHECK(is_valid_spec(OverlayField::elapsed, "ms"));
+    CHECK(!is_valid_spec(OverlayField::elapsed, ".0f"));
+    CHECK(!is_valid_spec(OverlayField::elapsed, ""));
+    CHECK(is_valid_spec(OverlayField::pace, "ms"));
+    CHECK(!is_valid_spec(OverlayField::pace, "hms"));
+    CHECK(!is_valid_spec(OverlayField::pace, ".1f"));
+    CHECK(is_valid_spec(OverlayField::time_of_day, "hm"));
+    CHECK(is_valid_spec(OverlayField::time_of_day, "hms"));
+    CHECK(!is_valid_spec(OverlayField::time_of_day, "%H:%M"));
+    CHECK(is_valid_spec(OverlayField::lr_balance, ".1f"));
+    CHECK(!is_valid_spec(OverlayField::lr_balance, "hms"));
+    CHECK(is_valid_spec(OverlayField::title, ""));
+    CHECK(!is_valid_spec(OverlayField::title, "s"));
+    CHECK(is_valid_spec(OverlayField::lap, ".0f"));
+    CHECK(is_valid_spec(OverlayField::altitude, ".0f"));
+    CHECK(!is_valid_spec(OverlayField::altitude, "%d"));
+}
+
+// Flat road, a record every 5 m, 1 s apart: a profile to vary.
+Activity flat_road(Storage &storage, int to)
+{
+    Activity activity { storage, ActivityID { } };
+    activity.segment.start_time.timestamp = Start;
+    for (auto d = 0; d <= to; d += 5) {
+        activity.records.push_back(record {
+            .timestamp = DateTime { .timestamp = Start + static_cast<u32>(d / 5) },
+            .altitude = 100.0f,
+            .distance = static_cast<f32>(d),
+        });
+    }
+    return activity;
+}
+
+// Records standing still at one distance, and a device going back in
+// distance, don't upset the grade around them.
+void test_grade_with_duplicate_and_backward_distances()
+{
+    Climb c;
+    auto &records = c.activity.records;
+    // Standing still at 120 m on the ramp, five records at the same place.
+    auto const at = std::ranges::find_if(records, [](record const &r) { return *r.distance == 120.0f; });
+    auto const still = *at;
+    records.insert(at + 1, 5, still);
+    OverlaySource const standing { c.activity };
+    CHECK_EQ(grade_of(grade_at(standing, 120, 30)), "20.0");
+    CHECK_EQ(grade_of(grade_at(standing, 50, 30)), "0.0");
+    // A record going back to 118 m after 125 m: left out, not searched.
+    Climb      back;
+    auto const after = std::ranges::find_if(back.activity.records, [](record const &r) { return *r.distance == 125.0f; });
+    back.activity.records.insert(after + 1, record { .timestamp = after->timestamp, .altitude = 3.6f, .distance = 118.0f });
+    OverlaySource const backwards { back.activity };
+    CHECK(std::ranges::is_sorted(backwards.profile, { }, &OverlaySource::ProfilePoint::distance));
+    CHECK_EQ(grade_of(grade_at(backwards, 120, 30)), "20.0");
+}
+
+// Records without distance or altitude here and there are skipped.
+void test_grade_with_gaps_in_the_records()
+{
+    Climb c;
+    for (auto ix = 0uz; ix < c.activity.records.size(); ix += 3) {
+        if (*c.activity.records[ix].distance > 100 && *c.activity.records[ix].distance < 140) {
+            ((ix % 2) ? c.activity.records[ix].altitude : c.activity.records[ix].distance).reset();
+        }
+    }
+    OverlaySource const source { c.activity };
+    CHECK_EQ(grade_of(grade_at(source, 120, 30)), "20.0");
+    // A profile of one point has no grade.
+    Storage  storage { };
+    Activity one = flat_road(storage, 0);
+    CHECK_EQ(grade_of(grade_at(OverlaySource { one }, 0, 10)), "none");
+}
+
+// The window's ends at the profile's: exactly at the end is still there.
+void test_grade_at_the_ends()
+{
+    Storage             storage { };
+    Activity            road = flat_road(storage, 300);
+    OverlaySource const source { road };
+    CHECK_EQ(grade_of(grade_at(source, 285, 30)), "0.0");
+    CHECK_EQ(grade_of(grade_at(source, 285.1, 30)), "none");
+    CHECK_EQ(grade_of(grade_at(source, 14.9, 30)), "none");
+    CHECK_EQ(grade_of(grade_at(source, 100, 200)), "0.0");
+    CHECK_EQ(grade_of(grade_at(source, 99, 200)), "none");
+    // Past the last record, the frame's distance is the last one: no grade.
+    CHECK_EQ(grade_of(values_at_time(source, 1000)[OverlayField::grade]), "none");
+}
+
+// A pause on a flat road, after which the altimeter reads 4 m higher, as a
+// barometer does when the weather changes during a long stop. The spec
+// says a window with a pause in it uses the riding on either side only, as
+// if the pause weren't there: the road is flat on either side, so the
+// grade is 0, not 4 m over 30 m.
+void test_grade_with_an_altitude_step_in_a_pause()
+{
+    Storage  storage { };
+    Activity road = flat_road(storage, 300);
+    for (auto &r : road.records) {
+        if (*r.distance > 150) {
+            r.timestamp.timestamp += 600;
+            *r.altitude += 4.0f;
+        }
+    }
+    // Standing at 150 m, the first record after the pause is still there.
+    road.records.insert(road.records.begin() + 31,
+        record { .timestamp = DateTime { .timestamp = Start + 30 + 600 }, .altitude = 104.0f, .distance = 150.0f });
+    OverlaySource const source { road };
+    CHECK_EQ(grade_of(grade_at(source, 150, 30)), "0.0");
+    CHECK_EQ(grade_of(grade_at(source, 140, 30)), "0.0");
+    CHECK_EQ(grade_of(values_at_time(source, 300)[OverlayField::grade]), "0.0");
+}
+
 }
 
 int main()
@@ -619,5 +858,16 @@ int main()
     test_grade();
     test_grade_through_a_pause();
     test_grade_without_altitude();
+    test_pause_at_record_times();
+    test_time_of_day_across_midnight();
+    test_pace_between_records();
+    test_lap_at_its_change();
+    test_balance_out_of_range();
+    test_date_specs_format();
+    test_specs_per_kind();
+    test_grade_with_duplicate_and_backward_distances();
+    test_grade_with_gaps_in_the_records();
+    test_grade_at_the_ends();
+    test_grade_with_an_altitude_step_in_a_pause();
     return ST::Test::test_result();
 }
