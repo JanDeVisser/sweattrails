@@ -75,6 +75,12 @@ void OverlayRender::step(double budget)
     auto const until = GetTime() + budget;
     while (m_frame < m_frames && m_encoder->can_write() && GetTime() < until) {
         render_frame();
+        // A font raylib couldn't load: the frames would be blank.
+        if (auto const &error = m_renderer.error(); error) {
+            m_encoder->stop();
+            m_result = std::unexpected(*error);
+            return;
+        }
     }
     // A frame ffmpeg didn't take, or the last: finish() says how it went.
     if (m_frame >= m_frames || m_encoder->failed()) {
