@@ -1,6 +1,6 @@
 # Overlay elevation profile
 
-Status: Draft
+Status: Ready
 
 ## Goal
 
