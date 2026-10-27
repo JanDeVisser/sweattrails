@@ -150,13 +150,37 @@ forgets the login, and Ctrl+G asks you to log in again.
 SweatTrails draws an activity's data as a video overlay, to put over the
 footage of the ride, with a transparent background. Ctrl+O previews it in
 place of the data panel and the map, at the moment marked in the graph,
-and Ctrl+Shift+O picks the layout. A
-layout is a JSON file that says what's shown where; the built-in one is
-`share/overlays/cycling-basic.overlay.json`, a good start for your own.
-Put those in `overlays/` in SweatTrails' data folder
+and Ctrl+Shift+O picks the layout. A layout is a JSON file that says
+what's shown where; the built-in ones,
+`share/overlays/cycling-basic.overlay.json` and `running-basic`, are a good
+start for your own. Put those in `overlays/` in SweatTrails' data folder
 (`~/Library/Application Support/sweattrails/overlays` on macOS), named
 `<name>.overlay.json`: the preview shows a change as soon as it's saved.
 The format is in `specs/overlay-layout.md`.
+
+A `text` element shows a template, such as `"{speed:.1f} {speed.unit}"`,
+and a `value` element a field with its unit. The fields:
+
+| Field | Shows |
+|---|---|
+| `speed`, `pace` | km/h or mph; min/km or min/mi, as `4:35` |
+| `power`, `heart_rate`, `cadence` | W, bpm, rpm (spm for runs) |
+| `distance`, `altitude` | km or mi; m or ft |
+| `grade` | %, over the 30 m around the moment; a `value` can set `"window": 20`, from 10 to 200 m |
+| `temperature` | °C or °F |
+| `lr_balance` | left/right, as `48/52` |
+| `elapsed` | `{elapsed}` is `1:05:09`, `{elapsed:ms}` `65:09` |
+| `time_of_day` | `{time_of_day}` is `09:44`, `{time_of_day:hms}` `09:44:10` |
+| `lap`, `title` | the lap, from 1; the activity's title |
+| `date` | `{date}` is `14 Jun 2025`; `{date:%Y-%m-%d}` takes `strftime`-like specs |
+
+During a pause, speed, power and cadence are 0, and heart rate is
+missing. A number can change color with its value, in the unit shown:
+
+```json
+{ "type": "value", "field": "power",
+  "color_by": { "thresholds": [[0, "#8ecae6"], [220, "#f9c74f"], [260, "#f94144"]] } }
+```
 
 Ctrl+E renders the overlay to a ProRes 4444 movie with alpha, which Final
 Cut and other editors import, for the part of the activity selected in the

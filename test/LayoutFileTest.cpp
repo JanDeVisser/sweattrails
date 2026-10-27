@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <format>
 #include <string>
 #include <variant>
 #include <vector>
@@ -129,24 +130,26 @@ void test_chosen_layout()
     CHECK(!read_chosen_layout(state).has_value());
 }
 
-// The layout the preview shows first loads, and only uses fonts that are
-// shipped.
-void test_builtin_layout()
+// The built-in layouts load, and only use fonts that are shipped, also
+// for their units.
+void test_builtin_layout(std::string_view name, size_t elements)
 {
-    LayoutFile file { fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays" / "cycling-basic.overlay.json" };
+    LayoutFile file { fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays" / std::format("{}.overlay.json", name) };
     CHECK(file.reload_if_changed());
     CHECK_EQ(error_of(file), "ok");
     if (!file.layout) {
         return;
     }
-    CHECK_EQ(file.layout->elements.size(), 10uz);
+    CHECK_EQ(file.layout->elements.size(), elements);
     CHECK_EQ(file.layout->skipped, 0uz);
+    auto const shipped = [](std::string const &font) {
+        return fs::exists(fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "fonts" / font);
+    };
     for (auto const &element : file.layout->elements) {
-        std::visit(
-            [](auto const &e) {
-                CHECK(fs::exists(fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "fonts" / e.style.font));
-            },
-            element);
+        std::visit([&shipped](auto const &e) { CHECK(shipped(e.style.font)); }, element);
+        if (auto const *value = std::get_if<ValueElement>(&element)) {
+            CHECK(shipped(value->unit_style.font));
+        }
     }
 }
 
@@ -198,22 +201,6 @@ void test_chosen_layout_not_a_name()
     CHECK(!read_chosen_layout(state).has_value());
     put(state, "[]");
     CHECK(!read_chosen_layout(state).has_value());
-}
-
-// The built-in layout's unit styles also use shipped fonts.
-void test_builtin_unit_fonts()
-{
-    LayoutFile file { fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays" / "cycling-basic.overlay.json" };
-    file.reload_if_changed();
-    if (!file.layout) {
-        CHECK(false);
-        return;
-    }
-    for (auto const &element : file.layout->elements) {
-        if (auto const *value = std::get_if<ValueElement>(&element)) {
-            CHECK(fs::exists(fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "fonts" / value->unit_style.font));
-        }
-    }
 }
 
 OverlayLayout decoded(std::string_view json)
@@ -268,12 +255,12 @@ int main()
     test_errors_and_recovering();
     test_overlay_layouts();
     test_chosen_layout();
-    test_builtin_layout();
+    test_builtin_layout("cycling-basic", 11);
+    test_builtin_layout("running-basic", 9);
     test_layout_fonts();
     test_missing_file();
     test_error_names_file_element_and_property();
     test_no_layout_directories();
     test_chosen_layout_not_a_name();
-    test_builtin_unit_fonts();
     return ST::Test::test_result();
 }
