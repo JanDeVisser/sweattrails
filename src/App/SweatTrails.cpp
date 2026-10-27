@@ -26,6 +26,8 @@
 #include <OAuth.h>
 #include <SweatTrails.h>
 #include <overlay/LayoutFile.h>
+#include <overlay/OverlayRender.h>
+#include <overlay/Render.h>
 #include <storage/Activity.h>
 #include <storage/Garmin.h>
 #include <storage/Storage.h>
@@ -308,6 +310,15 @@ void SweatTrails::on_terminate()
 {
     // Not waiting for a browser that's not coming back.
     wahoo_login.request_stop();
+    // While there's an OpenGL context to let go of the render texture in.
+    // A render that isn't done stops, and its file is removed.
+    overlay_render.reset();
+}
+
+void SweatTrails::process_input()
+{
+    Main<Job, Notification>::process_input();
+    step_render();
 }
 
 void SweatTrails::terminate()
@@ -326,7 +337,9 @@ void cmd_quit(pSweatTrails const &sweattrails, JSONValue const &)
         // User probably clicked the close window button twice
         return;
     }
-    auto const *prompt = "Are you sure you want to quit?";
+    auto const *prompt = sweattrails->overlay_render
+        ? "An overlay is rendering, and quitting stops it. Are you sure you want to quit?"
+        : "Are you sure you want to quit?";
     auto        are_you_sure = [](pSweatTrails const &sweattrails, QueryOption selection) {
         if (selection == QueryOption::QueryOptionYes) {
             sweattrails->terminate();
@@ -589,6 +602,122 @@ void cmd_overlay_layout(pSweatTrails const &sweattrails, JSONValue const &)
     list_box(sweattrails, "Overlay layout", entries, pick, current ? current->name : "");
 }
 
+// The overlay layout the preview shows, or would show, loaded.
+std::expected<LayoutFile, std::string> overlay_to_render(pSweatTrails const &sweattrails)
+{
+    auto const &preview = sweattrails->activity_display->preview;
+    // The preview only looks for changes while it's showing.
+    if (preview->file) {
+        auto file = *preview->file;
+        file.reload_if_changed();
+        return file;
+    }
+    auto const chosen = chosen_overlay_layout(sweattrails);
+    if (!chosen) {
+        return std::unexpected("There are no overlay layouts");
+    }
+    LayoutFile file { chosen->path };
+    file.reload_if_changed();
+    return file;
+}
+
+// Where ffmpeg is: an app opened from the Finder gets a PATH without
+// Homebrew's directories.
+std::optional<fs::path> find_ffmpeg()
+{
+    auto const *path = std::getenv("PATH");
+    return find_program("ffmpeg", (path != nullptr) ? path : "", { "/opt/homebrew/bin", "/usr/local/bin" });
+}
+
+void start_render(pSweatTrails const &sweattrails, RenderJob job)
+{
+    auto render = OverlayRender::start(std::move(job), [](std::string_view name) { return SweatTrails::the()->find_font(name); });
+    if (!render) {
+        sweattrails->set_status(std::format("Couldn't render the overlay: {}", render.error()));
+        return;
+    }
+    sweattrails->overlay_render = std::move(*render);
+    sweattrails->render_percent = -1;
+    sweattrails->step_render();
+}
+
+// A range longer than this asks first, with the file's size.
+constexpr double LongRender = 10 * 60;
+
+// Renders the activity's overlay to video, for the range the user picks,
+// starting with the graph's selection or lap. During a render, asks
+// whether to stop it.
+void cmd_overlay_render(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (sweattrails->overlay_render) {
+        if (!sweattrails->modals.empty()) {
+            return;
+        }
+        auto const prompt = std::format("Stop rendering {}?", sweattrails->overlay_render->output().filename().string());
+        query_box(sweattrails, prompt, [](pSweatTrails const &st, QueryOption selection) {
+            if (selection == QueryOption::QueryOptionYes) {
+                st->stop_render();
+            } }, QueryOptionYesNo);
+        return;
+    }
+    auto activity = activity_for_keys(sweattrails);
+    if (!activity) {
+        return;
+    }
+    auto const file = overlay_to_render(sweattrails);
+    if (!file) {
+        sweattrails->set_status(file.error());
+        return;
+    }
+    if (!file->layout) {
+        sweattrails->set_status(std::format("The overlay layout {} has an error: the preview (Ctrl+O) shows it", file->path.filename().string()));
+        return;
+    }
+    auto const settings = decode_render_settings(sweattrails->settings.get("overlay"), home_dir());
+    if (!settings) {
+        sweattrails->set_status(std::format("Can't render the overlay: in the settings, {}", settings.error()));
+        return;
+    }
+    auto const ffmpeg = find_ffmpeg();
+    if (!ffmpeg) {
+        sweattrails->set_status("Rendering the overlay needs ffmpeg, which isn't installed: brew install ffmpeg");
+        return;
+    }
+    auto const clock = activity_clock(activity->activity);
+    auto const initial = activity->segment
+        ? records_range(activity->activity, activity->segment->min, activity->segment->max)
+        : RenderRange { .from = 0, .to = clock.duration };
+    RenderJob  job {
+        .activity = activity,
+        .layout = *file->layout,
+        .layout_file = file->path.filename().string(),
+        .settings = *settings,
+        .range = initial,
+        .output = { },
+        .ffmpeg = *ffmpeg,
+    };
+    auto picked = [job, clock](pSweatTrails const &st, std::string const &text) mutable {
+        auto const range = parse_range(text, clock);
+        if (!range) {
+            st->set_status(range.error());
+            return;
+        }
+        job.range = *range;
+        job.output = output_path(job.settings.folder, clock, *range, [](fs::path const &p) { return fs::exists(p); });
+        if (range->to - range->from <= LongRender) {
+            start_render(st, std::move(job));
+            return;
+        }
+        auto const prompt = std::format("{} will be about {:.0f} GB. Render it?", job.output.filename().string(),
+            std::ceil(estimated_gigabytes(job.settings.resolution, *range)));
+        query_box(st, prompt, [job](pSweatTrails const &st, QueryOption selection) {
+            if (selection == QueryOption::QueryOptionYes) {
+                start_render(st, job);
+            } }, QueryOptionYesNo);
+    };
+    input_box(sweattrails, "Range", picked, format_range(initial));
+}
+
 void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
 {
     if (!sweattrails->modals.empty()) {
@@ -760,6 +889,8 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_O, KModControl });
     bus.add_task<SweatTrails>("st-overlay-layout", self(), cmd_overlay_layout)
         .bind(KeyCombo { KEY_O, KModControl | KModShift });
+    bus.add_task<SweatTrails>("st-overlay-render", self(), cmd_overlay_render)
+        .bind(KeyCombo { KEY_E, KModControl });
     // + is Shift = on most keyboards.
     bus.add_task<SweatTrails>("st-map-zoom-in", self(), cmd_map_zoom_in)
         .bind(KeyCombo { KEY_EQUAL, KModNone })
@@ -923,6 +1054,41 @@ void SweatTrails::set_message(std::string_view const &text)
 }
 
 // Must be called on the UI thread; jobs send a notification instead.
+// At most this long a UI frame, so that the app stays usable.
+constexpr double RenderBudget = 0.010;
+
+void SweatTrails::step_render()
+{
+    if (!overlay_render) {
+        return;
+    }
+    overlay_render->step(RenderBudget);
+    auto const name = overlay_render->output().filename().string();
+    if (!overlay_render->over()) {
+        auto const percent = static_cast<int>(overlay_render->progress() * 100);
+        if (percent != render_percent) {
+            render_percent = percent;
+            set_status(std::format("Rendering {}: {}%", name, percent));
+        }
+        return;
+    }
+    auto const &result = *overlay_render->result();
+    set_status(result
+            ? std::format("Rendered the overlay to {}", overlay_render->output().string())
+            : std::format("Couldn't render {}: {}", name, result.error()));
+    overlay_render.reset();
+}
+
+void SweatTrails::stop_render()
+{
+    if (!overlay_render) {
+        return;
+    }
+    overlay_render->stop();
+    set_status(std::format("Stopped rendering {}, and removed it", overlay_render->output().filename().string()));
+    overlay_render.reset();
+}
+
 void SweatTrails::set_status(std::string_view const &status_text)
 {
     // A download or the inbox may finish while a login waits.

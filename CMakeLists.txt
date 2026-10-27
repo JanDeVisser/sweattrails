@@ -50,6 +50,9 @@ endif()
 
 find_package(CURL)
 find_package(ZLIB REQUIRED)
+# The overlay's render reads its frames back with glReadPixels.
+set(OpenGL_GL_PREFERENCE GLVND)
+find_package(OpenGL REQUIRED)
 
 # Homebrew's OpenSSL isn't linked into /opt/homebrew, so CMake doesn't find
 # it by itself.
@@ -189,6 +192,7 @@ add_executable(
         src/App/overlay/Fields.cpp
         src/App/overlay/Layout.cpp
         src/App/overlay/LayoutFile.cpp
+        src/App/overlay/OverlayRender.cpp
         src/App/overlay/Render.cpp
         src/App/overlay/Renderer.cpp
         src/App/overlay/Template.cpp
@@ -228,6 +232,7 @@ target_link_libraries(
         Base
         Widget
         ${raylib_LIBRARIES}
+        OpenGL::GL
         ${FREETYPE_LIBRARIES}
         ${CURL_LIBRARIES}
         OpenSSL::SSL

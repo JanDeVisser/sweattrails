@@ -142,6 +142,12 @@ bool Encoder::can_write() const
     return m_queue.size() < QueueSize && !m_failed;
 }
 
+bool Encoder::failed() const
+{
+    std::lock_guard lock { m_mutex };
+    return m_failed;
+}
+
 bool Encoder::write(Frame frame)
 {
     std::unique_lock lock { m_mutex };

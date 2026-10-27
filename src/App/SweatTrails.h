@@ -16,6 +16,7 @@
 
 #include <App.h>
 
+#include <overlay/OverlayRender.h>
 #include <storage/Activity.h>
 #include <storage/Download.h>
 #include <storage/Garmin.h>
@@ -223,6 +224,10 @@ struct SweatTrails : public Main<Job, Notification> {
     bool wahoo_logging_in { false };
     // Waits for the browser to come back from the Wahoo login.
     std::jthread wahoo_login { };
+    // The overlay's render to video, while it runs. Only used on the UI
+    // thread, where it draws.
+    std::unique_ptr<OverlayRender> overlay_render { nullptr };
+    int                            render_percent { -1 }; // As the status line says it
 
     std::shared_ptr<WidgetStack>     widget_stack { nullptr };
     std::shared_ptr<ActivityDisplay> activity_display { nullptr };
@@ -232,6 +237,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static pSweatTrails the();
 
     void   initialize() override;
+    void   process_input() override;
     bool   query_close() override;
     void   on_start() override;
     void   on_resize() override;
@@ -246,6 +252,9 @@ struct SweatTrails : public Main<Job, Notification> {
     // An empty text, while a login waits, shows that it waits.
     void set_status(std::string_view const &text);
     void show_activity(Activity const &activity);
+    // Renders a few of the overlay's frames, and says how far it is.
+    void step_render();
+    void stop_render();
 };
 
 }

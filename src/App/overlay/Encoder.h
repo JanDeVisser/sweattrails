@@ -53,6 +53,8 @@ public:
     [[nodiscard]] Frame buffer();
     // Whether write() can take a frame without waiting.
     [[nodiscard]] bool can_write() const;
+    // Whether the program has gone before all frames were written.
+    [[nodiscard]] bool failed() const;
     // Queues a frame; waits while the queue is full. An error once the
     // program has gone, after which finish() tells why.
     bool write(Frame frame);
