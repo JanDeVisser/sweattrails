@@ -56,8 +56,10 @@ would be, but harmless, so they're allowed.
     distance (indoors). However long the window takes to ride, a slow
     steep climb included, it counts; but a window with a pause in it
     (records more than 5 s apart) uses the riding on either side of the
-    pause only, as if the pause weren't there. During a pause it's the
-    last value.
+    pause only, as if the pause weren't there: an altitude that changed
+    while standing still (no more than 1.4 m ridden across the pause),
+    such as a barometer drifting during a café stop, is no climb. During
+    a pause it's the last value.
   - It's not `record.grade`, which most devices don't record, so a layout
     using it would be missing for most activities.
 - **`lr_balance`**: FIT stores it as a bitfield. Bit `0x80` means the value
@@ -113,7 +115,8 @@ A `value` element can change color with its value:
 ```
 
 Each threshold is a value and the color from that value up; below the
-first, the element has its own color. The thresholds are in the unit
+first, the element has its own color. The number is compared as it's
+shown: 259.6 W, shown as `260`, is at a threshold of 260. The thresholds are in the unit
 shown: `40` is 40 km/h in a metric layout, or 40 mph if the element says
 `"unit": "mph"`, since that's how whoever writes the layout thinks of it.
 Switching the layout's `units` moves them, which matters little: they're
@@ -281,4 +284,99 @@ the Widget library: there are no new widgets.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: an altitude step during a pause becomes a steep grade on a
+   flat road, for the whole pause.** `OverlaySource::OverlaySource()`
+   (`src/App/overlay/Fields.cpp:321-332`) puts the records before and after
+   a pause into the profile as they are, and `grade_at()` (`:352-361`)
+   interpolates straight across them. A barometric altimeter drifts during
+   a long stop as the weather changes, and some devices recalibrate when
+   they start again. So with 100 m altitude before a café stop and 104 m
+   after it, on a flat road, every window that has the stop in it shows
+   4 m over 30 m, 13.3%. Since the distance is held during the pause, the
+   overlay shows 13.3% for the whole stop. The Feature says a window with
+   a pause in it "uses the riding on either side of the pause only, as if
+   the pause weren't there". Fix: when building the profile, if two
+   consecutive records are more than `MaxGap` apart and the distance
+   hardly grew, subtract the altitude step from every later point (a
+   running offset). `grade_at()` only uses differences, so the offset does
+   no harm. Test: `test_grade_with_an_altitude_step_in_a_pause` in
+   `OverlayFieldsTest.cpp`, which fails (13.3 where it should be 0.0).
+2. **Bug: `color_by` compares the unrounded value, so the color doesn't
+   match the number shown.** `shown_value()` (`src/App/overlay/Layout.cpp:653`)
+   passes `unit.shown(*number)`, before the spec rounds it. At 259.6 W
+   the element shows `260`, but with a threshold at 260 it stays the
+   color of the 220 threshold. A render interpolates between records, so
+   this happens on many frames around every threshold, and on whole
+   records in the preview, since `Segment::analyze` smooths power into
+   fractions. The Feature says each threshold is "the color from that
+   value up", in the unit shown. Fix: compare the number as formatted,
+   for example by parsing the formatted text back with `std::from_chars`
+   (it's a `Number` kind, so it parses), or by rounding to the spec's
+   precision. Test: `test_threshold_at_the_shown_number` in
+   `OverlayLayoutTest.cpp`, which fails.
+3. **Suggestion: during a pause, a field the record before it is missing
+   stays missing, not 0.** `paused()` (`src/App/overlay/Fields.cpp:137-141`)
+   sets speed, power and cadence to 0 only if the earlier *record* has
+   them. The spec's exception is for fields the *activity* doesn't have
+   at all. With a power meter dropout on the last record before an
+   auto-pause, power shows `--` for the whole pause, where the table says
+   0. This is rare. A fix would check whether any record has the field
+   (it could be in `OverlaySource`, worked out once).
+4. **Suggestion: a render's title changes if the activity is renamed
+   while it renders.** `OverlayRender` keeps `m_source` pointing at
+   `m_job.activity->activity` (`src/App/overlay/OverlayRender.cpp:26`), and
+   `values_at_time()` copies `activity->title` on every frame. F2 during a
+   render renames that same `DisplayedActivity` in place, so the video's
+   title changes halfway through, and the fonts are loaded again in the
+   middle of the render if the new name has new characters. The pointers
+   themselves are safe: the job's `shared_ptr` keeps the activity alive,
+   and the preview gets a new `DisplayedActivity`, and so a new source,
+   whenever `ActivityDisplay::set_activity()` runs. A fix is for the
+   render to take its title when it starts (a `title` in `OverlaySource`).
+5. **Suggestion: `running-basic` shows rpm for a walk or a hike.** The
+   cadence element (`share/overlays/running-basic.overlay.json:41`) takes
+   its unit from the sport, which is only spm for `sport::Running`. Picked
+   for a walk, it shows strides as rpm, half the steps. The spec says
+   "cadence in spm": `"unit": "spm"` on the element would make that so.
+6. **Suggestion: `%Z` and `%z` in a `date` spec print `UTC` and `+0000`.**
+   The date is local time stored in a `sys_seconds` (`Fields.cpp:77-80`,
+   `:476-479`), so these specs are accepted but wrong for the place where
+   the activity was. Either refuse them in `is_valid_spec()` for the
+   `Date` kind, or say so in the README.
+
+Tests added by the Reviewer, uncommitted:
+
+- `OverlayFieldsTest.cpp`: `test_pause_at_record_times` (the record's own
+  values at both ends of a gap, the pause table strictly between, the
+  distance held across a tunnel, exactly `MaxGap` interpolated),
+  `test_time_of_day_across_midnight`, `test_pace_between_records`
+  (inverse of the interpolated speed, metric, imperial and explicit
+  `min/mi`), `test_lap_at_its_change`, `test_balance_out_of_range`,
+  `test_date_specs_format` (every date spec that's accepted formats
+  without throwing, also for a date before 1970), `test_specs_per_kind`,
+  `test_grade_with_duplicate_and_backward_distances`,
+  `test_grade_with_gaps_in_the_records`, `test_grade_at_the_ends`, and
+  `test_grade_with_an_altitude_step_in_a_pause` (fails: finding 1).
+- `OverlayLayoutTest.cpp`: `test_thresholds_in_fahrenheit`,
+  `test_threshold_at_the_shown_number` (fails: finding 2),
+  `test_shown_grade_window`, `test_value_formats_per_kind`.
+
+### Resolution
+
+Jan agreed to all of them; each fix is its own commit.
+
+1. Fixed: building the profile, an altitude step across a pause with no
+   more than 1.4 m ridden (5 s at 1 km/h) comes off the points after it.
+   A pause on a ramp with a few meters ridden keeps its climb.
+   `test_grade_with_an_altitude_step_in_a_pause` passes.
+2. Fixed: `shown_value()` compares the number its text reads back as,
+   with padding and a sign stripped, else the value.
+   `test_threshold_at_the_shown_number` passes, also padded and signed.
+3. Fixed: `OverlaySource::recorded` says which fields the activity has;
+   a pause shows 0 for those. `test_pause_after_a_dropout`.
+4. Fixed: `OverlaySource::title` is taken when it's made; the preview
+   makes its source again when the title changes. `test_title_when_made`.
+5. Fixed: `"unit": "spm"` in `running-basic`.
+6. Fixed: date specs with `%z`, `%Z`, `%Ez` or `%Oz` are refused.
+   `test_date_without_zone`.
+7. The Reviewer's tests are kept, all passing.
