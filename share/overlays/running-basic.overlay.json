@@ -38,7 +38,8 @@
 
         { "type": "text", "text": "CADENCE", "style": "label",
           "at": { "x": 720, "y": -150, "anchor": "bottom-left" } },
-        { "type": "value", "field": "cadence", "unit_style": { "font": "Inter-Regular.ttf", "font_size": 32 },
+        // Steps, also for a walk or a hike, which aren't runs.
+        { "type": "value", "field": "cadence", "unit": "spm", "unit_style": { "font": "Inter-Regular.ttf", "font_size": 32 },
           "at": { "x": 720, "y": -60, "anchor": "bottom-left" } }
     ]
 }
