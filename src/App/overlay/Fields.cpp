@@ -128,16 +128,15 @@ double time_of_day(OverlaySource const &source, double timestamp)
 // The values during a pause, or with the signal lost, from the last
 // record's: not moving, and not measuring. Distance, altitude, grade and
 // lap stay as they were, and the clocks are worked out from the time.
-void paused(FieldValues &values)
+void paused(FieldValues &values, OverlaySource const &source)
 {
     auto const set = [&values](OverlayField field, std::optional<double> value) {
         values.values[static_cast<size_t>(field)] = value;
     };
-    // A field the record doesn't have stays missing: no power meter, no 0 W.
+    // No power meter, no 0 W: but one that dropped out just before the
+    // pause is 0 W in it.
     for (auto const field : { OverlayField::speed, OverlayField::power, OverlayField::cadence }) {
-        if (values[field]) {
-            set(field, 0.0);
-        }
+        set(field, source.has(field) ? std::optional { 0.0 } : std::nullopt);
     }
     for (auto const field : { OverlayField::heart_rate, OverlayField::temperature, OverlayField::lr_balance }) {
         set(field, std::nullopt);
@@ -345,6 +344,11 @@ OverlaySource::OverlaySource(Activity const &activity)
         profile.push_back(ProfilePoint { .distance = *r.distance, .altitude = *r.altitude - step });
         previous = &r;
     }
+    for (auto ix = 0uz; ix < activity.records.size(); ++ix) {
+        for (auto f = 0uz; f < OverlayFieldCount; ++f) {
+            recorded[f] = recorded[f] || field_value(*this, ix, static_cast<OverlayField>(f)).has_value();
+        }
+    }
 }
 
 namespace {
@@ -453,7 +457,7 @@ FieldValues values_at_time(OverlaySource const &source, double seconds)
             auto const from = time_of(records[earlier]);
             auto const span = time_of(records[later]) - from;
             if (span > MaxGap && at > from) {
-                paused(ret);
+                paused(ret, source);
             } else if (span > 0 && span <= MaxGap) {
                 auto const next = values_at_record(source, later);
                 auto const fraction = (at - from) / span;

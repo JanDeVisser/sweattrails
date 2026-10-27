@@ -106,6 +106,11 @@ struct OverlaySource {
     Activity const           *activity;
     i32                       utc_offset { 0 }; // Local time minus UTC, in seconds
     std::vector<ProfilePoint> profile { };      // The records with both, in order of distance
+    // The fields any record has: one the activity hasn't at all, such as
+    // power without a power meter, is missing throughout, also in a pause.
+    std::array<bool, OverlayFieldCount> recorded { };
+
+    [[nodiscard]] bool has(OverlayField field) const { return recorded[static_cast<size_t>(field)]; }
 };
 
 // The grade the layout shows if it doesn't say: over 30 m, so that a short

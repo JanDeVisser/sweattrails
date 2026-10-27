@@ -824,6 +824,25 @@ void test_grade_with_an_altitude_step_in_a_pause()
     CHECK_EQ(grade_of(values_at_time(source, 300)[OverlayField::grade]), "0.0");
 }
 
+// A power meter that drops out just before a pause: 0 W in it, since the
+// activity has power.
+void test_pause_after_a_dropout()
+{
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+    activity.segment.start_time.timestamp = Start;
+    activity.records.push_back(record { .timestamp = DateTime { .timestamp = Start }, .cadence = 90, .speed = 8.0f, .power = 200 });
+    activity.records.push_back(record { .timestamp = DateTime { .timestamp = Start + 1 }, .speed = 8.0f });
+    activity.records.push_back(record { .timestamp = DateTime { .timestamp = Start + 60 }, .speed = 8.0f, .power = 210 });
+    OverlaySource const source { activity };
+    CHECK(source.has(OverlayField::power));
+    CHECK(!source.has(OverlayField::heart_rate));
+    auto const values = values_at_time(source, 30);
+    CHECK_EQ(value_of(values, OverlayField::power), "0");
+    CHECK_EQ(value_of(values, OverlayField::cadence), "0");
+    CHECK_EQ(value_of(values, OverlayField::heart_rate), "none");
+}
+
 }
 
 int main()
@@ -869,5 +888,6 @@ int main()
     test_grade_with_gaps_in_the_records();
     test_grade_at_the_ends();
     test_grade_with_an_altitude_step_in_a_pause();
+    test_pause_after_a_dropout();
     return ST::Test::test_result();
 }
