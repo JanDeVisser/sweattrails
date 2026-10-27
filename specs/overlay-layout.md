@@ -135,6 +135,10 @@ The same two shapes are used everywhere a line or an area is drawn:
 So `graph.line`, `profile.done.line`, `map.track.done` and `border` are all
 strokes; `graph.fill` and `profile.done.fill` are fills.
 
+Every element can have a panel behind its box: `background` (a fill),
+`radius` for its corners, `border` (a stroke), and `padding`, which insets
+the content. See [overlay-gauge-graph.md](overlay-gauge-graph.md#panels).
+
 ### Positioning
 
 Every element has a box:
@@ -234,12 +238,14 @@ next to it.
   "size": { "width": 200, "height": 200 } }
 ```
 
-- `shape` is `bar` (horizontal), `vbar` or `arc`.
+- `shape` is `bar` (horizontal), `vbar` or `arc` (270°, open at the
+  bottom, filling clockwise).
 - `min` and `max` are one of:
-  - a number.
-  - `"auto"`: the field's range over the activity. Only fields that have a
-    computed range in `Segment` support this: `speed`, `power`, `cadence`,
-    `heart_rate` and `altitude`.
+  - a number, in the unit shown.
+  - `"auto"`: the field's range over the activity, from the records, for
+    any number field.
+- `color_by` colors the fill, as a `value`'s colors its number. See
+  [overlay-gauge-graph.md](overlay-gauge-graph.md) for bars' thickness.
   - *(deferred)* `{ "of": "ftp" | "max_hr", "factor": 1.5 }`, which needs the
     athlete profile.
 
@@ -257,8 +263,12 @@ next to it.
 
 - `x_axis` is `distance` or `time`.
 - `window: 60` shows a rolling 60-second trace ending at the current moment,
-  which suits heart rate or power. `window: "all"` shows the whole activity
-  with a cursor at the current position.
+  which suits heart rate or power; on a `distance` axis it's meters.
+  `window: "all"` shows the whole activity with a cursor at the current
+  position.
+- `min` and `max` are as for a gauge, `"auto"` by default, so the scale
+  doesn't move. Missing values break the line; each pixel column is the
+  average of its stretch. See [overlay-gauge-graph.md](overlay-gauge-graph.md).
 - For elevation, use the more specific `profile` element below.
 
 ### `profile`: elevation profile with the current position
