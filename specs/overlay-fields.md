@@ -1,6 +1,6 @@
 # Overlay fields
 
-Status: Draft
+Status: Ready
 
 ## Goal
 
