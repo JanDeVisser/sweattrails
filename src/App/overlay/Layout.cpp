@@ -31,7 +31,11 @@ constexpr Names TextStyleProperties { "font", "font_size", "color", "shadow" };
 constexpr Names BoxStyleProperties { "background", "radius", "padding", "border" };
 
 constexpr Names TextProperties { "text", "align" };
-constexpr Names ValueProperties { "field", "format", "unit", "unit_style", "missing", "color_by" };
+constexpr Names ValueProperties { "field", "format", "unit", "unit_style", "missing", "color_by", "window" };
+
+// Grade's window, in m: shorter is noise, longer smooths the ramps away.
+constexpr double ShortestWindow = 10;
+constexpr double LongestWindow = 200;
 
 constexpr Names LaterTypes { "gauge", "graph", "profile", "map", "image", "group" };
 
@@ -316,11 +320,45 @@ std::expected<std::string, LayoutError> value_spec(JSONValue const &json, Overla
     } else if (!spec.empty()) {
         return error(std::format("\"format\": `{}` isn't a format such as \"{{:.1f}}\"", format));
     }
-    // The duration specs, such as `hms`, come with the other fields.
-    if (field != OverlayField::elapsed && !is_valid_spec(spec)) {
+    if (!is_valid_spec(field, spec)) {
         return error(std::format("\"format\": `{}` isn't a format for {}", format, OverlayField_name(field)));
     }
     return std::string { spec };
+}
+
+std::expected<std::vector<Threshold>, LayoutError> color_by(JSONValue const &json, OverlayField field)
+{
+    auto const usage = std::string { "\"color_by\" needs \"thresholds\", such as [[0, \"#8ecae6\"], [150, \"#f94144\"]]" };
+    if (!json.is_object()) {
+        return error(usage);
+    }
+    TRY(check_properties(json, "\"color_by\"", { { "thresholds", "zones", "colors" } }));
+    if (json.get("zones")) {
+        return error("\"color_by\": zones need an athlete profile, which there isn't yet: give \"thresholds\"");
+    }
+    if (field_kind(field) != FieldKind::Number) {
+        return error(std::format("\"color_by\": {} isn't a number", OverlayField_name(field)));
+    }
+    auto const thresholds = json.get("thresholds");
+    if (!thresholds || !thresholds->is_array() || thresholds->size() == 0) {
+        return error(usage);
+    }
+    std::vector<Threshold> ret;
+    for (auto const &t : *thresholds) {
+        if (!t.is_array() || t.size() != 2) {
+            return error(usage);
+        }
+        auto const from = number_of(*t.get(0));
+        if (!from) {
+            return error(usage);
+        }
+        auto const c = TRY_EVAL(color(*t.get(1), "color_by"));
+        if (!ret.empty() && *from <= ret.back().from) {
+            return error("\"color_by\": the thresholds have to go up");
+        }
+        ret.push_back(Threshold { .from = *from, .color = c });
+    }
+    return ret;
 }
 
 std::expected<ValueElement, LayoutError> value_element(JSONValue const &json)
@@ -331,9 +369,6 @@ std::expected<ValueElement, LayoutError> value_element(JSONValue const &json)
         return error("a value needs a \"field\"");
     }
     auto const name = TRY_EVAL(string(*field, "field"));
-    if (is_later_field(name)) {
-        return error(std::format("\"field\": `{}` can't be shown as a value yet", name));
-    }
     auto const f = overlay_field(name);
     if (!f) {
         return error(std::format("\"field\": `{}` isn't a field", name));
@@ -362,6 +397,18 @@ std::expected<ValueElement, LayoutError> value_element(JSONValue const &json)
     if (auto const missing = json.get("missing"); missing) {
         ret.missing = TRY_EVAL(string(*missing, "missing"));
         ret.hide_when_missing = ret.missing == "hide";
+    }
+    if (auto const window = json.get("window"); window) {
+        if (ret.field != OverlayField::grade) {
+            return error("\"window\" is only for grade");
+        }
+        ret.window = TRY_EVAL(number(*window, "window"));
+        if (*ret.window < ShortestWindow || *ret.window > LongestWindow) {
+            return error(std::format("\"window\" is from {} to {} m", ShortestWindow, LongestWindow));
+        }
+    }
+    if (auto const c = json.get("color_by"); c) {
+        ret.thresholds = TRY_EVAL(color_by(*c, ret.field));
     }
     return ret;
 }
@@ -579,9 +626,60 @@ Vector2 place_in_box(Vector2 box, Vector2 size, Anchor anchor, std::optional<Ali
     return Vector2 { .x = x * (box.x - size.x), .y = fraction_y(anchor) * (box.y - size.y) };
 }
 
+Color threshold_color(std::vector<Threshold> const &thresholds, std::optional<double> shown, Color own)
+{
+    auto ret = own;
+    for (auto const &t : thresholds) {
+        if (shown && *shown >= t.from) {
+            ret = t.color;
+        }
+    }
+    return ret;
+}
+
+namespace {
+
+// The number as it's shown, rounded by its spec, so that the color goes
+// with what's read: 259.6 W shown as 260 is at a threshold of 260. A spec
+// whose text doesn't read back, such as with a fill, keeps the value.
+double as_shown(std::string_view text, double value)
+{
+    auto const start = text.find_first_not_of(" +");
+    auto const end = text.find_last_not_of(' ');
+    if (start == std::string_view::npos) {
+        return value;
+    }
+    text = text.substr(start, end + 1 - start);
+    double ret { 0 };
+    auto const [rest, error] = std::from_chars(text.data(), text.data() + text.size(), ret);
+    return (error == std::errc { } && rest == text.data() + text.size()) ? ret : value;
+}
+
+}
+
+std::optional<ShownValue> shown_value(ValueElement const &value, FieldValues const &values, Units units)
+{
+    // A grade over the element's own window, or the field as it is.
+    auto const number = value.window ? values.grade(*value.window) : values[value.field];
+    auto const has = value.window ? number.has_value() : values.has(value.field);
+    if (!has && value.hide_when_missing) {
+        return { };
+    }
+    auto const unit = value.unit.value_or(default_unit(value.field, units, values.sport));
+    auto const spec = value.spec.empty() ? default_spec(value.field) : std::string_view { value.spec };
+    auto       text = value.window ? format_field(value.field, number, unit, spec, value.missing) : format_value(values, value.field, unit, spec, value.missing);
+    auto const shown = number ? std::optional { as_shown(text, unit.shown(*number)) } : std::nullopt;
+    return ShownValue {
+        .number = std::move(text),
+        .unit = has ? std::string { unit.name } : std::string { },
+        .color = threshold_color(value.thresholds, shown, value.style.color),
+    };
+}
+
 std::set<int> layout_codepoints(OverlayLayout const &layout)
 {
-    std::set<int> ret;
+    // The units' degrees, °C and °F, which a layout doesn't spell out.
+    std::set<int> ret { 0xb0 };
     auto const    add = [&ret](std::string_view text) {
         for (auto const ch : to_wstring(text).value_or(std::wstring { })) {
             if (ch > 126) {

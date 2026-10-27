@@ -61,6 +61,8 @@ StorageResult<Storage> Storage::init(std::string_view const &app_name)
     ret.inbox_dir = TRY_EVAL(ensure_directory(ret.data_dir / "inbox"));
     ret.activity_dir = TRY_EVAL(ensure_directory(ret.data_dir / "activity"));
     ret.tiles_dir = TRY_EVAL(ensure_directory(ret.data_dir / "tiles"));
+    // Made at the start, so that it's there to be found.
+    ret.overlays_dir = TRY_EVAL(ensure_directory(ret.data_dir / "overlays"));
     return ret;
 }
 

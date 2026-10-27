@@ -54,6 +54,7 @@ struct Storage {
     fs::path inbox_dir { };
     fs::path activity_dir { };
     fs::path tiles_dir { };
+    fs::path overlays_dir { }; // The user's overlay layouts
     // std::optional<Strava> strava { };
 
     // Threading: the paths above don't change after init(), and can be used

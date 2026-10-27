@@ -297,6 +297,7 @@ sweattrails_test(scroll_test test/ScrollTest.cpp)
 sweattrails_test(table_test test/TableTest.cpp)
 sweattrails_test(text_line_test test/TextLineTest.cpp)
 sweattrails_test(colors_test test/ColorsTest.cpp)
+sweattrails_test(font_cache_test test/FontCacheTest.cpp)
 sweattrails_test(pick_box_test test/PickBoxTest.cpp)
 sweattrails_test(input_box_test test/InputBoxTest.cpp)
 sweattrails_test(key_binding_test test/KeyBindingTest.cpp)
@@ -410,6 +411,7 @@ target_link_libraries(layout_file_test PRIVATE ${CURL_LIBRARIES})
 sweattrails_test(
         overlay_render_test
         test/OverlayRenderTest.cpp
+        src/App/overlay/Fields.cpp
         src/App/overlay/Render.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Storage.cpp
@@ -426,6 +428,7 @@ sweattrails_test(
         encoder_test
         test/EncoderTest.cpp
         src/App/overlay/Encoder.cpp
+        src/App/overlay/Fields.cpp
         src/App/overlay/Render.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Storage.cpp

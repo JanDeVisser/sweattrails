@@ -33,6 +33,10 @@ OverlayPreview::OverlayPreview(pWidget const &parent)
 void OverlayPreview::set_activity(std::shared_ptr<DisplayedActivity> const &activity)
 {
     this->activity = activity;
+    source.reset();
+    if (activity) {
+        source.emplace(activity->activity);
+    }
 }
 
 void OverlayPreview::set_layout(std::filesystem::path const &path)
@@ -102,9 +106,13 @@ void OverlayPreview::draw()
         return;
     }
     auto const &layout = *file->layout;
-    if (activity) {
+    // Renamed since: the preview shows the new title.
+    if (activity && source && source->title != activity->activity.title) {
+        source.emplace(activity->activity);
+    }
+    if (activity && source) {
         BeginScissorMode(static_cast<int>(area.x), static_cast<int>(area.y), static_cast<int>(area.width), static_cast<int>(area.height));
-        renderer.draw(values_at_record(activity->activity, activity->current_record()), area);
+        renderer.draw(values_at_record(*source, activity->current_record()), area);
         EndScissorMode();
     }
     if (layout.skipped > 0) {

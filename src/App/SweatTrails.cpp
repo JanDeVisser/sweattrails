@@ -531,7 +531,7 @@ fs::path overlay_state_file(pSweatTrails const &sweattrails)
 // The built-in layouts, and the user's in the data directory.
 std::vector<LayoutEntry> overlay_layouts(pSweatTrails const &sweattrails)
 {
-    return overlay_layouts(fs::path { SWEATTRAILS_DATADIR } / "overlays", sweattrails->storage.data_dir / "overlays");
+    return overlay_layouts(fs::path { SWEATTRAILS_DATADIR } / "overlays", sweattrails->storage.overlays_dir);
 }
 
 std::optional<LayoutEntry> overlay_layout(pSweatTrails const &sweattrails, std::string_view name)

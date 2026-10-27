@@ -1,0 +1,45 @@
+// SweatTrails' built-in overlay layout for runs, and an example to copy: put
+// your own layouts in `overlays/` in SweatTrails' data folder, named
+// `<name>.overlay.json`. The format is in specs/overlay-layout.md.
+{
+    "version": 1,
+    "design_size": { "width": 1920, "height": 1080 },
+    "units": "metric",
+    "defaults": {
+        "font": "Inter-Bold.ttf",
+        "font_size": 72,
+        "color": "#ffffff",
+        "shadow": { "color": "#000000a0", "offset": [2, 2] }
+    },
+    "styles": {
+        "label": { "font": "Inter-Regular.ttf", "font_size": 24, "color": "#ffffffcc" },
+        "line": { "font_size": 40 }
+    },
+    "elements": [
+        // The distance and the times in the top left.
+        { "type": "text", "text": "{distance:.1f} {distance.unit}", "style": "line",
+          "at": { "x": 60, "y": 50 } },
+        { "type": "text", "text": "{elapsed}", "style": "line",
+          "at": { "x": 60, "y": 100 } },
+        // The time of day, to line the video up with the footage by.
+        { "type": "text", "text": "{time_of_day:hms}", "style": "label",
+          "at": { "x": 60, "y": 150 } },
+
+        // The values in the bottom left, each with a label above it.
+        { "type": "text", "text": "PACE", "style": "label",
+          "at": { "x": 60, "y": -150, "anchor": "bottom-left" } },
+        { "type": "value", "field": "pace", "unit_style": { "font": "Inter-Regular.ttf", "font_size": 32 },
+          "at": { "x": 60, "y": -60, "anchor": "bottom-left" } },
+
+        { "type": "text", "text": "HEART RATE", "style": "label",
+          "at": { "x": 420, "y": -150, "anchor": "bottom-left" } },
+        { "type": "value", "field": "heart_rate", "unit_style": { "font": "Inter-Regular.ttf", "font_size": 32 },
+          "at": { "x": 420, "y": -60, "anchor": "bottom-left" } },
+
+        { "type": "text", "text": "CADENCE", "style": "label",
+          "at": { "x": 720, "y": -150, "anchor": "bottom-left" } },
+        // Steps, also for a walk or a hike, which aren't runs.
+        { "type": "value", "field": "cadence", "unit": "spm", "unit_style": { "font": "Inter-Regular.ttf", "font_size": 32 },
+          "at": { "x": 720, "y": -60, "anchor": "bottom-left" } }
+    ]
+}

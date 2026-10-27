@@ -16,11 +16,14 @@
         "line": { "font_size": 40 }
     },
     "elements": [
-        // The distance and the time in the top left.
+        // The distance and the times in the top left.
         { "type": "text", "text": "{distance:.1f} {distance.unit}", "style": "line",
           "at": { "x": 60, "y": 50 } },
         { "type": "text", "text": "{elapsed}", "style": "line",
           "at": { "x": 60, "y": 100 } },
+        // The time of day, to line the video up with the footage by.
+        { "type": "text", "text": "{time_of_day:hms}", "style": "label",
+          "at": { "x": 60, "y": 150 } },
 
         // The values in the bottom left, each with a label above it.
         { "type": "text", "text": "SPEED", "style": "label",

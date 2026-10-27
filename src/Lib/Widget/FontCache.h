@@ -16,6 +16,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <raylib.h>
@@ -35,6 +36,11 @@ struct FontCache {
     // The characters besides ASCII that the fonts have. Different ones
     // unload the fonts, to be loaded again with them.
     void set_codepoints(std::set<int> extra);
+    // Adds the characters of `text` besides ASCII that the fonts don't
+    // have, such as those of an activity's title, which a layout can't
+    // know. Returns whether there were any: then the fonts are unloaded.
+    bool                               add_codepoints(std::string_view text);
+    [[nodiscard]] std::set<int> const &codepoints() const { return m_extra; }
 
     void clear();
 

@@ -59,6 +59,9 @@ void OverlayRenderer::draw(FieldValues const &values, Rectangle const &area)
         m_fonts.clear();
         m_scale = scale;
     }
+    // The title can have characters the layout doesn't, such as `ü`: the
+    // fonts are loaded again with them, once.
+    m_fonts.add_codepoints(values.title);
     for (auto const &element : m_layout->elements) {
         draw_element(element, values, area);
     }
@@ -121,24 +124,25 @@ void OverlayRenderer::draw_element(OverlayElement const &element, FieldValues co
     if (!f || !unit_font) {
         return;
     }
-    auto const number = values[value.field];
-    if (!number && value.hide_when_missing) {
+    auto const shown_as = shown_value(value, values, layout.units);
+    if (!shown_as) {
         return;
     }
-    auto const unit = value.unit.value_or(default_unit(value.field, layout.units, values.sport));
-    auto const spec = value.spec.empty() ? default_spec(value.field) : std::string_view { value.spec };
-    auto const shown = format_field(value.field, number, unit, spec, value.missing);
-    auto const unit_text = (number && !unit.name.empty()) ? std::string { unit.name } : std::string { };
-    auto const measured = MeasureTextEx(*f, shown.c_str(), static_cast<float>(f->baseSize), 0);
-    auto const unit_measured = unit_text.empty() ? Vector2 { } : MeasureTextEx(*unit_font, unit_text.c_str(), static_cast<float>(unit_font->baseSize), 0);
-    auto const gap = unit_text.empty() ? 0.0f : value.unit_style.font_size * scale * UnitGap;
-    auto const size = Vector2 { .x = measured.x + gap + unit_measured.x, .y = std::max(measured.y, unit_measured.y) };
-    auto const box_size = value.at.size ? Vector2 { .x = value.at.size->x * scale, .y = value.at.size->y * scale } : size;
-    auto const box = place(value.at, box_size, canvas_size, scale);
-    auto const in_box = place_in_box(box_size, size, value.at.anchor);
-    auto const at = Vector2 { .x = offset(box).x + in_box.x, .y = offset(box).y + in_box.y };
+    auto const &shown = shown_as->number;
+    auto const &unit_text = shown_as->unit;
+    auto const  measured = MeasureTextEx(*f, shown.c_str(), static_cast<float>(f->baseSize), 0);
+    auto const  unit_measured = unit_text.empty() ? Vector2 { } : MeasureTextEx(*unit_font, unit_text.c_str(), static_cast<float>(unit_font->baseSize), 0);
+    auto const  gap = unit_text.empty() ? 0.0f : value.unit_style.font_size * scale * UnitGap;
+    auto const  size = Vector2 { .x = measured.x + gap + unit_measured.x, .y = std::max(measured.y, unit_measured.y) };
+    auto const  box_size = value.at.size ? Vector2 { .x = value.at.size->x * scale, .y = value.at.size->y * scale } : size;
+    auto const  box = place(value.at, box_size, canvas_size, scale);
+    auto const  in_box = place_in_box(box_size, size, value.at.anchor);
+    auto const  at = Vector2 { .x = offset(box).x + in_box.x, .y = offset(box).y + in_box.y };
     // The number and its unit stand on the same line, at the bottom.
-    draw_text(*f, shown, Vector2 { .x = at.x, .y = at.y + size.y - measured.y }, value.style);
+    // Only the number takes the color of its threshold, not the unit.
+    auto style = value.style;
+    style.color = shown_as->color;
+    draw_text(*f, shown, Vector2 { .x = at.x, .y = at.y + size.y - measured.y }, style);
     if (!unit_text.empty()) {
         draw_text(*unit_font, unit_text, Vector2 { .x = at.x + measured.x + gap, .y = at.y + size.y - unit_measured.y }, value.unit_style);
     }
