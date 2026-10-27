@@ -1,6 +1,6 @@
 # Overlay fields
 
-Status: Ready
+Status: In progress
 
 ## Goal
 
@@ -121,6 +121,8 @@ mostly for power and heart rate, which have no imperial units.
 
 - Only the number changes color. The unit keeps its `unit_style`.
 - A missing value has the element's own color.
+- Only numbers have `color_by`, not durations such as pace, times,
+  dates, the balance or the title.
 - Only `value` elements have `color_by`. A `text` template can have
   several fields, so it's not clear which would pick the color. A
   `color_by` on a `text` is an error.
@@ -144,7 +146,8 @@ thresholds, `grade`'s `window`, and the built-in layouts.
 
 *(Deferred)*, as in the reference: `power_wkg`, `f.avg`, `f.max` and
 `f.lap_avg`, `color_by` zones, `smooth`, `interpolate: false`, and
-`max_gap` as a setting. Also the device's `record.grade`.
+`max_gap` as a setting. Also the device's `record.grade`. And `color_by` on
+pace, whose thresholds would need a syntax of their own (`"4:30"`).
 
 ## Open questions
 
@@ -152,11 +155,124 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+The fields stay in `overlay/Fields`, the layout's new properties in
+`overlay/Layout`, and the drawing in `overlay/Renderer`. Nothing goes into
+the Widget library: there are no new widgets.
+
+### Fields and their kinds
+
+- **`OVERLAYFIELDS`** gets the nine new fields, and `is_later_field()`
+  goes, with the "can't be shown as a value yet" error: every field in the
+  reference's table now exists. A name that isn't one, such as
+  `power.avg`, is the usual "isn't a field".
+- **`FieldKind`**, per field, says how it's formatted and which specs it
+  takes:
+
+  | Kind       | Fields                                                  | Specs                     |
+  |------------|---------------------------------------------------------|---------------------------|
+  | `Number`   | speed, power, heart_rate, cadence, distance, altitude, grade, temperature, lap | `std::format` |
+  | `Duration` | elapsed, pace                                           | `hms`, `ms` (pace: `ms`)  |
+  | `Clock`    | time_of_day                                             | `hm`, `hms`               |
+  | `Date`     | date                                                    | `std::chrono` specs       |
+  | `Balance`  | lr_balance                                              | `std::format`, both sides |
+  | `Text`     | title                                                   | none                      |
+
+  `is_valid_spec(field, spec)` checks a spec for the field's kind, where it
+  only checked number specs; the template parser and `value_spec()` use
+  it, and lose their special case for `elapsed`.
+- **Values stay doubles** in `FieldValues`, in a base unit, so that
+  interpolation works as it does: pace in s/m, altitude in m, grade in %,
+  temperature in °C, `lr_balance` as the right leg's share, `time_of_day`
+  in seconds since local midnight, `date` as local seconds since the
+  epoch, `lap` from 1. `title` is the one text: `FieldValues` gets a
+  `std::string title`.
+- **`FieldUnit`** gets an `offset`, for °F (`× 1.8 + 32`).
+- **`format_field()`** formats by kind: durations `h:mm:ss` or `m:ss`,
+  clocks `HH:MM` or `HH:MM:SS`, dates with `std::chrono` from a
+  `sys_seconds` that's already local, balance as `48/52`.
+
+### An activity prepared for the overlay
+
+- **`OverlaySource`** (`overlay/Fields.h`), made once from an `Activity`:
+  the activity, its local offset (the `utc_offset`, or the system's time
+  zone, which `activity_clock()` in `Render.cpp` then uses too, rather
+  than working it out again), and the profile for `grade`: the records'
+  `(distance, altitude)` where they have both, in order.
+- `values_at_time()` and `values_at_record()` take an `OverlaySource`
+  rather than an `Activity`. The preview keeps one for the activity it
+  shows, and makes it again when the activity changes; a render makes one
+  when it starts.
+- **Pauses**: `values_at_time()` already knows when the two records around
+  the moment are more than 5 s apart. It now applies the pause table
+  there, rather than holding the earlier record's values.
+- **`lap`** is the lap of the record before the moment, never
+  interpolated. **`time_of_day`** and **`date`** come from the moment's
+  time, not from records.
+- **`grade_at(source, distance, window)`**: binary searches on the
+  profile's distance for `distance ± window / 2`, interpolates the
+  altitude at both, and divides. A pause adds no distance, so a window
+  with a pause in it reaches past it by itself, and during a pause, with
+  the distance held, the grade is held too. Missing at the ends, and
+  without a profile. No per-window table is precomputed: it's two binary
+  searches a frame.
+- **`FieldValues::grade(window)`**, for a `value` element with a
+  `window`: the frame's `FieldValues` keeps the source and the distance,
+  and `values[grade]` is `grade(30)`.
+
+### The layout
+
+- **`ValueElement`** gets `std::optional<double> window` (10 to 200, only
+  for `grade`: an error on another field) and
+  `std::vector<Threshold> thresholds`, from `color_by`.
+- **`color_by`** takes `thresholds`, a list of `[value, color]`, in
+  increasing order, with `parse_color()`. Only for `Number` fields: a
+  duration, a clock, a date, a balance or a title has no value to
+  compare. Pace zones, with thresholds as `"4:30"`, are *(deferred)*.
+  A `color_by` with `zones` says zones need an athlete profile,
+  which there isn't yet. On a `text` element it's an error, as the
+  Feature says.
+- **`threshold_color(thresholds, shown, own)`**: the color of the last
+  threshold at or below the shown value, else the element's own.
+
+### Drawing
+
+- The renderer colors the number by `threshold_color()`, and leaves the
+  unit in `unit_style`.
+- **Characters the layout can't know**: a title can have any character,
+  `Rückweg`, which the fonts weren't loaded with, since
+  `layout_codepoints()` only has the layout's own text. The renderer looks
+  at the text it's about to draw, and if it has characters the fonts
+  don't, adds them and loads the fonts again. That happens once per new
+  character, so once per activity at most. `layout_codepoints()` adds the
+  default units' characters, `°C` and `°F`.
+
+### Built-in layouts and the README
+
+- `share/overlays/running-basic.overlay.json`, and `time_of_day` in
+  `cycling-basic`.
+- The README's overlay section lists the fields, formats and `color_by`.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `OverlayFieldsTest`:
+  - each new field from records: pace (and missing below 1 km/h),
+    altitude, temperature, `lr_balance` (the right-leg bit, `0xff`, no
+    bit), `lap` (with and without laps), `title`, `date`, `time_of_day`
+    with and without `utc_offset`;
+  - formats: `elapsed` in `hms` and `ms`, pace, clocks, dates, balance,
+    °F, and the specs each kind refuses;
+  - the pause table, field by field, in a gap;
+  - `grade_at()`: a known climb, a short window keeping a steep ramp
+    that 100 m flattens, a pause in the window, the ends, no altitude.
+- `OverlayLayoutTest`: `window` (range, only on grade), `color_by`
+  (thresholds, order, colors, zones, on a text, on a non-number field),
+  `threshold_color()`, the units' codepoints, and fields that used to be
+  "later" now decoding.
+- `LayoutFileTest`: `running-basic` decodes, like `cycling-basic`.
+- `OverlayRenderTest`: `activity_clock()` still passes on the shared
+  offset.
+- By hand: the preview of a ride with a climb, and of a run, with
+  `running-basic`; a title with an accent; a render through a pause.
 
 ## Review notes
 
