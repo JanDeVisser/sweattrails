@@ -439,6 +439,30 @@ target_include_directories(encoder_test PRIVATE src/App)
 target_link_libraries(encoder_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
+        overlay_render_start_test
+        test/OverlayRenderStartTest.cpp
+        src/App/overlay/Encoder.cpp
+        src/App/overlay/Fields.cpp
+        src/App/overlay/Layout.cpp
+        src/App/overlay/LayoutFile.cpp
+        src/App/overlay/OverlayRender.cpp
+        src/App/overlay/Render.cpp
+        src/App/overlay/Renderer.cpp
+        src/App/overlay/Template.cpp
+        src/App/widget/DisplayedActivity.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(overlay_render_start_test PRIVATE src/App)
+target_compile_definitions(overlay_render_start_test PRIVATE SWEATTRAILS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+target_link_libraries(overlay_render_start_test PRIVATE ${CURL_LIBRARIES} OpenGL::GL)
+
+sweattrails_test(
         displayed_activity_test
         test/DisplayedActivityTest.cpp
         src/App/widget/DisplayedActivity.cpp

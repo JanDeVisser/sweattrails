@@ -109,7 +109,10 @@ void OverlayRender::stop()
     if (over()) {
         return;
     }
-    m_encoder->stop();
+    // A render that couldn't start has no encoder.
+    if (m_encoder) {
+        m_encoder->stop();
+    }
     m_result = std::unexpected("Stopped");
 }
 
