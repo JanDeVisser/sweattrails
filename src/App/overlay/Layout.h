@@ -78,6 +78,12 @@ struct TextElement {
     std::optional<Align> align { }; // As the anchor if none
 };
 
+// `color_by`'s: from the value up, in the unit shown, the number's color.
+struct Threshold {
+    double from { 0 };
+    Color  color { WHITE };
+};
+
 struct ValueElement {
     size_t                   number { 0 }; // Its place in the layout's elements, from 1
     Placement                at { };
@@ -88,6 +94,8 @@ struct ValueElement {
     std::optional<FieldUnit> unit { }; // The layout's units if none
     std::string              missing { "--" };
     bool                     hide_when_missing { false };
+    std::optional<double>    window { };     // Grade's, in m; DefaultGradeWindow if none
+    std::vector<Threshold>   thresholds { }; // Going up
 };
 
 using OverlayElement = std::variant<TextElement, ValueElement>;
@@ -124,6 +132,20 @@ Rectangle place(Placement const &at, Vector2 size, Vector2 canvas, float scale);
 // A text's `align` picks the horizontal place instead. Relative to the
 // box's top left corner.
 Vector2 place_in_box(Vector2 box, Vector2 size, Anchor anchor, std::optional<Align> align = { });
+
+// What a value element shows for the frame's values: the number, its unit,
+// and the number's color, by `color_by`. Nothing if it's missing and hides.
+struct ShownValue {
+    std::string number { };
+    std::string unit { }; // Empty when missing
+    Color       color { WHITE };
+};
+
+std::optional<ShownValue> shown_value(ValueElement const &value, FieldValues const &values, Units units);
+
+// The color of the last threshold at or below `shown`; else, or without a
+// value, `own`.
+Color threshold_color(std::vector<Threshold> const &thresholds, std::optional<double> shown, Color own);
 
 // The element's place in the layout's elements, from 1, counting those
 // that were skipped.

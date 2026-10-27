@@ -8,6 +8,7 @@
 
 #include <format>
 #include <string>
+#include <vector>
 
 #include <JSON.h>
 
@@ -443,6 +444,132 @@ void test_place_in_box()
     // Content as big as the box fills it.
     CHECK_EQ(std::format("{}", place_in_box(box, box, Anchor::BottomRight).x), "0");
 }
+// The units' degrees are there, though the layout doesn't spell them out.
+void test_codepoints_of_units()
+{
+    auto const layout = decode(with_element(R"({ "type": "value", "field": "temperature" })"));
+    CHECK(layout.has_value());
+    if (layout) {
+        CHECK(layout_codepoints(*layout).contains(0xb0));
+    }
+}
+
+void test_grade_window()
+{
+    auto const layout = decode(with_element(R"({ "type": "value", "field": "grade", "window": 20 })"));
+    CHECK(layout.has_value());
+    if (layout) {
+        CHECK_EQ(std::get<ValueElement>(layout->elements[0]).window.value_or(0), 20.0);
+    }
+    CHECK_EQ(error_of(with_element(R"({ "type": "value", "field": "speed", "window": 20 })")), "element 1: \"window\" is only for grade");
+    CHECK_EQ(error_of(with_element(R"({ "type": "value", "field": "grade", "window": 5 })")), "element 1: \"window\" is from 10 to 200 m");
+    CHECK_EQ(error_of(with_element(R"({ "type": "value", "field": "grade", "window": 201 })")), "element 1: \"window\" is from 10 to 200 m");
+    CHECK_EQ(error_of(with_element(R"({ "type": "value", "field": "grade", "window": "short" })")), "element 1: \"window\" isn't a number");
+}
+
+void test_color_by()
+{
+    auto const layout = decode(with_element(R"({ "type": "value", "field": "power",
+        "color_by": { "thresholds": [[0, "#8ecae6"], [220, "#f9c74f"], [260, "#f94144"]] } })"));
+    CHECK(layout.has_value());
+    if (!layout) {
+        return;
+    }
+    auto const &value = std::get<ValueElement>(layout->elements[0]);
+    CHECK_EQ(value.thresholds.size(), 3uz);
+    if (value.thresholds.size() == 3) {
+        CHECK_EQ(value.thresholds[1].from, 220.0);
+        CHECK_EQ(show(value.thresholds[2].color), "249 65 68 255");
+    }
+}
+
+void test_color_by_errors()
+{
+    auto const value = [](std::string_view field, std::string_view color_by) {
+        return error_of(with_element(std::format(R"({{ "type": "value", "field": "{}", "color_by": {} }})", field, color_by)));
+    };
+    auto const usage = std::string { "element 1: \"color_by\" needs \"thresholds\", such as [[0, \"#8ecae6\"], [150, \"#f94144\"]]" };
+    CHECK_EQ(value("power", "[]"), usage);
+    CHECK_EQ(value("power", "{}"), usage);
+    CHECK_EQ(value("power", R"({ "thresholds": [] })"), usage);
+    CHECK_EQ(value("power", R"({ "thresholds": [[0]] })"), usage);
+    CHECK_EQ(value("power", R"({ "thresholds": [["0", "#ffffff"]] })"), usage);
+    CHECK_EQ(value("power", R"({ "thresholds": [[0, "red"]] })"),
+        "element 1: \"color_by\": `red` isn't a color: give one as \"#rrggbb\" or \"#rrggbbaa\"");
+    CHECK_EQ(value("power", R"({ "thresholds": [[200, "#ffffff"], [100, "#000000"]] })"), "element 1: \"color_by\": the thresholds have to go up");
+    CHECK_EQ(value("power", R"({ "thresholds": [[200, "#ffffff"], [200, "#000000"]] })"), "element 1: \"color_by\": the thresholds have to go up");
+    CHECK_EQ(value("heart_rate", R"({ "zones": "hr", "colors": ["#ffffff"] })"),
+        "element 1: \"color_by\": zones need an athlete profile, which there isn't yet: give \"thresholds\"");
+    CHECK_EQ(value("power", R"({ "thresholds": [[0, "#ffffff"]], "steps": 3 })"), "element 1: \"steps\" isn't a property of \"color_by\"");
+    // Only numbers: not a duration, such as pace, a clock, a date, a balance or the title.
+    for (auto const field : { "pace", "elapsed", "time_of_day", "date", "lr_balance", "title" }) {
+        CHECK_EQ(value(field, R"({ "thresholds": [[0, "#ffffff"]] })"), std::format("element 1: \"color_by\": {} isn't a number", field));
+    }
+    // Only values.
+    CHECK_EQ(error_of(with_element(R"({ "type": "text", "text": "{power}", "color_by": { "thresholds": [[0, "#ffffff"]] } })")),
+        "element 1: \"color_by\" isn't a property of a text");
+}
+
+void test_threshold_color()
+{
+    std::vector<Threshold> const thresholds { { .from = 100, .color = RED }, { .from = 200, .color = BLUE } };
+    CHECK_EQ(show(threshold_color(thresholds, 50.0, WHITE)), show(WHITE));
+    CHECK_EQ(show(threshold_color(thresholds, 100.0, WHITE)), show(RED));
+    CHECK_EQ(show(threshold_color(thresholds, 199.9, WHITE)), show(RED));
+    CHECK_EQ(show(threshold_color(thresholds, 250.0, WHITE)), show(BLUE));
+    CHECK_EQ(show(threshold_color(thresholds, std::nullopt, WHITE)), show(WHITE));
+    CHECK_EQ(show(threshold_color({ }, 250.0, WHITE)), show(WHITE));
+}
+
+// What a value element shows: in the unit shown, colored by it, the unit
+// in its own color; a grade over its own window.
+void test_shown_value()
+{
+    auto const layout = decode(R"({ "elements": [
+        { "type": "value", "field": "speed", "color": "#ffffff",
+          "color_by": { "thresholds": [[30, "#ff0000"]] } },
+        { "type": "value", "field": "power", "missing": "hide" },
+        { "type": "value", "field": "title" }
+    ] })");
+    CHECK(layout.has_value());
+    if (!layout) {
+        return;
+    }
+    FieldValues values { .title = "Col du Galibier" };
+    values.values[static_cast<size_t>(OverlayField::speed)] = 10.0; // 36 km/h, 22.4 mph
+    auto const &speed = std::get<ValueElement>(layout->elements[0]);
+    auto const  metric = shown_value(speed, values, Units::Metric);
+    CHECK(metric.has_value());
+    if (metric) {
+        CHECK_EQ(metric->number, "36.0");
+        CHECK_EQ(metric->unit, "km/h");
+        CHECK_EQ(show(metric->color), "255 0 0 255");
+    }
+    // 30 is in mph now: below it.
+    auto const imperial = shown_value(speed, values, Units::Imperial);
+    CHECK(imperial.has_value());
+    if (imperial) {
+        CHECK_EQ(imperial->number, "22.4");
+        CHECK_EQ(show(imperial->color), "255 255 255 255");
+    }
+    CHECK(!shown_value(std::get<ValueElement>(layout->elements[1]), values, Units::Metric).has_value());
+    auto const title = shown_value(std::get<ValueElement>(layout->elements[2]), values, Units::Metric);
+    CHECK(title.has_value());
+    if (title) {
+        CHECK_EQ(title->number, "Col du Galibier");
+        CHECK_EQ(title->unit, "");
+    }
+    // Missing: the missing text, no unit, the element's color.
+    values.values[static_cast<size_t>(OverlayField::speed)].reset();
+    auto const missing = shown_value(speed, values, Units::Metric);
+    CHECK(missing.has_value());
+    if (missing) {
+        CHECK_EQ(missing->number, "--");
+        CHECK_EQ(missing->unit, "");
+        CHECK_EQ(show(missing->color), "255 255 255 255");
+    }
+}
+
 }
 
 int main()
@@ -466,5 +593,11 @@ int main()
     test_value_formats();
     test_sizes();
     test_codepoints();
+    test_codepoints_of_units();
+    test_grade_window();
+    test_color_by();
+    test_color_by_errors();
+    test_threshold_color();
+    test_shown_value();
     return ST::Test::test_result();
 }
