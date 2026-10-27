@@ -153,9 +153,11 @@ place of the data panel and the map, at the moment marked in the graph,
 and Ctrl+Shift+O picks the layout. A layout is a JSON file that says
 what's shown where; the built-in ones,
 `share/overlays/cycling-basic.overlay.json` and `running-basic`, are a good
-start for your own. Put those in `overlays/` in SweatTrails' data folder
+start for your own. Put those in the `overlays` folder in SweatTrails'
+data folder, which the app makes when it starts
 (`~/Library/Application Support/sweattrails/overlays` on macOS), named
-`<name>.overlay.json`: the preview shows a change as soon as it's saved.
+`<name>.overlay.json`: the preview shows a change as soon as it's saved,
+and one named like a built-in layout replaces it.
 The format is in `specs/overlay-layout.md`.
 
 A `text` element shows a template, such as `"{speed:.1f} {speed.unit}"`,
