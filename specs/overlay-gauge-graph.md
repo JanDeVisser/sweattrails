@@ -168,7 +168,9 @@ for a video, and in the Widget library's `App` for the window.
 - **Defaults**, for what an element doesn't say: a gauge's `fill` is its
   `color`, its `track` the color at a fifth of its alpha; a graph's `line`
   is its `color`, 2 px wide; no graph `fill` and no `cursor` unless asked
-  for.
+  for, and a cursor without a color is the line's. A graph without a
+  `window` shows `"all"`. Gauges and graphs take `color` but no other text
+  style, and have no fonts: `element_fonts()` says which an element has.
 - **Errors**: a gauge or a graph needs a `size`; its field has to be a
   number (as for `color_by`: not pace, see Version 1 scope); `min` has to be below `max`; `window` is
   more than 0, or `"all"`.
@@ -181,9 +183,16 @@ No raylib drawing, so that tests reach it all:
   text or value without a `size`, the box is the content plus the padding.
 - **`gauge_fraction(shown, min, max)`**: 0 to 1, clamped; none when
   missing.
+- **`shown_bounds(source, field, unit, min, max)`**: the element's
+  bounds, or the activity's range in the unit shown for `"auto"`; none if
+  the activity hasn't got the field. Bounds that meet, such as a field
+  that never changes, are 1 apart rather than dividing by 0.
 - **`bar_rects(content, shape, thickness, fraction)`**: the track's and
   the fill's rectangles, centred across, filling from the left or the
   bottom.
+- **`arc_ring(content, thickness)`**: the arc's centre and radii, as big
+  as fits. An arc without a `thickness` is a fifth of its radius thick,
+  as the spec gives no default for arcs.
 - **`arc_angles(fraction)`**: in raylib's degrees (0 is to the right,
   clockwise on screen), from 135°, the bottom left, over 270°.
 - **`graph_columns(source, element, now, columns)`**: one value a pixel
@@ -193,7 +202,13 @@ No raylib drawing, so that tests reach it all:
     the whole activity for `"all"`; before the start it's empty;
   - the average of the records in the stretch, or the value at its
     middle when there are none, as in a pause or a stretch shorter than a
-    record, which is what most rolling windows have.
+    record, which is what most rolling windows have;
+  - the last column takes the record at its end too, which is the
+    activity's last with `"all"`.
+- **`graph_now(graph, values)`**: the frame's `elapsed` or `distance`, and
+  **`graph_position(source, graph, now)`**: where the cursor goes, from 0
+  to 1, at the right edge of a rolling window and moving along with
+  `"all"`.
 - **`graph_y(value, min, max, content)`**: where a value goes, clamped
   to the box.
 
@@ -202,13 +217,20 @@ No raylib drawing, so that tests reach it all:
 - **`OverlaySource::range(field)`**, for `"auto"`: the lowest and highest
   value over the records, in the base unit, worked out once with the
   rest of the source. The unit converts both ends, since every unit only
-  multiplies and adds.
+  multiplies and adds. A field has a range if a record has it, so the
+  ranges replace the `recorded` flags, and `has()` reads them.
+- `field_value()` gives a record's grade, over the default window, so
+  that grade has a range and can be graphed like the other fields.
+- **`OverlaySource::mileage`**: the records with a distance, in order of
+  it, as the profile is. A graph on a distance axis searches it for a
+  column's records, and for the time at a column's middle.
 
 ### Drawing
 
-- The renderer draws an element's panel first: `DrawRectangleRounded()`
-  and `DrawRectangleRoundedLinesEx()`, with raylib's roundness worked out
-  from the radius, then its content in the content box.
+- The renderer has a `draw()` per element type. Each draws its panel
+  first: `DrawRectangleRounded()` and `DrawRectangleRoundedLinesEx()`,
+  with raylib's roundness worked out from the radius, then its content in
+  the content box.
 - Gauges: `DrawRectangleRec()` for bars, `DrawRing()` for the arc. Graphs:
   the area under each unbroken run as triangles, the run as
   `DrawSplineLinear()`, which has a width, and the cursor as a circle.
@@ -219,7 +241,10 @@ No raylib drawing, so that tests reach it all:
   the output's size, and that, with bilinear filtering, into one of the
   output's size, which averages each 2×2 block; that's what's read back.
   The colors are premultiplied, which is what filtering needs; the copy
-  uses raylib's premultiplied blend. The fonts load at the doubled size
+  uses raylib's premultiplied blend, which onto the cleared frame copies
+  them. Measured at 1080p: 300 frames of the dashboard took 3.5 s with
+  the doubled texture and without, since ffmpeg's encoding is what limits
+  a render. The fonts load at the doubled size
   by themselves, since the renderer scales to its area. At 4K the large
   texture is 7680×4320, within the 16384 textures can be.
 - **Window**: `App::create()` asks for 4× multisampling before
@@ -229,7 +254,8 @@ No raylib drawing, so that tests reach it all:
 ### Built-in layout and README
 
 - `share/overlays/cycling-dashboard.overlay.json`, and the README's
-  overlay section shows a gauge, a graph and a panel.
+  overlay section shows a gauge, a graph and a panel. Until groups come,
+  a panel behind several elements is a `text` without text, with a size.
 
 ## Test plan
 
