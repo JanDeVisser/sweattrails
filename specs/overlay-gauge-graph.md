@@ -277,4 +277,55 @@ No raylib drawing, so that tests reach it all:
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: the last column can miss the activity's last record.**
+   `graph_columns()` (`src/App/overlay/Shapes.cpp:208`) ends the last
+   column at `left + width`, which is `from + (columns - 1) * width +
+   width`. In floating point that's often a hair less than `to`, and then
+   `before_end()`'s `x == to` is false for the last record. Example: 3 s
+   in 7 columns ends at 2.9999999999999996. For "all" at 400 columns this
+   happens for about 1 activity length in 6 (3458 of the lengths from 100
+   to 20000 s). Then the last column averages without the last record, or,
+   if that was its only record, falls back to the value at its middle.
+   Example: 807 W where the last record is 1000 W. A rolling window loses
+   the record at `now` in the same way. Fix: end the last column at `to`
+   itself (`ix == columns - 1 ? to : left + width`). Test:
+   `test_all_takes_the_last_record` in `test/OverlayShapesTest.cpp`,
+   fails.
+   *Resolved:* the last column ends at `to` (d7024d0).
+2. **Bug: a `window` in the defaults breaks every value that isn't
+   grade.** `value_element()` (`src/App/overlay/Layout.cpp:443`) checks
+   the cascaded JSON, so `"defaults": { "window": 60 }`, meant for the
+   graphs, fails the layout with `element 2: "window" is only for grade` at
+   the first speed or power value. `element()`'s comment says the reverse:
+   properties from the defaults and styles may be for elements of another
+   type. The code was there before this branch, but the graph is what makes
+   a `window` in the defaults likely. It also works the other way round: a
+   grade window in the defaults, in meters, becomes every graph's window,
+   in seconds. Fix: check "only for grade" against the element's own
+   properties, and have a non-grade value ignore a `window` it inherits.
+   The overlap of meters and seconds is maybe a question for the layout
+   reference. Test: `test_graph_window_in_the_defaults` in
+   `test/OverlayLayoutTest.cpp`, fails.
+   *Resolved:* only a `window` the value gives itself has to be for
+   grade, and other values ignore an inherited one; the test also checks
+   that a grade value still inherits it (4d2df53). Grade and graphs keep
+   sharing the property name for now.
+3. **Suggestion: move the box size with padding into Shapes.** The
+   architecture puts "for a text or value without a `size`, the box is the
+   content plus the padding" in `content_box()`. It's in
+   `OverlayRenderer::box_size()` (`src/App/overlay/Renderer.cpp:111`)
+   instead, a private member that no test can reach. A free function next
+   to `content_box()` in `Shapes.h` would make it testable.
+   *Resolved:* `box_size()` is in `Shapes.h`, with `test_box_size`
+   (091a93c).
+4. **Suggestion: make `Axis` a struct.** `Axis` in
+   `src/App/overlay/Shapes.cpp:90` is a `class`. `STYLE.md` asks for
+   `struct`. *Resolved* (4e6263c).
+5. **Missing tests, now added (they pass):** "all" on a distance axis
+   through the pause, a rolling distance window at the start, and graphing
+   grade, in `test/OverlayShapesTest.cpp`. *Committed* with the fix for 1.
+
+I couldn't check the 2x supersampling in `OverlayRender`, the vertical
+flip, or the MSAA hint without a GPU context. They need the hand test.
+The Developer rendered frames of the dashboard through `OverlayRender` in
+a hidden window: upright, blended right, and with smooth edges.
