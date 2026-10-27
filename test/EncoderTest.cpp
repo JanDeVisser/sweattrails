@@ -6,11 +6,16 @@
  * The encoder, with /bin/sh standing in for ffmpeg.
  */
 
+#include <cerrno>
+#include <chrono>
 #include <filesystem>
 #include <format>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <fcntl.h>
+#include <sys/wait.h>
 
 #include <IO.h>
 
@@ -158,6 +163,24 @@ void test_stop_by_destructor()
     CHECK(!fs::exists(output));
 }
 
+// A file the app has open, without close-on-exec, isn't the program's.
+void test_no_files_inherited()
+{
+    Test::TempDir dir { "encoder-inherit" };
+    auto const    output = dir.path / "out.raw";
+    auto const    fd = ::open((dir.path / "open").c_str(), O_WRONLY | O_CREAT, 0644);
+    CHECK(fd >= 0);
+    auto const script = std::format("if [ -e /dev/fd/{} ]; then echo inherited >&2; exit 1; fi; exec cat > \"$1\"", fd);
+    auto       encoder = started({ "-c", script, "sh", output.string() }, output, 4);
+    CHECK(encoder->write(encoder->buffer()));
+    auto const finished = encoder->finish();
+    CHECK(finished.has_value());
+    if (!finished) {
+        CHECK_EQ(finished.error(), "<none>");
+    }
+    ::close(fd);
+}
+
 void test_no_program()
 {
     auto const encoder = Encoder::start("/nowhere/ffmpeg", { }, "/tmp/never.mov", 4);
@@ -165,6 +188,87 @@ void test_no_program()
     if (!encoder) {
         CHECK(encoder.error().starts_with("Can't start ffmpeg"));
     }
+}
+
+// The file descriptors the test has open.
+int open_fds()
+{
+    auto ret { 0 };
+    for (auto fd = 0; fd < 1024; ++fd) {
+        if (::fcntl(fd, F_GETFD) != -1) {
+            ++ret;
+        }
+    }
+    return ret;
+}
+
+// Whether the encoder left a child behind, as a zombie or still running.
+bool has_children()
+{
+    return !(::waitpid(-1, nullptr, WNOHANG) == -1 && errno == ECHILD);
+}
+
+// Finishing, failing and stopping close the pipe, and wait for the
+// program. Reviewer's test.
+void test_no_leaks()
+{
+    Test::TempDir dir { "encoder-leaks" };
+    auto const    fds = open_fds();
+    {
+        auto encoder = started({ "-c", "exec cat > \"$1\"", "sh", (dir.path / "a.raw").string() }, dir.path / "a.raw", 16);
+        CHECK(encoder->write(numbered(*encoder, 1)));
+        CHECK(encoder->finish().has_value());
+    }
+    CHECK_EQ(open_fds(), fds);
+    CHECK(!has_children());
+    {
+        auto encoder = started({ "-c", "exit 3" }, dir.path / "b.mov", 1 << 20);
+        for (auto n = 0; n < 10 && encoder->write(encoder->buffer()); ++n) { }
+        CHECK(!encoder->finish().has_value());
+    }
+    CHECK_EQ(open_fds(), fds);
+    CHECK(!has_children());
+    {
+        auto encoder = started({ "-c", "exec cat > \"$1\"", "sh", (dir.path / "c.raw").string() }, dir.path / "c.raw", 16);
+        CHECK(encoder->write(numbered(*encoder, 1)));
+        encoder->stop();
+    }
+    CHECK_EQ(open_fds(), fds);
+    CHECK(!has_children());
+}
+
+// A program that doesn't read: the writer is stuck in the middle of a
+// frame, and stop() still returns. Reviewer's test.
+void test_stop_while_stuck()
+{
+    Test::TempDir dir { "encoder-stuck" };
+    auto const    output = dir.path / "out.mov";
+    auto          encoder = started({ "-c", "exec sleep 30" }, output, 1 << 20);
+    CHECK(encoder->write(encoder->buffer()));
+    CHECK(encoder->write(encoder->buffer()));
+    CHECK(!encoder->can_write());
+    auto const started_at = std::chrono::steady_clock::now();
+    encoder->stop();
+    CHECK(std::chrono::steady_clock::now() - started_at < std::chrono::seconds { 5 });
+    CHECK(!has_children());
+}
+
+// A program that exits without an error, before it has all the frames:
+// that's a failure too, and the file goes. Reviewer's test.
+void test_early_exit_without_an_error()
+{
+    Test::TempDir dir { "encoder-early" };
+    auto const    output = dir.path / "out.mov";
+    MUST(write_file_by_name(output.string(), std::string_view { "half a movie" }));
+    auto encoder = started({ "-c", "exit 0" }, output, 1 << 20);
+    auto failed = false;
+    for (auto n = 0; n < 10 && !failed; ++n) {
+        failed = !encoder->write(encoder->buffer());
+    }
+    CHECK(failed);
+    CHECK(encoder->failed());
+    CHECK(!encoder->finish().has_value());
+    CHECK(!fs::exists(output));
 }
 
 }
@@ -178,6 +282,10 @@ int main()
     test_exit_code();
     test_stop();
     test_stop_by_destructor();
+    test_no_files_inherited();
     test_no_program();
+    test_no_leaks();
+    test_stop_while_stuck();
+    test_early_exit_without_an_error();
     return ST::Test::test_result();
 }

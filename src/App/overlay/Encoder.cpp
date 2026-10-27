@@ -80,11 +80,21 @@ std::expected<std::unique_ptr<Encoder>, std::string> Encoder::start(
     auto const               log = fs::temp_directory_path() / std::format("sweattrails-{}-{}.log", ::getpid(), output.stem().string());
     std::unique_ptr<Encoder> encoder { new Encoder(std::move(output), log, frame_bytes) };
 
+    // Neither end goes to other programs the app starts, which would keep
+    // the program's stdin open.
     int fds[2];
-    if (::pipe(fds) != 0) {
+#ifdef __linux__
+    auto const piped = ::pipe2(fds, O_CLOEXEC);
+#else
+    auto const piped = ::pipe(fds);
+    if (piped == 0) {
+        ::fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+        ::fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+    }
+#endif
+    if (piped != 0) {
         return std::unexpected(std::format("Can't start {}: {}", program.filename().string(), std::strerror(errno)));
     }
-    ::fcntl(fds[1], F_SETFD, FD_CLOEXEC);
 
     posix_spawn_file_actions_t actions;
     posix_spawn_file_actions_init(&actions);
@@ -101,7 +111,17 @@ std::expected<std::unique_ptr<Encoder>, std::string> Encoder::start(
     }
     argv.push_back(nullptr);
 
-    auto const spawned = posix_spawnp(&encoder->m_pid, program.c_str(), &actions, nullptr, argv.data(), environ);
+    // The program gets its stdin, stdout and stderr, and none of the app's
+    // other files, such as the Wahoo login's socket. Elsewhere it's up to
+    // the app to open its files close-on-exec.
+    posix_spawnattr_t attributes;
+    posix_spawnattr_init(&attributes);
+#ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
+    posix_spawnattr_setflags(&attributes, POSIX_SPAWN_CLOEXEC_DEFAULT);
+#endif
+
+    auto const spawned = posix_spawnp(&encoder->m_pid, program.c_str(), &actions, &attributes, argv.data(), environ);
+    posix_spawnattr_destroy(&attributes);
     posix_spawn_file_actions_destroy(&actions);
     ::close(fds[0]);
     if (spawned != 0) {
