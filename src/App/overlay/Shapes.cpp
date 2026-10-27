@@ -96,8 +96,7 @@ struct Stretch {
 
 // The records along the graph's axis: each one's place on it, from the
 // first to the last, and its value.
-class Axis {
-public:
+struct Axis {
     Axis(OverlaySource const &source, GraphElement const &graph)
         : m_source(source)
         , m_graph(graph)
