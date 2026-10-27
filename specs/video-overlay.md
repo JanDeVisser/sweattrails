@@ -301,6 +301,12 @@ process is kept thin.
   `/opt/homebrew/bin` and `/usr/local/bin`.
 - **`unpremultiply()`**: straight alpha for a frame's pixels, as the
   technical notes say.
+- **`records_range(activity, first, last)`**: the range the graph's
+  selection or the lap covers, for the box to start with.
+- **`ffmpeg_arguments()`**: as in the technical notes, plus
+  `-hide_banner -loglevel error`, so that the log's last line is the
+  error, and `-n`: ffmpeg would ask about overwriting a file on its
+  stdin, which has the frames.
 
 ### ffmpeg: `overlay/Encoder.h`
 
@@ -318,21 +324,28 @@ process is kept thin.
   thread also unpremultiplies.
 - `SIGPIPE` is ignored, as `OAuth.cpp` does already, so that ffmpeg
   exiting early is an `EPIPE` from `write()`, not the end of the app.
-- **`stop()`** kills ffmpeg and removes the file; **`finish()`** closes
-  its stdin and waits for it. Tests use `/bin/sh` as a stand-in for ffmpeg.
+- **`stop()`** kills ffmpeg (`SIGKILL`: the file goes anyway) and removes
+  the file; **`finish()`** closes its stdin and waits for it. The log is
+  removed either way, since the error has its last line. Tests use
+  `/bin/sh` as a stand-in for ffmpeg.
 
 ### In the app
 
-- **`OverlayRender`**, owned by `SweatTrails` while a render runs: a
+- **`OverlayRender`** (`overlay/OverlayRender.h`), owned by
+  `SweatTrails` while a render runs: a
   `RenderTexture2D` at the output size, the renderer, the encoder, and the
   frame it's at. `SweatTrails::process_input()` gives it a step each UI
   frame: it renders frames, with the separate alpha blend mode, and reads
   each back with `glReadPixels` into one buffer per queue slot, until about
   10 ms have gone, or the queue is full. The status line shows the percentage.
+  The app now links OpenGL itself, for `glReadPixels`.
 - **Ctrl+E** (`st-overlay-render`): the layout as the preview would show
   it, the settings, `input_box()` for the range, a `query_box()` for a
   long one, then the render. During a render it asks whether to stop.
   `cmd_quit` asks first, too, while one runs.
+- **Modals** (Widget library): a box removes itself when it closes,
+  rather than the top modal, so that the range box's submit function can
+  open the question about a long range.
 - README: ffmpeg in the requirements, and rendering in the overlay
   section.
 
