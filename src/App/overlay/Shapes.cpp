@@ -214,6 +214,19 @@ std::vector<std::optional<double>> graph_columns(OverlaySource const &source, Gr
     return ret;
 }
 
+std::optional<float> graph_position(OverlaySource const &source, GraphElement const &graph, double now)
+{
+    auto const extent = Axis { source, graph }.extent();
+    if (!extent) {
+        return { };
+    }
+    if (graph.window) {
+        return 1.0f;
+    }
+    auto const [start, end] = *extent;
+    return (end > start) ? static_cast<float>(std::clamp((now - start) / (end - start), 0.0, 1.0)) : 1.0f;
+}
+
 float graph_y(double shown, Bounds const &bounds, Rectangle content)
 {
     auto const fraction = std::clamp((shown - bounds.min) / (bounds.max - bounds.min), 0.0, 1.0);

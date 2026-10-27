@@ -241,6 +241,20 @@ void test_graph_now()
     CHECK(!graph_now(graph(OverlayField::power, 10, GraphAxis::Distance), values_at_time(no_distance, 50)));
 }
 
+void test_graph_position()
+{
+    Ride                t;
+    OverlaySource const source { t.activity };
+    CHECK_EQ(graph_position(source, graph(OverlayField::power, 10), 50).value_or(-1), 1.0f);
+    CHECK_EQ(graph_position(source, graph(OverlayField::power, { }), 150).value_or(-1), 0.25f);
+    CHECK_EQ(graph_position(source, graph(OverlayField::power, { }), 900).value_or(-1), 1.0f);
+    CHECK_EQ(graph_position(source, graph(OverlayField::power, { }, GraphAxis::Distance), 1000).value_or(-1), 0.2f);
+
+    Ride                without { false };
+    OverlaySource const no_distance { without.activity };
+    CHECK(!graph_position(no_distance, graph(OverlayField::power, 10, GraphAxis::Distance), 50));
+}
+
 void test_graph_y()
 {
     Bounds const    bounds { .min = 0, .max = 100 };
@@ -267,6 +281,7 @@ int main()
     test_distance_axis_through_a_pause();
     test_nothing_to_draw();
     test_graph_now();
+    test_graph_position();
     test_graph_y();
     return ST::Test::test_result();
 }

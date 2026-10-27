@@ -8,6 +8,7 @@
 #include <format>
 
 #include <overlay/Renderer.h>
+#include <overlay/Shapes.h>
 
 namespace ST {
 
@@ -94,41 +95,65 @@ void OverlayRenderer::draw_text(Font const &font, std::string_view text, Vector2
     DrawTextEx(font, s.c_str(), at, size, 0, style.color);
 }
 
-// The text, or the value with its unit after it, measured, placed, and
-// drawn.
 void OverlayRenderer::draw_element(OverlayElement const &element, FieldValues const &values, Rectangle const &area)
 {
-    auto const &layout = *m_layout;
-    auto const  scale = m_scale;
-    auto const  canvas_size = Vector2 { .x = area.width, .y = area.height };
-    auto const  offset = [&area](Rectangle const &box) { return Vector2 { .x = area.x + box.x, .y = area.y + box.y }; };
+    std::visit([this, &values, &area](auto const &e) { draw(e, values, area); }, element);
+}
 
-    if (auto const *text = std::get_if<TextElement>(&element)) {
-        auto const f = font(text->style, text->number);
-        if (!f) {
-            return;
-        }
-        auto const shown = fill_template(text->text, values, layout.units, "--");
-        auto const measured = MeasureTextEx(*f, shown.c_str(), static_cast<float>(f->baseSize), 0);
-        auto const box_size = text->at.size ? Vector2 { .x = text->at.size->x * scale, .y = text->at.size->y * scale } : measured;
-        auto const box = place(text->at, box_size, canvas_size, scale);
-        auto const in_box = place_in_box(box_size, measured, text->at.anchor, text->align);
-        auto const at = offset(box);
-        draw_text(*f, shown, Vector2 { .x = at.x + in_box.x, .y = at.y + in_box.y }, text->style);
+// The element's box on the screen, of `size` in pixels: its own size, or
+// what it measured with its padding around it.
+Rectangle OverlayRenderer::screen_box(Placement const &at, Vector2 size, Rectangle const &area) const
+{
+    auto const box = place(at, size, Vector2 { .x = area.width, .y = area.height }, m_scale);
+    return Rectangle { .x = area.x + box.x, .y = area.y + box.y, .width = box.width, .height = box.height };
+}
+
+Vector2 OverlayRenderer::box_size(Placement const &at, Vector2 content, Panel const &panel) const
+{
+    if (at.size) {
+        return Vector2 { .x = at.size->x * m_scale, .y = at.size->y * m_scale };
+    }
+    auto const padding = 2 * panel.padding * m_scale;
+    return Vector2 { .x = content.x + padding, .y = content.y + padding };
+}
+
+// The panel behind the box, and the box inside its padding.
+Rectangle OverlayRenderer::draw_panel(Panel const &panel, Rectangle const &box) const
+{
+    // raylib's roundness is the share of the shorter side that's rounded.
+    auto const shorter = std::min(box.width, box.height);
+    auto const roundness = (shorter > 0) ? std::min(1.0f, 2 * panel.radius * m_scale / shorter) : 0.0f;
+    if (panel.background) {
+        DrawRectangleRounded(box, roundness, 0, *panel.background);
+    }
+    if (panel.border) {
+        DrawRectangleRoundedLinesEx(box, roundness, 0, panel.border->width * m_scale, panel.border->color);
+    }
+    return content_box(box, panel.padding * m_scale);
+}
+
+void OverlayRenderer::draw(TextElement const &text, FieldValues const &values, Rectangle const &area)
+{
+    auto const f = font(text.style, text.number);
+    if (!f) {
         return;
     }
+    auto const shown = fill_template(text.text, values, m_layout->units, "--");
+    auto const measured = MeasureTextEx(*f, shown.c_str(), static_cast<float>(f->baseSize), 0);
+    auto const content = draw_panel(text.panel, screen_box(text.at, box_size(text.at, measured, text.panel), area));
+    auto const in_box = place_in_box(Vector2 { .x = content.width, .y = content.height }, measured, text.at.anchor, text.align);
+    draw_text(*f, shown, Vector2 { .x = content.x + in_box.x, .y = content.y + in_box.y }, text.style);
+}
 
-    auto const *value_element = std::get_if<ValueElement>(&element);
-    if (value_element == nullptr) {
-        return;
-    }
-    auto const &value = *value_element;
-    auto const  f = font(value.style, value.number);
-    auto const  unit_font = font(value.unit_style, value.number);
+// The value with its unit after it, measured, placed, and drawn.
+void OverlayRenderer::draw(ValueElement const &value, FieldValues const &values, Rectangle const &area)
+{
+    auto const f = font(value.style, value.number);
+    auto const unit_font = font(value.unit_style, value.number);
     if (!f || !unit_font) {
         return;
     }
-    auto const shown_as = shown_value(value, values, layout.units);
+    auto const shown_as = shown_value(value, values, m_layout->units);
     if (!shown_as) {
         return;
     }
@@ -136,12 +161,11 @@ void OverlayRenderer::draw_element(OverlayElement const &element, FieldValues co
     auto const &unit_text = shown_as->unit;
     auto const  measured = MeasureTextEx(*f, shown.c_str(), static_cast<float>(f->baseSize), 0);
     auto const  unit_measured = unit_text.empty() ? Vector2 { } : MeasureTextEx(*unit_font, unit_text.c_str(), static_cast<float>(unit_font->baseSize), 0);
-    auto const  gap = unit_text.empty() ? 0.0f : value.unit_style.font_size * scale * UnitGap;
+    auto const  gap = unit_text.empty() ? 0.0f : value.unit_style.font_size * m_scale * UnitGap;
     auto const  size = Vector2 { .x = measured.x + gap + unit_measured.x, .y = std::max(measured.y, unit_measured.y) };
-    auto const  box_size = value.at.size ? Vector2 { .x = value.at.size->x * scale, .y = value.at.size->y * scale } : size;
-    auto const  box = place(value.at, box_size, canvas_size, scale);
-    auto const  in_box = place_in_box(box_size, size, value.at.anchor);
-    auto const  at = Vector2 { .x = offset(box).x + in_box.x, .y = offset(box).y + in_box.y };
+    auto const  content = draw_panel(value.panel, screen_box(value.at, box_size(value.at, size, value.panel), area));
+    auto const  in_box = place_in_box(Vector2 { .x = content.width, .y = content.height }, size, value.at.anchor);
+    auto const  at = Vector2 { .x = content.x + in_box.x, .y = content.y + in_box.y };
     // The number and its unit stand on the same line, at the bottom.
     // Only the number takes the color of its threshold, not the unit.
     auto style = value.style;
@@ -149,6 +173,89 @@ void OverlayRenderer::draw_element(OverlayElement const &element, FieldValues co
     draw_text(*f, shown, Vector2 { .x = at.x, .y = at.y + size.y - measured.y }, style);
     if (!unit_text.empty()) {
         draw_text(*unit_font, unit_text, Vector2 { .x = at.x + measured.x + gap, .y = at.y + size.y - unit_measured.y }, value.unit_style);
+    }
+}
+
+// The track, and over it the fill up to the value. A missing value, or
+// "auto" for a field the activity hasn't got, shows the track only.
+void OverlayRenderer::draw(GaugeElement const &gauge, FieldValues const &values, Rectangle const &area)
+{
+    auto const content = draw_panel(gauge.panel, screen_box(gauge.at, box_size(gauge.at, { }, gauge.panel), area));
+    auto const unit = gauge.unit.value_or(default_unit(gauge.field, m_layout->units, values.sport));
+    auto const value = values[gauge.field];
+    auto const shown = value ? std::optional { unit.shown(*value) } : std::nullopt;
+    auto const bounds = values.source ? shown_bounds(*values.source, gauge.field, unit, gauge.min, gauge.max) : std::nullopt;
+    auto const fraction = bounds ? gauge_fraction(shown, *bounds) : std::nullopt;
+    auto const fill = threshold_color(gauge.thresholds, shown, gauge.fill);
+    auto const thickness = gauge.thickness ? std::optional { *gauge.thickness * m_scale } : std::nullopt;
+
+    if (gauge.shape == GaugeShape::Arc) {
+        auto const ring = arc_ring(content, thickness);
+        DrawRing(ring.center, ring.inner, ring.outer, ArcStart, ArcStart + ArcSweep, 0, gauge.track);
+        if (fraction && *fraction > 0) {
+            auto const angles = arc_angles(*fraction);
+            DrawRing(ring.center, ring.inner, ring.outer, angles.start, angles.end, 0, fill);
+        }
+        return;
+    }
+    auto const rects = bar_rects(content, gauge.shape, thickness, fraction.value_or(0));
+    DrawRectangleRec(rects.track, gauge.track);
+    if (fraction && *fraction > 0) {
+        DrawRectangleRec(rects.fill, fill);
+    }
+}
+
+// The line through a value per pixel column, broken where values are
+// missing, the area under it, and the cursor at the moment.
+void OverlayRenderer::draw(GraphElement const &graph, FieldValues const &values, Rectangle const &area)
+{
+    auto const content = draw_panel(graph.panel, screen_box(graph.at, box_size(graph.at, { }, graph.panel), area));
+    auto const now = graph_now(graph, values);
+    if (!values.source || !now || content.width < 1) {
+        return;
+    }
+    auto const &source = *values.source;
+    auto const  unit = graph.unit.value_or(default_unit(graph.field, m_layout->units, values.sport));
+    auto const  bounds = shown_bounds(source, graph.field, unit, graph.min, graph.max);
+    if (!bounds) {
+        return;
+    }
+    auto const columns = graph_columns(source, graph, unit, *now, static_cast<size_t>(content.width));
+    auto const bottom = content.y + content.height;
+
+    std::vector<Vector2> run;
+    auto const           draw_run = [&]() {
+        if (graph.fill) {
+            for (auto ix = 1uz; ix < run.size(); ++ix) {
+                auto const &l = run[ix - 1];
+                auto const &r = run[ix];
+                // Counter-clockwise on the screen, as raylib draws them.
+                DrawTriangle(l, Vector2 { .x = l.x, .y = bottom }, Vector2 { .x = r.x, .y = bottom }, *graph.fill);
+                DrawTriangle(l, Vector2 { .x = r.x, .y = bottom }, r, *graph.fill);
+            }
+        }
+        auto const width = graph.line.width * m_scale;
+        if (run.size() == 1) {
+            DrawCircleV(run.front(), width / 2, graph.line.color);
+        } else if (run.size() > 1) {
+            DrawSplineLinear(run.data(), static_cast<int>(run.size()), width, graph.line.color);
+        }
+        run.clear();
+    };
+    for (auto ix = 0uz; ix < columns.size(); ++ix) {
+        if (!columns[ix]) {
+            draw_run();
+            continue;
+        }
+        run.push_back(Vector2 { .x = content.x + static_cast<float>(ix) + 0.5f, .y = graph_y(*columns[ix], *bounds, content) });
+    }
+    draw_run();
+
+    auto const position = graph_position(source, graph, *now);
+    auto const value = values[graph.field];
+    if (graph.cursor && position && value) {
+        auto const at = Vector2 { .x = content.x + *position * content.width, .y = graph_y(unit.shown(*value), *bounds, content) };
+        DrawCircleV(at, graph.cursor->radius * m_scale, graph.cursor->color);
     }
 }
 

@@ -85,6 +85,10 @@ std::optional<double> graph_now(GraphElement const &graph, FieldValues const &va
 std::vector<std::optional<double>> graph_columns(OverlaySource const &source, GraphElement const &graph,
     FieldUnit const &unit, double now, size_t columns);
 
+// Where the moment is along the graph, from 0 to 1: at the right edge of
+// a rolling window, and moving along with "all". None without records.
+std::optional<float> graph_position(OverlaySource const &source, GraphElement const &graph, double now);
+
 // The height of a value in the content, clamped to it: `min` at the
 // bottom, `max` at the top.
 float graph_y(double shown, Bounds const &bounds, Rectangle content);
