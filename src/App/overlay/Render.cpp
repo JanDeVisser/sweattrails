@@ -131,13 +131,19 @@ std::optional<int> clock_time(std::string_view text)
     return ret;
 }
 
-// A point of the range in seconds since the start, or nothing.
-std::optional<double> range_point(std::string_view text, ActivityClock const &clock)
+// A point of the range, in seconds since the start. A time of day is still
+// on the start's day: parse_range() picks the day.
+struct RangePoint {
+    double seconds { 0 };
+    bool   time_of_day { false };
+};
+
+std::optional<RangePoint> range_point(std::string_view text, ActivityClock const &clock)
 {
     text = strip(text);
     if (!text.starts_with('@')) {
         auto const t = clock_time(text);
-        return t ? std::optional<double> { *t } : std::nullopt;
+        return t ? std::optional { RangePoint { .seconds = static_cast<double>(*t) } } : std::nullopt;
     }
     // A time of day without seconds is `h:mm`, not minutes and seconds.
     text = text.substr(1);
@@ -145,13 +151,36 @@ std::optional<double> range_point(std::string_view text, ActivityClock const &cl
     if (!t || *t >= SecondsPerDay) {
         return { };
     }
-    // Long before the start is after midnight, on a ride through it. A
-    // little before the start is cut to the start, like any range.
-    auto elapsed = *t - clock.start_time_of_day;
-    if (elapsed < -SecondsPerDay / 2) {
-        elapsed += SecondsPerDay;
+    return RangePoint { .seconds = static_cast<double>(*t - clock.start_time_of_day), .time_of_day = true };
+}
+
+// The day closest to the activity, for a ride through midnight, or one
+// that starts just after it. A little before or after is cut to the
+// activity later, like any range.
+double closest_day(double seconds, ActivityClock const &clock)
+{
+    auto const away = [&clock](double t) {
+        return (t < 0) ? -t : std::max(0.0, t - clock.duration);
+    };
+    auto ret = seconds;
+    for (auto const t : { seconds - SecondsPerDay, seconds + SecondsPerDay }) {
+        if (away(t) < away(ret)) {
+            ret = t;
+        }
     }
-    return elapsed;
+    return ret;
+}
+
+// An end that's a time of day comes after the start, within a day.
+double after(double start, double end)
+{
+    while (end <= start) {
+        end += SecondsPerDay;
+    }
+    while (end - SecondsPerDay > start) {
+        end -= SecondsPerDay;
+    }
+    return end;
 }
 
 std::string clock_text(double seconds)
@@ -226,18 +255,20 @@ std::expected<RenderRange, std::string> parse_range(std::string_view text, Activ
     if (dash == std::string_view::npos) {
         return std::unexpected(usage);
     }
-    auto const from = range_point(text.substr(0, dash), clock);
-    auto const to = range_point(text.substr(dash + 1), clock);
-    if (!from || !to) {
+    auto const first = range_point(text.substr(0, dash), clock);
+    auto const last = range_point(text.substr(dash + 1), clock);
+    if (!first || !last) {
         return std::unexpected(usage);
     }
-    if (*to <= *from) {
+    auto const from = first->time_of_day ? closest_day(first->seconds, clock) : first->seconds;
+    auto const to = last->time_of_day ? after(from, last->seconds) : last->seconds;
+    if (to <= from) {
         return std::unexpected(std::format("`{}` ends before it starts", strip(text)));
     }
-    if (*from >= clock.duration || *to <= 0) {
+    if (from >= clock.duration || to <= 0) {
         return std::unexpected(std::format("`{}` isn't in the activity, which is {} long", strip(text), clock_text(clock.duration)));
     }
-    return RenderRange { .from = std::max(0.0, *from), .to = std::min(clock.duration, *to) };
+    return RenderRange { .from = std::max(0.0, from), .to = std::min(clock.duration, to) };
 }
 
 std::string format_range(RenderRange const &range)

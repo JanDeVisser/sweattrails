@@ -8,6 +8,8 @@
  */
 
 #include <array>
+#include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <format>
 #include <string>
@@ -203,6 +205,80 @@ void test_timecodes()
     CHECK_EQ(timecode(3600, FrameRate { 24000, 1001 }), "00:59:56:10");
 }
 
+// Ranges around midnight, as a time of day. Reviewer's tests.
+void test_ranges_at_midnight()
+{
+    // Started at 23:50, so 00:05 is the next day.
+    ActivityClock const late { .duration = 7200, .start_time_of_day = 23 * 3600 + 50 * 60, .date = "2025-06-14" };
+    CHECK_EQ(range_of("@23:55-@00:05", late), "300 900");
+    // A little before the start, on the same day, is cut to the start.
+    CHECK_EQ(range_of("@23:40-@23:55", late), "0 300");
+    // Started at 00:10: 23:55 is a little before the start, the day
+    // before, and is cut to the start as well.
+    ActivityClock const early { .duration = 7200, .start_time_of_day = 10 * 60, .date = "2025-06-15" };
+    CHECK_EQ(range_of("@23:55-@00:20", early), "0 600");
+    CHECK_EQ(range_of("@00:15-@00:20", early), "300 600");
+}
+
+// The time zone the system has, where an activity has no utc_offset.
+void test_activity_clock_without_offset()
+{
+    auto const *old = std::getenv("TZ");
+    std::string saved { (old != nullptr) ? old : "" };
+    ::setenv("TZ", "America/Toronto", 1);
+    ::tzset();
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+    activity.segment.start_time.timestamp = 1'750'000'000; // 2025-06-15 15:06:40 UTC
+    activity.records.push_back(record { .timestamp = DateTime { .timestamp = 1'750'000'000 } });
+    auto const clock = activity_clock(activity);
+    CHECK_EQ(clock.start_time_of_day, 11 * 3600 + 6 * 60 + 40);
+    CHECK_EQ(clock.date, "2025-06-15");
+    if (old != nullptr) {
+        ::setenv("TZ", saved.c_str(), 1);
+    } else {
+        ::unsetenv("TZ");
+    }
+    ::tzset();
+}
+
+// Every drop-frame label for two hours, counted label by label: ;00 and
+// ;01 (;00 to ;03 at 59.94) are skipped at each minute but every tenth.
+// Reviewer's test.
+void test_every_drop_frame_label(FrameRate const &rate, i64 nominal, i64 drop)
+{
+    i64  h { 0 }, m { 0 }, s { 0 }, f { 0 };
+    auto mismatches { 0 };
+    for (i64 frame = 0; frame < 2 * 3600 * nominal; ++frame) {
+        auto const expected = std::format("{:02}:{:02}:{:02};{:02}", h, m, s, f);
+        if (auto const label = timecode(at_frame(frame, rate), rate); label != expected && ++mismatches <= 3) {
+            CHECK_EQ(label, expected);
+        }
+        if (++f == nominal) {
+            f = 0;
+            if (++s == 60) {
+                s = 0;
+                if (++m == 60) {
+                    m = 0;
+                    ++h;
+                }
+                if (m % 10 != 0) {
+                    f = drop;
+                }
+            }
+        }
+    }
+    CHECK_EQ(mismatches, 0);
+}
+
+void test_timecodes_at_midnight()
+{
+    // The last frame of the day, and the timecode wrapping round.
+    CHECK_EQ(timecode(24 * 3600 - 1.0 / 25, FrameRate { 25, 1 }), "23:59:59:24");
+    CHECK_EQ(timecode(24 * 3600, FrameRate { 25, 1 }), "00:00:00:00");
+    CHECK_EQ(timecode(0, FrameRate { 30000, 1001 }), "00:00:00;00");
+}
+
 void test_output_path()
 {
     ActivityClock const clock { .duration = 7200, .start_time_of_day = 11 * 3600 + 6 * 60 + 40, .date = "2025-06-15" };
@@ -266,6 +342,11 @@ int main()
     test_ffmpeg_arguments();
     test_frames();
     test_timecodes();
+    test_ranges_at_midnight();
+    test_activity_clock_without_offset();
+    test_every_drop_frame_label(FrameRate { 30000, 1001 }, 30, 2);
+    test_every_drop_frame_label(FrameRate { 60000, 1001 }, 60, 4);
+    test_timecodes_at_midnight();
     test_output_path();
     test_find_program();
     test_estimated_size();
