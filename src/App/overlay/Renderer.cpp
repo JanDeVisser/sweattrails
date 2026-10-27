@@ -121,13 +121,13 @@ void OverlayRenderer::draw_element(OverlayElement const &element, FieldValues co
     if (!f || !unit_font) {
         return;
     }
-    auto const number = values[value.field];
+    auto const number = values.has(value.field);
     if (!number && value.hide_when_missing) {
         return;
     }
     auto const unit = value.unit.value_or(default_unit(value.field, layout.units, values.sport));
     auto const spec = value.spec.empty() ? default_spec(value.field) : std::string_view { value.spec };
-    auto const shown = format_field(value.field, number, unit, spec, value.missing);
+    auto const shown = format_value(values, value.field, unit, spec, value.missing);
     auto const unit_text = (number && !unit.name.empty()) ? std::string { unit.name } : std::string { };
     auto const measured = MeasureTextEx(*f, shown.c_str(), static_cast<float>(f->baseSize), 0);
     auto const unit_measured = unit_text.empty() ? Vector2 { } : MeasureTextEx(*unit_font, unit_text.c_str(), static_cast<float>(unit_font->baseSize), 0);

@@ -24,7 +24,16 @@ namespace ST {
     S(heart_rate)        \
     S(cadence)           \
     S(distance)          \
-    S(elapsed)
+    S(elapsed)           \
+    S(pace)              \
+    S(altitude)          \
+    S(grade)             \
+    S(temperature)       \
+    S(lr_balance)        \
+    S(time_of_day)       \
+    S(lap)               \
+    S(title)             \
+    S(date)
 
 enum class OverlayField {
 #undef S
@@ -43,20 +52,31 @@ constexpr size_t OverlayFieldCount = 0
 std::string_view            OverlayField_name(OverlayField field);
 std::optional<OverlayField> overlay_field(std::string_view name);
 
-// A field the design has that a later slice of the overlay builds, such as
-// `lap`. A layout may name it already: it shows as missing.
-bool is_later_field(std::string_view name);
+// How a field is shown, and which specs it takes.
+enum class FieldKind {
+    Number,   // std::format specs
+    Duration, // `hms`, 1:05:09, or `ms`, 65:09
+    Clock,    // `hm`, 09:44, or `hms`, 09:44:10
+    Date,     // std::chrono specs, such as `%d %b %Y`
+    Balance,  // Left/right, 48/52, each side with a std::format spec
+    Text,     // As it is, without a spec
+};
+
+FieldKind field_kind(OverlayField field);
 
 enum class Units {
     Metric,
     Imperial,
 };
 
-// A unit a field is shown in: its name, and what the field's base unit
-// (m/s, m, s, ...) is multiplied by.
+// A unit a field is shown in: its name, and how it's had from the field's
+// base unit (m/s, m, s, °C, ...): multiplied by `factor`, plus `offset`.
 struct FieldUnit {
     std::string_view name { };
     double           factor { 1.0 };
+    double           offset { 0.0 };
+
+    [[nodiscard]] double shown(double value) const { return value * factor + offset; }
 };
 
 FieldUnit default_unit(OverlayField field, Units units, sport sport);
@@ -67,6 +87,8 @@ std::string_view default_spec(OverlayField field);
 
 // Whether std::format takes `spec` for a double.
 bool is_valid_spec(std::string_view spec);
+// Whether the field takes `spec`, for its kind.
+bool is_valid_spec(OverlayField field, std::string_view spec);
 
 // What the overlay needs of an activity, worked out once: the preview
 // makes one for the activity it shows, a render when it starts. It points
@@ -84,7 +106,10 @@ i32 local_utc_offset(Activity const &activity);
 
 // The field's value at the record, in its base unit. Nothing if the record
 // doesn't have it. Cadence is as FIT records it, per minute: revolutions,
-// or the strides of one foot, which `spm` doubles to steps.
+// or the strides of one foot, which `spm` doubles to steps. Pace is in s/m,
+// `lr_balance` the right leg's share in %, `time_of_day` seconds since
+// local midnight, `date` local seconds since the epoch. `title` is no
+// number: it's in FieldValues::title.
 std::optional<double> field_value(OverlaySource const &source, size_t record, OverlayField field);
 
 // The fields' values for one frame of the overlay, in their base units,
@@ -92,10 +117,17 @@ std::optional<double> field_value(OverlaySource const &source, size_t record, Ov
 struct FieldValues {
     std::array<std::optional<double>, OverlayFieldCount> values { };
     sport                                                sport { sport::Cycling };
+    std::string                                          title { };
 
     [[nodiscard]] std::optional<double> operator[](OverlayField field) const
     {
         return values[static_cast<size_t>(field)];
+    }
+
+    // Whether the field has a value: for `title`, that there's a title.
+    [[nodiscard]] bool has(OverlayField field) const
+    {
+        return (field == OverlayField::title) ? !title.empty() : values[static_cast<size_t>(field)].has_value();
     }
 };
 
@@ -112,9 +144,12 @@ FieldValues values_at_record(OverlaySource const &source, size_t record);
 // give the earlier record's value. `elapsed` is `seconds`.
 FieldValues values_at_time(OverlaySource const &source, double seconds);
 
-// What's shown for a value: converted to the unit and formatted with
-// `spec`, which is_valid_spec() has passed; or `missing`. `elapsed` is
-// always h:mm:ss.
+// What's shown for a value: converted to the unit and formatted, as the
+// field's kind says, with `spec`, which is_valid_spec() has passed; or
+// `missing`. Not for `title`, which format_value() shows.
 std::string format_field(OverlayField field, std::optional<double> value, FieldUnit const &unit, std::string_view spec, std::string_view missing);
+
+// What's shown for a field of the frame's values, `title` included.
+std::string format_value(FieldValues const &values, OverlayField field, FieldUnit const &unit, std::string_view spec, std::string_view missing);
 
 }

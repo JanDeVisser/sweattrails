@@ -316,8 +316,7 @@ std::expected<std::string, LayoutError> value_spec(JSONValue const &json, Overla
     } else if (!spec.empty()) {
         return error(std::format("\"format\": `{}` isn't a format such as \"{{:.1f}}\"", format));
     }
-    // The duration specs, such as `hms`, come with the other fields.
-    if (field != OverlayField::elapsed && !is_valid_spec(spec)) {
+    if (!is_valid_spec(field, spec)) {
         return error(std::format("\"format\": `{}` isn't a format for {}", format, OverlayField_name(field)));
     }
     return std::string { spec };
@@ -331,9 +330,6 @@ std::expected<ValueElement, LayoutError> value_element(JSONValue const &json)
         return error("a value needs a \"field\"");
     }
     auto const name = TRY_EVAL(string(*field, "field"));
-    if (is_later_field(name)) {
-        return error(std::format("\"field\": `{}` can't be shown as a value yet", name));
-    }
     auto const f = overlay_field(name);
     if (!f) {
         return error(std::format("\"field\": `{}` isn't a field", name));

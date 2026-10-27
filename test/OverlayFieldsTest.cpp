@@ -7,6 +7,8 @@
  * templates.
  */
 
+#include <cstdlib>
+#include <ctime>
 #include <format>
 #include <string>
 #include <vector>
@@ -68,9 +70,8 @@ void test_names()
     CHECK_EQ(OverlayField_name(OverlayField::heart_rate), "heart_rate");
     CHECK(overlay_field("heart_rate") == OverlayField::heart_rate);
     CHECK(!overlay_field("hr").has_value());
-    CHECK(is_later_field("lap"));
-    CHECK(!is_later_field("speed"));
-    CHECK(!is_later_field("hr"));
+    CHECK(overlay_field("lr_balance") == OverlayField::lr_balance);
+    CHECK(!overlay_field("power.avg").has_value());
 }
 
 void test_metric()
@@ -154,11 +155,11 @@ void test_templates()
     CHECK_EQ(t.fill(""), "");
 }
 
-// A field of a later slice is missing, and has no unit yet.
+// The fields that were for a later slice until this one.
 void test_later_fields()
 {
     TestActivity t;
-    CHECK_EQ(t.fill("Lap {lap} · {altitude:.0f}{altitude.unit}"), "Lap -- · --");
+    CHECK_EQ(t.fill("Lap {lap} · {altitude:.0f}{altitude.unit}"), "Lap 1 · --m");
 }
 
 void test_template_errors()
@@ -198,9 +199,10 @@ void test_elapsed()
     CHECK_EQ(shown(t, OverlayField::elapsed, 3), "10:01:01");
     // A record past the end has no time either.
     CHECK_EQ(shown(t, OverlayField::elapsed, 4), "--");
-    // Whatever the spec, until slice 3.
-    CHECK_EQ(t.fill("{elapsed:ms}"), "1:05:09");
+    CHECK_EQ(t.fill("{elapsed:ms}"), "65:09");
+    CHECK_EQ(t.fill("{elapsed:hms}"), "1:05:09");
     CHECK_EQ(format_field(OverlayField::elapsed, 3909.0, FieldUnit { }, "hms", "--"), "1:05:09");
+    CHECK_EQ(t.fill("{elapsed:.1f}"), "error: `.1f` isn't a format for `elapsed`");
 }
 
 // An activity without records: everything is missing.
@@ -226,9 +228,8 @@ void test_template_braces()
     CHECK_EQ(t.fill("{speed:{}}"), "error: `{` isn't a format for `speed`");
     CHECK_EQ(t.fill("{speed.units}"), "error: `speed.units` isn't a field");
     CHECK_EQ(t.fill("{ speed }"), "error: ` speed ` isn't a field");
-    // A later field's unit is empty, and its spec isn't checked yet.
+    // A field without a unit has an empty one.
     CHECK_EQ(t.fill("[{lap.unit}]"), "[]");
-    CHECK_EQ(t.fill("{time_of_day:hm}"), "--");
 }
 
 // Specs that would make std::vformat throw at draw time are caught.
@@ -302,6 +303,168 @@ void test_values_at_record()
     CHECK_EQ(value_of(values, OverlayField::elapsed), "3909");
     CHECK_EQ(value_of(values_at_record(OverlaySource { t.activity }, 1), OverlayField::power), "none");
 }
+
+// 2025-06-15 15:06:40 UTC is 11:06:40 in Toronto, in the summer.
+constexpr i32 Toronto = -4 * 3600;
+
+// The fields of this slice, on records that have them.
+struct NewFieldsActivity {
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+
+    NewFieldsActivity()
+    {
+        activity.sport = sport::Running;
+        activity.title = "Rückweg";
+        activity.utc_offset = Toronto;
+        activity.segment.start_time.timestamp = Start;
+        activity.records.push_back(record {
+            .timestamp = DateTime { .timestamp = Start + 3909 },
+            .altitude = 1234.4f,
+            .speed = 3.7f,
+            .temperature = 21,
+            .left_right_balance = 0x80 | 52,
+        });
+        // Walking: too slow for a pace; a balance without its side.
+        activity.records.push_back(record {
+            .timestamp = DateTime { .timestamp = Start + 3910 },
+            .speed = 0.2f,
+            .temperature = -3,
+            .left_right_balance = 52,
+        });
+        activity.records.push_back(record {
+            .timestamp = DateTime { .timestamp = Start + 3911 },
+            .speed = 0.0f,
+            .left_right_balance = 0xff,
+        });
+    }
+
+    [[nodiscard]] std::string field(OverlayField f, size_t record = 0, Units units = Units::Metric, std::string_view spec = "") const
+    {
+        auto const unit = default_unit(f, units, activity.sport);
+        auto const s = spec.empty() ? default_spec(f) : spec;
+        return format_value(values_at_record(OverlaySource { activity }, record), f, unit, s, "--");
+    }
+
+    [[nodiscard]] std::string fill(std::string_view text, size_t record = 0, Units units = Units::Metric) const
+    {
+        auto const parsed = parse_template(text);
+        if (!parsed) {
+            return "error: " + parsed.error();
+        }
+        return fill_template(*parsed, values_at_record(OverlaySource { activity }, record), units, "--");
+    }
+};
+
+void test_pace()
+{
+    NewFieldsActivity t;
+    // 3.7 m/s is 270 s/km.
+    CHECK_EQ(t.field(OverlayField::pace), "4:30");
+    CHECK_EQ(t.field(OverlayField::pace, 0, Units::Imperial), "7:15");
+    CHECK_EQ(t.fill("{pace} {pace.unit}"), "4:30 min/km");
+    CHECK_EQ(t.fill("{pace.unit}", 0, Units::Imperial), "min/mi");
+    // Below 1 km/h, and standing still.
+    CHECK_EQ(t.field(OverlayField::pace, 1), "--");
+    CHECK_EQ(t.field(OverlayField::pace, 2), "--");
+    CHECK_EQ(t.fill("{pace:hms}"), "error: `hms` isn't a format for `pace`");
+}
+
+void test_altitude_and_temperature()
+{
+    NewFieldsActivity t;
+    CHECK_EQ(t.field(OverlayField::altitude), "1234");
+    CHECK_EQ(t.field(OverlayField::altitude, 0, Units::Imperial), "4050");
+    CHECK_EQ(t.field(OverlayField::altitude, 1), "--");
+    CHECK_EQ(t.fill("{temperature}{temperature.unit}"), "21°C");
+    CHECK_EQ(t.fill("{temperature}{temperature.unit}", 0, Units::Imperial), "70°F");
+    CHECK_EQ(t.fill("{temperature}", 1, Units::Imperial), "27");
+    CHECK_EQ(t.fill("{temperature:.1f}", 1), "-3.0");
+    auto const kelvin = field_unit(OverlayField::temperature, "K");
+    CHECK(!kelvin.has_value());
+}
+
+// Left/right: bit 0x80 says it's the right leg's share.
+void test_balance()
+{
+    NewFieldsActivity t;
+    CHECK_EQ(t.field(OverlayField::lr_balance), "48/52");
+    CHECK_EQ(t.fill("{lr_balance:.1f}"), "48.0/52.0");
+    // Without the bit the side isn't known; 0xff is none.
+    CHECK_EQ(t.field(OverlayField::lr_balance, 1), "--");
+    CHECK_EQ(t.field(OverlayField::lr_balance, 2), "--");
+}
+
+void test_laps()
+{
+    NewFieldsActivity t;
+    CHECK_EQ(t.field(OverlayField::lap, 2), "1");
+    t.activity.laps.push_back(Lap { .first_record = 0, .end_record = 2 });
+    t.activity.laps.push_back(Lap { .first_record = 2, .end_record = 3 });
+    CHECK_EQ(t.field(OverlayField::lap, 1), "1");
+    CHECK_EQ(t.fill("Lap {lap}", 2), "Lap 2");
+}
+
+void test_title()
+{
+    NewFieldsActivity t;
+    CHECK_EQ(t.fill("{title}"), "Rückweg");
+    CHECK_EQ(t.field(OverlayField::title), "Rückweg");
+    CHECK_EQ(t.fill("{title:>10}"), "error: `>10` isn't a format for `title`");
+    t.activity.title.clear();
+    CHECK_EQ(t.fill("{title}"), "--");
+}
+
+void test_date_and_time_of_day()
+{
+    NewFieldsActivity t;
+    CHECK_EQ(t.field(OverlayField::date), "15 Jun 2025");
+    CHECK_EQ(t.fill("{date:%Y-%m-%d}"), "2025-06-15");
+    CHECK_EQ(t.fill("{date:%A}"), "Sunday");
+    // 3909 s after 11:06:40.
+    CHECK_EQ(t.field(OverlayField::time_of_day), "12:11");
+    CHECK_EQ(t.fill("{time_of_day:hms}"), "12:11:49");
+    CHECK_EQ(t.fill("{time_of_day:hh}"), "error: `hh` isn't a format for `time_of_day`");
+    CHECK_EQ(t.fill("{date:%Q}"), "error: `%Q` isn't a format for `date`");
+    // Ten hours east, it's the next day.
+    t.activity.utc_offset = 10 * 3600;
+    CHECK_EQ(t.field(OverlayField::date), "16 Jun 2025");
+    CHECK_EQ(t.field(OverlayField::time_of_day), "02:11");
+}
+
+// Without a utc_offset, the system's time zone has it.
+void test_time_of_day_without_offset()
+{
+    auto const *old = std::getenv("TZ");
+    std::string saved { (old != nullptr) ? old : "" };
+    ::setenv("TZ", "America/Toronto", 1);
+    ::tzset();
+    NewFieldsActivity t;
+    t.activity.utc_offset.reset();
+    CHECK_EQ(t.field(OverlayField::time_of_day), "12:11");
+    if (old != nullptr) {
+        ::setenv("TZ", saved.c_str(), 1);
+    } else {
+        ::unsetenv("TZ");
+    }
+    ::tzset();
+}
+
+// Between records: the clock runs, the lap doesn't glide.
+void test_new_fields_between_records()
+{
+    NewFieldsActivity t;
+    t.activity.laps.push_back(Lap { .first_record = 0, .end_record = 1 });
+    t.activity.laps.push_back(Lap { .first_record = 1, .end_record = 3 });
+    OverlaySource const source { t.activity };
+    auto const          values = values_at_time(source, 3909.6);
+    CHECK_EQ(format_value(values, OverlayField::lap, FieldUnit { }, ".0f", "--"), "1");
+    CHECK_EQ(format_value(values, OverlayField::time_of_day, FieldUnit { }, "hms", "--"), "12:11:49");
+    CHECK_EQ(format_value(values, OverlayField::title, FieldUnit { }, "", "--"), "Rückweg");
+    // Long after the last record, the clock still runs.
+    CHECK_EQ(format_value(values_at_time(source, 3909 + 600), OverlayField::time_of_day, FieldUnit { }, "hms", "--"), "12:21:49");
+}
+
 }
 
 int main()
@@ -324,5 +487,13 @@ int main()
     test_values_at_time();
     test_values_without_records();
     test_values_at_record();
+    test_pace();
+    test_altitude_and_temperature();
+    test_balance();
+    test_laps();
+    test_title();
+    test_date_and_time_of_day();
+    test_time_of_day_without_offset();
+    test_new_fields_between_records();
     return ST::Test::test_result();
 }

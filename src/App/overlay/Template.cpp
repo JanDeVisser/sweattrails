@@ -28,15 +28,12 @@ std::expected<Placeholder, std::string> parse_placeholder(std::string_view text)
             return std::unexpected(std::format("`{{{}}}`: a unit has no format", text));
         }
     }
-    if (is_later_field(name)) {
-        return ret;
-    }
-    ret.field = overlay_field(name);
-    if (!ret.field) {
+    auto const field = overlay_field(name);
+    if (!field) {
         return std::unexpected(std::format("`{}` isn't a field", name));
     }
-    // The duration specs, such as `hms`, come with the other fields.
-    if (!spec.empty() && ret.field != OverlayField::elapsed && !is_valid_spec(spec)) {
+    ret.field = *field;
+    if (!spec.empty() && !is_valid_spec(ret.field, spec)) {
         return std::unexpected(std::format("`{}` isn't a format for `{}`", spec, name));
     }
     return ret;
@@ -94,18 +91,14 @@ std::string fill_template(Template const &text, FieldValues const &values, Units
             continue;
         }
         auto const &placeholder = std::get<Placeholder>(part);
-        if (!placeholder.field) {
-            ret += placeholder.unit ? "" : missing;
-            continue;
-        }
-        auto const field = *placeholder.field;
-        auto const unit = default_unit(field, units, values.sport);
+        auto const  field = placeholder.field;
+        auto const  unit = default_unit(field, units, values.sport);
         if (placeholder.unit) {
             ret += unit.name;
             continue;
         }
         auto const spec = placeholder.spec.empty() ? default_spec(field) : std::string_view { placeholder.spec };
-        ret += format_field(field, values[field], unit, spec, missing);
+        ret += format_value(values, field, unit, spec, missing);
     }
     return ret;
 }

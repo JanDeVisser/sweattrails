@@ -219,7 +219,9 @@ void test_errors()
         "element 1: \"shadow.offset\" isn't a pair of numbers, such as [2, 2]");
     CHECK_EQ(error_of(with_element(R"({ "type": "value" })")), "element 1: a value needs a \"field\"");
     CHECK_EQ(error_of(with_element(R"({ "type": "value", "field": "hr" })")), "element 1: \"field\": `hr` isn't a field");
-    CHECK_EQ(error_of(with_element(R"({ "type": "value", "field": "lap" })")), "element 1: \"field\": `lap` can't be shown as a value yet");
+    CHECK(decode(with_element(R"({ "type": "value", "field": "lap" })")).has_value());
+    CHECK_EQ(error_of(with_element(R"({ "type": "value", "field": "elapsed", "format": "{:.1f}" })")),
+        "element 1: \"format\": `{:.1f}` isn't a format for elapsed");
     CHECK_EQ(error_of(with_element(R"({ "type": "value", "field": "speed", "format": "{:.1q}" })")),
         "element 1: \"format\": `{:.1q}` isn't a format for speed");
     CHECK_EQ(error_of(with_element(R"({ "type": "value", "field": "speed", "format": ".1f" })")),

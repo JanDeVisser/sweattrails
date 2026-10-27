@@ -21,9 +21,9 @@
 namespace ST {
 
 struct Placeholder {
-    std::optional<OverlayField> field { }; // None for a field of a later slice
-    std::string                 spec { };  // The default spec if empty
-    bool                        unit { false };
+    OverlayField field { OverlayField::speed };
+    std::string  spec { }; // The default spec if empty
+    bool         unit { false };
 };
 
 using TemplatePart = std::variant<std::string, Placeholder>;
