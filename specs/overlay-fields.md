@@ -1,6 +1,6 @@
 # Overlay fields
 
-Status: In progress
+Status: In review
 
 ## Goal
 
@@ -233,6 +233,10 @@ the Widget library: there are no new widgets.
   Feature says.
 - **`threshold_color(thresholds, shown, own)`**: the color of the last
   threshold at or below the shown value, else the element's own.
+- **`shown_value(element, values, units)`**: what a `value` element shows,
+  the number, its unit and the number's color, or nothing when it hides.
+  It moved out of the renderer, so that a test can reach it; the renderer
+  only measures and draws.
 
 ### Drawing
 
@@ -240,11 +244,12 @@ the Widget library: there are no new widgets.
   unit in `unit_style`.
 - **Characters the layout can't know**: a title can have any character,
   `Rückweg`, which the fonts weren't loaded with, since
-  `layout_codepoints()` only has the layout's own text. The renderer looks
-  at the text it's about to draw, and if it has characters the fonts
-  don't, adds them and loads the fonts again. That happens once per new
-  character, so once per activity at most. `layout_codepoints()` adds the
-  default units' characters, `°C` and `°F`.
+  `layout_codepoints()` only has the layout's own text. The title is the
+  only such text (month and day names are English), so the renderer gives
+  it to **`FontCache::add_codepoints()`** (Widget library), which adds
+  the characters the fonts don't have, and unloads them to be loaded
+  again with them. That happens once per activity at most.
+  `layout_codepoints()` always has `°`, for `°C` and `°F`.
 
 ### Built-in layouts and the README
 
