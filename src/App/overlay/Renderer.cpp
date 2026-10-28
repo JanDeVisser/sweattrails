@@ -7,6 +7,7 @@
 #include <cmath>
 #include <format>
 
+#include <overlay/ElevationProfile.h>
 #include <overlay/Renderer.h>
 #include <overlay/Shapes.h>
 
@@ -16,6 +17,11 @@ namespace {
 
 // A value's unit is this much of its font size to the right of it.
 constexpr float UnitGap = 0.2f;
+
+// In design pixels: the ring around a profile's marker, and the space
+// between the marker and its label.
+constexpr float MarkerOutline = 2.0f;
+constexpr float LabelGap = 4.0f;
 
 }
 
@@ -214,33 +220,17 @@ void OverlayRenderer::draw(GraphElement const &graph, FieldValues const &values,
     auto const columns = graph_columns(source, graph, unit, *now, static_cast<size_t>(content.width));
     auto const bottom = content.y + content.height;
 
+    Trace const          trace { .line = graph.line, .fill = graph.fill };
     std::vector<Vector2> run;
-    auto const           draw_run = [&]() {
-        if (graph.fill) {
-            for (auto ix = 1uz; ix < run.size(); ++ix) {
-                auto const &l = run[ix - 1];
-                auto const &r = run[ix];
-                // Counter-clockwise on the screen, as raylib draws them.
-                DrawTriangle(l, Vector2 { .x = l.x, .y = bottom }, Vector2 { .x = r.x, .y = bottom }, *graph.fill);
-                DrawTriangle(l, Vector2 { .x = r.x, .y = bottom }, r, *graph.fill);
-            }
-        }
-        auto const width = graph.line.width * m_scale;
-        if (run.size() == 1) {
-            DrawCircleV(run.front(), width / 2, graph.line.color);
-        } else if (run.size() > 1) {
-            DrawSplineLinear(run.data(), static_cast<int>(run.size()), width, graph.line.color);
-        }
-        run.clear();
-    };
     for (auto ix = 0uz; ix < columns.size(); ++ix) {
         if (!columns[ix]) {
-            draw_run();
+            draw_trace(run, trace, bottom);
+            run.clear();
             continue;
         }
         run.push_back(Vector2 { .x = content.x + static_cast<float>(ix) + 0.5f, .y = graph_y(*columns[ix], *bounds, content) });
     }
-    draw_run();
+    draw_trace(run, trace, bottom);
 
     auto const position = graph_position(source, graph, *now);
     auto const value = values[graph.field];
@@ -250,8 +240,85 @@ void OverlayRenderer::draw(GraphElement const &graph, FieldValues const &values,
     }
 }
 
-void OverlayRenderer::draw(ProfileElement const &, FieldValues const &, Rectangle const &)
+// A line through the points, and the area under it down to `bottom`.
+void OverlayRenderer::draw_trace(std::vector<Vector2> const &points, Trace const &trace, float bottom) const
 {
+    if (trace.fill) {
+        for (auto ix = 1uz; ix < points.size(); ++ix) {
+            auto const &l = points[ix - 1];
+            auto const &r = points[ix];
+            // Counter-clockwise on the screen, as raylib draws them.
+            DrawTriangle(l, Vector2 { .x = l.x, .y = bottom }, Vector2 { .x = r.x, .y = bottom }, *trace.fill);
+            DrawTriangle(l, Vector2 { .x = r.x, .y = bottom }, r, *trace.fill);
+        }
+    }
+    auto const width = trace.line.width * m_scale;
+    if (points.size() == 1) {
+        DrawCircleV(points.front(), width / 2, trace.line.color);
+    } else if (points.size() > 1) {
+        DrawSplineLinear(points.data(), static_cast<int>(points.size()), width, trace.line.color);
+    }
+}
+
+// The profile of the extent, done up to the moment and remaining after
+// it, with the lap lines, the marker and the labels over it.
+void OverlayRenderer::draw(ProfileElement const &profile, FieldValues const &values, Rectangle const &area)
+{
+    auto const content = draw_panel(profile.panel, screen_box(profile.at, box_size(profile.at, { }, profile.panel, m_scale), area));
+    if (!values.source || content.width < 1) {
+        return;
+    }
+    auto const &source = *values.source;
+    auto const  extent = profile_extent(source, profile, values);
+    if (!extent) {
+        return;
+    }
+    auto const unit = default_unit(OverlayField::altitude, m_layout->units, values.sport);
+    auto const columns = profile_columns(source, *extent, profile.smooth, unit, static_cast<size_t>(content.width));
+    auto const bounds = profile_bounds(columns, profile.min, profile.max, profile.min_span);
+    auto const points = profile_points(columns, bounds, content);
+    auto const bottom = content.y + content.height;
+    auto const at = profile_marker(points, *extent, values[OverlayField::distance], content);
+
+    // Without a moment, such as before the first distance, all of it remains.
+    auto const split = split_at(points, at ? at->x : content.x - 1);
+    draw_trace(split.remaining, profile.remaining.value_or(profile.done), bottom);
+    draw_trace(split.done, profile.done, bottom);
+    if (profile.laps && profile.extent == ProfileExtent::All) {
+        for (auto const start : lap_starts(source, *extent)) {
+            auto const x = profile_x(start, *extent, content);
+            DrawLineEx(Vector2 { .x = x, .y = content.y }, Vector2 { .x = x, .y = bottom }, profile.laps->width * m_scale, profile.laps->color);
+        }
+    }
+    if (profile.axis_labels) {
+        if (auto const f = font(*profile.axis_labels, profile.number); f) {
+            auto const lowest = std::format("{:.0f} {}", bounds.min, unit.name);
+            auto const measured = MeasureTextEx(*f, lowest.c_str(), static_cast<float>(f->baseSize), 0);
+            draw_text(*f, std::format("{:.0f} {}", bounds.max, unit.name), Vector2 { .x = content.x, .y = content.y }, *profile.axis_labels);
+            draw_text(*f, lowest, Vector2 { .x = content.x, .y = bottom - measured.y }, *profile.axis_labels);
+        }
+    }
+    if (!at) {
+        return;
+    }
+    auto const radius = profile.marker ? profile.marker->radius * m_scale : 0.0f;
+    if (auto const &marker = profile.marker; marker) {
+        if (marker->drop_line) {
+            DrawLineEx(*at, Vector2 { .x = at->x, .y = bottom }, marker->drop_line->width * m_scale, marker->drop_line->color);
+        }
+        if (marker->outline) {
+            DrawRing(*at, radius, radius + MarkerOutline * m_scale, 0, 360, 0, *marker->outline);
+        }
+        DrawCircleV(*at, radius, marker->color);
+    }
+    if (auto const &label = profile.marker_label; label) {
+        if (auto const f = font(label->style, profile.number); f) {
+            auto const text = fill_template(label->text, values, m_layout->units, "--");
+            auto const measured = MeasureTextEx(*f, text.c_str(), static_cast<float>(f->baseSize), 0);
+            auto const box = label_box(*at, radius + LabelGap * m_scale, measured, content);
+            draw_text(*f, text, Vector2 { .x = box.x, .y = box.y }, label->style);
+        }
+    }
 }
 
 }
