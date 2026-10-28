@@ -41,14 +41,15 @@ struct OverlayRenderer {
 
     // Draws the elements into `area`, in screen or render texture
     // coordinates, scaled to fit it.
-    void draw(FieldValues const &values, Rectangle const &area);
+    // `time` says which elements show, and how much while they fade.
+    void draw(FieldValues const &values, Rectangle const &area, VideoTime time);
 
     // The maps' tiles, which the owner of `tiles` asks for before drawing,
     // with `detail` drawing pixels to a pixel of what's made: 2 for a
     // render. Without, as in tests, maps have no tiles.
     void set_tiles(OverlayTiles *tiles, float detail);
     // The tiles the maps show in `area` at the moment: what draw() draws.
-    [[nodiscard]] std::vector<Tile> tiles_needed(FieldValues const &values, Rectangle const &area) const;
+    [[nodiscard]] std::vector<Tile> tiles_needed(FieldValues const &values, Rectangle const &area, VideoTime time) const;
 
 private:
     FontFinder                                   m_find;
@@ -60,6 +61,7 @@ private:
     OverlayTiles                                *m_tiles { nullptr };
     float                                        m_detail { 1 };
     float                                        m_scale { 0 };
+    float                                        m_alpha { 1 };    // Of the element being drawn, as it fades
     std::map<std::string, std::filesystem::path> m_font_paths { }; // By the layout's name for them
 
     void                draw_element(OverlayElement const &element, FieldValues const &values, Rectangle const &area);
@@ -77,6 +79,7 @@ private:
     void                draw_attribution(MapElement const &map, Rectangle const &panel, Rectangle const &area);
     void                draw_trace(std::vector<Vector2> const &points, Trace const &trace, float bottom) const;
     std::optional<Font> font(TextStyle const &style, size_t element);
+    [[nodiscard]] Color faded(Color color) const;
     void                draw_text(Font const &font, std::string_view text, Vector2 at, TextStyle const &style) const;
 };
 

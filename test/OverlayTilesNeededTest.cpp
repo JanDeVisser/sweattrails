@@ -87,6 +87,9 @@ std::set<int> levels(std::vector<Tile> const &tiles)
     return ret;
 }
 
+// A moment of a minute's video: elements without `visible` show at any.
+constexpr VideoTime Always { .at = 1, .length = 60 };
+
 constexpr std::string_view FollowMap = R"({ "type": "map", "view": "follow", "zoom": 15, "size": { "width": 300, "height": 300 },
     "tiles": { "filter": "dark" } })";
 
@@ -108,15 +111,15 @@ void test_levels()
     CHECK(!renderer.error());
 
     renderer.set_tiles(&tiles, 2);
-    auto const hd = renderer.tiles_needed(at_second(source, 1.5), frame(3840, 2160));
+    auto const hd = renderer.tiles_needed(at_second(source, 1.5), frame(3840, 2160), Always);
     CHECK_EQ(levels(hd), std::set { 15 });
     // 600 px of the large frame at 512 px a tile: two or three across.
     CHECK(hd.size() >= 4 && hd.size() <= 9);
-    CHECK_EQ(levels(renderer.tiles_needed(at_second(source, 1.5), frame(7680, 4320))), std::set { 16 });
-    CHECK_EQ(levels(renderer.tiles_needed(at_second(source, 1.5), frame(5120, 2880))), std::set { 15 });
+    CHECK_EQ(levels(renderer.tiles_needed(at_second(source, 1.5), frame(7680, 4320), Always)), std::set { 16 });
+    CHECK_EQ(levels(renderer.tiles_needed(at_second(source, 1.5), frame(5120, 2880), Always)), std::set { 15 });
 
     renderer.set_tiles(&tiles, 1);
-    CHECK_EQ(levels(renderer.tiles_needed(at_second(source, 1.5), frame(960, 540))), std::set { 14 });
+    CHECK_EQ(levels(renderer.tiles_needed(at_second(source, 1.5), frame(960, 540), Always)), std::set { 14 });
 }
 
 // The same tiles as the frame after, while the rider is in the same place.
@@ -128,8 +131,8 @@ void test_follow_moves()
     OverlayRenderer     renderer { any_font };
     renderer.set_layout(layout_of(FollowMap), "test.overlay.json");
     renderer.set_tiles(&tiles, 2);
-    auto const now = renderer.tiles_needed(at_second(source, 1.5), frame(3840, 2160));
-    auto const again = renderer.tiles_needed(at_second(source, 1.5), frame(3840, 2160));
+    auto const now = renderer.tiles_needed(at_second(source, 1.5), frame(3840, 2160), Always);
+    auto const again = renderer.tiles_needed(at_second(source, 1.5), frame(3840, 2160), Always);
     CHECK(now == again);
     CHECK(!now.empty());
 }
@@ -144,16 +147,16 @@ void test_none()
     {
         OverlayRenderer renderer { any_font };
         renderer.set_layout(layout_of(FollowMap), "test.overlay.json");
-        CHECK(renderer.tiles_needed(at_second(source, 1.5), frame(3840, 2160)).empty());
+        CHECK(renderer.tiles_needed(at_second(source, 1.5), frame(3840, 2160), Always).empty());
         renderer.set_tiles(&tiles, 2);
         FieldValues const without_source { };
-        CHECK(renderer.tiles_needed(without_source, frame(3840, 2160)).empty());
+        CHECK(renderer.tiles_needed(without_source, frame(3840, 2160), Always).empty());
     }
     {
         OverlayRenderer renderer { any_font };
         renderer.set_layout(layout_of(R"({ "type": "map", "view": "follow", "size": { "width": 300, "height": 300 } })"), "test.overlay.json");
         renderer.set_tiles(&tiles, 2);
-        CHECK(renderer.tiles_needed(at_second(source, 1.5), frame(3840, 2160)).empty());
+        CHECK(renderer.tiles_needed(at_second(source, 1.5), frame(3840, 2160), Always).empty());
     }
     Storage             storage { };
     Activity            indoors { storage, ActivityID { } };
@@ -161,7 +164,7 @@ void test_none()
     OverlayRenderer     renderer { any_font };
     renderer.set_layout(layout_of(FollowMap), "test.overlay.json");
     renderer.set_tiles(&tiles, 2);
-    CHECK(renderer.tiles_needed(at_second(without, 1.5), frame(3840, 2160)).empty());
+    CHECK(renderer.tiles_needed(at_second(without, 1.5), frame(3840, 2160), Always).empty());
 }
 
 // `fit`: the few tiles of the whole ride, the same on every frame.
@@ -173,8 +176,8 @@ void test_fit()
     OverlayRenderer     renderer { any_font };
     renderer.set_layout(layout_of(R"({ "type": "map", "view": "fit", "size": { "width": 300, "height": 300 }, "tiles": { } })"), "test.overlay.json");
     renderer.set_tiles(&tiles, 2);
-    auto const first = renderer.tiles_needed(at_second(source, 0), frame(3840, 2160));
-    auto const last = renderer.tiles_needed(at_second(source, 3), frame(3840, 2160));
+    auto const first = renderer.tiles_needed(at_second(source, 0), frame(3840, 2160), Always);
+    auto const last = renderer.tiles_needed(at_second(source, 3), frame(3840, 2160), Always);
     CHECK(!first.empty());
     CHECK(first.size() <= 9);
     CHECK(first == last);
@@ -183,11 +186,29 @@ void test_fit()
 
 }
 
+// A map that isn't showing at the moment needs no tiles.
+void test_hidden()
+{
+    Ride                r;
+    OverlaySource const source { r.activity };
+    auto                tiles = no_tiles();
+    OverlayRenderer     renderer { any_font };
+    renderer.set_layout(layout_of(R"({ "type": "map", "view": "follow", "size": { "width": 300, "height": 300 },
+        "tiles": { }, "visible": { "from": 5, "to": 10 } })"),
+        "test.overlay.json");
+    renderer.set_tiles(&tiles, 2);
+    auto const at = [&](double t) { return renderer.tiles_needed(at_second(source, 1.5), frame(3840, 2160), VideoTime { .at = t, .length = 60 }); };
+    CHECK(at(4).empty());
+    CHECK(!at(5).empty());
+    CHECK(at(10).empty());
+}
+
 int main()
 {
     test_levels();
     test_follow_moves();
     test_none();
     test_fit();
+    test_hidden();
     return ST::Test::test_result();
 }

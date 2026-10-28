@@ -83,7 +83,7 @@ void OverlayRenderer::clear()
     m_scale = 0;
 }
 
-void OverlayRenderer::draw(FieldValues const &values, Rectangle const &area)
+void OverlayRenderer::draw(FieldValues const &values, Rectangle const &area, VideoTime time)
 {
     if (!m_layout || m_error) {
         return;
@@ -97,8 +97,12 @@ void OverlayRenderer::draw(FieldValues const &values, Rectangle const &area)
     // fonts are loaded again with them, once.
     m_fonts.add_codepoints(values.title);
     for (auto const &element : m_layout->elements) {
-        draw_element(element, values, area);
+        m_alpha = visibility_alpha(std::visit([](auto const &e) { return e.visible; }, element), time);
+        if (m_alpha > 0) {
+            draw_element(element, values, area);
+        }
     }
+    m_alpha = 1;
 }
 
 void OverlayRenderer::set_tiles(OverlayTiles *tiles, float detail)
@@ -107,7 +111,7 @@ void OverlayRenderer::set_tiles(OverlayTiles *tiles, float detail)
     m_detail = detail;
 }
 
-std::vector<Tile> OverlayRenderer::tiles_needed(FieldValues const &values, Rectangle const &area) const
+std::vector<Tile> OverlayRenderer::tiles_needed(FieldValues const &values, Rectangle const &area, VideoTime time) const
 {
     if (!m_layout || m_error || m_tiles == nullptr) {
         return { };
@@ -116,7 +120,7 @@ std::vector<Tile> OverlayRenderer::tiles_needed(FieldValues const &values, Recta
     std::vector<Tile> ret;
     for (auto const &element : m_layout->elements) {
         auto const *map = std::get_if<MapElement>(&element);
-        if (map == nullptr || !map->tiles) {
+        if (map == nullptr || !map->tiles || visibility_alpha(map->visible, time) <= 0) {
             continue;
         }
         auto const frame = map_frame(*map, values, area, scale);
@@ -146,15 +150,21 @@ std::optional<Font> OverlayRenderer::font(TextStyle const &style, size_t element
     return ret;
 }
 
+Color OverlayRenderer::faded(Color color) const
+{
+    color.a = static_cast<unsigned char>(std::lround(static_cast<float>(color.a) * m_alpha));
+    return color;
+}
+
 void OverlayRenderer::draw_text(Font const &font, std::string_view text, Vector2 at, TextStyle const &style) const
 {
     auto const s = std::string { text };
     auto const size = static_cast<float>(font.baseSize);
     if (style.shadow) {
         auto const offset = Vector2 { .x = at.x + style.shadow->offset.x * m_scale, .y = at.y + style.shadow->offset.y * m_scale };
-        DrawTextEx(font, s.c_str(), offset, size, 0, style.shadow->color);
+        DrawTextEx(font, s.c_str(), offset, size, 0, faded(style.shadow->color));
     }
-    DrawTextEx(font, s.c_str(), at, size, 0, style.color);
+    DrawTextEx(font, s.c_str(), at, size, 0, faded(style.color));
 }
 
 void OverlayRenderer::draw_element(OverlayElement const &element, FieldValues const &values, Rectangle const &area)
@@ -201,14 +211,14 @@ void draw_line(std::vector<Vector2> const &points, float width, Color color)
 void OverlayRenderer::draw_background(Panel const &panel, ClipShape const &shape) const
 {
     if (panel.background) {
-        DrawRectangleRounded(shape.box, roundness(shape), 0, *panel.background);
+        DrawRectangleRounded(shape.box, roundness(shape), 0, faded(*panel.background));
     }
 }
 
 void OverlayRenderer::draw_border(Panel const &panel, ClipShape const &shape) const
 {
     if (panel.border) {
-        DrawRectangleRoundedLinesEx(shape.box, roundness(shape), 0, panel.border->width * m_scale, panel.border->color);
+        DrawRectangleRoundedLinesEx(shape.box, roundness(shape), 0, panel.border->width * m_scale, faded(panel.border->color));
     }
 }
 
@@ -271,17 +281,17 @@ void OverlayRenderer::draw(GaugeElement const &gauge, FieldValues const &values,
 
     if (gauge.shape == GaugeShape::Arc) {
         auto const ring = arc_ring(content, thickness);
-        DrawRing(ring.center, ring.inner, ring.outer, ArcStart, ArcStart + ArcSweep, 0, gauge.track);
+        DrawRing(ring.center, ring.inner, ring.outer, ArcStart, ArcStart + ArcSweep, 0, faded(gauge.track));
         if (fraction && *fraction > 0) {
             auto const angles = arc_angles(*fraction);
-            DrawRing(ring.center, ring.inner, ring.outer, angles.start, angles.end, 0, fill);
+            DrawRing(ring.center, ring.inner, ring.outer, angles.start, angles.end, 0, faded(fill));
         }
         return;
     }
     auto const rects = bar_rects(content, gauge.shape, thickness, fraction.value_or(0));
-    DrawRectangleRec(rects.track, gauge.track);
+    DrawRectangleRec(rects.track, faded(gauge.track));
     if (fraction && *fraction > 0) {
-        DrawRectangleRec(rects.fill, fill);
+        DrawRectangleRec(rects.fill, faded(fill));
     }
 }
 
@@ -319,7 +329,7 @@ void OverlayRenderer::draw(GraphElement const &graph, FieldValues const &values,
     auto const value = values[graph.field];
     if (graph.cursor && position && value) {
         auto const at = Vector2 { .x = content.x + *position * content.width, .y = graph_y(unit.shown(*value), *bounds, content) };
-        DrawCircleV(at, graph.cursor->radius * m_scale, graph.cursor->color);
+        DrawCircleV(at, graph.cursor->radius * m_scale, faded(graph.cursor->color));
     }
 }
 
@@ -331,15 +341,15 @@ void OverlayRenderer::draw_trace(std::vector<Vector2> const &points, Trace const
             auto const &l = points[ix - 1];
             auto const &r = points[ix];
             // Counter-clockwise on the screen, as raylib draws them.
-            DrawTriangle(l, Vector2 { .x = l.x, .y = bottom }, Vector2 { .x = r.x, .y = bottom }, *trace.fill);
-            DrawTriangle(l, Vector2 { .x = r.x, .y = bottom }, r, *trace.fill);
+            DrawTriangle(l, Vector2 { .x = l.x, .y = bottom }, Vector2 { .x = r.x, .y = bottom }, faded(*trace.fill));
+            DrawTriangle(l, Vector2 { .x = r.x, .y = bottom }, r, faded(*trace.fill));
         }
     }
     auto const width = trace.line.width * m_scale;
     if (points.size() == 1) {
-        DrawCircleV(points.front(), width / 2, trace.line.color);
+        DrawCircleV(points.front(), width / 2, faded(trace.line.color));
     } else if (points.size() > 1) {
-        DrawSplineLinear(points.data(), static_cast<int>(points.size()), width, trace.line.color);
+        DrawSplineLinear(points.data(), static_cast<int>(points.size()), width, faded(trace.line.color));
     }
 }
 
@@ -370,7 +380,7 @@ void OverlayRenderer::draw(ProfileElement const &profile, FieldValues const &val
     if (profile.laps && profile.extent == ProfileExtent::All) {
         for (auto const start : lap_starts(source, *extent)) {
             auto const x = profile_x(start, *extent, content);
-            DrawLineEx(Vector2 { .x = x, .y = content.y }, Vector2 { .x = x, .y = bottom }, profile.laps->width * m_scale, profile.laps->color);
+            DrawLineEx(Vector2 { .x = x, .y = content.y }, Vector2 { .x = x, .y = bottom }, profile.laps->width * m_scale, faded(profile.laps->color));
         }
     }
     if (profile.axis_labels) {
@@ -387,12 +397,12 @@ void OverlayRenderer::draw(ProfileElement const &profile, FieldValues const &val
     auto const radius = profile.marker ? profile.marker->radius * m_scale : 0.0f;
     if (auto const &marker = profile.marker; marker) {
         if (marker->drop_line) {
-            DrawLineEx(*at, Vector2 { .x = at->x, .y = bottom }, marker->drop_line->width * m_scale, marker->drop_line->color);
+            DrawLineEx(*at, Vector2 { .x = at->x, .y = bottom }, marker->drop_line->width * m_scale, faded(marker->drop_line->color));
         }
         if (marker->outline) {
-            DrawRing(*at, radius, radius + MarkerOutline * m_scale, 0, 360, 0, *marker->outline);
+            DrawRing(*at, radius, radius + MarkerOutline * m_scale, 0, 360, 0, faded(*marker->outline));
         }
-        DrawCircleV(*at, radius, marker->color);
+        DrawCircleV(*at, radius, faded(marker->color));
     }
     if (auto const &label = profile.marker_label; label) {
         if (auto const f = font(label->style, profile.number); f) {
@@ -428,18 +438,18 @@ void OverlayRenderer::draw(MapElement const &map, FieldValues const &values, Rec
         m_clip.begin(inner.box, inner.radius);
         if (track.outline) {
             auto const wider = 2 * track.outline->width * m_scale;
-            draw_line(remaining, track.remaining.width * m_scale + wider, track.outline->color);
-            draw_line(done, track.done.width * m_scale + wider, track.outline->color);
+            draw_line(remaining, track.remaining.width * m_scale + wider, faded(track.outline->color));
+            draw_line(done, track.done.width * m_scale + wider, faded(track.outline->color));
         }
-        draw_line(remaining, track.remaining.width * m_scale, track.remaining.color);
-        draw_line(done, track.done.width * m_scale, track.done.color);
+        draw_line(remaining, track.remaining.width * m_scale, faded(track.remaining.color));
+        draw_line(done, track.done.width * m_scale, faded(track.done.color));
         if (auto const &marker = map.marker; marker) {
             auto const centre = transform->to_screen(*at);
             auto const radius = marker->radius * m_scale;
             if (marker->outline) {
-                DrawRing(centre, radius, radius + MarkerOutline * m_scale, 0, 360, 0, *marker->outline);
+                DrawRing(centre, radius, radius + MarkerOutline * m_scale, 0, 360, 0, faded(*marker->outline));
             }
-            DrawCircleV(centre, radius, marker->color);
+            DrawCircleV(centre, radius, faded(marker->color));
         }
         m_clip.end();
     }
@@ -453,7 +463,7 @@ void OverlayRenderer::draw(MapElement const &map, FieldValues const &values, Rec
 void OverlayRenderer::draw_tiles(MapElement const &map, MapTransform const &transform, ClipShape const &clip)
 {
     auto const full = Rectangle { .x = 0, .y = 0, .width = 256, .height = 256 };
-    auto const tint = Fade(WHITE, map.tiles->opacity);
+    auto const tint = faded(Fade(WHITE, map.tiles->opacity));
     m_clip.begin(clip.box, clip.radius, color_filter(map.tiles->filter));
     for (auto const &[tile, screen] : map_tiles(transform, clip.box, tile_level(transform, m_detail))) {
         if (auto const *texture = m_tiles->texture(tile); texture != nullptr) {
