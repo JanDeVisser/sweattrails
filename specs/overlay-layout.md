@@ -635,9 +635,10 @@ most of the elements exist.
 6. **`map`**, split in two:
    - 6a, [overlay-map.md](overlay-map.md): the track, `fit` and `follow`,
      clipping, and the marker.
-   - 6b: the OpenStreetMap tiles under it, tile filters, the attribution,
-     fetching the tiles along the track before a render, and the tile code
-     prerequisites.
+   - 6b, [overlay-map-tiles.md](overlay-map-tiles.md): the OpenStreetMap
+     tiles under it, tile filters, the attribution, fetching each
+     frame's tiles during a render (OSM's policy doesn't allow fetching
+     them before it), and some of the tile code prerequisites.
 7. **`group`, `image`, and `visible`/`fade`**.
 
 Deferred, in no slice yet:
