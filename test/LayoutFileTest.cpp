@@ -201,6 +201,39 @@ void test_dashboard_map()
     CHECK_EQ(map.attribution.font_size, 14.0f);
 }
 
+// The ride's name and date for the video's first 5 seconds, on a panel,
+// fading over half a second; everything else always shows.
+void test_dashboard_title_card()
+{
+    LayoutFile file { fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays" / "cycling-dashboard.overlay.json" };
+    CHECK(file.reload_if_changed());
+    if (!file.layout) {
+        return;
+    }
+    std::vector<std::string> card;
+    for (auto const &element : file.layout->elements) {
+        auto const *text = std::get_if<TextElement>(&element);
+        auto const  visible = std::visit([](auto const &e) { return e.visible; }, element);
+        if (!visible) {
+            continue;
+        }
+        CHECK_EQ(visible->from, 0.0);
+        CHECK_EQ(visible->to.value_or(0), 5.0);
+        CHECK_EQ(visible->fade, 0.5);
+        std::string shown;
+        if (text != nullptr) {
+            for (auto const &part : text->text.parts) {
+                if (auto const *field = std::get_if<Placeholder>(&part)) {
+                    shown += std::format("{{{}}}", OverlayField_name(field->field));
+                }
+            }
+            shown += text->panel.background ? "panel" : "";
+        }
+        card.push_back(shown);
+    }
+    CHECK_EQ(card, (std::vector<std::string> { "panel", "{title}", "{date}" }));
+}
+
 // A file that isn't there yet: an error, once, until it's made.
 void test_missing_file()
 {
@@ -305,8 +338,9 @@ int main()
     test_chosen_layout();
     test_builtin_layout("cycling-basic", 11);
     test_builtin_layout("running-basic", 9);
-    test_builtin_layout("cycling-dashboard", 17);
+    test_builtin_layout("cycling-dashboard", 20);
     test_dashboard_map();
+    test_dashboard_title_card();
     test_layout_fonts();
     test_missing_file();
     test_error_names_file_element_and_property();

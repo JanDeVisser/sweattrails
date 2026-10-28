@@ -64,7 +64,7 @@ struct OverlayRender {
 private:
     OverlayRender(RenderJob job, FontFinder find, TileFetcher cached, TileScheduler schedule);
     [[nodiscard]] Rectangle large_area() const;
-    void                    render_frame(FieldValues const &values);
+    void                    render_frame(FieldValues const &values, VideoTime time);
 
     RenderJob                                       m_job;
     OverlaySource                                   m_source;

@@ -119,8 +119,9 @@ void OverlayPreview::draw()
         BeginScissorMode(static_cast<int>(area.x), static_cast<int>(area.y), static_cast<int>(area.width), static_cast<int>(area.height));
         // What's not there yet is left out, until it has downloaded.
         auto const values = values_at_record(*source, activity->current_record());
-        tiles.request(renderer.tiles_needed(values, area));
-        renderer.draw(values, area);
+        auto const time = preview_time(activity->activity, values[OverlayField::elapsed].value_or(0), activity->selection());
+        tiles.request(renderer.tiles_needed(values, area, time));
+        renderer.draw(values, area, time);
         EndScissorMode();
     }
     if (layout.skipped > 0) {

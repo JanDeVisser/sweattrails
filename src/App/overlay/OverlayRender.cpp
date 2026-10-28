@@ -92,12 +92,14 @@ void OverlayRender::step(double budget)
     while (m_frame < m_frames && m_encoder->can_write() && GetTime() < until) {
         // A frame waits for its tiles, which are only fetched once a frame
         // shows them: OSM doesn't allow fetching them ahead.
-        auto const values = values_at_time(m_source, frame_time(m_job.range, m_job.settings.fps, m_frame));
-        m_waiting = !m_tiles.request(m_renderer.tiles_needed(values, large_area()));
+        auto const seconds = frame_time(m_job.range, m_job.settings.fps, m_frame);
+        auto const values = values_at_time(m_source, seconds);
+        auto const time = VideoTime { .at = seconds - m_job.range.from, .length = m_job.range.to - m_job.range.from };
+        m_waiting = !m_tiles.request(m_renderer.tiles_needed(values, large_area(), time));
         if (m_waiting) {
             return;
         }
-        render_frame(values);
+        render_frame(values, time);
         // A font raylib couldn't load: the frames would be blank.
         if (auto const &error = m_renderer.error(); error) {
             m_encoder->stop();
@@ -121,7 +123,7 @@ Rectangle OverlayRender::large_area() const
     return Rectangle { .x = 0, .y = 0, .width = static_cast<float>(width * Supersampling), .height = static_cast<float>(height * Supersampling) };
 }
 
-void OverlayRender::render_frame(FieldValues const &values)
+void OverlayRender::render_frame(FieldValues const &values, VideoTime time)
 {
     auto const [width, height] = m_job.settings.resolution;
     auto const large = large_area();
@@ -132,7 +134,7 @@ void OverlayRender::render_frame(FieldValues const &values)
     // leaves the colors premultiplied, which the encoder undoes.
     rlSetBlendFactorsSeparate(RL_SRC_ALPHA, RL_ONE_MINUS_SRC_ALPHA, RL_ONE, RL_ONE_MINUS_SRC_ALPHA, RL_FUNC_ADD, RL_FUNC_ADD);
     BeginBlendMode(BLEND_CUSTOM_SEPARATE);
-    m_renderer.draw(values, large);
+    m_renderer.draw(values, large, time);
     EndBlendMode();
     EndTextureMode();
 

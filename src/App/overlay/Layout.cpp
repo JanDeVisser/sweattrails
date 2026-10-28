@@ -958,7 +958,64 @@ float fraction_y(Anchor a)
     }
 }
 
+// None without `visible` or `fade`: the element always shows.
+std::expected<std::optional<Visibility>, LayoutError> visibility(JSONValue const &json)
+{
+    auto const visible = json.get("visible");
+    auto const fade = json.get("fade");
+    if (!visible && !fade) {
+        return std::optional<Visibility> { };
+    }
+    Visibility ret;
+    if (visible) {
+        if (!visible->is_object()) {
+            return error("\"visible\" isn't an object, such as { \"from\": 0, \"to\": 5 }");
+        }
+        TRY(check_properties(*visible, "\"visible\"", { { "from", "to" } }));
+        if (auto const from = visible->get("from"); from) {
+            ret.from = TRY_EVAL(number(*from, "visible.from"));
+        }
+        if (auto const to = visible->get("to"); to && string_of(*to) != "end") {
+            auto const t = number_of(*to);
+            if (!t) {
+                return error("\"visible.to\" isn't a number or \"end\"");
+            }
+            ret.to = *t;
+        }
+        // Ending at the video's start: probably meant as its end.
+        if (ret.to == 0.0) {
+            return error("\"visible\": it's never visible, as \"to\" is the video's start: its end is \"end\"");
+        }
+        // Both from the start, or both from the end: empty whatever the
+        // video's length.
+        if (ret.to && (ret.from < 0) == (*ret.to < 0) && ret.from >= *ret.to) {
+            return error("\"visible\": it's never visible, as \"from\" isn't before \"to\"");
+        }
+    }
+    if (fade) {
+        auto const f = number_of(*fade);
+        if (!f || *f < 0) {
+            return error("\"fade\" isn't a number of 0 or more");
+        }
+        ret.fade = *f;
+    }
+    return std::optional { ret };
+}
+
+std::expected<std::optional<OverlayElement>, LayoutError> typed_element(JSONValue const &json, JSONValue const &defaults, JSONValue const &styles);
+
+// The element, and when it shows, which every type has.
 std::expected<std::optional<OverlayElement>, LayoutError> element(JSONValue const &json, JSONValue const &defaults, JSONValue const &styles)
+{
+    auto ret = TRY_EVAL(typed_element(json, defaults, styles));
+    if (ret) {
+        auto const visible = TRY_EVAL(visibility(TRY_EVAL(cascaded(json, defaults, styles))));
+        std::visit([&visible](auto &e) { e.visible = visible; }, *ret);
+    }
+    return ret;
+}
+
+std::expected<std::optional<OverlayElement>, LayoutError> typed_element(JSONValue const &json, JSONValue const &defaults, JSONValue const &styles)
 {
     if (!json.is_object()) {
         return error("it isn't an object");
@@ -1005,6 +1062,26 @@ std::expected<std::optional<OverlayElement>, LayoutError> element(JSONValue cons
     return error(std::format("\"type\": `{}` isn't an element type", name));
 }
 
+}
+
+float visibility_alpha(std::optional<Visibility> const &visible, VideoTime time)
+{
+    if (!visible) {
+        return 1;
+    }
+    // Times from the start, inside the video, so that the element fades
+    // in and out within it.
+    auto const seconds = [&time](double t) { return (t < 0) ? time.length + t : t; };
+    auto const from = std::max(0.0, seconds(visible->from));
+    auto const to = std::min(time.length, visible->to ? seconds(*visible->to) : time.length);
+    if (time.at < from || time.at >= to) {
+        return 0;
+    }
+    if (visible->fade <= 0) {
+        return 1;
+    }
+    auto const alpha = std::min({ 1.0, (time.at - from) / visible->fade, (to - time.at) / visible->fade });
+    return static_cast<float>(alpha);
 }
 
 std::string LayoutError::to_string() const

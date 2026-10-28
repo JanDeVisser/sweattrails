@@ -265,6 +265,29 @@ std::expected<RenderRange, std::string> parse_range(std::string_view text, Activ
     return RenderRange { .from = std::max(0.0, from), .to = std::min(clock.duration, to) };
 }
 
+RenderRange initial_render_range(Activity const &activity, std::optional<std::pair<size_t, size_t>> selection)
+{
+    if (selection) {
+        if (auto const selected = records_range(activity, selection->first, selection->second); selected.to > selected.from) {
+            return selected;
+        }
+    }
+    return RenderRange { .from = 0, .to = activity_clock(activity).duration };
+}
+
+VideoTime preview_time(Activity const &activity, double elapsed, std::optional<std::pair<size_t, size_t>> selection)
+{
+    // A frame at 30 fps, the usual; the preview doesn't know the render's.
+    constexpr double LastFrame = 1.0 / 30;
+    auto const       range = initial_render_range(activity, selection);
+    auto const       length = range.to - range.from;
+    auto             at = elapsed - range.from;
+    if (std::abs(at - length) < 1e-6) {
+        at = std::max(0.0, length - LastFrame);
+    }
+    return VideoTime { .at = at, .length = length };
+}
+
 std::string format_range(RenderRange const &range)
 {
     return std::format("{}-{}", clock_text(range.from), clock_text(range.to));

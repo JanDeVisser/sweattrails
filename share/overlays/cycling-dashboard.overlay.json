@@ -16,7 +16,9 @@
                    "border": { "color": "#ffffff30", "width": 1 } },
         "label": { "font": "Inter-Regular.ttf", "font_size": 22, "color": "#ffffffcc" },
         "line": { "font_size": 40 },
-        "unit": { "unit_style": { "font": "Inter-Regular.ttf", "font_size": 28 } }
+        "unit": { "unit_style": { "font": "Inter-Regular.ttf", "font_size": 28 } },
+        // For the first 5 seconds of the video, fading in and out.
+        "title_card": { "visible": { "to": 5 }, "fade": 0.5 }
     },
     "elements": [
         // The distance and the times in the top left, in a panel: a text
@@ -92,6 +94,15 @@
         { "type": "value", "field": "power", "style": "unit",
           "at": { "x": -160, "y": -160, "anchor": "center" } },
         { "type": "text", "text": "POWER", "style": "label",
-          "at": { "x": -160, "y": -92, "anchor": "center" } }
+          "at": { "x": -160, "y": -92, "anchor": "center" } },
+
+        // The ride's name and date in the middle, at the start of the
+        // video, with room for a title of some 50 characters.
+        { "type": "text", "text": "", "style": ["title_card", "panel"],
+          "at": { "x": "50%", "y": "50%", "anchor": "center" }, "size": { "width": 1400, "height": 200 } },
+        { "type": "text", "text": "{title}", "style": "title_card", "font_size": 48,
+          "at": { "x": "50%", "y": "50%", "anchor": "bottom" } },
+        { "type": "text", "text": "{date}", "style": ["title_card", "label"], "font_size": 28,
+          "at": { "x": "50%", "y": "52%", "anchor": "top" } }
     ]
 }
