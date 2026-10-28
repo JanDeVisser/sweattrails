@@ -1,6 +1,6 @@
 # Overlay visibility: showing elements for part of a video
 
-Status: In review
+Status: Done
 
 ## Goal
 
