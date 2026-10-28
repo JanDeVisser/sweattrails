@@ -1006,6 +1006,31 @@ void test_track()
     CHECK_EQ(position_of(without, 0), "none");
 }
 
+// A gap of MaxGap is still glided across; a gap of more is held. And only
+// a position near 0° on both axes is no fix.
+void test_track_gap_and_near_zero()
+{
+    Storage  storage;
+    Activity activity { storage, ActivityID { } };
+    activity.segment.start_time.timestamp = Start;
+    auto const add = [&activity](u32 t, float lat, float lon) {
+        activity.records.push_back(record { .timestamp = DateTime { .timestamp = Start + t }, .position = Coordinates { .lat = lat, .lon = lon } });
+    };
+    add(0, 52.0f, 4.0f);
+    add(5, 52.0f, 4.001f);
+    add(11, 52.0f, 4.002f);
+    // No fix; and at Greenwich, and on the equator, which are places.
+    add(12, 0.05f, 0.05f);
+    add(13, 51.5f, 0.05f);
+    add(14, 0.05f, 30.0f);
+    OverlaySource const source { activity };
+    CHECK_EQ(source.track.size(), 5uz);
+    CHECK_EQ(source.track[3].seconds, 13.0);
+    CHECK_EQ(position_of(source, 2.5), "0.50");
+    CHECK_EQ(position_of(source, 8), "1.00");
+    CHECK_EQ(position_of(source, 11), "2.00");
+}
+
 int main()
 {
     test_names();
@@ -1056,5 +1081,6 @@ int main()
     test_average_altitude();
     test_average_altitude_across_a_step();
     test_track();
+    test_track_gap_and_near_zero();
     return ST::Test::test_result();
 }

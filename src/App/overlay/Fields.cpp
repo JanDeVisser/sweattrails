@@ -376,9 +376,7 @@ OverlaySource::OverlaySource(Activity const &activity)
         profile_area.push_back((ix == 0) ? 0.0 : profile_area.back() + area);
     }
     for (auto ix = 0uz; ix < activity.records.size(); ++ix) {
-        // A device without a fix records 0° for both, or near it, as the
-        // app's map has it.
-        if (auto const &p = activity.records[ix].position; p && std::abs(p->lat) > 0.1 && std::abs(p->lon) > 0.1) {
+        if (auto const &p = activity.records[ix].position; p && p->has_fix()) {
             auto const seconds = static_cast<double>(activity.records[ix].timestamp.timestamp) - start_of(activity);
             track.push_back(TrackPoint { .seconds = seconds, .at = world_pixel(*p, 0) });
         }

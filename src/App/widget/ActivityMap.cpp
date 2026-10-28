@@ -66,7 +66,7 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
     // A record without a position is drawn where the one before it was.
     auto const none = std::numeric_limits<double>::quiet_NaN();
     for (auto const &record : this->activity->activity.records) {
-        if (record.position && std::abs(record.position->lat) > 0.1 && std::abs(record.position->lon) > 0.1) {
+        if (record.position && record.position->has_fix()) {
             track.push_back(world_pixel(*record.position, 0));
         } else {
             track.push_back(track.empty() ? WorldPoint { .x = none, .y = none } : track.back());
