@@ -53,7 +53,9 @@ reference.
     to the map it reads as the map's, and covers none of it.
   - Where there's no room below the map in the frame, such as for a map
     at the bottom, it goes just above it instead, as the policy says the
-    attribution mustn't be off-screen.
+    attribution mustn't be off-screen. Where there's no room above
+    either, for a map as tall as the frame, it goes inside the map, at
+    its bottom.
 - **The tiles' zoom**: the OSM level nearest the map's scale, in world
   pixels per screen pixel, `round(log2(scale))`, with the tiles drawn
   bigger or smaller to fit. One rule for both views:
@@ -113,6 +115,12 @@ So a frame can wait for its tiles:
 - A tile that fails to download is left out: the panel shows through. The
   render goes on, and at its end the status line says "Couldn't download
   3 map tiles", as the app's map does.
+- After five tiles failed in a row, as from a server that refuses them
+  or a network that hangs, the render downloads no more, and the rest
+  of its tiles count as failed: it would otherwise ask again for every
+  frame's new tiles, for hundreds of requests and, at 30 s a tile on a
+  network that hangs, hours. The preview downloads again for another
+  activity, and tries the tiles that failed again.
 - How many: in `follow` at zoom 15 in a 300 px box at 1080p, a new column
   of tiles is needed every minute and a half or so at 30 km/h. That's
   about 25 tiles for a 10-minute clip, and 300 to 400 for a whole 3-hour
@@ -330,4 +338,104 @@ and `"attribution": { "style": "label", "font_size": 14 }`.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+Reviewed on `feature/overlay-map-tiles` at 034b68a.
+
+1. **Bug: the preview never forgets a tile that failed.** The preview's
+   `OverlayTiles` lives as long as the app, and `tiles_done()`
+   (`src/App/overlay/OverlayTiles.cpp:111`) adds each failure to
+   `m_failed` for good. Nothing clears it: `OverlayPreview::set_activity()`
+   (`src/App/widget/OverlayPreview.cpp:37`) doesn't touch `tiles`. So if
+   you open the preview of a ride while offline, then go online, that
+   ride's tiles stay blank in the preview until you restart the app, also
+   after showing another activity and coming back. The app's map clears
+   `failed` in `ActivityMap::set_activity()`, so it doesn't have this
+   problem. The same place would also be the moment to cancel the
+   preview's download: at present it carries on after the activity
+   changes or the preview is hidden. That's at most one view's tiles, but
+   they're no longer on screen. Not tested: `OverlayTiles` has no way to
+   forget failures yet.
+2. **Bug: the attribution is off-screen for a map as tall as the frame.**
+   `attribution_box()` (`src/App/overlay/TrackMap.cpp:173-176`) moves the
+   credit above the map when it doesn't fit below, but doesn't check that
+   it fits there either. A 600x1080 map in a 1920x1080 frame, as in a
+   map-only layout, puts it at y = -24, which the policy doesn't allow
+   ("mustn't be off-screen"). For that case the credit could go inside
+   the map, at its bottom. The new
+   `OverlayTrackMapTest::test_attribution_box_full_height` fails because
+   of this.
+3. **Suggestion: a render keeps asking a server that refuses it.** Each
+   new tile is tried once. But when the server says 429 or 403, or the
+   network hangs so that each tile waits out the 30 s timeout, the render
+   still asks for every later frame's new tiles, one at a time. That's
+   300 to 400 tiles for a 3-hour ride, and up to about 3 hours of waiting
+   on a network that hangs. Stopping the render's downloads for the rest
+   of the render after a 429 or 403, or after a few failures in a row,
+   would be kinder to OSM and to the user, and the existing "Couldn't
+   download N map tiles" would still report them. The app's map behaves
+   the same way, so this may belong in `fetch_tiles()` or the job.
+4. **Suggestion: the preview reads the cache on every frame for the tiles
+   it's waiting for.** `OverlayPreview::draw()` calls `tiles.request()` on
+   every frame (`OverlayPreview.cpp:121`), and for each tile that isn't
+   loaded yet, `have` calls the cache fetcher
+   (`OverlayTiles.cpp:58`): an `fs::exists()` per missing tile, 60 times
+   a second, for as long as its download takes. That's cheap, but the
+   tiles already asked for in `m_download` could skip the cache until
+   their `MapTile` comes in.
+
+Checked, and nothing found:
+
+- A render can't wait forever for a tile. Its download is only replaced
+  or cancelled by its own `request()`, once all the frame's tiles are
+  there. Every tile of a download ends either in a `MapTile` (loaded, or
+  failed if it doesn't decode) or in `MapTilesDone::failed`. Tiles that
+  arrive before the `MapTilesDone` let the frame go on. A busy job
+  thread, such as during a sync, delays the render but doesn't hang it.
+  The cancelled-download path only drops tiles the render no longer
+  waits for.
+- Notifications go to the app's map, the preview and the render by
+  owner, and `next_tile_owner()` keeps their ids apart.
+- `tile_level()` and `map_tiles()` give levels 15/16/15 for a render at
+  1080p, 4K and 1440p, and 14 for the preview at 960x540. The tiles'
+  edges match at level 18. Tiles past the world's top-left and
+  bottom-right edges are left out.
+- The shader's color matrix and `ColorMatrix::apply()` compute the same
+  thing. The alpha row is the identity, so opacity survives every
+  filter.
+- The preview and the render only ask for the tiles in their current
+  frame's view, at their own scale, which is no bulk download.
+
+Tests added (not committed):
+
+- `test/OverlayTilesNeededTest.cpp` (new, `overlay_tiles_needed_test`):
+  `OverlayRenderer::tiles_needed()` at render and preview levels, stable
+  between frames at one place, none without a position, tiles, a source
+  or `set_tiles()`, and `fit`'s few tiles staying the same across the
+  ride.
+- `OverlayTilesTest`: a frame waiting while its download is part way,
+  all tiles in before `MapTilesDone`, a downloaded tile that doesn't
+  decode, a replaced download's failures, a tile cached meanwhile by
+  another map.
+- `OverlayTrackMapTest`: `fit`'s 0.7 to 1.4 range in `tile_level()`, the
+  world's bottom-right edge, seams at level 18 at 1.33x, the attribution
+  in an offset area (the preview), the full-height map (fails, item 2),
+  and more `color_filter()` colors with alpha.
+- `OverlayLayoutTest`: opacity 0 and 1, -0.1, a filter of 5 or `""`, a
+  source of 1, and an unknown attribution style.
+
+### Resolution
+
+1. Fixed: `OverlayTiles::reset()` drops the download and forgets the
+   failures, and the preview calls it for each activity.
+   `test_reset`.
+2. Fixed: with no room above either, the credit goes inside the map, at
+   its bottom. `test_attribution_box_full_height` fails on the old code.
+3. Fixed in `OverlayTiles`, for the render and the preview: after
+   `GiveUpAfter` (5) tiles failed in a row, it downloads no more, logs
+   it once, and counts the rest as failed, until a `reset()`.
+   `test_give_up`. The app's map is left as it is, for a change of its
+   own.
+4. Fixed: tiles in the download going on aren't looked for in the cache.
+   `test_cached_meanwhile` expected the opposite, a tile another map
+   cached meanwhile loaded from the cache at once; it now checks that
+   the cache isn't asked again, and that the download brings the tile.
+5. Committed.
