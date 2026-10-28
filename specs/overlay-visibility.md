@@ -1,6 +1,6 @@
 # Overlay visibility: showing elements for part of a video
 
-Status: In progress
+Status: In review
 
 ## Goal
 
@@ -157,7 +157,8 @@ float visibility_alpha(std::optional<Visibility> const &visible, VideoTime time)
   selection, which is the lap when a lap is selected, if it's more than
   one record, or else the whole activity. `cmd_overlay_render()` uses it
   now, and the preview too, with `at` the marked record's elapsed time
-  less the range's start. A mark outside the range shows only the
+  less the range's start. `DisplayedActivity::selection()` gives it the
+  graph's selection as a pair of records. A mark outside the range shows only the
   elements that always show.
 
 ### Built-in layout
@@ -176,7 +177,7 @@ on it, centred in the frame.
 - `OverlayLayoutTest`: `visibility_alpha()` before, at and after `from`
   and `to`, through both fades, from the end, a window shorter than two
   fades, `fade` alone over the whole video, and none.
-- `OverlayRenderTest` (or where `records_range()` is tested):
+- `OverlayRenderTest`:
   `initial_render_range()` with a selection, a selection of one record,
   and none.
 - `OverlayTilesNeededTest`: no tiles for a hidden map.
