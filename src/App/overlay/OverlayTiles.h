@@ -42,10 +42,14 @@ struct OverlayTiles {
 
     // Loads the cached ones of `tiles`, and downloads the others, unless
     // they failed before. The download going on is replaced, unless it has
-    // all of them. True when all are loaded or failed.
+    // all of them. True when all are loaded or failed. After GiveUpAfter
+    // tiles failed in a row, it downloads no more: a server that refuses
+    // them, or a network that hangs, would only be asked again for every
+    // frame's new tiles. Those count as failed.
     bool request(std::vector<Tile> const &tiles);
     // Drops the download going on, and forgets the tiles that failed, to
-    // try them again: for another activity, when the network may be back.
+    // try them again, and downloads again after giving up: for another
+    // activity, when the network may be back.
     void reset();
     // Null if it's not loaded.
     [[nodiscard]] Texture2D const *texture(Tile const &tile) const;
@@ -59,6 +63,7 @@ struct OverlayTiles {
 
     // Many times what a frame has in view.
     static constexpr size_t MaxLoaded = 64;
+    static constexpr size_t GiveUpAfter = 5;
 
 private:
     struct Loaded {
@@ -74,6 +79,7 @@ private:
     std::set<Tile>         m_failed { };
     pTileDownload          m_download { };
     size_t                 m_requests { 0 };
+    size_t                 m_failed_in_a_row { 0 }; // Since a tile last arrived
 
     bool load(Tile const &tile, std::string const &png);
     void unload_least_recently_used(std::vector<Tile> const &keep);

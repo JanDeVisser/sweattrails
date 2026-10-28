@@ -62,6 +62,10 @@ bool OverlayTiles::request(std::vector<Tile> const &tiles)
             }
             return true;
         }
+        if (m_failed_in_a_row >= GiveUpAfter) {
+            m_failed.insert(tile);
+            return true;
+        }
         return false;
     };
     auto const next = next_download(tiles, have, m_download ? &m_download->tiles : nullptr);
@@ -90,6 +94,7 @@ void OverlayTiles::reset()
         m_download.reset();
     }
     m_failed.clear();
+    m_failed_in_a_row = 0;
 }
 
 Texture2D const *OverlayTiles::texture(Tile const &tile) const
@@ -107,7 +112,9 @@ void OverlayTiles::add_tile(MapTile const &tile)
     }
     if (!load(tile.tile, tile.png)) {
         m_failed.insert(tile.tile);
+        return;
     }
+    m_failed_in_a_row = 0;
 }
 
 // The tiles that failed aren't asked for again: a server that refuses a
@@ -118,6 +125,11 @@ void OverlayTiles::tiles_done(MapTilesDone const &done)
         return;
     }
     m_failed.insert(done.failed.begin(), done.failed.end());
+    auto const before = m_failed_in_a_row;
+    m_failed_in_a_row += done.failed.size();
+    if (before < GiveUpAfter && m_failed_in_a_row >= GiveUpAfter) {
+        warning(Map, "{} map tiles in a row couldn't be downloaded: downloading no more for the overlay", m_failed_in_a_row);
+    }
     if (done.download == m_download) {
         m_download.reset();
     }

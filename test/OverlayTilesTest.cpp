@@ -190,6 +190,30 @@ void test_reset()
     CHECK_EQ(fake.scheduled.size(), 3uz);
 }
 
+// Five failures in a row, and no more downloads: the rest count as
+// failed, until a reset. A tile that arrives starts the count again.
+void test_give_up()
+{
+    Fake fake;
+    auto tiles = fake.make();
+    CHECK(!tiles.request({ tile(1), tile(2), tile(3), tile(4), tile(5) }));
+    tiles.add_tile(MapTile { .download = fake.scheduled[0], .tile = tile(5), .png = png(5) });
+    tiles.tiles_done(MapTilesDone { .download = fake.scheduled[0], .failed = { tile(1), tile(2), tile(3), tile(4) } });
+    CHECK(!tiles.request({ tile(6) }));
+    CHECK_EQ(fake.scheduled.size(), 2uz);
+    tiles.tiles_done(MapTilesDone { .download = fake.scheduled[1], .failed = { tile(6) } });
+    CHECK(tiles.request({ tile(7), tile(8) }));
+    CHECK_EQ(fake.scheduled.size(), 2uz);
+    CHECK_EQ(tiles.failed(), 7uz);
+    // Cached tiles still load.
+    fake.cached[tile(9)] = png(9);
+    CHECK(tiles.request({ tile(9) }));
+    CHECK(tiles.texture(tile(9)) != nullptr);
+    tiles.reset();
+    CHECK(!tiles.request({ tile(7) }));
+    CHECK_EQ(fake.scheduled.size(), 3uz);
+}
+
 void test_destroyed()
 {
     Fake fake;
@@ -301,6 +325,7 @@ int main()
     test_broken();
     test_unload();
     test_reset();
+    test_give_up();
     test_destroyed();
     test_waiting();
     test_arrived_before_done();
