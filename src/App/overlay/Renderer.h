@@ -27,11 +27,12 @@
 namespace ST {
 
 struct OverlayRenderer {
-    explicit OverlayRenderer(FontFinder find);
+    explicit OverlayRenderer(FontFinder find, ImageFinder find_image = { });
 
-    // The layout to draw, from the file called `file_name`, which starts the
-    // errors. Finds its fonts: one that isn't there is the error.
-    void set_layout(OverlayLayout const &layout, std::string_view file_name);
+    // The layout to draw, from `file`, whose name starts the errors, and
+    // next to which its pictures are looked for first. Finds its fonts and
+    // its pictures: one that isn't there is the error.
+    void set_layout(OverlayLayout const &layout, fs::path const &file);
     void clear();
 
     [[nodiscard]] OverlayLayout const *layout() const { return m_layout ? &*m_layout : nullptr; }
@@ -53,6 +54,7 @@ struct OverlayRenderer {
 
 private:
     FontFinder                                   m_find;
+    ImageFinder                                  m_find_image;
     std::optional<OverlayLayout>                 m_layout { };
     std::string                                  m_file_name { };
     std::optional<std::string>                   m_error { };
@@ -61,8 +63,9 @@ private:
     OverlayTiles                                *m_tiles { nullptr };
     float                                        m_detail { 1 };
     float                                        m_scale { 0 };
-    float                                        m_alpha { 1 };    // Of the element being drawn, as it fades
-    std::map<std::string, std::filesystem::path> m_font_paths { }; // By the layout's name for them
+    float                                        m_alpha { 1 };     // Of the element being drawn, as it fades
+    std::map<std::string, std::filesystem::path> m_font_paths { };  // By the layout's name for them
+    std::map<std::string, std::filesystem::path> m_image_paths { }; // By their src
 
     void                draw_element(OverlayElement const &element, FieldValues const &values, Rectangle const &area);
     void                draw(TextElement const &text, FieldValues const &values, Rectangle const &area);

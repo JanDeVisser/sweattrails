@@ -247,9 +247,11 @@ struct SweatTrails : public Main<Job, Notification> {
     void   load_font();
     // The font file of this name in the font directories, if there is one.
     std::optional<fs::path> find_font(std::string_view name);
-    StringList              get_font_dirs();
-    void                    terminate();
-    void                    set_message(std::string_view const &text);
+    // The pictures next to a layout, or with the built-in ones.
+    static ImageFinder image_finder();
+    StringList         get_font_dirs();
+    void               terminate();
+    void               set_message(std::string_view const &text);
     // An empty text, while a login waits, shows that it waits.
     void set_status(std::string_view const &text);
     void show_activity(Activity const &activity);

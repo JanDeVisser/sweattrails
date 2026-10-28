@@ -52,25 +52,32 @@ MapFrame map_frame(MapElement const &map, FieldValues const &values, Rectangle c
 
 }
 
-OverlayRenderer::OverlayRenderer(FontFinder find)
+OverlayRenderer::OverlayRenderer(FontFinder find, ImageFinder find_image)
     : m_find(std::move(find))
+    , m_find_image(std::move(find_image))
 {
 }
 
 // Finds the layout's fonts once, rather than on every frame. A font that
 // isn't in any of the font directories is an error, as a mistake in the
 // file is.
-void OverlayRenderer::set_layout(OverlayLayout const &layout, std::string_view file_name)
+void OverlayRenderer::set_layout(OverlayLayout const &layout, fs::path const &file)
 {
     clear();
     m_layout = layout;
-    m_file_name = file_name;
+    m_file_name = file.filename().string();
     auto paths = layout_fonts(layout, m_find);
     if (!paths) {
         m_error = std::format("{}: {}", m_file_name, paths.error().to_string());
         return;
     }
     m_font_paths = std::move(*paths);
+    auto images = layout_images(layout, file.parent_path(), m_find_image);
+    if (!images) {
+        m_error = std::format("{}: {}", m_file_name, images.error().to_string());
+        return;
+    }
+    m_image_paths = std::move(*images);
     m_fonts.set_codepoints(layout_codepoints(layout));
 }
 
@@ -79,6 +86,7 @@ void OverlayRenderer::clear()
     m_layout.reset();
     m_error.reset();
     m_font_paths.clear();
+    m_image_paths.clear();
     m_fonts.clear();
     m_scale = 0;
 }

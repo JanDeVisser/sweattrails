@@ -330,6 +330,50 @@ void test_layout_fonts()
 }
 }
 
+// A picture next to the layout comes first, then a built-in one; an
+// absolute path is what it says.
+void test_find_image()
+{
+    std::set<fs::path> const files { "/mine/logo.png", "/builtin/icons/heart.png", "/builtin/logo.png", "/elsewhere/me.jpg" };
+    auto const               exists = [&files](fs::path const &p) { return files.contains(p); };
+    auto const               find = [&exists](std::string_view src) {
+        auto const found = find_image(src, "/mine", "/builtin", exists);
+        return found ? found->string() : std::string { "none" };
+    };
+    CHECK_EQ(find("logo.png"), "/mine/logo.png");
+    CHECK_EQ(find("icons/heart.png"), "/builtin/icons/heart.png");
+    CHECK_EQ(find("/elsewhere/me.jpg"), "/elsewhere/me.jpg");
+    CHECK_EQ(find("/mine/me.jpg"), "none");
+    CHECK_EQ(find("icons/bolt.png"), "none");
+}
+
+// Each picture is looked for once, and a missing one names the element
+// that shows it.
+void test_layout_images()
+{
+    auto const               layout = decoded(R"({ "elements": [
+        { "type": "text", "text": "a" },
+        { "type": "image", "src": "icons/heart.png" },
+        { "type": "image", "src": "icons/heart.png" },
+        { "type": "image", "src": "logo.png" }
+    ] })");
+    std::vector<std::string> asked;
+    auto const               find = [&asked](std::string_view src, fs::path const &dir) -> std::optional<fs::path> {
+        asked.push_back(std::format("{} in {}", src, dir.string()));
+        return (src == "logo.png") ? std::nullopt : std::optional { dir / src };
+    };
+    auto const images = layout_images(layout, "/layouts", find);
+    CHECK(!images.has_value());
+    if (!images) {
+        CHECK_EQ(images.error().to_string(),
+            "element 4: the picture `logo.png` isn't there: it's looked for next to the layout, and with the built-in layouts");
+    }
+    CHECK_EQ(asked, (std::vector<std::string> { "icons/heart.png in /layouts", "logo.png in /layouts" }));
+
+    auto const found = layout_images(decoded(R"({ "elements": [ { "type": "image", "src": "a.png" } ] })"), "/layouts", find);
+    CHECK(found && found->at("a.png") == fs::path { "/layouts/a.png" });
+}
+
 int main()
 {
     test_load_and_reload();
@@ -341,6 +385,8 @@ int main()
     test_builtin_layout("cycling-dashboard", 20);
     test_dashboard_map();
     test_dashboard_title_card();
+    test_find_image();
+    test_layout_images();
     test_layout_fonts();
     test_missing_file();
     test_error_names_file_element_and_property();

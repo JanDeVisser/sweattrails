@@ -72,6 +72,41 @@ std::expected<std::map<std::string, fs::path>, LayoutError> layout_fonts(Overlay
     return ret;
 }
 
+std::optional<fs::path> find_image(std::string_view src, fs::path const &layout_dir, fs::path const &builtin_dir,
+    std::function<bool(fs::path const &)> const &exists)
+{
+    auto const path = fs::path { src };
+    if (path.is_absolute()) {
+        return exists(path) ? std::optional { path } : std::nullopt;
+    }
+    for (auto const &dir : { layout_dir, builtin_dir }) {
+        if (exists(dir / path)) {
+            return dir / path;
+        }
+    }
+    return { };
+}
+
+std::expected<std::map<std::string, fs::path>, LayoutError> layout_images(OverlayLayout const &layout, fs::path const &layout_dir, ImageFinder const &find)
+{
+    std::map<std::string, fs::path> ret;
+    for (auto const &element : layout.elements) {
+        auto const *image = std::get_if<ImageElement>(&element);
+        if (image == nullptr || ret.contains(image->src)) {
+            continue;
+        }
+        auto const path = find ? find(image->src, layout_dir) : std::nullopt;
+        if (!path) {
+            return std::unexpected(LayoutError {
+                .element = image->number,
+                .message = std::format("the picture `{}` isn't there: it's looked for next to the layout, and with the built-in layouts", image->src),
+            });
+        }
+        ret[image->src] = *path;
+    }
+    return ret;
+}
+
 std::vector<LayoutEntry> overlay_layouts(fs::path const &builtin_dir, fs::path const &user_dir)
 {
     std::map<std::string, fs::path> found;

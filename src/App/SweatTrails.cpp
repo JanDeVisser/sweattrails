@@ -634,6 +634,7 @@ void start_render(pSweatTrails const &sweattrails, RenderJob job)
     auto render = OverlayRender::start(
         std::move(job),
         [](std::string_view name) { return SweatTrails::the()->find_font(name); },
+        SweatTrails::image_finder(),
         [](Tile const &tile) { return tile.get_cached_tile(SweatTrails::the()->storage); },
         [](pTileDownload const &download) { SweatTrails::the()->schedule<JobType::DownloadTiles>(download); });
     if (!render) {
@@ -694,7 +695,7 @@ void cmd_overlay_render(pSweatTrails const &sweattrails, JSONValue const &)
     RenderJob  job {
         .activity = activity,
         .layout = *file->layout,
-        .layout_file = file->path.filename().string(),
+        .layout_file = file->path,
         .settings = *settings,
         .range = initial,
         .output = { },
@@ -1055,6 +1056,16 @@ void SweatTrails::load_font()
     if (!load(font_name) && (font_name != default_font)) {
         assert(load(default_font));
     }
+}
+
+ImageFinder SweatTrails::image_finder()
+{
+    return [](std::string_view src, fs::path const &layout_dir) {
+        return find_image(src, layout_dir, fs::path { SWEATTRAILS_DATADIR } / "overlays", [](fs::path const &path) {
+            std::error_code ec { };
+            return fs::is_regular_file(path, ec);
+        });
+    };
 }
 
 std::optional<fs::path> SweatTrails::find_font(std::string_view name)
