@@ -15,6 +15,7 @@
 #include <string_view>
 #include <vector>
 
+#include <Map.h>
 #include <storage/Activity.h>
 
 namespace ST {
@@ -108,6 +109,12 @@ struct OverlaySource {
         size_t record { 0 };
     };
 
+    // A record with a position, for the map.
+    struct TrackPoint {
+        double     seconds { 0 }; // Since the start
+        WorldPoint at { };        // Web Mercator, at zoom 0
+    };
+
     // A point of the activity's profile, for the grade.
     struct ProfilePoint {
         double distance { 0 }; // m
@@ -120,6 +127,7 @@ struct OverlaySource {
     i32                       utc_offset { 0 }; // Local time minus UTC, in seconds
     std::vector<ProfilePoint> profile { };      // The records with both, in order of distance
     std::vector<Mileage>      mileage { };      // The records with a distance, in order of it
+    std::vector<TrackPoint>   track { };        // The records with a position, in order of time
     // The area under the profile from its start to each of its points, in
     // m², for the average altitude over a stretch.
     std::vector<double> profile_area { };
@@ -194,6 +202,12 @@ struct FieldValues {
 // Records further apart than this were a pause, or a lost signal: there's
 // nothing to interpolate between them.
 constexpr double MaxGap = 5.0;
+
+// Where the activity was at the moment, at zoom 0: between the track's
+// points around it, held at the earlier across a gap of more than MaxGap,
+// as in a tunnel or a pause. The first point before the first, the last
+// after the last; none without a track.
+std::optional<WorldPoint> position_at(OverlaySource const &source, double seconds);
 
 // The values at the record, as the preview shows them.
 FieldValues values_at_record(OverlaySource const &source, size_t record);

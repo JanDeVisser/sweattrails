@@ -376,6 +376,12 @@ OverlaySource::OverlaySource(Activity const &activity)
         profile_area.push_back((ix == 0) ? 0.0 : profile_area.back() + area);
     }
     for (auto ix = 0uz; ix < activity.records.size(); ++ix) {
+        // A device without a fix records 0° for both, or near it, as the
+        // app's map has it.
+        if (auto const &p = activity.records[ix].position; p && std::abs(p->lat) > 0.1 && std::abs(p->lon) > 0.1) {
+            auto const seconds = static_cast<double>(activity.records[ix].timestamp.timestamp) - start_of(activity);
+            track.push_back(TrackPoint { .seconds = seconds, .at = world_pixel(*p, 0) });
+        }
         // As for the profile, a distance that goes back is ignored.
         if (auto const d = activity.records[ix].distance; d && (mileage.empty() || *d >= mileage.back().distance)) {
             mileage.push_back(Mileage { .distance = *d, .record = ix });
@@ -500,6 +506,31 @@ std::optional<double> field_value(OverlaySource const &source, size_t record, Ov
         return start_of(activity) + source.utc_offset;
     }
     return { };
+}
+
+std::optional<WorldPoint> position_at(OverlaySource const &source, double seconds)
+{
+    auto const &track = source.track;
+    if (track.empty()) {
+        return { };
+    }
+    auto const after = std::ranges::upper_bound(track, seconds, { }, &OverlaySource::TrackPoint::seconds);
+    if (after == track.begin()) {
+        return track.front().at;
+    }
+    if (after == track.end()) {
+        return track.back().at;
+    }
+    auto const &earlier = *(after - 1);
+    auto const  span = after->seconds - earlier.seconds;
+    if (span > MaxGap || span <= 0) {
+        return earlier.at;
+    }
+    auto const fraction = (seconds - earlier.seconds) / span;
+    return WorldPoint {
+        .x = earlier.at.x + fraction * (after->at.x - earlier.at.x),
+        .y = earlier.at.y + fraction * (after->at.y - earlier.at.y),
+    };
 }
 
 FieldValues values_at_record(OverlaySource const &source, size_t record)

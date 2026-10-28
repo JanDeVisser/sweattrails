@@ -949,6 +949,63 @@ void test_average_altitude_across_a_step()
     CHECK_EQ(average_of(source, 100, 200), "100.00");
 }
 
+// Records a second apart going east, but for one without a position, one
+// at 0° (no fix), and a minute's gap after the fifth second.
+struct Ride {
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+
+    Ride()
+    {
+        activity.segment.start_time.timestamp = Start;
+        for (auto i = 0u; i < 8; ++i) {
+            auto const t = (i <= 5) ? i : i + 60;
+            record     r { .timestamp = DateTime { .timestamp = Start + t } };
+            if (i == 2) {
+                r.position = Coordinates { .lat = 0.0f, .lon = 0.0f };
+            } else if (i != 3) {
+                r.position = Coordinates { .lat = 52.0f, .lon = 4.0f + 0.001f * static_cast<float>(i) };
+            }
+            activity.records.push_back(r);
+        }
+    }
+};
+
+std::string position_of(OverlaySource const &source, double seconds)
+{
+    auto const p = position_at(source, seconds);
+    if (!p) {
+        return "none";
+    }
+    // In thousandths of a degree east of 4°.
+    auto const east = (p->x - world_pixel(Coordinates { .lat = 52.0f, .lon = 4.0f }, 0).x) / (world_pixel(Coordinates { .lat = 52.0f, .lon = 4.001f }, 0).x - world_pixel(Coordinates { .lat = 52.0f, .lon = 4.0f }, 0).x);
+    return std::format("{:.2f}", east);
+}
+
+void test_track()
+{
+    Ride                r;
+    OverlaySource const source { r.activity };
+    // No position, and 0°, are left out.
+    CHECK_EQ(source.track.size(), 6uz);
+    CHECK_EQ(source.track[2].seconds, 4.0);
+    CHECK_EQ(position_of(source, 0), "0.00");
+    CHECK_EQ(position_of(source, 0.5), "0.50");
+    // Across the record without a position: 1 s to 4 s, 3 s apart.
+    CHECK_EQ(position_of(source, 2.5), "2.50");
+    // Held across the gap, from 5 s to 66 s.
+    CHECK_EQ(position_of(source, 30), "5.00");
+    CHECK_EQ(position_of(source, 66.5), "6.50");
+    // Before the start and after the end.
+    CHECK_EQ(position_of(source, -10), "0.00");
+    CHECK_EQ(position_of(source, 100), "7.00");
+
+    TestActivity        indoors;
+    OverlaySource const without { indoors.activity };
+    CHECK(without.track.empty());
+    CHECK_EQ(position_of(without, 0), "none");
+}
+
 int main()
 {
     test_names();
@@ -998,5 +1055,6 @@ int main()
     test_ranges();
     test_average_altitude();
     test_average_altitude_across_a_step();
+    test_track();
     return ST::Test::test_result();
 }
