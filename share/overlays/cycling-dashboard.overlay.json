@@ -70,16 +70,23 @@
         // Speed, heart rate and cadence in the bottom left, in a panel.
         { "type": "text", "text": "", "style": "panel",
           "at": { "x": 40, "y": -40, "anchor": "bottom-left" }, "size": { "width": 760, "height": 170 } },
+        // Each label with an icon before it, in the color of what it's for.
+        { "type": "image", "src": "icons/speedometer.png", "tint": "#ffffffcc",
+          "at": { "x": 70, "y": -152, "anchor": "bottom-left" }, "size": { "width": 24 } },
         { "type": "text", "text": "SPEED", "style": "label",
-          "at": { "x": 70, "y": -150, "anchor": "bottom-left" } },
+          "at": { "x": 102, "y": -150, "anchor": "bottom-left" } },
         { "type": "value", "field": "speed", "style": "unit",
           "at": { "x": 70, "y": -60, "anchor": "bottom-left" } },
+        { "type": "image", "src": "icons/heart.png", "tint": "#f94144",
+          "at": { "x": 330, "y": -152, "anchor": "bottom-left" }, "size": { "width": 24 } },
         { "type": "text", "text": "HEART RATE", "style": "label",
-          "at": { "x": 330, "y": -150, "anchor": "bottom-left" } },
+          "at": { "x": 362, "y": -150, "anchor": "bottom-left" } },
         { "type": "value", "field": "heart_rate", "style": "unit",
           "at": { "x": 330, "y": -60, "anchor": "bottom-left" } },
+        { "type": "image", "src": "icons/cadence.png", "tint": "#ffffffcc",
+          "at": { "x": 570, "y": -152, "anchor": "bottom-left" }, "size": { "width": 24 } },
         { "type": "text", "text": "CADENCE", "style": "label",
-          "at": { "x": 570, "y": -150, "anchor": "bottom-left" } },
+          "at": { "x": 602, "y": -150, "anchor": "bottom-left" } },
         { "type": "value", "field": "cadence", "style": "unit",
           "at": { "x": 570, "y": -60, "anchor": "bottom-left" } },
 
@@ -93,8 +100,10 @@
           "size": { "width": 240, "height": 240 } },
         { "type": "value", "field": "power", "style": "unit",
           "at": { "x": -160, "y": -160, "anchor": "center" } },
+        { "type": "image", "src": "icons/bolt.png", "tint": "#f9c74f",
+          "at": { "x": -210, "y": -92, "anchor": "left" }, "size": { "width": 24 } },
         { "type": "text", "text": "POWER", "style": "label",
-          "at": { "x": -160, "y": -92, "anchor": "center" } },
+          "at": { "x": -144, "y": -92, "anchor": "center" } },
 
         // The ride's name and date in the middle, at the start of the
         // video, with room for a title of some 50 characters.

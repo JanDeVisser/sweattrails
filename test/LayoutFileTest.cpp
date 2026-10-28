@@ -149,6 +149,29 @@ void test_builtin_layout(std::string_view name, size_t elements)
             CHECK(shipped(font));
         }
     }
+    // And its pictures, as the app finds them.
+    auto const builtin = fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays";
+    auto const images = layout_images(*file.layout, builtin, [&builtin](std::string_view src, fs::path const &dir) {
+        return find_image(src, dir, builtin, [](fs::path const &p) { return fs::is_regular_file(p); });
+    });
+    CHECK_EQ(images ? std::string { "ok" } : images.error().to_string(), "ok");
+}
+
+// An icon before each of the dashboard's labels, tinted.
+void test_dashboard_icons()
+{
+    LayoutFile file { fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays" / "cycling-dashboard.overlay.json" };
+    CHECK(file.reload_if_changed());
+    if (!file.layout) {
+        return;
+    }
+    std::vector<std::string> icons;
+    for (auto const &element : file.layout->elements) {
+        if (auto const *image = std::get_if<ImageElement>(&element); image) {
+            icons.push_back(std::format("{} {}", image->src, image->width.value_or(0)));
+        }
+    }
+    CHECK_EQ(icons, (std::vector<std::string> { "icons/speedometer.png 24", "icons/heart.png 24", "icons/cadence.png 24", "icons/bolt.png 24" }));
 }
 
 // The dashboard's map, as the spec's Version 1 scope has it: a circle,
@@ -382,9 +405,10 @@ int main()
     test_chosen_layout();
     test_builtin_layout("cycling-basic", 11);
     test_builtin_layout("running-basic", 9);
-    test_builtin_layout("cycling-dashboard", 20);
+    test_builtin_layout("cycling-dashboard", 24);
     test_dashboard_map();
     test_dashboard_title_card();
+    test_dashboard_icons();
     test_find_image();
     test_layout_images();
     test_layout_fonts();

@@ -241,6 +241,18 @@ downloads each frame's tiles as it gets to them, and waits for them:
 the first render of a ride takes longer, and the next ones read them from
 the cache. A tile that can't be downloaded is left out.
 
+An `image` shows a PNG or a JPEG, looked for next to the layout file and
+then with the built-in layouts. It's never stretched: give it a `width`,
+a `height`, both to fit it in that box, or neither for its own size, and
+a `tint` to color it. The app has white icons to tint in
+`share/overlays/icons/`: `heart`, `bolt`, `speedometer`, `cadence` and
+`mountain`:
+
+```json
+{ "type": "image", "src": "icons/heart.png", "tint": "#f94144",
+  "at": { "x": 330, "y": -152, "anchor": "bottom-left" }, "size": { "width": 24 } }
+```
+
 Any element can show for part of the video only, with `visible`: `from`
 and `to` are seconds from the video's start, or back from its end if
 negative, and `fade` fades it in and out within that time. The dashboard
