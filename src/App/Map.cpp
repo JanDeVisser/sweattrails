@@ -22,6 +22,7 @@
 #include <Process.h>
 
 #include <Coordinates.h>
+#include <Http.h>
 #include <Map.h>
 #include <storage/Storage.h>
 
@@ -117,10 +118,11 @@ std::expected<void, std::variant<CURLcode, LibCError>> download(std::string url,
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_CA_CACHE_TIMEOUT, 604800L);
-    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+    // A connection that hangs would keep an overlay render waiting.
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "sweattrails/1.0");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, UserAgent);
     // Fail on an HTTP error, such as the 403 or 429 the tile server sends to
     // clients that break its usage policy, instead of caching the error page
     // as the tile.

@@ -18,6 +18,10 @@
 
 namespace ST {
 
+// OSM's tile policy blocks library defaults, and asks for a way to reach
+// the app's makers.
+constexpr char const UserAgent[] = "SweatTrails/1.0 (+https://github.com/JanDeVisser/sweattrails)";
+
 struct HttpRequest {
     std::string              method { "GET" };
     std::string              url { };
