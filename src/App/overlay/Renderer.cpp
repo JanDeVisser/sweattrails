@@ -365,7 +365,7 @@ void OverlayRenderer::draw(MapElement const &map, FieldValues const &values, Rec
     if (at) {
         auto const &source = *values.source;
         auto const  transform = (map.mode == MapMode::Follow) ? std::optional { follow_transform(*at, map.zoom, m_scale, inner.box) }
-                                                              : fit_transform(source.track, inner.box, m_scale);
+                                                              : fit_transform(source.track, inner, m_scale);
         auto const  split = split_track(source, *now);
         auto const  done = screen_points(split.done, *transform);
         auto const  remaining = screen_points(split.remaining, *transform);

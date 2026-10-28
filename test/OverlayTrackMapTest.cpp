@@ -7,6 +7,7 @@
  * moment, the points on the screen, and the clip's shape.
  */
 
+#include <cmath>
 #include <format>
 #include <string>
 #include <vector>
@@ -45,20 +46,67 @@ void test_fit()
 {
     Rectangle const content { 0, 0, 110, 110 };
     // Wide: 10 world pixels, with 10% to spare, across 110.
-    auto const wide = fit_transform(track_of({ { 0, 0 }, { 10, 1 } }), content, 1);
+    auto const wide = fit_transform(track_of({ { 0, 0 }, { 10, 1 } }), ClipShape { .box = content }, 1);
     CHECK(wide.has_value());
     if (wide) {
         CHECK_EQ(wide->scale, 10.0);
         CHECK_EQ(show(wide->to_screen({ 5, 0.5 })), "55 55");
         CHECK_EQ(show(wide->to_screen({ 0, 0.5 })), "5 55");
     }
-    auto const tall = fit_transform(track_of({ { 0, 0 }, { 1, 10 } }), content, 1);
+    auto const tall = fit_transform(track_of({ { 0, 0 }, { 1, 10 } }), ClipShape { .box = content }, 1);
     CHECK_EQ(tall ? tall->scale : 0, 10.0);
     // A track of one point: street level, at the layout's scale.
-    auto const point = fit_transform(track_of({ { 3, 4 }, { 3, 4 } }), content, 2);
+    auto const point = fit_transform(track_of({ { 3, 4 }, { 3, 4 } }), ClipShape { .box = content }, 2);
     CHECK_EQ(point ? point->scale : 0, 524288.0);
     CHECK_EQ(point ? show(point->to_screen({ 3, 4 })) : std::string { }, "55 55");
-    CHECK(!fit_transform({ }, content, 1));
+    CHECK(!fit_transform({ }, ClipShape { .box = content }, 1));
+}
+
+// In a content box away from the screen's corner, the track's middle is
+// at the box's middle.
+void test_fit_in_offset_content()
+{
+    auto const fit = fit_transform(track_of({ { 0, 0 }, { 10, 1 } }), ClipShape { .box = Rectangle { 100, 200, 110, 220 } }, 1);
+    CHECK_EQ(fit ? show(fit->to_screen({ 5, 0.5 })) : std::string { }, "155 310");
+}
+
+// The spec's fit has the whole track in the box. In a circle, the box is
+// the circle: a ride along the diagonal has its ends in the bounds'
+// corners, which are outside a circle as big as the bounds.
+void test_fit_in_a_circle()
+{
+    auto const clip = clip_shape(ClipKind::Circle, Rectangle { 0, 0, 110, 110 }, 0);
+    auto const track = track_of({ { 0, 0 }, { 5, 5 }, { 10, 10 } });
+    auto const fit = fit_transform(track, clip, 1);
+    CHECK(fit.has_value());
+    if (!fit) {
+        return;
+    }
+    auto const centre = Vector2 { .x = clip.box.x + clip.radius, .y = clip.box.y + clip.radius };
+    for (auto const &p : track) {
+        auto const at = fit->to_screen(p.at);
+        auto const from_centre = std::hypot(at.x - centre.x, at.y - centre.y);
+        CHECK(from_centre <= clip.radius);
+    }
+}
+
+// A track from corner to corner of its bounds stays clear of a rounded
+// clip's corners: inside the circle each corner is rounded with.
+void test_fit_in_a_rounded_rectangle()
+{
+    auto const clip = clip_shape(ClipKind::Rounded, Rectangle { 0, 0, 300, 300 }, 60);
+    auto const fit = fit_transform(track_of({ { 0, 0 }, { 10, 10 } }), clip, 1);
+    CHECK(fit.has_value());
+    if (!fit) {
+        return;
+    }
+    auto const top_left = fit->to_screen({ 0, 0 });
+    CHECK(std::hypot(top_left.x - 60, top_left.y - 60) <= 60);
+    auto const bottom_right = fit->to_screen({ 10, 10 });
+    CHECK(std::hypot(bottom_right.x - 240, bottom_right.y - 240) <= 60);
+    // A rectangle has no corners to clear: 10% to spare.
+    auto const rect = fit_transform(track_of({ { 0, 0 }, { 10, 10 } }), clip_shape(ClipKind::Rect, Rectangle { 0, 0, 300, 300 }, 60), 1);
+    CHECK_EQ(std::format("{:.2f}", rect ? rect->scale : 0), "27.27");
 }
 
 void test_follow()
@@ -109,6 +157,9 @@ void test_split()
     CHECK_EQ(east(split_track(source, -1).remaining), "0.0 0.0 1.0 2.0 3.0");
     CHECK_EQ(east(split_track(source, 10).done), "0.0 1.0 2.0 3.0 3.0");
     CHECK_EQ(east(split_track(source, 10).remaining), "3.0");
+    // At a record, it's the end of done and the start of what remains.
+    CHECK_EQ(east(split_track(source, 2).done), "0.0 1.0 2.0");
+    CHECK_EQ(east(split_track(source, 2).remaining), "2.0 2.0 3.0");
 
     Storage             storage;
     Activity            indoors { storage, ActivityID { } };
@@ -153,6 +204,9 @@ void test_clip_shape()
 int main()
 {
     test_fit();
+    test_fit_in_offset_content();
+    test_fit_in_a_circle();
+    test_fit_in_a_rounded_rectangle();
     test_follow();
     test_split();
     test_screen_points();

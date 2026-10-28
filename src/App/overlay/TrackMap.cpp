@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <ranges>
 
 #include <overlay/TrackMap.h>
@@ -35,26 +36,38 @@ Vector2 MapTransform::to_screen(WorldPoint const &point) const
     };
 }
 
-std::optional<MapTransform> fit_transform(std::vector<OverlaySource::TrackPoint> const &track, Rectangle content, float layout_scale)
+std::optional<MapTransform> fit_transform(std::vector<OverlaySource::TrackPoint> const &track, ClipShape const &clip, float layout_scale)
 {
     if (track.empty()) {
         return { };
     }
     auto const [min_x, max_x] = std::ranges::minmax(track | std::views::transform([](auto const &p) { return p.at.x; }));
     auto const [min_y, max_y] = std::ranges::minmax(track | std::views::transform([](auto const &p) { return p.at.y; }));
-    auto const width = (max_x - min_x) * (1 + FitSpare);
-    auto const height = (max_y - min_y) * (1 + FitSpare);
-    auto       scale = MaxFitScale * layout_scale;
-    if (width > 0) {
-        scale = std::min(scale, content.width / width);
-    }
-    if (height > 0) {
-        scale = std::min(scale, content.height / height);
+    auto const  width = (max_x - min_x) * (1 + FitSpare);
+    auto const  height = (max_y - min_y) * (1 + FitSpare);
+    auto        scale = MaxFitScale * layout_scale;
+    auto const &box = clip.box;
+    if (box.width == box.height && 2 * clip.radius >= box.width) {
+        // A circle: the bounds' corners are half their diagonal from the
+        // middle.
+        if (auto const diagonal = std::hypot(width, height); diagonal > 0) {
+            scale = std::min(scale, box.width / diagonal);
+        }
+    } else {
+        // A rounded corner cuts into the box this far along each side
+        // where the bounds' corner would be.
+        auto const cut = 2 * clip.radius * (1 - std::numbers::sqrt2_v<float> / 2);
+        if (width > 0) {
+            scale = std::min(scale, (box.width - cut) / width);
+        }
+        if (height > 0) {
+            scale = std::min(scale, (box.height - cut) / height);
+        }
     }
     return MapTransform {
         .center = WorldPoint { .x = (min_x + max_x) / 2, .y = (min_y + max_y) / 2 },
         .scale = scale,
-        .screen_center = middle(content),
+        .screen_center = middle(box),
     };
 }
 
