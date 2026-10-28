@@ -153,7 +153,8 @@ place of the data panel and the map, at the moment marked in the graph,
 and Ctrl+Shift+O picks the layout. A layout is a JSON file that says
 what's shown where; the built-in ones,
 `share/overlays/cycling-basic.overlay.json`, `running-basic` and
-`cycling-dashboard`, with a power gauge and a heart rate graph, are a good
+`cycling-dashboard`, with an elevation profile, a power gauge and a heart
+rate graph, are a good
 start for your own. Put those in the `overlays` folder in SweatTrails'
 data folder, which the app makes when it starts
 (`~/Library/Application Support/sweattrails/overlays` on macOS), named
@@ -199,6 +200,21 @@ have a panel behind it:
   "line": { "color": "#f94144", "width": 3 }, "fill": "#f9414430", "cursor": { "radius": 6 },
   "background": "#00000060", "radius": 16, "padding": 16,
   "at": { "x": 40, "y": -200, "anchor": "bottom-left" }, "size": { "width": 400, "height": 100 } }
+```
+
+A `profile` shows the elevation of the whole ride, or with
+`"extent": "lap"` of the lap, with a marker where the rider is, the part
+done and the part remaining in their own colors, and a label by the
+marker:
+
+```json
+{ "type": "profile", "extent": "all",
+  "done": { "line": { "color": "#ffb703", "width": 3 }, "fill": "#ffb70360" },
+  "remaining": { "line": { "color": "#ffffff", "width": 2 }, "fill": "#ffffff20" },
+  "marker": { "radius": 7, "outline": "#ffb703", "drop_line": true },
+  "marker_label": { "text": "{altitude:.0f} {altitude.unit} · {grade:+.1f}%", "font_size": 22 },
+  "axis_labels": { "min_max": true }, "laps": { "color": "#ffffff60" },
+  "at": { "x": "50%", "y": 40, "anchor": "top" }, "size": { "width": 900, "height": 120 } }
 ```
 
 Ctrl+E renders the overlay to a ProRes 4444 movie with alpha, which Final

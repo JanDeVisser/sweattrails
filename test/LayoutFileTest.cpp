@@ -255,7 +255,7 @@ int main()
     test_chosen_layout();
     test_builtin_layout("cycling-basic", 11);
     test_builtin_layout("running-basic", 9);
-    test_builtin_layout("cycling-dashboard", 15);
+    test_builtin_layout("cycling-dashboard", 16);
     test_layout_fonts();
     test_missing_file();
     test_error_names_file_element_and_property();
