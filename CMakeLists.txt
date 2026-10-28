@@ -194,6 +194,7 @@ add_executable(
         src/App/overlay/LayoutFile.cpp
         src/App/overlay/OverlayRender.cpp
         src/App/overlay/Render.cpp
+        src/App/overlay/ElevationProfile.cpp
         src/App/overlay/Renderer.cpp
         src/App/overlay/Shapes.cpp
         src/App/overlay/Template.cpp
@@ -409,6 +410,25 @@ target_include_directories(overlay_shapes_test PRIVATE src/App)
 target_link_libraries(overlay_shapes_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
+        overlay_elevation_profile_test
+        test/OverlayElevationProfileTest.cpp
+        src/App/overlay/ElevationProfile.cpp
+        src/App/overlay/Fields.cpp
+        src/App/overlay/Layout.cpp
+        src/App/overlay/Shapes.cpp
+        src/App/overlay/Template.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(overlay_elevation_profile_test PRIVATE src/App)
+target_link_libraries(overlay_elevation_profile_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
         layout_file_test
         test/LayoutFileTest.cpp
         src/App/overlay/Fields.cpp
@@ -469,6 +489,7 @@ sweattrails_test(
         src/App/overlay/LayoutFile.cpp
         src/App/overlay/OverlayRender.cpp
         src/App/overlay/Render.cpp
+        src/App/overlay/ElevationProfile.cpp
         src/App/overlay/Renderer.cpp
         src/App/overlay/Shapes.cpp
         src/App/overlay/Template.cpp
