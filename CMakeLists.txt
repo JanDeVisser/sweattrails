@@ -196,6 +196,7 @@ add_executable(
         src/App/overlay/LayoutFile.cpp
         src/App/overlay/OverlayRender.cpp
         src/App/overlay/OverlayTiles.cpp
+        src/App/overlay/Picture.cpp
         src/App/overlay/Render.cpp
         src/App/overlay/ElevationProfile.cpp
         src/App/overlay/Renderer.cpp
@@ -481,8 +482,30 @@ target_compile_definitions(layout_file_test PRIVATE SWEATTRAILS_SOURCE_DIR="${PR
 target_link_libraries(layout_file_test PRIVATE ${CURL_LIBRARIES})
 
 # Reads the built-in icons, and pictures, with raylib, without a window.
-sweattrails_test(overlay_image_test test/OverlayImageTest.cpp)
+sweattrails_test(
+        overlay_image_test
+        test/OverlayImageTest.cpp
+        src/App/overlay/Fields.cpp
+        src/App/overlay/Layout.cpp
+        src/App/overlay/LayoutFile.cpp
+        src/App/overlay/OverlayTiles.cpp
+        src/App/overlay/Picture.cpp
+        src/App/overlay/ElevationProfile.cpp
+        src/App/overlay/Renderer.cpp
+        src/App/overlay/Shapes.cpp
+        src/App/overlay/Template.cpp
+        src/App/overlay/TrackMap.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(overlay_image_test PRIVATE src/App)
 target_compile_definitions(overlay_image_test PRIVATE SWEATTRAILS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+target_link_libraries(overlay_image_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         overlay_render_test
@@ -528,6 +551,7 @@ sweattrails_test(
         src/App/overlay/LayoutFile.cpp
         src/App/overlay/OverlayRender.cpp
         src/App/overlay/OverlayTiles.cpp
+        src/App/overlay/Picture.cpp
         src/App/overlay/Render.cpp
         src/App/overlay/ElevationProfile.cpp
         src/App/overlay/Renderer.cpp
@@ -554,6 +578,7 @@ sweattrails_test(
         src/App/overlay/Layout.cpp
         src/App/overlay/LayoutFile.cpp
         src/App/overlay/OverlayTiles.cpp
+        src/App/overlay/Picture.cpp
         src/App/overlay/ElevationProfile.cpp
         src/App/overlay/Renderer.cpp
         src/App/overlay/Shapes.cpp

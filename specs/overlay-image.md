@@ -168,11 +168,20 @@ struct ImageElement {
 
 ### Loading and drawing
 
-- The renderer finds the files in `set_layout()`, and loads each
-  texture the first time it's drawn, as it does fonts: `set_layout()`
-  has no GL context in tests. A picture that's found but doesn't load
-  is the renderer's error from then on, as a font is, which stops a
-  render and shows in the preview.
+- The renderer finds the files in `set_layout()`, and decodes them
+  there too, with `decode_picture(path)` in `overlay/Picture`, which
+  needs no GL context: a picture that's found but doesn't decode is the
+  error at once, also one that shows only later in the video, so a
+  render doesn't start. Each texture is made from the decoded picture
+  the first time it's drawn, as `set_layout()` has no GL context in
+  tests; one the GPU won't take is the error from then on, as a font
+  is.
+- `decode_picture()` gives each transparent pixel the color of the
+  shown pixels nearest it (`bleed_colors()`), keeping it transparent:
+  mipmaps average colors without their alpha, so a PNG's black
+  transparent pixels would darken its edges when drawn small.
+  Premultiplying the alpha would do it too, but needs a blend mode of
+  its own, and the render already sets one for the whole frame.
 - Textures get mipmaps and trilinear filtering, so that a 96 px icon
   drawn at 24 px isn't jagged; they're unloaded with the layout.
 - Drawn with `DrawTexturePro()`, tinted by `faded(tint)`, inside the
@@ -286,5 +295,13 @@ the bolt in the gauge's yellow, `#f9c74f`, as the gauge has no amber.
 1. Fixed, with Jan: JPEG is out of Version 1 and deferred. A `src`
    that doesn't end in `.png` is an error when the layout is read, which
    says only PNG pictures are supported (`test_image_errors`).
+2. Fixed: `set_layout()` decodes the pictures, and makes textures of
+   them only when first drawn (`test_picture_that_doesnt_decode` in
+   `overlay_image_test`).
+3. Fixed in the same commit, as both are in `decode_picture()`: the
+   colors are bled into the transparent pixels before the upload,
+   rather than premultiplied, as the render's own blend mode for the
+   frame would have to be broken into (`test_bleed_colors`,
+   `test_decoded_icon`).
 6. The review's tests are committed, apart from `test_jpeg()`, which
    became a test of the error for a picture that isn't a PNG (see 1).

@@ -34,7 +34,8 @@ struct OverlayRenderer {
 
     // The layout to draw, from `file`, whose name starts the errors, and
     // next to which its pictures are looked for first. Finds its fonts and
-    // its pictures: one that isn't there is the error.
+    // its pictures, and decodes the pictures: one that isn't there, or
+    // doesn't decode, is the error.
     void set_layout(OverlayLayout const &layout, fs::path const &file);
     void clear();
 
@@ -69,7 +70,8 @@ private:
     float                                        m_alpha { 1 };     // Of the element being drawn, as it fades
     std::map<std::string, std::filesystem::path> m_font_paths { };  // By the layout's name for them
     std::map<std::string, std::filesystem::path> m_image_paths { }; // By their src
-    std::map<std::string, Texture2D>             m_pictures { };    // Loaded when first drawn, by their src
+    std::map<std::string, Image>                 m_decoded { };     // By their src, until made a texture
+    std::map<std::string, Texture2D>             m_pictures { };    // Made when first drawn, by their src
 
     void                     draw_element(OverlayElement const &element, FieldValues const &values, Rectangle const &area);
     void                     draw(TextElement const &text, FieldValues const &values, Rectangle const &area);
@@ -87,6 +89,7 @@ private:
     void                     draw_attribution(MapElement const &map, Rectangle const &panel, Rectangle const &area);
     void                     draw_trace(std::vector<Vector2> const &points, Trace const &trace, float bottom) const;
     std::optional<Font>      font(TextStyle const &style, size_t element);
+    bool                     decode_pictures(OverlayLayout const &layout);
     std::optional<Texture2D> picture(ImageElement const &image);
     void                     unload_pictures();
     [[nodiscard]] Color      faded(Color color) const;

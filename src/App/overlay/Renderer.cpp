@@ -8,6 +8,7 @@
 #include <format>
 
 #include <overlay/ElevationProfile.h>
+#include <overlay/Picture.h>
 #include <overlay/Renderer.h>
 #include <overlay/Shapes.h>
 #include <overlay/TrackMap.h>
@@ -78,7 +79,32 @@ void OverlayRenderer::set_layout(OverlayLayout const &layout, fs::path const &fi
         return;
     }
     m_image_paths = std::move(*images);
+    if (!decode_pictures(layout)) {
+        return;
+    }
     m_fonts.set_codepoints(layout_codepoints(layout));
+}
+
+// Here rather than when first drawn, so that a picture that doesn't
+// decode keeps a render from starting, also one that shows only later in
+// the video. Decoding needs no GL context; making a texture does.
+bool OverlayRenderer::decode_pictures(OverlayLayout const &layout)
+{
+    for (auto const &element : layout.elements) {
+        auto const *image = std::get_if<ImageElement>(&element);
+        if (image == nullptr || m_decoded.contains(image->src)) {
+            continue;
+        }
+        auto const &path = m_image_paths.at(image->src);
+        auto        decoded = decode_picture(path);
+        if (!decoded) {
+            m_error = std::format("{}: element {}: the picture `{}` can't be loaded from `{}`",
+                m_file_name, image->number, image->src, path.string());
+            return false;
+        }
+        m_decoded[image->src] = *decoded;
+    }
+    return true;
 }
 
 OverlayRenderer::~OverlayRenderer()
@@ -92,6 +118,10 @@ void OverlayRenderer::unload_pictures()
         UnloadTexture(texture);
     }
     m_pictures.clear();
+    for (auto const &[src, image] : m_decoded) {
+        UnloadImage(image);
+    }
+    m_decoded.clear();
 }
 
 void OverlayRenderer::clear()
@@ -506,25 +536,25 @@ void OverlayRenderer::draw_attribution(MapElement const &map, Rectangle const &p
     draw_text(*f, OsmAttribution, Vector2 { .x = box.x, .y = box.y }, map.attribution);
 }
 
-// Loaded the first time it's drawn, as there's no GL context to load it
-// in before, in tests. One that's there but doesn't load is an error from
-// the next frame on, as a font is.
+// Made a texture the first time it's drawn, as there's no GL context to
+// make it in before, in tests. One the GPU won't take, as one too big for
+// it, is an error from the next frame on, as a font is.
 std::optional<Texture2D> OverlayRenderer::picture(ImageElement const &image)
 {
     if (auto const it = m_pictures.find(image.src); it != m_pictures.end()) {
         return it->second;
     }
-    auto const path = m_image_paths.find(image.src);
-    if (path == m_image_paths.end()) {
+    auto const decoded = m_decoded.find(image.src);
+    if (decoded == m_decoded.end()) {
         return { };
     }
-    auto loaded = LoadImage(path->second.string().c_str());
-    auto texture = (loaded.data != nullptr) ? LoadTextureFromImage(loaded) : Texture2D { };
-    UnloadImage(loaded);
+    auto texture = LoadTextureFromImage(decoded->second);
+    UnloadImage(decoded->second);
+    m_decoded.erase(decoded);
     if (texture.id == 0) {
         if (!m_error) {
-            m_error = std::format("{}: element {}: the picture `{}` can't be loaded from `{}`",
-                m_file_name, image.number, image.src, path->second.string());
+            m_error = std::format("{}: element {}: the picture `{}` can't be made a texture",
+                m_file_name, image.number, image.src);
         }
         return { };
     }
