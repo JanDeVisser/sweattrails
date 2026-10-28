@@ -241,6 +241,19 @@ downloads each frame's tiles as it gets to them, and waits for them:
 the first render of a ride takes longer, and the next ones read them from
 the cache. A tile that can't be downloaded is left out.
 
+Any element can show for part of the video only, with `visible`: `from`
+and `to` are seconds from the video's start, or back from its end if
+negative, and `fade` fades it in and out within that time. The dashboard
+has a title card for its first 5 seconds; an outro could be:
+
+```json
+{ "type": "text", "text": "Thanks for watching", "visible": { "from": -8 }, "fade": 1,
+  "at": { "x": "50%", "y": "50%", "anchor": "center" } }
+```
+
+The preview measures these times from the start of the graph's
+selection, or of the whole activity, as a render's range starts.
+
 Ctrl+E renders the overlay to a ProRes 4444 movie with alpha, which Final
 Cut and other editors import, for the part of the activity selected in the
 graph, the lap, or the whole activity; the box it opens takes elapsed
