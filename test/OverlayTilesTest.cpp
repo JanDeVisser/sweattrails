@@ -34,11 +34,13 @@ struct Fake {
     std::vector<pTileDownload>  scheduled { };
     std::set<unsigned int>      textures { };
     size_t                      unloaded { 0 };
+    size_t                      lookups { 0 }; // In the cache
 
     OverlayTiles make()
     {
         return OverlayTiles {
             [this](Tile const &t) -> std::expected<std::string, LibCError> {
+                ++lookups;
                 if (auto it = cached.find(t); it != cached.end()) {
                     return it->second;
                 }
@@ -301,17 +303,22 @@ void test_replaced_done()
     CHECK(tiles.request({ tile(1) }));
 }
 
-// A tile another map downloaded in the meantime is in the cache: loaded
-// from there, and the download for it isn't needed any more.
+// A tile that's being downloaded isn't looked for in the cache on every
+// frame, also if another map has cached it in the meantime: the download
+// brings it, from the cache.
 void test_cached_meanwhile()
 {
     Fake fake;
     auto tiles = fake.make();
     CHECK(!tiles.request({ tile(1) }));
+    CHECK_EQ(fake.lookups, 1uz);
     fake.cached[tile(1)] = png(1);
+    CHECK(!tiles.request({ tile(1) }));
+    CHECK(!tiles.request({ tile(1) }));
+    CHECK_EQ(fake.lookups, 1uz);
+    CHECK(fake.scheduled.size() == 1 && !fake.scheduled[0]->cancelled);
+    tiles.add_tile(MapTile { .download = fake.scheduled[0], .tile = tile(1), .png = png(1) });
     CHECK(tiles.request({ tile(1) }));
-    CHECK(tiles.texture(tile(1)) != nullptr);
-    CHECK(fake.scheduled.size() == 1 && fake.scheduled[0]->cancelled);
 }
 
 }

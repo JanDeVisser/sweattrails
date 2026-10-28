@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <algorithm>
+
 #include <Logging.h>
 
 #include <overlay/OverlayTiles.h>
@@ -54,6 +56,10 @@ bool OverlayTiles::request(std::vector<Tile> const &tiles)
         }
         if (m_failed.contains(tile)) {
             return true;
+        }
+        // On its way: not looked for in the cache again on every frame.
+        if (m_download && std::ranges::find(m_download->tiles, tile) != m_download->tiles.end()) {
+            return false;
         }
         if (auto png = m_cached(tile); png) {
             // A cached tile that doesn't decode would only fail again.
