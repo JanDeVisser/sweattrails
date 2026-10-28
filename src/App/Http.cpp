@@ -108,7 +108,7 @@ std::expected<HttpResponse, LibCError> http_fetch(HttpRequest const &request)
         curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE, static_cast<long>(request.body.size()));
     }
     curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, header_list.get());
-    curl_easy_setopt(curl.get(), CURLOPT_USERAGENT, "sweattrails/1.0");
+    curl_easy_setopt(curl.get(), CURLOPT_USERAGENT, UserAgent);
     curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, 60L);
     curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 1L);

@@ -52,6 +52,8 @@
                      "remaining": { "color": "#ffffff80", "width": 3 },
                      "outline": { "color": "#00000080", "width": 2 } },
           "marker": { "color": "#ffffff", "radius": 8, "outline": "#ffb703" },
+          "tiles": { "opacity": 0.6, "filter": "dark" },
+          "attribution": { "style": "label", "font_size": 14 },
           "at": { "x": -40, "y": 40, "anchor": "top-right" },
           "size": { "width": 300, "height": 300 } },
 

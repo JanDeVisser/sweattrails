@@ -24,8 +24,7 @@ namespace ST {
 
 namespace {
 
-constexpr float      TrackWidth = 3.0f;
-constexpr char const Attribution[] = "© OpenStreetMap contributors";
+constexpr float TrackWidth = 3.0f;
 
 }
 
@@ -50,7 +49,7 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
     failed.clear();
     track.clear();
     has_map = false;
-    ++map_id;
+    map_id = next_tile_owner();
     this->activity = activity;
     if (!this->activity) {
         return;
@@ -325,11 +324,11 @@ void ActivityMap::draw_track() const
 // OSM's license asks for it on the map.
 void ActivityMap::draw_attribution() const
 {
-    auto const size = App::measure_text(Attribution, FontSize::Small);
+    auto const size = App::measure_text(OsmAttribution, FontSize::Small);
     auto const x = viewport.width - size.x - 6;
     auto const y = viewport.height - size.y - 4;
     draw_rectangle_no_normalize(x - 4, y - 2, size.x + 8, size.y + 4, Fade(BLACK, 0.5f));
-    render_text(x, y, Attribution, FontSize::Small, RAYWHITE);
+    render_text(x, y, OsmAttribution, FontSize::Small, RAYWHITE);
 }
 
 // Drops the tiles still waiting to be downloaded, and the status line

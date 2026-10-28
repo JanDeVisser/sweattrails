@@ -224,6 +224,187 @@ void test_map_shapes()
 
 }
 
+// The level nearest the scale: as asked for at 1080p, one more at 4K, the
+// same at 1440p, drawn bigger, and at a render's double size, as at its
+// own.
+void test_tile_level()
+{
+    auto const at = [](double scale, float detail) {
+        return static_cast<int>(tile_level(MapTransform { .scale = scale }, detail));
+    };
+    CHECK_EQ(at(std::ldexp(1.0, 15), 1), 15);
+    CHECK_EQ(at(std::ldexp(1.0, 16), 1), 16);
+    CHECK_EQ(at(std::ldexp(1.0, 15) * 4 / 3, 1), 15);
+    CHECK_EQ(at(std::ldexp(1.0, 16), 2), 15);
+    CHECK_EQ(at(std::ldexp(1.0, 15) * 1.5, 1), 16);
+    CHECK_EQ(at(0.001, 1), 0);
+    CHECK_EQ(at(std::ldexp(1.0, 22), 1), 18);
+}
+
+std::string show(std::vector<PlacedTile> const &tiles)
+{
+    std::string ret;
+    for (auto const &[tile, screen] : tiles) {
+        ret += std::format("{}{}/{}/{} at {}", ret.empty() ? "" : ", ", tile.zoom, tile.x, tile.y, show(screen));
+    }
+    return ret;
+}
+
+void test_map_tiles()
+{
+    // The world's middle at the box's middle: the four tiles of level 1.
+    MapTransform const middle { .center = { 128, 128 }, .scale = 2, .screen_center = { 100, 100 } };
+    CHECK_EQ(show(map_tiles(middle, Rectangle { 0, 0, 200, 200 }, 1)),
+        "1/0/0 at -156 -156 256 256, 1/1/0 at 100 -156 256 256, 1/0/1 at -156 100 256 256, 1/1/1 at 100 100 256 256");
+    // A box ending at a tile's edge doesn't have the next tile.
+    CHECK_EQ(map_tiles(middle, Rectangle { 0, 0, 100, 100 }, 1).size(), 1uz);
+
+    // Scaled, a tile is 166.4 px: its edges at whole pixels, shared with
+    // the next one.
+    MapTransform const scaled { .center = { 128, 128 }, .scale = 1.3, .screen_center = { 100.3f, 100 } };
+    auto const         tiles = map_tiles(scaled, Rectangle { 0, 0, 200, 200 }, 1);
+    CHECK_EQ(tiles.size(), 4uz);
+    if (tiles.size() == 4) {
+        CHECK_EQ(show(tiles[0].screen), "-66 -66 166 166");
+        CHECK_EQ(show(tiles[1].screen), "100 -66 167 166");
+    }
+
+    // Near the world's top left corner: none past its edges.
+    MapTransform const corner { .center = { 10, 10 }, .scale = 2, .screen_center = { 100, 100 } };
+    CHECK_EQ(show(map_tiles(corner, Rectangle { 0, 0, 200, 200 }, 1)), "1/0/0 at 80 80 256 256");
+}
+
+void test_attribution_box()
+{
+    Rectangle const area { 0, 0, 1920, 1080 };
+    Vector2 const   text { 200, 20 };
+    Rectangle const panel { 100, 100, 300, 300 };
+    CHECK_EQ(show(attribution_box(panel, ClipKind::Rect, text, 4, area)), "200 404 200 20");
+    CHECK_EQ(show(attribution_box(panel, ClipKind::Rounded, text, 4, area)), "200 404 200 20");
+    CHECK_EQ(show(attribution_box(panel, ClipKind::Circle, text, 4, area)), "150 404 200 20");
+    // At the bottom of the frame, above the map.
+    CHECK_EQ(show(attribution_box(Rectangle { 100, 760, 300, 300 }, ClipKind::Rect, text, 4, area)), "200 736 200 20");
+    // A small circle at the frame's right edge: inside the frame.
+    CHECK_EQ(show(attribution_box(Rectangle { 1800, 100, 100, 100 }, ClipKind::Circle, text, 4, area)), "1720 204 200 20");
+}
+
+std::string show(Color c)
+{
+    return std::format("{} {} {} {}", c.r, c.g, c.b, c.a);
+}
+
+void test_color_filter()
+{
+    auto const filter = [](TileFilterKind kind, Color tint = WHITE) {
+        return color_filter(TileFilter { .kind = kind, .tint = tint });
+    };
+    Color const red { 255, 0, 0, 255 };
+    CHECK_EQ(show(filter(TileFilterKind::None).apply(red)), "255 0 0 255");
+    CHECK_EQ(show(filter(TileFilterKind::Grayscale).apply(red)), "76 76 76 255");
+    CHECK_EQ(show(filter(TileFilterKind::Grayscale).apply(Color { 128, 128, 128, 255 })), "128 128 128 255");
+    // Dark: white roads go black, and black ones white. The alpha stays.
+    CHECK_EQ(show(filter(TileFilterKind::Dark).apply(WHITE)), "0 0 0 255");
+    CHECK_EQ(show(filter(TileFilterKind::Dark).apply(Color { 0, 0, 0, 128 })), "255 255 255 128");
+    CHECK_EQ(show(filter(TileFilterKind::Tint, Color { 255, 183, 3, 255 }).apply(WHITE)), "255 183 3 255");
+}
+
+// fit's scale is anywhere between two levels: the tiles are drawn from 0.7
+// to 1.4 times as big.
+void test_tile_level_between()
+{
+    auto const at = [](double times) {
+        return static_cast<int>(tile_level(MapTransform { .scale = std::ldexp(1.0, 15) * times }, 1));
+    };
+    CHECK_EQ(at(0.71), 15);
+    CHECK_EQ(at(1.41), 15);
+    CHECK_EQ(at(1.42), 16);
+    CHECK_EQ(at(0.70), 14);
+}
+
+// Near the world's bottom right corner: none past its edges either.
+void test_map_tiles_far_edge()
+{
+    MapTransform const corner { .center = { 250, 250 }, .scale = 2, .screen_center = { 100, 100 } };
+    CHECK_EQ(show(map_tiles(corner, Rectangle { 0, 0, 200, 200 }, 1)), "1/1/1 at -144 -144 256 256");
+}
+
+// At street level, somewhere real, drawn 1.33 times as big: the tiles
+// cover the box, and each starts where the one before it ends.
+void test_map_tiles_no_seams()
+{
+    auto const         at = world_pixel(Coordinates { .lat = 52.37, .lon = 4.89 }, 0);
+    MapTransform const transform { .center = at, .scale = std::ldexp(1.0, 18) * 4 / 3, .screen_center = { 200, 200 } };
+    Rectangle const    box { 50, 50, 300, 300 };
+    auto const         tiles = map_tiles(transform, box, 18);
+    CHECK(tiles.size() >= 4 && tiles.size() <= 9);
+    if (tiles.empty()) {
+        return;
+    }
+    auto left = tiles[0].screen.x;
+    auto top = tiles[0].screen.y;
+    auto right = left;
+    auto bottom = top;
+    for (auto ix = 0uz; ix < tiles.size(); ++ix) {
+        auto const &[tile, screen] = tiles[ix];
+        CHECK_EQ(static_cast<int>(tile.zoom), 18);
+        CHECK(screen.width == 341 || screen.width == 342);
+        CHECK(screen.height == 341 || screen.height == 342);
+        if (ix + 1 < tiles.size() && tiles[ix + 1].tile.y == tile.y) {
+            CHECK_EQ(tiles[ix + 1].screen.x, screen.x + screen.width);
+            CHECK_EQ(tiles[ix + 1].tile.x, tile.x + 1);
+        }
+        for (auto const &below : tiles) {
+            if (below.tile.x == tile.x && below.tile.y == tile.y + 1) {
+                CHECK_EQ(below.screen.y, screen.y + screen.height);
+            }
+        }
+        left = std::min(left, screen.x);
+        top = std::min(top, screen.y);
+        right = std::max(right, screen.x + screen.width);
+        bottom = std::max(bottom, screen.y + screen.height);
+    }
+    CHECK(left <= box.x && top <= box.y);
+    CHECK(right >= box.x + box.width && bottom >= box.y + box.height);
+}
+
+// In the preview, the area isn't at the screen's corner.
+void test_attribution_box_in_an_area()
+{
+    Rectangle const area { 200, 100, 960, 540 };
+    Vector2 const   text { 100, 20 };
+    CHECK_EQ(show(attribution_box(Rectangle { 300, 200, 150, 150 }, ClipKind::Rect, text, 4, area)), "350 354 100 20");
+    CHECK_EQ(show(attribution_box(Rectangle { 300, 500, 150, 140 }, ClipKind::Rect, text, 4, area)), "350 476 100 20");
+    CHECK_EQ(show(attribution_box(Rectangle { 150, 200, 150, 150 }, ClipKind::Circle, text, 4, area)), "200 354 100 20");
+}
+
+// A map as tall as the frame, as in a map-only layout: no room below it,
+// nor above. The policy says the credit mustn't be off-screen.
+void test_attribution_box_full_height()
+{
+    Rectangle const area { 0, 0, 1920, 1080 };
+    Vector2 const   text { 200, 20 };
+    auto const      box = attribution_box(Rectangle { 100, 0, 600, 1080 }, ClipKind::Rect, text, 4, area);
+    CHECK(box.y >= area.y);
+    CHECK(box.y + box.height <= area.y + area.height);
+    // Inside the map, at its bottom.
+    CHECK_EQ(show(box), "500 1056 200 20");
+}
+
+void test_color_filter_more()
+{
+    auto const filter = [](TileFilterKind kind, Color tint = WHITE) {
+        return color_filter(TileFilter { .kind = kind, .tint = tint });
+    };
+    // A gray in the middle stays about there in the dark map.
+    CHECK_EQ(show(filter(TileFilterKind::Dark).apply(Color { 128, 128, 128, 255 })), "127 127 127 255");
+    // OSM's blue water: Rec. 601 luma, (0.299 * 170 + 0.587 * 211 + 0.114 * 223) = 200.
+    CHECK_EQ(show(filter(TileFilterKind::Grayscale).apply(Color { 170, 211, 223, 255 })), "200 200 200 255");
+    CHECK_EQ(show(filter(TileFilterKind::Tint, Color { 255, 183, 3, 255 }).apply(BLACK)), "0 0 0 255");
+    // The layer's opacity is in the alpha, which every filter keeps.
+    CHECK_EQ(show(filter(TileFilterKind::Tint, Color { 255, 183, 3, 255 }).apply(Color { 255, 255, 255, 153 })), "255 183 3 153");
+    CHECK_EQ(show(filter(TileFilterKind::Grayscale).apply(Color { 0, 0, 255, 153 })), "29 29 29 153");
+}
+
 int main()
 {
     test_fit();
@@ -235,5 +416,15 @@ int main()
     test_screen_points();
     test_clip_shape();
     test_map_shapes();
+    test_tile_level();
+    test_map_tiles();
+    test_attribution_box();
+    test_color_filter();
+    test_tile_level_between();
+    test_map_tiles_far_edge();
+    test_map_tiles_no_seams();
+    test_attribution_box_in_an_area();
+    test_attribution_box_full_height();
+    test_color_filter_more();
     return ST::Test::test_result();
 }

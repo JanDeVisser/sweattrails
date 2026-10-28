@@ -28,6 +28,7 @@ namespace ST {
 struct OverlayPreview : public Widget {
     std::shared_ptr<DisplayedActivity> activity { };
     std::optional<LayoutFile>          file { };
+    OverlayTiles                       tiles; // The maps', downloaded as they're shown
 
     explicit OverlayPreview(pWidget const &parent);
     void set_activity(std::shared_ptr<DisplayedActivity> const &activity);

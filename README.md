@@ -221,7 +221,10 @@ A `map` shows the track, the part ridden in one color and the rest in
 another, with a marker where the rider is: the whole track with
 `"view": "fit"`, or following the rider at an OpenStreetMap zoom level with
 `"view": "follow"`. It's clipped to a `rect`, a `rounded` rectangle or a
-`circle`, and so is its panel. There are no map tiles under it yet:
+`circle`, and so is its panel. With `tiles`, OpenStreetMap is under the
+track, at an `opacity`, and with a `filter`: `none`, `grayscale`, `dark`,
+or a color to tint it. OpenStreetMap's credit is then below the map, or
+above it at the bottom of the frame, in the `attribution`'s style:
 
 ```json
 { "type": "map", "view": "follow", "zoom": 15, "clip": "circle",
@@ -229,8 +232,14 @@ another, with a marker where the rider is: the whole track with
   "track": { "done": { "color": "#ffb703", "width": 5 }, "remaining": { "color": "#ffffff80", "width": 3 },
              "outline": { "color": "#00000080", "width": 2 } },
   "marker": { "color": "#ffffff", "radius": 8, "outline": "#ffb703" },
+  "tiles": { "opacity": 0.6, "filter": "dark" }, "attribution": { "style": "label", "font_size": 14 },
   "at": { "x": -40, "y": 40, "anchor": "top-right" }, "size": { "width": 300, "height": 300 } }
 ```
+
+OpenStreetMap doesn't allow fetching its tiles ahead of time, so a render
+downloads each frame's tiles as it gets to them, and waits for them:
+the first render of a ride takes longer, and the next ones read them from
+the cache. A tile that can't be downloaded is left out.
 
 Ctrl+E renders the overlay to a ProRes 4444 movie with alpha, which Final
 Cut and other editors import, for the part of the activity selected in the

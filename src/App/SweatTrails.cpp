@@ -631,7 +631,11 @@ std::optional<fs::path> find_ffmpeg()
 
 void start_render(pSweatTrails const &sweattrails, RenderJob job)
 {
-    auto render = OverlayRender::start(std::move(job), [](std::string_view name) { return SweatTrails::the()->find_font(name); });
+    auto render = OverlayRender::start(
+        std::move(job),
+        [](std::string_view name) { return SweatTrails::the()->find_font(name); },
+        [](Tile const &tile) { return tile.get_cached_tile(SweatTrails::the()->storage); },
+        [](pTileDownload const &download) { SweatTrails::the()->schedule<JobType::DownloadTiles>(download); });
     if (!render) {
         sweattrails->set_status(std::format("Couldn't render the overlay: {}", render.error()));
         return;
@@ -820,14 +824,28 @@ void SweatTrails::notif_wahoo_login_ended(Notification::Payload const &data)
     }
 }
 
+// Each of the maps that download tiles takes its own: the app's, the
+// overlay preview's, and a render's.
 void SweatTrails::notif_map_tile(Notification::Payload const &data)
 {
-    SweatTrails::the()->activity_display->map->add_tile(std::get<MapTile>(data));
+    auto const  the = SweatTrails::the();
+    auto const &tile = std::get<MapTile>(data);
+    the->activity_display->map->add_tile(tile);
+    the->activity_display->preview->tiles.add_tile(tile);
+    if (the->overlay_render) {
+        the->overlay_render->tiles().add_tile(tile);
+    }
 }
 
 void SweatTrails::notif_map_tiles_done(Notification::Payload const &data)
 {
-    SweatTrails::the()->activity_display->map->tiles_done(std::get<MapTilesDone>(data));
+    auto const  the = SweatTrails::the();
+    auto const &done = std::get<MapTilesDone>(data);
+    the->activity_display->map->tiles_done(done);
+    the->activity_display->preview->tiles.tiles_done(done);
+    if (the->overlay_render) {
+        the->overlay_render->tiles().tiles_done(done);
+    }
 }
 
 void SweatTrails::show_activity(Activity const &activity)
@@ -1073,15 +1091,19 @@ void SweatTrails::step_render()
     auto const name = overlay_render->output().filename().string();
     if (!overlay_render->over()) {
         auto const percent = static_cast<int>(overlay_render->progress() * 100);
-        if (percent != render_percent) {
+        auto const waiting = overlay_render->waiting();
+        if (percent != render_percent || waiting != render_waiting) {
             render_percent = percent;
-            set_status(std::format("Rendering {}: {}%", name, percent));
+            render_waiting = waiting;
+            set_status(std::format("Rendering {}: {}%{}", name, percent, waiting ? ", downloading map tiles" : ""));
         }
         return;
     }
     auto const &result = *overlay_render->result();
+    auto const  failed = overlay_render->tiles().failed();
+    auto const  without = (failed == 0) ? std::string { } : std::format(". Couldn't download {} map {}", failed, (failed == 1) ? "tile" : "tiles");
     set_status(result
-            ? std::format("Rendered the overlay to {}", overlay_render->output().string())
+            ? std::format("Rendered the overlay to {}{}", overlay_render->output().string(), without)
             : std::format("Couldn't render {}: {}", name, result.error()));
     overlay_render.reset();
 }

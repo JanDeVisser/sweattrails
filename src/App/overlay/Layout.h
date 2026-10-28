@@ -221,15 +221,35 @@ struct MapTrack {
     std::optional<Stroke> outline { }; // Around both, this much wider on each side
 };
 
+enum class TileFilterKind {
+    None,
+    Grayscale,
+    Dark, // Grayscale, inverted
+    Tint, // Grayscale, times the tint
+};
+
+struct TileFilter {
+    TileFilterKind kind { TileFilterKind::None };
+    Color          tint { WHITE };
+};
+
+// OpenStreetMap under the track, which is the only source.
+struct MapTileLayer {
+    float      opacity { 1 };
+    TileFilter filter { };
+};
+
 struct MapElement {
-    size_t                number { 0 }; // Its place in the layout's elements, from 1
-    Placement             at { };       // With a size
-    Panel                 panel { };    // In the clip's shape
-    MapMode               mode { MapMode::Fit };
-    int                   zoom { 15 }; // OSM's level, for Follow
-    ClipKind              clip { ClipKind::Rect };
-    MapTrack              track { };
-    std::optional<Marker> marker { };
+    size_t                      number { 0 }; // Its place in the layout's elements, from 1
+    Placement                   at { };       // With a size
+    Panel                       panel { };    // In the clip's shape
+    MapMode                     mode { MapMode::Fit };
+    int                         zoom { 15 }; // OSM's level, for Follow
+    ClipKind                    clip { ClipKind::Rect };
+    MapTrack                    track { };
+    std::optional<Marker>       marker { };
+    std::optional<MapTileLayer> tiles { };
+    TextStyle                   attribution { }; // Of the tiles, which always have it
 };
 
 using OverlayElement = std::variant<TextElement, ValueElement, GaugeElement, GraphElement, ProfileElement, MapElement>;

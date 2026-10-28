@@ -24,6 +24,32 @@ constexpr float UnitGap = 0.2f;
 constexpr float MarkerOutline = 2.0f;
 constexpr float LabelGap = 4.0f;
 
+// In design pixels: between a map and its tiles' credit.
+constexpr float AttributionGap = 4.0f;
+
+// Where a map is, and what it shows at the moment: no transform without a
+// position.
+struct MapFrame {
+    MapShapes                   shapes { };
+    std::optional<WorldPoint>   at { };
+    std::optional<MapTransform> transform { };
+};
+
+MapFrame map_frame(MapElement const &map, FieldValues const &values, Rectangle const &area, float scale)
+{
+    auto const placed = place(map.at, box_size(map.at, { }, map.panel, scale), Vector2 { .x = area.width, .y = area.height }, scale);
+    auto const box = Rectangle { .x = area.x + placed.x, .y = area.y + placed.y, .width = placed.width, .height = placed.height };
+    MapFrame   ret { .shapes = map_shapes(map.clip, box, map.panel.radius * scale, map.panel.padding * scale) };
+    auto const now = values[OverlayField::elapsed];
+    ret.at = (values.source && now) ? position_at(*values.source, *now) : std::nullopt;
+    if (ret.at) {
+        auto const &inner = ret.shapes.track;
+        ret.transform = (map.mode == MapMode::Follow) ? std::optional { follow_transform(*ret.at, map.zoom, scale, inner.box) }
+                                                      : fit_transform(values.source->track, inner, scale);
+    }
+    return ret;
+}
+
 }
 
 OverlayRenderer::OverlayRenderer(FontFinder find)
@@ -73,6 +99,35 @@ void OverlayRenderer::draw(FieldValues const &values, Rectangle const &area)
     for (auto const &element : m_layout->elements) {
         draw_element(element, values, area);
     }
+}
+
+void OverlayRenderer::set_tiles(OverlayTiles *tiles, float detail)
+{
+    m_tiles = tiles;
+    m_detail = detail;
+}
+
+std::vector<Tile> OverlayRenderer::tiles_needed(FieldValues const &values, Rectangle const &area) const
+{
+    if (!m_layout || m_error || m_tiles == nullptr) {
+        return { };
+    }
+    auto const        scale = layout_scale(m_layout->design_size, Vector2 { .x = area.width, .y = area.height });
+    std::vector<Tile> ret;
+    for (auto const &element : m_layout->elements) {
+        auto const *map = std::get_if<MapElement>(&element);
+        if (map == nullptr || !map->tiles) {
+            continue;
+        }
+        auto const frame = map_frame(*map, values, area, scale);
+        if (!frame.transform) {
+            continue;
+        }
+        for (auto const &placed : map_tiles(*frame.transform, frame.shapes.track.box, tile_level(*frame.transform, m_detail))) {
+            ret.push_back(placed.tile);
+        }
+    }
+    return ret;
 }
 
 // A font that's there but can't be loaded, such as a broken file, is an
@@ -349,22 +404,23 @@ void OverlayRenderer::draw(ProfileElement const &profile, FieldValues const &val
     }
 }
 
-// The track in the clip's shape: the panel in it, the remaining track
-// and the done one over it, each with its outline under it, the marker,
-// and the border over the clip's edge.
+// The track in the clip's shape: the panel in it, the tiles, the
+// remaining track and the done one over it, each with its outline under
+// it, the marker, the border over the clip's edge, and the tiles' credit.
 void OverlayRenderer::draw(MapElement const &map, FieldValues const &values, Rectangle const &area)
 {
-    auto const box = screen_box(map.at, box_size(map.at, { }, map.panel, m_scale), area);
-    auto const [outer, inner] = map_shapes(map.clip, box, map.panel.radius * m_scale, map.panel.padding * m_scale);
+    auto const frame = map_frame(map, values, area, m_scale);
+    auto const &[outer, inner] = frame.shapes;
     draw_background(map.panel, outer);
 
-    auto const now = values[OverlayField::elapsed];
-    auto const at = (values.source && now) ? position_at(*values.source, *now) : std::nullopt;
-    if (at) {
+    auto const &at = frame.at;
+    auto const &transform = frame.transform;
+    if (at && transform) {
         auto const &source = *values.source;
-        auto const  transform = (map.mode == MapMode::Follow) ? std::optional { follow_transform(*at, map.zoom, m_scale, inner.box) }
-                                                              : fit_transform(source.track, inner, m_scale);
-        auto const  split = split_track(source, *now);
+        if (map.tiles && m_tiles != nullptr) {
+            draw_tiles(map, *transform, inner);
+        }
+        auto const  split = split_track(source, *values[OverlayField::elapsed]);
         auto const  done = screen_points(split.done, *transform);
         auto const  remaining = screen_points(split.remaining, *transform);
         auto const &track = map.track;
@@ -388,6 +444,34 @@ void OverlayRenderer::draw(MapElement const &map, FieldValues const &values, Rec
         m_clip.end();
     }
     draw_border(map.panel, outer);
+    if (map.tiles && m_tiles != nullptr && transform) {
+        draw_attribution(map, outer.box, area);
+    }
+}
+
+// The tiles that are loaded; the panel shows where they aren't.
+void OverlayRenderer::draw_tiles(MapElement const &map, MapTransform const &transform, ClipShape const &clip)
+{
+    auto const full = Rectangle { .x = 0, .y = 0, .width = 256, .height = 256 };
+    auto const tint = Fade(WHITE, map.tiles->opacity);
+    m_clip.begin(clip.box, clip.radius, color_filter(map.tiles->filter));
+    for (auto const &[tile, screen] : map_tiles(transform, clip.box, tile_level(transform, m_detail))) {
+        if (auto const *texture = m_tiles->texture(tile); texture != nullptr) {
+            DrawTexturePro(*texture, full, screen, Vector2 { }, 0, tint);
+        }
+    }
+    m_clip.end();
+}
+
+void OverlayRenderer::draw_attribution(MapElement const &map, Rectangle const &panel, Rectangle const &area)
+{
+    auto const f = font(map.attribution, map.number);
+    if (!f) {
+        return;
+    }
+    auto const measured = MeasureTextEx(*f, OsmAttribution, static_cast<float>(f->baseSize), 0);
+    auto const box = attribution_box(panel, map.clip, measured, AttributionGap * m_scale, area);
+    draw_text(*f, OsmAttribution, Vector2 { .x = box.x, .y = box.y }, map.attribution);
 }
 
 }
