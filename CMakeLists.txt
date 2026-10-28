@@ -436,6 +436,7 @@ sweattrails_test(
         test/OverlayTrackMapTest.cpp
         src/App/overlay/Fields.cpp
         src/App/overlay/Layout.cpp
+        src/App/overlay/Shapes.cpp
         src/App/overlay/Template.cpp
         src/App/overlay/TrackMap.cpp
         src/App/storage/Activity.cpp

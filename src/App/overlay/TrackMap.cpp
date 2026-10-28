@@ -9,6 +9,7 @@
 #include <numbers>
 #include <ranges>
 
+#include <overlay/Shapes.h>
 #include <overlay/TrackMap.h>
 
 namespace ST {
@@ -122,6 +123,14 @@ ClipShape clip_shape(ClipKind kind, Rectangle content, float corner)
         break;
     }
     return ClipShape { .box = content };
+}
+
+MapShapes map_shapes(ClipKind kind, Rectangle box, float radius, float padding)
+{
+    return MapShapes {
+        .panel = clip_shape(kind, box, radius),
+        .track = clip_shape(kind, content_box(box, padding), radius - padding),
+    };
 }
 
 }

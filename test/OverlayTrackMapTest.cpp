@@ -199,6 +199,29 @@ void test_clip_shape()
     CHECK_EQ(rect.radius, 0.0f);
 }
 
+// The track's shape is inside the padding, with its corners rounded as
+// much less: a circle stays one, and a corner no rounder than the padding
+// is square inside it.
+void test_map_shapes()
+{
+    Rectangle const box { 10, 20, 300, 200 };
+    auto const      circle = map_shapes(ClipKind::Circle, box, 16, 10);
+    CHECK_EQ(show(circle.panel.box), "60 20 200 200");
+    CHECK_EQ(circle.panel.radius, 100.0f);
+    CHECK_EQ(show(circle.track.box), "70 30 180 180");
+    CHECK_EQ(circle.track.radius, 90.0f);
+    auto const rounded = map_shapes(ClipKind::Rounded, box, 16, 10);
+    CHECK_EQ(show(rounded.panel.box), "10 20 300 200");
+    CHECK_EQ(rounded.panel.radius, 16.0f);
+    CHECK_EQ(show(rounded.track.box), "20 30 280 180");
+    CHECK_EQ(rounded.track.radius, 6.0f);
+    CHECK_EQ(map_shapes(ClipKind::Rounded, box, 8, 10).track.radius, 0.0f);
+    auto const rect = map_shapes(ClipKind::Rect, box, 16, 10);
+    CHECK_EQ(rect.panel.radius, 0.0f);
+    CHECK_EQ(show(rect.track.box), "20 30 280 180");
+    CHECK_EQ(rect.track.radius, 0.0f);
+}
+
 }
 
 int main()
@@ -211,5 +234,6 @@ int main()
     test_split();
     test_screen_points();
     test_clip_shape();
+    test_map_shapes();
     return ST::Test::test_result();
 }

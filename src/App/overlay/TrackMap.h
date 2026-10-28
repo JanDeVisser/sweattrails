@@ -44,6 +44,16 @@ struct ClipShape {
 // rounded corners of `corner`; or the content.
 ClipShape clip_shape(ClipKind kind, Rectangle content, float corner);
 
+// The map's panel, `box` with corners rounded by `radius`, and the shape
+// inside its padding that the track is clipped to, with corners rounded
+// as much less as the padding, so that both edges run alongside.
+struct MapShapes {
+    ClipShape panel { };
+    ClipShape track { };
+};
+
+MapShapes map_shapes(ClipKind kind, Rectangle box, float radius, float padding);
+
 // The whole track in the clip, with 10% to spare, but zoomed in no further
 // than OSM's level 18, at the layout's scale: in a circle, the corners of
 // the track's bounds inside it, and in a rounded rectangle, clear of its

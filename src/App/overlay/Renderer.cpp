@@ -355,9 +355,7 @@ void OverlayRenderer::draw(ProfileElement const &profile, FieldValues const &val
 void OverlayRenderer::draw(MapElement const &map, FieldValues const &values, Rectangle const &area)
 {
     auto const box = screen_box(map.at, box_size(map.at, { }, map.panel, m_scale), area);
-    auto const padding = map.panel.padding * m_scale;
-    auto const outer = clip_shape(map.clip, box, map.panel.radius * m_scale);
-    auto const inner = clip_shape(map.clip, content_box(box, padding), map.panel.radius * m_scale - padding);
+    auto const [outer, inner] = map_shapes(map.clip, box, map.panel.radius * m_scale, map.panel.padding * m_scale);
     draw_background(map.panel, outer);
 
     auto const now = values[OverlayField::elapsed];
