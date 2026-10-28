@@ -1,6 +1,6 @@
 # Overlay map: the track
 
-Status: Ready
+Status: In progress
 
 ## Goal
 
@@ -137,11 +137,113 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+The map is decoded in `overlay/Layout`, the track and the moment's
+position are in `overlay/Fields`' `OverlaySource`, the geometry in a new
+`overlay/TrackMap`, and `overlay/Renderer` draws it, clipped by a small
+shader.
+
+### Clipping: a shader, not a render texture
+
+The reference draws a map into a render texture of its own, and that
+through a shader that discards what's outside the shape. But a frame is
+already drawn into a render texture, the doubled one, and raylib's
+texture mode doesn't nest: `EndTextureMode()` goes back to the window,
+not to the frame. So instead:
+
+- **A clip shader**: its vertex shader passes each vertex's position, in
+  the coordinates everything is drawn in, to its fragment shader, which
+  works out how far the pixel is inside the shape (a signed distance:
+  rectangle, rounded rectangle, circle) and fades the color's alpha out
+  over the last pixel. Everything drawn between `BeginShaderMode()` and
+  `EndShaderMode()` is clipped: lines, circles, and in 6b the tiles.
+- It doesn't care whether it draws into the window or a texture, which
+  way up that is, or how big its pixels are, since it works in drawing
+  coordinates. And the fade gives a smooth edge in the preview too, not
+  only in a render.
+- The shader's source is a string in the code, loaded once with
+  `LoadShaderFromMemory()` when a map is first drawn, as it needs the GL
+  context: no file in `share/` to install or miss.
+- A `rect` clip uses the same shader, which keeps one way of drawing a
+  map.
+
+### The layout
+
+- **`MapElement`**: `at`, `panel`, `view` (`Fit`, `Follow`), `zoom` (1 to
+  18), `clip` (`Rect`, `Rounded`, `Circle`), `track` (`done`,
+  `remaining`: strokes; `outline`: an optional stroke) and `marker`
+  (optional).
+- The profile's `marker()` decoder is shared, with what each element
+  takes: a map's marker has no `drop_line`.
+- `map` leaves `LaterTypes`; `view`, `zoom`, `clip`, `track`, `tiles`,
+  `attribution` and `rotate` leave `LaterProperties`. `tiles`,
+  `attribution` and `rotate` are taken and ignored.
+- A map takes `color` but no other text style, and has no fonts.
+- Defaults and errors as in the Feature.
+
+### The track: `OverlaySource`
+
+- **`OverlaySource::track`**: the records with a position, each as its
+  time since the start and its Web Mercator point at zoom 0
+  (`world_pixel(position, 0)`), worked out once. A position within 0.1°
+  of 0° latitude or longitude is none, as in the app's map, which is what
+  devices record without a fix.
+- **`position_at(source, seconds)`**: between the two track points around
+  the moment, as `values_at_time()` interpolates the fields; held at the
+  earlier one across a gap of more than `MaxGap`, so the marker holds in
+  a tunnel and in a pause; the first point before the first, the last
+  after the last. None without a track.
+
+### Geometry: `overlay/TrackMap.h`
+
+No raylib drawing, so that tests reach it:
+
+- **`MapTransform { world center, scale, screen center }`**, with
+  `to_screen(world point)`: pixels per zoom-0 world pixel.
+- **`fit_transform(track, content)`**: the track's bounds with 10% to
+  spare, at the scale where they fit, but no more than zoom 18's.
+- **`follow_transform(position, zoom, layout scale, content)`**: centred
+  on the position, at `2^zoom` times the layout's scale.
+- **`split_track(source, seconds)`**: the track's points before the
+  moment and after, both with the position at the moment.
+- **`screen_points(points, transform)`**: in screen pixels, leaving out a
+  point less than a pixel from the one before it, which a long ride in a
+  small `fit` map has thousands of.
+- **`ClipShape { kind, Rectangle box, radius }`** for the content box:
+  a circle as big as fits in its middle, a rounded rectangle with the
+  panel's radius less its padding, or the box.
+
+### Drawing
+
+- The panel takes the clip's shape: `DrawCircleV()` and `DrawRing()` for
+  a circle; the rounded rectangle as other panels have it, with the
+  radius as is for `rounded`, and none for `rect`.
+- Then, in the clip shader: the outlines under the remaining and done
+  traces, wider by the outline's width on each side, the traces, and the
+  marker with its outline ring.
+- The border is drawn last, over the clip's edge.
+
+### Built-in layout
+
+- `cycling-dashboard` gets the map in its top right corner, as in the
+  Version 1 scope.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `OverlayLayoutTest`: decoding maps (views, zoom, clips, track strokes
+  and their defaults, the marker and `"marker": null`), the errors, a
+  `drop_line` on a map's marker being one, and `tiles`, `attribution` and
+  `rotate` being taken.
+- `OverlayFieldsTest`: the track (positions near 0° left out), and
+  `position_at()` between records, across a gap, before and after.
+- `OverlayTrackMapTest` (new): `fit_transform()` for a wide and a tall
+  track and a track of one point, `follow_transform()` at the layout's
+  scale, `split_track()` in the middle, before the first point and after
+  the last, `screen_points()` thinning, and `clip_shape()` for the three
+  shapes with padding.
+- `LayoutFileTest`: `cycling-dashboard` decodes with its map.
+- By hand, and with a throwaway frame dump: the dashboard's map in the
+  preview and a render, the circle's edge in both, `follow` and `fit`,
+  and the render's speed.
 
 ## Review notes
 
