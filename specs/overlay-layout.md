@@ -632,9 +632,12 @@ most of the elements exist.
    specs (`hms`, `ms`, `hm`, `date`), and `color_by` thresholds.
 4. **`gauge` and `graph`**.
 5. **`profile`**.
-6. **`map`**: `fit` and `follow`, clipping through a render texture and a
-   shader, tile filters, the tiles along the track, and the tile code
-   prerequisites. The biggest slice, which may be split again.
+6. **`map`**, split in two:
+   - 6a, [overlay-map.md](overlay-map.md): the track, `fit` and `follow`,
+     clipping, and the marker.
+   - 6b: the OpenStreetMap tiles under it, tile filters, the attribution,
+     fetching the tiles along the track before a render, and the tile code
+     prerequisites.
 7. **`group`, `image`, and `visible`/`fade`**.
 
 Deferred, in no slice yet:
