@@ -43,6 +43,16 @@ Vector2 image_size(Vector2 picture, std::optional<float> width, std::optional<fl
 // `anchor` is in it.
 Rectangle fit_picture(Rectangle content, Vector2 picture, Anchor anchor);
 
+// Where an image is drawn in a canvas, in pixels at `scale`: its panel,
+// and the picture inside the panel's padding. With a width and a height,
+// that's the panel's box; else the picture's size, or a side and the
+// other in its aspect ratio, is the content, with the padding around it.
+struct ImageBox {
+    Rectangle panel;
+    Rectangle picture;
+};
+ImageBox image_box(ImageElement const &image, Vector2 picture, Vector2 canvas, float scale);
+
 // The lowest and the highest value a gauge or a graph shows, in the unit
 // shown: the element's own, or the activity's range for "auto".
 struct Bounds {

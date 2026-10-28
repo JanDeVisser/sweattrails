@@ -410,8 +410,33 @@ void test_fit_picture_anchors()
 
 }
 
+// The panel and the picture in it, at a scale of 2, in a canvas of 1000
+// by 500: one side, both sides, and neither.
+void test_image_box()
+{
+    Vector2 const logo { 400, 100 };
+    auto const    image = [](std::optional<float> width, std::optional<float> height, Placement at, float padding) {
+        return ImageElement { .at = at, .panel = Panel { .padding = padding }, .width = width, .height = height };
+    };
+    auto const top_left = Placement { .x = { .value = 10 }, .y = { .value = 20 } };
+    auto const box = [&logo](ImageElement const &i) {
+        auto const b = image_box(i, logo, Vector2 { 1000, 500 }, 2);
+        return std::format("{} | {}", show(b.panel), show(b.picture));
+    };
+    // A side: the content is 200 by 50, and 20 px of padding around it.
+    CHECK_EQ(box(image(200.0f, { }, top_left, 10)), "20 40 440 140 | 40 60 400 100");
+    // Both: that's the panel, and the picture fits inside the padding.
+    CHECK_EQ(box(image(100.0f, 100.0f, Placement { }, 10)), "0 0 200 200 | 20 20 160 40");
+    // Neither: the picture's own size, from the bottom right.
+    auto const bottom_right = Placement { .x = { .value = -10 }, .y = { .value = -10 }, .anchor = Anchor::BottomRight };
+    CHECK_EQ(box(image({ }, { }, bottom_right, 0)), "180 280 800 200 | 180 280 800 200");
+    // Both, with the anchor: the picture sits at the box's bottom right.
+    CHECK_EQ(box(image(100.0f, 100.0f, bottom_right, 10)), "780 280 200 200 | 800 420 160 40");
+}
+
 int main()
 {
+    test_image_box();
     test_image_size();
     test_fit_picture();
     test_fit_picture_anchors();

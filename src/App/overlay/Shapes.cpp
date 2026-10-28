@@ -51,6 +51,20 @@ Rectangle fit_picture(Rectangle content, Vector2 picture, Anchor anchor)
     return Rectangle { .x = content.x + at.x, .y = content.y + at.y, .width = size.x, .height = size.y };
 }
 
+ImageBox image_box(ImageElement const &image, Vector2 picture, Vector2 canvas, float scale)
+{
+    auto const size = image_size(picture, image.width, image.height);
+    auto       at = image.at;
+    if (image.width && image.height) {
+        at.size = size;
+    }
+    auto const panel = place(at, box_size(at, Vector2 { .x = size.x * scale, .y = size.y * scale }, image.panel, scale), canvas, scale);
+    return ImageBox {
+        .panel = panel,
+        .picture = fit_picture(content_box(panel, image.panel.padding * scale), picture, image.at.anchor),
+    };
+}
+
 std::optional<Bounds> shown_bounds(OverlaySource const &source, OverlayField field, FieldUnit const &unit,
     std::optional<double> min, std::optional<double> max)
 {

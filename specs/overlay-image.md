@@ -166,6 +166,9 @@ struct ImageElement {
   the anchor is in it, with `place_in_box()`.
 - `cascaded()` takes the properties that replace those under them
   whole, rather than merge: `size`, for an image.
+- **`image_box(image, picture, canvas, scale)`** puts them together,
+  after the review: the panel's box in the canvas, and the picture's
+  rectangle in it. The renderer moves both into its area and draws.
 - The box is then as for a text: the content and the panel's padding
   around it, or, with both sides, `width` by `height` is the box, as
   `size` is for other elements, and the picture fits inside the
@@ -310,5 +313,7 @@ the bolt in the gauge's yellow, `#f9c74f`, as the gauge has no amber.
    `test_decoded_icon`).
 4. Fixed: an image's `size` replaces the one under it in the cascade,
    also a style's over the defaults' (`test_image_size_replaces`).
+5. Fixed: `image_box()` in `overlay/Shapes` (`test_image_box`: one
+   side, both, neither, and an anchor).
 6. The review's tests are committed, apart from `test_jpeg()`, which
    became a test of the error for a picture that isn't a PNG (see 1).

@@ -565,9 +565,8 @@ std::optional<Texture2D> OverlayRenderer::picture(ImageElement const &image)
     return texture;
 }
 
-// The picture fits inside the panel's padding without stretching. With a
-// width and a height, that's the box; else the picture's size, or a side
-// and the other in its aspect ratio, is the content.
+// The picture fits inside the panel's padding without stretching: see
+// image_box().
 void OverlayRenderer::draw(ImageElement const &image, FieldValues const &, Rectangle const &area)
 {
     auto const texture = picture(image);
@@ -575,14 +574,10 @@ void OverlayRenderer::draw(ImageElement const &image, FieldValues const &, Recta
         return;
     }
     auto const own = Vector2 { .x = static_cast<float>(texture->width), .y = static_cast<float>(texture->height) };
-    auto const size = image_size(own, image.width, image.height);
-    auto       at = image.at;
-    if (image.width && image.height) {
-        at.size = size;
-    }
-    auto const content = draw_panel(image.panel, screen_box(at, box_size(at, Vector2 { .x = size.x * m_scale, .y = size.y * m_scale }, image.panel, m_scale), area));
-    auto const shown = fit_picture(content, own, image.at.anchor);
-    DrawTexturePro(*texture, Rectangle { .x = 0, .y = 0, .width = own.x, .height = own.y }, shown, Vector2 { }, 0, faded(image.tint));
+    auto const box = image_box(image, own, Vector2 { .x = area.width, .y = area.height }, m_scale);
+    auto const on_screen = [&area](Rectangle r) { return Rectangle { .x = area.x + r.x, .y = area.y + r.y, .width = r.width, .height = r.height }; };
+    draw_panel(image.panel, on_screen(box.panel));
+    DrawTexturePro(*texture, Rectangle { .x = 0, .y = 0, .width = own.x, .height = own.y }, on_screen(box.picture), Vector2 { }, 0, faded(image.tint));
 }
 
 }
