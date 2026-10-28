@@ -149,6 +149,20 @@ void test_records_range()
     CHECK(records_range(activity, 2, 99) == (RenderRange { .from = 2, .to = 11 }));
 }
 
+void test_initial_render_range()
+{
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+    activity.segment.start_time.timestamp = 1'750'000'000;
+    for (u32 t : { 0u, 1u, 2u, 10u, 11u }) {
+        activity.records.push_back(record { .timestamp = DateTime { .timestamp = 1'750'000'000 + t } });
+    }
+    CHECK(initial_render_range(activity, std::pair { 1uz, 3uz }) == (RenderRange { .from = 1, .to = 10 }));
+    // One record, or none: the whole activity.
+    CHECK(initial_render_range(activity, std::pair { 2uz, 2uz }) == (RenderRange { .from = 0, .to = 11 }));
+    CHECK(initial_render_range(activity, std::nullopt) == (RenderRange { .from = 0, .to = 11 }));
+}
+
 void test_ffmpeg_arguments()
 {
     RenderSettings const settings { .resolution = { 1920, 1080 }, .fps = { 30000, 1001 }, .folder = "/m" };
@@ -339,6 +353,7 @@ int main()
     test_format_range();
     test_activity_clock();
     test_records_range();
+    test_initial_render_range();
     test_ffmpeg_arguments();
     test_frames();
     test_timecodes();

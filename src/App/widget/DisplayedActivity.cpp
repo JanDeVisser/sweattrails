@@ -22,6 +22,14 @@ void DisplayedActivity::clear_segment()
     lap.reset();
 }
 
+std::optional<std::pair<size_t, size_t>> DisplayedActivity::selection() const
+{
+    if (!segment) {
+        return { };
+    }
+    return std::pair { segment->min, segment->max };
+}
+
 void DisplayedActivity::clear_mark()
 {
     mark.reset();

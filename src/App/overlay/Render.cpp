@@ -265,6 +265,16 @@ std::expected<RenderRange, std::string> parse_range(std::string_view text, Activ
     return RenderRange { .from = std::max(0.0, from), .to = std::min(clock.duration, to) };
 }
 
+RenderRange initial_render_range(Activity const &activity, std::optional<std::pair<size_t, size_t>> selection)
+{
+    if (selection) {
+        if (auto const selected = records_range(activity, selection->first, selection->second); selected.to > selected.from) {
+            return selected;
+        }
+    }
+    return RenderRange { .from = 0, .to = activity_clock(activity).duration };
+}
+
 std::string format_range(RenderRange const &range)
 {
     return std::format("{}-{}", clock_text(range.from), clock_text(range.to));

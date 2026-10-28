@@ -85,6 +85,12 @@ std::string format_range(RenderRange const &range);
 // a lap has them.
 RenderRange records_range(Activity const &activity, size_t first, size_t last);
 
+// The range a render starts its box with, and the preview shows: the
+// graph's selection of records `first` to `last`, which is the lap when a
+// lap is selected; the whole activity without one, or for a selection of
+// one record, which isn't a range.
+RenderRange initial_render_range(Activity const &activity, std::optional<std::pair<size_t, size_t>> selection);
+
 // The frames in the range, and when frame `n` is, from integers rather
 // than added up, so that a long render doesn't drift.
 size_t frame_count(RenderRange const &range, FrameRate const &rate);

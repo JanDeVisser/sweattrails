@@ -31,9 +31,11 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
 
     explicit DisplayedActivity(Activity const &activity);
     void clear_segment();
-    void clear_mark();
-    void set_mark(size_t t);
-    void set_segment(size_t t);
+    // The segment's first and last record, for an overlay's range.
+    [[nodiscard]] std::optional<std::pair<size_t, size_t>> selection() const;
+    void                                                   clear_mark();
+    void                                                   set_mark(size_t t);
+    void                                                   set_segment(size_t t);
 
     // The record the overlay preview shows: the marked one, or else where a
     // drag in the graph is, the end of the range it's selecting, or else
