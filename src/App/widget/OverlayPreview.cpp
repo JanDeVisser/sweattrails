@@ -38,6 +38,7 @@ void OverlayPreview::set_activity(std::shared_ptr<DisplayedActivity> const &acti
 {
     this->activity = activity;
     source.reset();
+    tiles.reset();
     if (activity) {
         source.emplace(activity->activity);
     }

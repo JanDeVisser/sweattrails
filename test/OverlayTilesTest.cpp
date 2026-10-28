@@ -173,6 +173,23 @@ void test_unload()
     CHECK(fake.textures.empty());
 }
 
+// For another activity, what failed is tried again, and what the last one
+// was downloading isn't.
+void test_reset()
+{
+    Fake fake;
+    auto tiles = fake.make();
+    CHECK(!tiles.request({ tile(1) }));
+    tiles.tiles_done(MapTilesDone { .download = fake.scheduled[0], .failed = { tile(1) } });
+    CHECK(!tiles.request({ tile(2) }));
+    CHECK_EQ(fake.scheduled.size(), 2uz);
+    tiles.reset();
+    CHECK(fake.scheduled[1]->cancelled);
+    CHECK_EQ(tiles.failed(), 0uz);
+    CHECK(!tiles.request({ tile(1) }));
+    CHECK_EQ(fake.scheduled.size(), 3uz);
+}
+
 void test_destroyed()
 {
     Fake fake;
@@ -180,6 +197,96 @@ void test_destroyed()
         auto tiles = fake.make();
         CHECK(!tiles.request({ tile(1) }));
     }
+    CHECK(fake.scheduled.size() == 1 && fake.scheduled[0]->cancelled);
+}
+
+// A render's frame waits for its download: a tile of it arriving leaves
+// the frame waiting for the others, without another download.
+void test_waiting()
+{
+    Fake fake;
+    auto tiles = fake.make();
+    CHECK(!tiles.request({ tile(1), tile(2) }));
+    CHECK_EQ(fake.scheduled.size(), 1uz);
+    if (fake.scheduled.size() != 1) {
+        return;
+    }
+    auto const download = fake.scheduled[0];
+    tiles.add_tile(MapTile { .download = download, .tile = tile(1), .png = png(1) });
+    CHECK(!tiles.request({ tile(1), tile(2) }));
+    CHECK_EQ(fake.scheduled.size(), 1uz);
+    CHECK(!download->cancelled);
+}
+
+// All of a download's tiles there, before the job thread says it's done:
+// the frame goes on, and the done that follows changes nothing.
+void test_arrived_before_done()
+{
+    Fake fake;
+    auto tiles = fake.make();
+    CHECK(!tiles.request({ tile(1), tile(2) }));
+    if (fake.scheduled.size() != 1) {
+        CHECK_EQ(fake.scheduled.size(), 1uz);
+        return;
+    }
+    auto const download = fake.scheduled[0];
+    tiles.add_tile(MapTile { .download = download, .tile = tile(1), .png = png(1) });
+    tiles.add_tile(MapTile { .download = download, .tile = tile(2), .png = png(2) });
+    CHECK(tiles.request({ tile(1), tile(2) }));
+    tiles.tiles_done(MapTilesDone { .download = download });
+    CHECK(tiles.request({ tile(1), tile(2) }));
+    CHECK_EQ(fake.scheduled.size(), 1uz);
+    CHECK_EQ(tiles.failed(), 0uz);
+}
+
+// A downloaded tile that doesn't decode failed, as a broken cached one.
+void test_downloaded_broken()
+{
+    Fake fake;
+    auto tiles = fake.make();
+    CHECK(!tiles.request({ tile(1) }));
+    if (fake.scheduled.size() != 1) {
+        CHECK_EQ(fake.scheduled.size(), 1uz);
+        return;
+    }
+    tiles.add_tile(MapTile { .download = fake.scheduled[0], .tile = tile(1), .png = "broken" });
+    CHECK(tiles.texture(tile(1)) == nullptr);
+    CHECK_EQ(tiles.failed(), 1uz);
+    CHECK(tiles.request({ tile(1) }));
+    CHECK_EQ(fake.scheduled.size(), 1uz);
+}
+
+// The end of a download a later request replaced: its failures count,
+// and the download going on stays.
+void test_replaced_done()
+{
+    Fake fake;
+    auto tiles = fake.make();
+    CHECK(!tiles.request({ tile(1) }));
+    CHECK(!tiles.request({ tile(2) }));
+    if (fake.scheduled.size() != 2) {
+        CHECK_EQ(fake.scheduled.size(), 2uz);
+        return;
+    }
+    tiles.tiles_done(MapTilesDone { .download = fake.scheduled[0], .failed = { tile(1) } });
+    CHECK_EQ(tiles.failed(), 1uz);
+    CHECK(!tiles.request({ tile(2) }));
+    CHECK_EQ(fake.scheduled.size(), 2uz);
+    CHECK(!fake.scheduled[1]->cancelled);
+    // Failed, so there.
+    CHECK(tiles.request({ tile(1) }));
+}
+
+// A tile another map downloaded in the meantime is in the cache: loaded
+// from there, and the download for it isn't needed any more.
+void test_cached_meanwhile()
+{
+    Fake fake;
+    auto tiles = fake.make();
+    CHECK(!tiles.request({ tile(1) }));
+    fake.cached[tile(1)] = png(1);
+    CHECK(tiles.request({ tile(1) }));
+    CHECK(tiles.texture(tile(1)) != nullptr);
     CHECK(fake.scheduled.size() == 1 && fake.scheduled[0]->cancelled);
 }
 
@@ -193,6 +300,12 @@ int main()
     test_replaced();
     test_broken();
     test_unload();
+    test_reset();
     test_destroyed();
+    test_waiting();
+    test_arrived_before_done();
+    test_downloaded_broken();
+    test_replaced_done();
+    test_cached_meanwhile();
     return ST::Test::test_result();
 }

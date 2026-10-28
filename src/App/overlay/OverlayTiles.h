@@ -44,6 +44,9 @@ struct OverlayTiles {
     // they failed before. The download going on is replaced, unless it has
     // all of them. True when all are loaded or failed.
     bool request(std::vector<Tile> const &tiles);
+    // Drops the download going on, and forgets the tiles that failed, to
+    // try them again: for another activity, when the network may be back.
+    void reset();
     // Null if it's not loaded.
     [[nodiscard]] Texture2D const *texture(Tile const &tile) const;
 

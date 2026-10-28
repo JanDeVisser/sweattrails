@@ -83,6 +83,15 @@ bool OverlayTiles::request(std::vector<Tile> const &tiles)
     return false;
 }
 
+void OverlayTiles::reset()
+{
+    if (m_download) {
+        m_download->cancelled = true;
+        m_download.reset();
+    }
+    m_failed.clear();
+}
+
 Texture2D const *OverlayTiles::texture(Tile const &tile) const
 {
     auto const it = m_loaded.find(tile);
