@@ -54,8 +54,8 @@ struct SplitLine {
 
 SplitLine split_at(std::vector<Vector2> const &points, float x);
 
-// The marker on the line where `distance` is. None without a distance, or
-// with one outside the extent.
+// The marker on the line where `distance` is, or at its end past it. None
+// without a distance, or before the extent.
 std::optional<Vector2> profile_marker(std::vector<Vector2> const &points, DistanceRange extent, std::optional<double> distance, Rectangle content);
 
 // Where the laps after the first start, inside the extent.

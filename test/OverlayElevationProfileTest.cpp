@@ -100,8 +100,9 @@ void test_extent()
     ProfileElement      all { };
     ProfileElement      lap { .extent = ProfileExtent::Lap };
     CHECK_EQ(show(profile_extent(source, all, in_lap(source, 2))), "0-300");
-    CHECK_EQ(show(profile_extent(source, lap, in_lap(source, 1))), "0-95");
-    CHECK_EQ(show(profile_extent(source, lap, in_lap(source, 2))), "100-195");
+    // Up to where the next lap starts.
+    CHECK_EQ(show(profile_extent(source, lap, in_lap(source, 1))), "0-100");
+    CHECK_EQ(show(profile_extent(source, lap, in_lap(source, 2))), "100-200");
     CHECK_EQ(show(profile_extent(source, lap, in_lap(source, 3))), "200-300");
 
     // An activity without laps is one lap.
@@ -196,7 +197,8 @@ void test_marker()
     CHECK_EQ(at(120), "120 50");
     CHECK_EQ(at(300), "300 0");
     CHECK_EQ(at({ }), "none");
-    CHECK_EQ(at(400), "none");
+    CHECK_EQ(at(-10), "none");
+    CHECK_EQ(at(400), "300 0");
 
     // A minute's pause at 120 m: the marker holds.
     for (auto &r : c.activity.records) {
@@ -236,6 +238,62 @@ void test_label_box()
     CHECK_EQ(show(label_box({ 10, 60 }, 10, Vector2 { 400, 20 }, content)), "0 30 400 20");
 }
 
+// A lap's records without distances: the lap has no profile, and draws
+// its panel only.
+void test_lap_without_distances()
+{
+    Climb c;
+    for (auto ix = 20uz; ix < 40; ++ix) {
+        c.activity.records[ix].distance.reset();
+    }
+    OverlaySource const  source { c.activity };
+    ProfileElement const lap { .extent = ProfileExtent::Lap };
+    CHECK_EQ(show(profile_extent(source, lap, in_lap(source, 2))), "none");
+    CHECK_EQ(show(profile_extent(source, lap, in_lap(source, 3))), "200-300");
+}
+
+// A lap with distances but without altitudes, such as an altimeter that
+// gave out, is past the profile's end: it has no profile either, rather
+// than a range that runs backwards.
+void test_lap_past_the_profile()
+{
+    Climb c;
+    for (auto ix = 40uz; ix < c.activity.records.size(); ++ix) {
+        c.activity.records[ix].altitude.reset();
+    }
+    OverlaySource const  source { c.activity };
+    ProfileElement const lap { .extent = ProfileExtent::Lap };
+    CHECK_EQ(show(profile_extent(source, lap, in_lap(source, 2))), "100-195");
+    CHECK_EQ(show(profile_extent(source, lap, in_lap(source, 3))), "none");
+}
+
+// Between a lap's last record and the next lap's first, the frame is still
+// in the lap, with a distance past the lap's last one. The lap's profile
+// goes on to the next lap's start, and the marker with it, rather than
+// going, which would turn all of the lap from done to remaining for that
+// second.
+void test_marker_at_the_end_of_a_lap()
+{
+    Climb                c;
+    OverlaySource const  source { c.activity };
+    ProfileElement const lap { .extent = ProfileExtent::Lap };
+    Rectangle const      content { 0, 0, 100, 100 };
+    auto const           values = values_at_time(source, 19.5);
+    CHECK_EQ(values[OverlayField::lap].value_or(0), 1.0);
+    CHECK_EQ(values[OverlayField::distance].value_or(0), 97.5);
+    auto const extent = profile_extent(source, lap, values);
+    CHECK(extent.has_value());
+    if (!extent) {
+        return;
+    }
+    auto const points = profile_points(profile_columns(source, *extent, 0, meters(), 100), Bounds { .min = 0, .max = 8 }, content);
+    auto const marker = profile_marker(points, *extent, values[OverlayField::distance], content);
+    CHECK(marker.has_value());
+    if (marker) {
+        CHECK_EQ(std::format("{:.1f}", marker->x), "97.5");
+    }
+}
+
 }
 
 int main()
@@ -248,5 +306,8 @@ int main()
     test_marker();
     test_lap_starts();
     test_label_box();
+    test_lap_without_distances();
+    test_lap_past_the_profile();
+    test_marker_at_the_end_of_a_lap();
     return ST::Test::test_result();
 }

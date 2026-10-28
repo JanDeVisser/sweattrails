@@ -39,9 +39,16 @@ std::optional<DistanceRange> profile_extent(OverlaySource const &source, Profile
         return ret;
     }
     auto const ix = std::clamp(static_cast<size_t>(*lap), 1uz, activity.laps.size()) - 1;
-    auto const in_lap = distances(activity, activity.laps[ix].first_record, activity.laps[ix].end_record);
+    auto       in_lap = distances(activity, activity.laps[ix].first_record, activity.laps[ix].end_record);
     if (!in_lap) {
         return { };
+    }
+    // Up to where the next lap starts: the frame is in this lap until
+    // then, and its distance glides on past this lap's last record.
+    if (ix + 1 < activity.laps.size()) {
+        if (auto const next = distances(activity, activity.laps[ix + 1].first_record, activity.laps[ix + 1].end_record); next) {
+            in_lap->to = std::max(in_lap->to, next->from);
+        }
     }
     // A lap without distances, of none, or past the profile's ends, such as
     // one where the altimeter gave out, has no profile.
@@ -139,10 +146,12 @@ float profile_x(double distance, DistanceRange extent, Rectangle content)
 
 std::optional<Vector2> profile_marker(std::vector<Vector2> const &points, DistanceRange extent, std::optional<double> distance, Rectangle content)
 {
-    if (points.empty() || !distance || *distance < extent.from || *distance > extent.to) {
+    if (points.empty() || !distance || *distance < extent.from) {
         return { };
     }
-    auto const x = profile_x(*distance, extent, content);
+    // Past the end, such as where the altitudes stop before the distances
+    // do, all of it is done.
+    auto const x = profile_x(std::min(*distance, extent.to), extent, content);
     return Vector2 { .x = x, .y = y_at(points, x) };
 }
 
