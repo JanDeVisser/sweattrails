@@ -1,6 +1,6 @@
 # Overlay images: logos and icons
 
-Status: Ready
+Status: In progress
 
 ## Goal
 
@@ -108,11 +108,103 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+An image is decoded in `overlay/Layout`, its file found as the fonts
+are, in `overlay/LayoutFile`, its size worked out in `overlay/Shapes`,
+and `overlay/Renderer` loads and draws it.
+
+### The layout
+
+```cpp
+struct ImageElement {
+    size_t                    number { 0 };
+    std::optional<Visibility> visible { };
+    Placement                 at { };      // Without a size: that's `width` and `height`
+    Panel                     panel { };
+    std::string               src { };     // As the layout says it
+    std::optional<float>      width { };   // In design pixels
+    std::optional<float>      height { };
+    Color                     tint { WHITE };
+};
+```
+
+- `image` leaves `LaterTypes`, and `src` and `tint` leave
+  `LaterProperties`. `OverlayElement` gets `ImageElement`.
+- `size` is decoded by the image itself, as one side may be left out,
+  which `width_height()`, for every other element, doesn't allow. Both
+  sides more than 0.
+
+### Finding the file
+
+- `find_image(src, layout_dir, builtin_dir, exists)`: an absolute
+  `src` as it is; else next to the layout, then in the built-in
+  layouts' folder; none if neither has it. `exists` is for tests.
+- `layout_images(layout, layout_dir, ImageFinder)`, as
+  `layout_fonts()`: the files by `src`, or an error with the first
+  element whose picture isn't there, naming it.
+- `using ImageFinder = std::function<std::optional<fs::path>(std::string_view src, fs::path const &layout_dir)>`;
+  the app's binds `share/overlays/` in.
+- So that the renderer knows the layout's folder,
+  `OverlayRenderer::set_layout()` takes the layout file's path rather
+  than its name, which it still starts errors with, and `RenderJob`'s
+  `layout_file` becomes the path. The renderer takes the `ImageFinder`
+  with the `FontFinder`.
+
+### The size (`overlay/Shapes`)
+
+- **`image_size(Vector2 picture, std::optional<float> width,
+  std::optional<float> height)`**: the content's size in design
+  pixels: the picture's, or the side given and the other in its aspect
+  ratio, or both as given.
+- **`fit_picture(Rectangle content, Vector2 picture, Anchor anchor)`**:
+  the picture as big as fits in the content without stretching, where
+  the anchor is in it, with `place_in_box()`.
+- The box is then as for a text: the content and the panel's padding
+  around it, or, with both sides, `width` by `height` is the box, as
+  `size` is for other elements, and the picture fits inside the
+  padding.
+
+### Loading and drawing
+
+- The renderer finds the files in `set_layout()`, and loads each
+  texture the first time it's drawn, as it does fonts: `set_layout()`
+  has no GL context in tests. A picture that's found but doesn't load
+  is the renderer's error from then on, as a font is, which stops a
+  render and shows in the preview.
+- Textures get mipmaps and trilinear filtering, so that a 96 px icon
+  drawn at 24 px isn't jagged; they're unloaded with the layout.
+- Drawn with `DrawTexturePro()`, tinted by `faded(tint)`, inside the
+  panel.
+
+### The icons
+
+- From Tabler Icons' outline set: `heart`, `bolt`, `gauge` as
+  `speedometer.png`, `rotate-clockwise` as `cadence.png`, and
+  `mountain`, 96 px, white (`currentColor` made `#ffffff`), with
+  Tabler's `LICENSE` as `share/overlays/icons/LICENSE`.
+- Made with `rsvg-convert -w 96 -h 96`, which needs `brew install
+  librsvg` on the Developer's machine; the PNGs are committed.
+
+### Built-in layout
+
+Each label in the dashboard moves 32 px to the right, and an image of
+24 px goes before it, anchored as the label, tinted as the spec says.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `OverlayLayoutTest`: an image with each kind of size, a tint, a
+  panel, `visible`; the errors: no `src`, a `src` that isn't a string,
+  a `tint` that isn't a color, a side of 0; `image` no longer skipped.
+- `LayoutFileTest`: `find_image()` for an absolute path, next to the
+  layout, in the built-in folder, the layout's first, and neither;
+  `layout_images()` naming the element whose picture isn't there; the
+  dashboard's four icons, found.
+- `OverlayShapesTest` (or where `place_in_box()` is tested):
+  `image_size()` and `fit_picture()`, for wide and tall pictures in
+  wide and tall boxes, with each anchor.
+- Tests that used `image` as a skipped type use `group`.
+- By hand, with a throwaway frame dump: the dashboard's icons at 1080p
+  and 4K, a logo with only a width, a picture that's missing, and a
+  fade.
 
 ## Review notes
 
