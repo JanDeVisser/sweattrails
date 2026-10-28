@@ -168,7 +168,9 @@ not to the frame. So instead:
 - It's **`ClipShader`** in the Widget library (`src/Lib/Widget`), with
   `begin(box, radius)` and `end()`, since nothing in it is the overlay's.
   A circle is a rounded rectangle with half its side for a radius, so the
-  shader has one shape.
+  shader has one shape. The shader is checked once, after loading: where
+  it doesn't compile, `ClipShader` logs it and clips to the box with
+  scissor mode.
 
 ### The layout
 
@@ -197,8 +199,9 @@ not to the frame. So instead:
 - **`OverlaySource::track`**: the records with a position, each as its
   time since the start and its Web Mercator point at zoom 0
   (`world_pixel(position, 0)`), worked out once. A position within 0.1°
-  of 0° latitude or longitude is none, as in the app's map, which is what
-  devices record without a fix.
+  of 0° in both latitude and longitude is none, which is what devices
+  record without a fix: `Coordinates::has_fix()`, which the app's map
+  uses as well.
 - **`position_at(source, seconds)`**: between the two track points around
   the moment, as `values_at_time()` interpolates the fields; held at the
   earlier one across a gap of more than `MaxGap`, so the marker holds in
@@ -224,14 +227,16 @@ No raylib drawing, so that tests reach it:
 - **`ClipShape { Rectangle box, radius }`**, from `clip_shape(kind,
   box, corner)`: a circle as big as fits in the box's middle, a rounded
   rectangle with the corner as given, at most half the shorter side, or
-  the box. The panel's shape is for the box, the clip's for the content
-  box, with the panel's radius less its padding.
+  the box. `map_shapes(kind, box, radius, padding)` returns both: the
+  panel's shape for the box, and the track's for the content box, with
+  the panel's radius less its padding.
 
 ### Drawing
 
-- The panel takes the clip's shape: `DrawCircleV()` and `DrawRing()` for
-  a circle; the rounded rectangle as other panels have it, with the
-  radius as is for `rounded`, and none for `rect`.
+- The panel takes the clip's shape. Every shape is a rounded rectangle,
+  drawn with `DrawRectangleRounded()` and `DrawRectangleRoundedLinesEx()`
+  as other panels are: at roundness 1 for a circle, the radius as is for
+  `rounded`, and none for `rect`.
 - Then, in the clip shader: the outlines under the remaining and done
   traces, wider by the outline's width on each side, the traces, and the
   marker with its outline ring.
@@ -257,8 +262,8 @@ No raylib drawing, so that tests reach it:
 - `OverlayTrackMapTest` (new): `fit_transform()` for a wide and a tall
   track and a track of one point, `follow_transform()` at the layout's
   scale, `split_track()` in the middle, before the first point and after
-  the last, `screen_points()` thinning, and `clip_shape()` for the three
-  shapes with padding.
+  the last, `screen_points()` thinning, `clip_shape()` for the three shapes,
+  and `map_shapes()` with padding.
 - `LayoutFileTest`: `cycling-dashboard` decodes with its map.
 - By hand, and with a throwaway frame dump: the dashboard's map in the
   preview and a render, the circle's edge in both, `follow` and `fit`,
