@@ -642,7 +642,7 @@ most of the elements exist.
 7. **`group`, `image`, and `visible`/`fade`**, split in three:
    - 7a, [overlay-visibility.md](overlay-visibility.md): `visible` and
      `fade`.
-   - 7b: `image`.
+   - 7b, [overlay-image.md](overlay-image.md): `image`.
    - 7c: `group`.
 
 Deferred, in no slice yet:
