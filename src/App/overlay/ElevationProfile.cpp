@@ -40,11 +40,16 @@ std::optional<DistanceRange> profile_extent(OverlaySource const &source, Profile
     }
     auto const ix = std::clamp(static_cast<size_t>(*lap), 1uz, activity.laps.size()) - 1;
     auto const in_lap = distances(activity, activity.laps[ix].first_record, activity.laps[ix].end_record);
-    // A lap without distances, or of none, has no profile.
-    if (!in_lap || in_lap->to <= in_lap->from) {
+    if (!in_lap) {
         return { };
     }
-    return DistanceRange { .from = std::max(ret.from, in_lap->from), .to = std::min(ret.to, in_lap->to) };
+    // A lap without distances, of none, or past the profile's ends, such as
+    // one where the altimeter gave out, has no profile.
+    ret = DistanceRange { .from = std::max(ret.from, in_lap->from), .to = std::min(ret.to, in_lap->to) };
+    if (ret.to <= ret.from) {
+        return { };
+    }
+    return ret;
 }
 
 std::vector<double> profile_columns(OverlaySource const &source, DistanceRange extent, double smooth, FieldUnit const &unit, size_t columns)
