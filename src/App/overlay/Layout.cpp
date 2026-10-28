@@ -44,8 +44,7 @@ constexpr Names GraphProperties { "field", "unit", "x_axis", "window", "min", "m
 constexpr Names ProfileProperties { "extent", "smooth", "min", "max", "min_span", "done", "remaining", "marker",
     "marker_label", "axis_labels", "laps", "color_by_grade" };
 
-// `tiles` and `attribution` are for slice 6b, and `rotate` deferred: taken,
-// and not drawn yet.
+// `rotate` is deferred: taken, and not done yet.
 constexpr Names MapProperties { "view", "zoom", "clip", "track", "marker", "tiles", "attribution", "rotate" };
 
 constexpr Names LaterTypes { "image", "group" };
@@ -803,9 +802,44 @@ std::expected<MapTrack, LayoutError> map_track(JSONValue const &json, Color colo
     return ret;
 }
 
-std::expected<MapElement, LayoutError> map_element(JSONValue const &json)
+std::expected<MapTileLayer, LayoutError> map_tiles(JSONValue const &json)
 {
-    auto const color = TRY_EVAL(text_style(json)).color;
+    if (!json.is_object()) {
+        return error("\"tiles\" isn't an object, such as { \"source\": \"osm\" }, or null");
+    }
+    TRY(check_properties(json, "\"tiles\"", { { "source", "opacity", "filter" } }));
+    MapTileLayer ret;
+    if (auto const source = json.get("source"); source && string_of(*source) != "osm") {
+        return error("\"tiles.source\" isn't osm, the only source there is yet");
+    }
+    if (auto const opacity = json.get("opacity"); opacity) {
+        auto const o = number_of(*opacity);
+        if (!o || *o < 0 || *o > 1) {
+            return error("\"tiles.opacity\" isn't a number from 0 to 1");
+        }
+        ret.opacity = static_cast<float>(*o);
+    }
+    if (auto const filter = json.get("filter"); filter) {
+        auto const name = string_of(*filter).value_or("");
+        if (name == "none") {
+            ret.filter.kind = TileFilterKind::None;
+        } else if (name == "grayscale") {
+            ret.filter.kind = TileFilterKind::Grayscale;
+        } else if (name == "dark") {
+            ret.filter.kind = TileFilterKind::Dark;
+        } else if (auto const tint = parse_color(name); tint) {
+            ret.filter = TileFilter { .kind = TileFilterKind::Tint, .tint = *tint };
+        } else {
+            return error("\"tiles.filter\" isn't none, grayscale, dark or a color");
+        }
+    }
+    return ret;
+}
+
+std::expected<MapElement, LayoutError> map_element(JSONValue const &json, JSONValue const &styles)
+{
+    auto const style = TRY_EVAL(text_style(json));
+    auto const color = style.color;
     MapElement ret {
         .at = TRY_EVAL(sized_placement(json, "map")),
         .panel = TRY_EVAL(panel(json)),
@@ -843,6 +877,23 @@ std::expected<MapElement, LayoutError> map_element(JSONValue const &json)
     auto const m = json.get("marker");
     auto const own = Marker { .color = ret.track.done.color, .radius = 8 };
     ret.marker = m ? TRY_EVAL(marker(*m, own, false)) : std::optional { own };
+    if (auto const tiles = json.get("tiles"); tiles && !tiles->is_null()) {
+        ret.tiles = TRY_EVAL(map_tiles(*tiles));
+    }
+    // Small, and readable over footage, rather than in the map's text size.
+    ret.attribution = TextStyle {
+        .font = style.font,
+        .font_size = 14,
+        .color = style.color,
+        .shadow = Shadow { .color = { 0, 0, 0, 160 }, .offset = { 1, 1 } },
+    };
+    if (auto const attribution = json.get("attribution"); attribution) {
+        if (!attribution->is_object()) {
+            return error("\"attribution\" isn't an object, such as { \"style\": \"label\" }");
+        }
+        TRY(check_properties(*attribution, "\"attribution\"", { { "style" }, TextStyleProperties }));
+        ret.attribution = TRY_EVAL(label_style(*attribution, "attribution", ret.attribution, styles));
+    }
     return ret;
 }
 
@@ -941,7 +992,7 @@ std::expected<std::optional<OverlayElement>, LayoutError> element(JSONValue cons
         if (auto const m = json.get("marker"); m && m->is_object() && m->get("drop_line")) {
             return error("\"drop_line\" isn't a property of a map's marker");
         }
-        return std::optional<OverlayElement> { TRY_EVAL(map_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
+        return std::optional<OverlayElement> { TRY_EVAL(map_element(TRY_EVAL(cascaded(json, defaults, styles)), styles)) };
     }
     if (name == "profile") {
         TRY(check_properties(json, "a profile", { ElementProperties, TextStyleProperties, BoxStyleProperties, ProfileProperties }));
@@ -1082,6 +1133,9 @@ std::vector<std::string> element_fonts(OverlayElement const &element)
         }
         return ret;
     }
+    if (auto const *map = std::get_if<MapElement>(&element); map && map->tiles) {
+        return { map->attribution.font };
+    }
     return { };
 }
 
@@ -1181,6 +1235,8 @@ std::set<int> layout_codepoints(OverlayLayout const &layout)
                     add(*literal);
                 }
             }
+        } else if (auto const *map = std::get_if<MapElement>(&element); map && map->tiles) {
+            add(OsmAttribution);
         }
     }
     return ret;

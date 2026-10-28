@@ -1092,7 +1092,8 @@ void test_map()
         CHECK_EQ(m.marker->radius, 10.0f);
         CHECK_EQ(show(m.marker->outline.value_or(BLANK)), "255 183 3 255");
     }
-    CHECK(element_fonts(layout->elements[0]).empty());
+    // With tiles, the attribution's font.
+    CHECK_EQ(element_fonts(layout->elements[0]), std::vector<std::string> { "Inter-Regular.ttf" });
 }
 
 // What a map is without saying: fit, zoom 15, rect, the done track in its
@@ -1196,6 +1197,72 @@ void test_map_cascade()
     CHECK_EQ(profile.marker ? profile.marker->radius : 0.0f, 6.0f);
 }
 
+// OpenStreetMap under the track: its opacity and filter, and the credit
+// it comes with, small by default, or as its style says.
+void test_map_tiles()
+{
+    auto const layout = decode(R"({
+        "defaults": { "font": "A.ttf", "color": "#ff0000" },
+        "styles": { "label": { "font": "L.ttf", "font_size": 22, "shadow": null } },
+        "elements": [
+            { "type": "map", "size": { "width": 300, "height": 300 },
+              "tiles": { "source": "osm", "opacity": 0.6, "filter": "dark" },
+              "attribution": { "style": "label", "font_size": 12 } },
+            { "type": "map", "size": { "width": 300, "height": 300 }, "tiles": { } },
+            { "type": "map", "size": { "width": 300, "height": 300 }, "tiles": { "filter": "grayscale" } },
+            { "type": "map", "size": { "width": 300, "height": 300 }, "tiles": { "filter": "#ffb703" } },
+            { "type": "map", "size": { "width": 300, "height": 300 }, "tiles": null },
+            { "type": "map", "size": { "width": 300, "height": 300 } } ] })");
+    CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
+    if (!layout || layout->elements.size() != 6) {
+        return;
+    }
+    auto const map = [&layout](size_t ix) { return std::get<MapElement>(layout->elements[ix]); };
+    auto const dark = map(0);
+    CHECK(dark.tiles.has_value());
+    CHECK_EQ(dark.tiles ? dark.tiles->opacity : 0.0f, 0.6f);
+    CHECK(dark.tiles && dark.tiles->filter.kind == TileFilterKind::Dark);
+    CHECK_EQ(dark.attribution.font, "L.ttf");
+    CHECK_EQ(dark.attribution.font_size, 12.0f);
+    CHECK(!dark.attribution.shadow);
+
+    auto const plain = map(1);
+    CHECK_EQ(plain.tiles ? plain.tiles->opacity : 0.0f, 1.0f);
+    CHECK(plain.tiles && plain.tiles->filter.kind == TileFilterKind::None);
+    // The map's font and color, small, with a shadow.
+    CHECK_EQ(plain.attribution.font, "A.ttf");
+    CHECK_EQ(plain.attribution.font_size, 14.0f);
+    CHECK_EQ(show(plain.attribution.color), "255 0 0 255");
+    CHECK(plain.attribution.shadow.has_value());
+
+    CHECK(map(2).tiles && map(2).tiles->filter.kind == TileFilterKind::Grayscale);
+    auto const tinted = map(3);
+    CHECK(tinted.tiles && tinted.tiles->filter.kind == TileFilterKind::Tint);
+    CHECK_EQ(show(tinted.tiles ? tinted.tiles->filter.tint : BLANK), "255 183 3 255");
+    CHECK(!map(4).tiles);
+    CHECK(!map(5).tiles);
+
+    // The credit's font and text are only needed with tiles.
+    CHECK_EQ(element_fonts(layout->elements[0]), std::vector<std::string> { "L.ttf" });
+    CHECK(element_fonts(layout->elements[5]).empty());
+    CHECK(layout_codepoints(*layout).contains(0xa9));
+}
+
+void test_map_tiles_errors()
+{
+    auto const map = [](std::string_view properties) {
+        return error_of(with_element(std::format(R"({{ "type": "map", "size": {{ "width": 300, "height": 300 }}, {} }})", properties)));
+    };
+    CHECK_EQ(map(R"("tiles": "osm")"), "element 1: \"tiles\" isn't an object, such as { \"source\": \"osm\" }, or null");
+    CHECK_EQ(map(R"("tiles": { "source": "stamen" })"), "element 1: \"tiles.source\" isn't osm, the only source there is yet");
+    CHECK_EQ(map(R"("tiles": { "opacity": 1.5 })"), "element 1: \"tiles.opacity\" isn't a number from 0 to 1");
+    CHECK_EQ(map(R"("tiles": { "opacity": "half" })"), "element 1: \"tiles.opacity\" isn't a number from 0 to 1");
+    CHECK_EQ(map(R"("tiles": { "filter": "sepia" })"), "element 1: \"tiles.filter\" isn't none, grayscale, dark or a color");
+    CHECK_EQ(map(R"("tiles": { "url": "x" })"), "element 1: \"url\" isn't a property of \"tiles\"");
+    CHECK_EQ(map(R"("attribution": "OSM")"), "element 1: \"attribution\" isn't an object, such as { \"style\": \"label\" }");
+    CHECK_EQ(map(R"("attribution": { "text": "me" })"), "element 1: \"text\" isn't a property of \"attribution\"");
+}
+
 int main()
 {
     test_cascade();
@@ -1241,5 +1308,7 @@ int main()
     test_map_defaults();
     test_map_errors();
     test_map_cascade();
+    test_map_tiles();
+    test_map_tiles_errors();
     return ST::Test::test_result();
 }

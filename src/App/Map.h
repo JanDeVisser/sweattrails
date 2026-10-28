@@ -62,6 +62,9 @@ struct Tile {
     auto operator<=>(Tile const &) const = default;
 };
 
+// OSM's licence asks for this wherever its tiles are shown.
+constexpr char const OsmAttribution[] = "© OpenStreetMap contributors";
+
 // The map zooms in to this OSM level, street level. GPS isn't more precise,
 // and OSM's server stops at 19.
 constexpr u8 MaxMapZoom = 18;
