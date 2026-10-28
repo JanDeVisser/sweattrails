@@ -1501,8 +1501,52 @@ void test_image_errors()
         "element 1: \"font\" isn't a property of an image");
 }
 
+// An image takes its picture, its tint and its size from the defaults
+// and its styles; the elements of other types ignore a tint and a src
+// meant for images.
+void test_image_cascade()
+{
+    auto const layout = decode(R"({
+        "defaults": { "tint": "#ff000080", "src": "icons/heart.png", "font": "A.ttf" },
+        "styles": { "icon": { "size": { "width": 24 } } },
+        "elements": [
+            { "type": "text", "text": "a" },
+            { "type": "gauge", "field": "power", "size": { "width": 100, "height": 100 } },
+            { "type": "image", "style": "icon" },
+            { "type": "image", "src": "logo.png", "tint": "#ffffff", "size": { } } ] })");
+    CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
+    if (!layout || layout->elements.size() != 4) {
+        return;
+    }
+    auto const icon = std::get<ImageElement>(layout->elements[2]);
+    CHECK_EQ(icon.src, "icons/heart.png");
+    CHECK_EQ(show(icon.tint), "255 0 0 128");
+    CHECK(icon.width == 24.0f && !icon.height);
+    CHECK(!icon.at.size);
+    auto const logo = std::get<ImageElement>(layout->elements[3]);
+    CHECK_EQ(show(logo.tint), "255 255 255 255");
+    // An empty size is the picture's own.
+    CHECK(!logo.width && !logo.height && !logo.at.size);
+}
+
+void test_image_size_errors()
+{
+    CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "a.png", "size": { "width": "big" } })")),
+        "element 1: \"size.width\" isn't a number");
+    CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "a.png", "size": { "width": 10, "height": 0 } })")),
+        "element 1: \"size.height\" isn't more than 0");
+    // The size from a style is checked as the image's own is.
+    CHECK_EQ(error_of(R"({ "styles": { "s": { "size": { "width": -1 } } },
+        "elements": [ { "type": "image", "src": "a.png", "style": "s" } ] })"),
+        "element 1: \"size.width\" isn't more than 0");
+    CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "a.png", "at": { "x": 1, "width": 3 } })")),
+        "element 1: \"width\" isn't a property of \"at\"");
+}
+
 int main()
 {
+    test_image_cascade();
+    test_image_size_errors();
     test_cascade();
     test_styles();
     test_layout_properties();

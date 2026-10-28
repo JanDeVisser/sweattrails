@@ -480,6 +480,10 @@ target_include_directories(layout_file_test PRIVATE src/App)
 target_compile_definitions(layout_file_test PRIVATE SWEATTRAILS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 target_link_libraries(layout_file_test PRIVATE ${CURL_LIBRARIES})
 
+# Reads the built-in icons, and pictures, with raylib, without a window.
+sweattrails_test(overlay_image_test test/OverlayImageTest.cpp)
+target_compile_definitions(overlay_image_test PRIVATE SWEATTRAILS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
 sweattrails_test(
         overlay_render_test
         test/OverlayRenderTest.cpp

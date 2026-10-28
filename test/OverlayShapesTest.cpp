@@ -373,12 +373,48 @@ void test_fit_picture()
     CHECK_EQ(show(fit_picture(square, Vector2 { }, Anchor::Center)), "10 20 0 0");
 }
 
+// A wide picture in a tall box, and a tall one in a wide box, at each
+// anchor; and a box the padding left nothing of.
+void test_fit_picture_anchors()
+{
+    Rectangle const tall_box { 0, 0, 40, 100 };
+    Vector2 const   wide { 80, 40 };
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::TopLeft)), "0 0 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::Top)), "0 0 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::TopRight)), "0 0 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::Left)), "0 40 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::Center)), "0 40 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::Right)), "0 40 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::BottomLeft)), "0 80 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::Bottom)), "0 80 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::BottomRight)), "0 80 40 20");
+
+    Rectangle const wide_box { 0, 0, 100, 40 };
+    Vector2 const   tall { 40, 80 };
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::TopLeft)), "0 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::Top)), "40 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::TopRight)), "80 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::Left)), "0 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::Center)), "40 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::Right)), "80 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::BottomLeft)), "0 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::Bottom)), "40 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::BottomRight)), "80 0 20 40");
+
+    // A box of 32 by 24 with a padding of 16: content_box() leaves no
+    // room, and nothing is drawn, rather than a picture turned over.
+    auto const content = content_box(Rectangle { 0, 0, 32, 24 }, 16);
+    auto const shown = fit_picture(content, Vector2 { 96, 96 }, Anchor::Center);
+    CHECK(shown.width == 0 && shown.height == 0);
+}
+
 }
 
 int main()
 {
     test_image_size();
     test_fit_picture();
+    test_fit_picture_anchors();
     test_content_box();
     test_box_size();
     test_shown_bounds();

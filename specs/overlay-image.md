@@ -209,4 +209,76 @@ the bolt in the gauge's yellow, `#f9c74f`, as the gauge has no amber.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: a JPEG never loads.** The build links Homebrew's raylib 6.2
+   (`/opt/homebrew/lib/libraylib.dylib`), which is built without
+   `SUPPORT_FILEFORMAT_JPG`. `LoadImage()` in `OverlayRenderer::picture()`
+   (`src/App/overlay/Renderer.cpp:521`) logs "IMAGE: Data format not
+   supported" for `logo.jpg`, `logo.jpeg` and `LOGO.JPG`, so any JPEG in a
+   layout is the error "the picture `…` can't be loaded from `…`". JPEG is
+   in Version 1 scope. `overlay_image_test`'s `test_jpeg()` fails on it.
+   To fix it, either build raylib with JPEG support (the `RAYLIB` CMake
+   option already takes a custom build), decode JPEGs some other way, or
+   agree with Jan to take JPEG out of scope.
+2. **Bug: a picture that's found but doesn't load is only noticed once
+   it's drawn.** `picture()` loads lazily, and `draw()` skips an element
+   whose visibility alpha is 0 (`Renderer.cpp:123`). Take an image with
+   `"visible": { "from": 60 }` and a `src` that's an SVG, a broken file or
+   a JPEG (see 1). The render starts, encodes 60 seconds of frames, and
+   then stops with the error (`OverlayRender.cpp:102`). The preview shows
+   no error until the scrubbed point is inside the image's visible time.
+   The spec says such a render doesn't start. `LoadImage()` needs no GL
+   context (`overlay_image_test` uses it without a window), so
+   `set_layout()` could decode each picture, or at least check that it
+   decodes, and leave only the texture upload for the first draw. That
+   would also let a test cover this error.
+3. **Bug (visual): dark fringes on mipmapped icons.** The five PNGs'
+   transparent pixels are black, `(0, 0, 0, 0)`: heart.png has 7245 of
+   its 9216 pixels like that, and the other icons are similar.
+   `GenTextureMipmaps()` (`Renderer.cpp:532`) averages unpremultiplied
+   RGBA. At 24 px, mip level 2 of 96 px, an edge texel that's half
+   covered becomes grey at half alpha, rather than white at half alpha,
+   so the edges are drawn at half the tint's brightness. Tabler's strokes
+   are 2/24 of the icon, so at 24 px most of each icon is edge. The same
+   goes for any user's logo with transparency. Fix it by bleeding color
+   into the transparent pixels before the upload (for white icons, make
+   them white), or by premultiplying the alpha and blending to match.
+   Check by hand in the 1080p frame dump the Test plan mentions.
+4. **Suggestion: a one-sided `size` merges with a cascaded one.**
+   `cascade()` (`Layout.cpp:1135`) merges objects, so an image with
+   `"size": { "width": 24 }` and a style or default with
+   `"size": { "width": 760, "height": 170 }` gets a box of 24 by 170,
+   rather than "24 wide, the height in its aspect ratio". That follows
+   the reference's cascade, but for an image one side means something
+   different from two. Either say so in the README, or let an image's
+   own `size` replace the cascaded one rather than merge with it.
+5. **Suggestion: make the image's box testable.**
+   `OverlayRenderer::draw(ImageElement)` (`Renderer.cpp:541`) puts
+   `image_size()`, `box_size()`, `content_box()` and `fit_picture()`
+   together. That is where the padding behaves differently with one side
+   and with two, and without GL no test can reach it. A function in
+   `overlay/Shapes` such as `image_box(image, picture, area, scale)`,
+   returning the panel's box and the picture's rectangle, could be
+   tested like `fit_picture()`.
+6. **Missing tests (added).** The Reviewer added:
+   - `overlay_image_test` (new, `test/OverlayImageTest.cpp`): the five
+     icons load with raylib, are 96 by 96, and are pure white wherever
+     they show (passes). JPEGs load (fails, see 1). An SVG, a non-PNG
+     named `.png`, an empty file and a missing file give no data, which
+     is what the renderer's error depends on (passes).
+   - `OverlayLayoutTest`: `src`, `tint` and a one-sided `size` cascade
+     from the defaults and a style, and a text and a gauge ignore a
+     default `tint` and `src`. An empty `size` is the picture's own.
+     A `size` side that isn't a number, a side of 0 with the other
+     given, a bad size from a style, and a stray property in `at`.
+   - `LayoutFileTest`: `find_image()` with `../`, an absolute path that
+     isn't there, and an empty `src`. `layout_images()` without a finder.
+     The dashboard icons' tints.
+   - `OverlayShapesTest`: `fit_picture()` for a wide picture in a tall
+     box and a tall picture in a wide box, at all nine anchors (the
+     Developer's tests had four), and a box that the padding leaves
+     nothing of.
+
+### Resolution
+
+6. The review's tests are committed, apart from `test_jpeg()`, which
+   became a test of the error for a picture that isn't a PNG (see 1).

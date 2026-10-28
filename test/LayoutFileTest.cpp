@@ -168,10 +168,11 @@ void test_dashboard_icons()
     std::vector<std::string> icons;
     for (auto const &element : file.layout->elements) {
         if (auto const *image = std::get_if<ImageElement>(&element); image) {
-            icons.push_back(std::format("{} {}", image->src, image->width.value_or(0)));
+            icons.push_back(std::format("{} {} #{:02x}{:02x}{:02x}{:02x}", image->src, image->width.value_or(0),
+                image->tint.r, image->tint.g, image->tint.b, image->tint.a));
         }
     }
-    CHECK_EQ(icons, (std::vector<std::string> { "icons/speedometer.png 24", "icons/heart.png 24", "icons/cadence.png 24", "icons/bolt.png 24" }));
+    CHECK_EQ(icons, (std::vector<std::string> { "icons/speedometer.png 24 #ffffffcc", "icons/heart.png 24 #f94144ff", "icons/cadence.png 24 #ffffffcc", "icons/bolt.png 24 #f9c74fff" }));
 }
 
 // The dashboard's map, as the spec's Version 1 scope has it: a circle,
@@ -397,8 +398,38 @@ void test_layout_images()
     CHECK(found && found->at("a.png") == fs::path { "/layouts/a.png" });
 }
 
+// A path up from the layout's folder is next to the layout too; an
+// absolute one isn't looked for anywhere else.
+void test_find_image_paths()
+{
+    std::set<fs::path> const files { "/mine/../shared/logo.png", "/builtin/logo.png" };
+    auto const               exists = [&files](fs::path const &p) { return files.contains(p); };
+    auto const               find = [&exists](std::string_view src) {
+        auto const found = find_image(src, "/mine", "/builtin", exists);
+        return found ? found->string() : std::string { "none" };
+    };
+    CHECK_EQ(find("../shared/logo.png"), "/mine/../shared/logo.png");
+    CHECK_EQ(find("/logo.png"), "none");
+    CHECK_EQ(find(""), "none");
+}
+
+// Without a finder, as a render's test has, a picture isn't there; a
+// layout without pictures doesn't need one.
+void test_layout_images_without_finder()
+{
+    auto const without = layout_images(decoded(R"({ "elements": [ { "type": "text", "text": "a" } ] })"), "/layouts", ImageFinder { });
+    CHECK(without && without->empty());
+    auto const with = layout_images(decoded(R"({ "elements": [ { "type": "image", "src": "a.png" } ] })"), "/layouts", ImageFinder { });
+    CHECK(!with.has_value());
+    if (!with) {
+        CHECK(with.error().to_string().starts_with("element 1: the picture `a.png` isn't there"));
+    }
+}
+
 int main()
 {
+    test_find_image_paths();
+    test_layout_images_without_finder();
     test_load_and_reload();
     test_errors_and_recovering();
     test_overlay_layouts();
