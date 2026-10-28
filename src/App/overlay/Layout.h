@@ -63,6 +63,24 @@ struct Shadow {
     Vector2 offset { }; // In design pixels
 };
 
+// When an element shows, in seconds of the video: from its start, or if
+// negative, back from its end. No `to` is the end.
+struct Visibility {
+    double                from { 0 };
+    std::optional<double> to { };
+    double                fade { 0 }; // In and out, inside the window
+};
+
+// Where a frame is in the video, and how long the video is, in seconds.
+struct VideoTime {
+    double at { 0 };
+    double length { 0 };
+};
+
+// 0 when hidden, 1 when shown, and in between while it fades. An element
+// without a Visibility always shows.
+float visibility_alpha(std::optional<Visibility> const &visible, VideoTime time);
+
 struct TextStyle {
     std::string           font { "Inter-Regular.ttf" };
     float                 font_size { 48 }; // In design pixels
@@ -88,12 +106,13 @@ struct Panel {
 };
 
 struct TextElement {
-    size_t               number { 0 }; // Its place in the layout's elements, from 1
-    Placement            at { };
-    Panel                panel { };
-    TextStyle            style { };
-    Template             text { };
-    std::optional<Align> align { }; // As the anchor if none
+    size_t                    number { 0 }; // Its place in the layout's elements, from 1
+    std::optional<Visibility> visible { };  // None: always
+    Placement                 at { };
+    Panel                     panel { };
+    TextStyle                 style { };
+    Template                  text { };
+    std::optional<Align>      align { }; // As the anchor if none
 };
 
 // `color_by`'s: from the value up, in the unit shown, the number's color.
@@ -103,18 +122,19 @@ struct Threshold {
 };
 
 struct ValueElement {
-    size_t                   number { 0 }; // Its place in the layout's elements, from 1
-    Placement                at { };
-    Panel                    panel { };
-    TextStyle                style { };
-    TextStyle                unit_style { };
-    OverlayField             field { OverlayField::speed };
-    std::string              spec { }; // The default spec if empty
-    std::optional<FieldUnit> unit { }; // The layout's units if none
-    std::string              missing { "--" };
-    bool                     hide_when_missing { false };
-    std::optional<double>    window { };     // Grade's, in m; DefaultGradeWindow if none
-    std::vector<Threshold>   thresholds { }; // Going up
+    size_t                    number { 0 }; // Its place in the layout's elements, from 1
+    std::optional<Visibility> visible { };  // None: always
+    Placement                 at { };
+    Panel                     panel { };
+    TextStyle                 style { };
+    TextStyle                 unit_style { };
+    OverlayField              field { OverlayField::speed };
+    std::string               spec { }; // The default spec if empty
+    std::optional<FieldUnit>  unit { }; // The layout's units if none
+    std::string               missing { "--" };
+    bool                      hide_when_missing { false };
+    std::optional<double>     window { };     // Grade's, in m; DefaultGradeWindow if none
+    std::vector<Threshold>    thresholds { }; // Going up
 };
 
 enum class GaugeShape {
@@ -124,18 +144,19 @@ enum class GaugeShape {
 };
 
 struct GaugeElement {
-    size_t                   number { 0 }; // Its place in the layout's elements, from 1
-    Placement                at { };       // With a size: there's no text to measure
-    Panel                    panel { };
-    OverlayField             field { OverlayField::speed };
-    std::optional<FieldUnit> unit { }; // The layout's units if none
-    GaugeShape               shape { GaugeShape::Bar };
-    std::optional<double>    min { }; // In the unit shown; none is "auto"
-    std::optional<double>    max { };
-    Color                    track { };
-    Color                    fill { WHITE };
-    std::optional<float>     thickness { }; // In design pixels; the box's if none
-    std::vector<Threshold>   thresholds { };
+    size_t                    number { 0 }; // Its place in the layout's elements, from 1
+    std::optional<Visibility> visible { };  // None: always
+    Placement                 at { };       // With a size: there's no text to measure
+    Panel                     panel { };
+    OverlayField              field { OverlayField::speed };
+    std::optional<FieldUnit>  unit { }; // The layout's units if none
+    GaugeShape                shape { GaugeShape::Bar };
+    std::optional<double>     min { }; // In the unit shown; none is "auto"
+    std::optional<double>     max { };
+    Color                     track { };
+    Color                     fill { WHITE };
+    std::optional<float>      thickness { }; // In design pixels; the box's if none
+    std::vector<Threshold>    thresholds { };
 };
 
 enum class GraphAxis {
@@ -149,18 +170,19 @@ struct Cursor {
 };
 
 struct GraphElement {
-    size_t                   number { 0 }; // Its place in the layout's elements, from 1
-    Placement                at { };       // With a size
-    Panel                    panel { };
-    OverlayField             field { OverlayField::speed };
-    std::optional<FieldUnit> unit { };
-    GraphAxis                axis { GraphAxis::Time };
-    std::optional<double>    window { }; // Seconds or meters, ending at the moment; none is "all"
-    std::optional<double>    min { };    // In the unit shown; none is "auto"
-    std::optional<double>    max { };
-    Stroke                   line { };
-    std::optional<Color>     fill { };
-    std::optional<Cursor>    cursor { };
+    size_t                    number { 0 }; // Its place in the layout's elements, from 1
+    std::optional<Visibility> visible { };  // None: always
+    Placement                 at { };       // With a size
+    Panel                     panel { };
+    OverlayField              field { OverlayField::speed };
+    std::optional<FieldUnit>  unit { };
+    GraphAxis                 axis { GraphAxis::Time };
+    std::optional<double>     window { }; // Seconds or meters, ending at the moment; none is "all"
+    std::optional<double>     min { };    // In the unit shown; none is "auto"
+    std::optional<double>     max { };
+    Stroke                    line { };
+    std::optional<Color>      fill { };
+    std::optional<Cursor>     cursor { };
 };
 
 enum class ProfileExtent {
@@ -188,6 +210,7 @@ struct ProfileLabel {
 
 struct ProfileElement {
     size_t                      number { 0 }; // Its place in the layout's elements, from 1
+    std::optional<Visibility>   visible { };  // None: always
     Placement                   at { };       // With a size
     Panel                       panel { };
     TextStyle                   style { }; // What its labels' styles are over
@@ -241,6 +264,7 @@ struct MapTileLayer {
 
 struct MapElement {
     size_t                      number { 0 }; // Its place in the layout's elements, from 1
+    std::optional<Visibility>   visible { };  // None: always
     Placement                   at { };       // With a size
     Panel                       panel { };    // In the clip's shape
     MapMode                     mode { MapMode::Fit };
