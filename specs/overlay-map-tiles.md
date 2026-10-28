@@ -1,6 +1,6 @@
 # Overlay map: the tiles
 
-Status: Ready
+Status: In progress
 
 ## Goal
 
@@ -162,11 +162,167 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+The tiles are decoded in `overlay/Layout`, which tiles a map needs and
+where the attribution goes are worked out in `overlay/TrackMap`, a new
+`overlay/OverlayTiles` keeps a renderer's tile textures and downloads,
+and `overlay/Renderer` draws them, through the clip shader with a color
+filter. The downloads go through the job thread's `DownloadTiles`, as
+the app's map's do.
+
+### The layout
+
+- **`MapTileLayer { float opacity { 1 }; TileFilter filter { }; }`**
+  and **`TileFilter { TileFilterKind kind { None }; Color tint { }; }`**,
+  with `TileFilterKind` `None`, `Grayscale`, `Dark`, `Tint`. There's no
+  `source` member while `"osm"` is the only one.
+- **`MapElement`** gets `std::optional<MapTileLayer> tiles` and
+  `TextStyle attribution`. `tiles` and `attribution` stop being ignored.
+- The attribution's style is decoded as a profile's labels are, with
+  `label_style()`: its own properties, over its `style`, over a base of
+  the map's own font and color at 14 design pixels with a shadow, so
+  that a map without `attribution` gets a small credit that reads over
+  footage, not one in the map's 48 px text size. The spec's "the
+  `label` style's look by default" can't be had in a layout without a
+  `label` style; the dashboard says `"style": "label"`.
+- `layout_fonts()` and `layout_codepoints()` take in the attribution's
+  font and text (the `©`) for a map with tiles.
+
+### Which tiles, and where (`overlay/TrackMap`)
+
+No drawing, so tests reach it:
+
+- **`tile_level(MapTransform const &, float detail)`**: the OSM level
+  nearest the scale, `round(log2(scale / detail))`, from 0 to 18.
+  `detail` is how many drawing pixels a pixel of the result is: 2 in a
+  render, which draws at twice the size, 1 in the preview. Without it a
+  1080p render would fetch level 16 tiles, four times as many.
+- **`map_tiles(MapTransform const &, Rectangle box, u8 level)`**: the
+  `PlacedTile`s covering the box, each with its rectangle on the screen,
+  its edges rounded out to whole pixels so that scaled tiles leave no
+  seams. Tiles past the world's edges are left out, as in
+  `MapView::tiles()`.
+- **`attribution_box(Rectangle map, ClipKind, Vector2 text, float gap,
+  Rectangle area)`**: below the map, right-aligned with it, or centred
+  under a circle; above it when it would go past the area's bottom.
+- **`color_filter(TileFilter)`**: the filter as a 4x4 color matrix and
+  an offset, which the shader applies; `apply()` on a color, for tests.
+  `Grayscale` is Rec. 601 luma (0.299, 0.587, 0.114) in each channel;
+  `Dark` is one less that; `Tint` the luma times the tint's color.
+
+### The tiles a renderer has (`overlay/OverlayTiles`)
+
+```cpp
+// The tiles of one renderer's maps: loaded from the cache at once, else
+// downloaded on the job thread, one download at a time.
+struct OverlayTiles {
+    OverlayTiles(TileFetcher cached, std::function<void(pTileDownload)> schedule);
+    ~OverlayTiles(); // Unloads the textures, cancels the download
+
+    // Loads the cached ones of `tiles`, and asks for the others, unless
+    // they failed before. True when all are loaded or failed.
+    bool request(std::vector<Tile> const &tiles);
+    Texture2D const *texture(Tile const &tile) const; // Null if not loaded
+
+    void add_tile(MapTile const &tile);       // From the job thread's notifications;
+    void tiles_done(MapTilesDone const &done); // others' downloads are ignored
+    [[nodiscard]] size_t failed() const;
+};
+```
+
+- A request replaces the download going on with one of the missing
+  tiles unless it has them all already, as `next_download()` decides for
+  the app's map: in the preview, the tiles of a mark the user scrubbed
+  past aren't fetched. A render's frame waits for its download, so it's
+  never replaced.
+- Textures are unloaded past 64, least recently drawn first, with
+  `tiles_to_unload()`; 64 is many times what a frame has in view.
+- The logic is in pure functions where it can be, as for the app's map,
+  so that tests don't need a GL context: the texture loading is behind
+  the `cached` fetcher and a small loader. `OverlayTiles` is tested with
+  a fake fetcher and scheduler, without textures, through a loader that
+  a test replaces.
+- `TileDownload::map` (an id) is how the notifications find their owner:
+  `notif_map_tile()` and `notif_map_tiles_done()` hand each to the app's
+  map, the preview's tiles and the render's tiles, and each ignores
+  downloads that aren't its own. Its downloads get ids from the same
+  counter as the app's map's.
+- It's in the app, not the Widget library: it's about OSM tiles and the
+  app's jobs. The app's map keeps its own tile code, which also draws
+  placeholders from other levels while zooming; moving it onto
+  `OverlayTiles` could come later.
+
+### Rendering and the preview
+
+- `OverlayRenderer` gets `set_tiles(OverlayTiles *, float detail)`; with
+  none, as in tests, tiles aren't drawn. And `tiles_needed(values,
+  area)`: the tiles of every map with tiles at that moment, worked out
+  as `draw()` does.
+- **`OverlayRender`** owns an `OverlayTiles`. `step()` asks for the next
+  frame's tiles before drawing it, and if they're not all there, returns
+  until a later step, while the notifications bring them. `waiting()`
+  says so, and the status line says "Rendering x.mov: 42%, downloading
+  map tiles". At the end, the failures are added: "Rendered the overlay
+  to …. Couldn't download 3 map tiles".
+- **`OverlayPreview`** owns an `OverlayTiles` too, and requests the
+  tiles before each draw, without waiting: what's missing is left out.
+  The preview fetches tiles at its own scale, which is smaller than the
+  video's, so it shows a lower level: fewer downloads, and the video's
+  level drawn at the preview's size couldn't be read anyway.
+- Two `OverlayTiles`, the preview's and the render's, rather than one
+  shared: their requests would replace each other's downloads, and a
+  frame has only a few tiles to load twice.
+
+### Drawing
+
+- The tiles are drawn first inside the clip shader, before the track,
+  over the panel's background, with `DrawTexturePro()` at their placed
+  rectangles, bilinear, tinted white at the layer's `opacity`.
+- **`ClipShader::begin(box, radius, ColorMatrix const & = identity)`**:
+  the shader gets a color matrix and offset as uniforms, applied before
+  the clip's fade; the identity for the track and the marker. In the
+  Widget library, as a general color matrix, with nothing of OSM in it.
+  The scissor fallback draws the tiles unfiltered.
+- The attribution is drawn after the border, at `attribution_box()`,
+  with the renderer's `draw_text()`, outside the clip.
+
+### Tile code prerequisites
+
+- **`UserAgent`** in `Http.h`: `SweatTrails/1.0
+  (+https://github.com/JanDeVisser/sweattrails)`, used by `http_fetch()`
+  and the tile `download()`.
+- `download()` stops logging verbosely, and gets a timeout of 30
+  seconds, as `http_fetch()` has one of 60: a connection that hangs
+  would otherwise keep a render waiting forever.
+
+### Built-in layout
+
+The dashboard's map gets `"tiles": { "opacity": 0.6, "filter": "dark" }`
+and `"attribution": { "style": "label", "font_size": 14 }`.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `OverlayLayoutTest`: `tiles` with each filter and an opacity, `null`
+  and left out; the errors (not an object, another source, an opacity
+  out of range, an unknown filter); the attribution's style over its
+  named style, and its default; the fonts and codepoints a map with
+  tiles needs.
+- `OverlayTrackMapTest`: `tile_level()` at 1080p, at 4K, at 1440p and
+  for a render's `detail` of 2, and at the limits; `map_tiles()` for a
+  box over four tiles, scaled tiles' whole-pixel edges, and tiles past
+  the world's edge; `attribution_box()` below, centred under a circle,
+  and above at the bottom of the area; `color_filter()` on a few colors.
+- `OverlayTilesTest` (new): cached tiles loaded at once, missing ones
+  scheduled as one download, a request covered by the download going on
+  not scheduling another, failed ones not asked for again and counted,
+  and another owner's tiles ignored. With a fake fetcher, scheduler and
+  loader.
+- `LayoutFileTest`: the dashboard's map with its tiles and attribution.
+- By hand, with a throwaway frame dump: tiles under the track in a
+  circle, each filter, no seams between tiles at 1440p, the attribution
+  at the top and the bottom of the frame; a render waiting for tiles,
+  and offline, finishing with the failures reported; the preview
+  scrubbing; a render in Final Cut. Drawing can't be tested without a
+  GL context.
 
 ## Review notes
 
