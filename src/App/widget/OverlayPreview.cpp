@@ -119,10 +119,7 @@ void OverlayPreview::draw()
         BeginScissorMode(static_cast<int>(area.x), static_cast<int>(area.y), static_cast<int>(area.width), static_cast<int>(area.height));
         // What's not there yet is left out, until it has downloaded.
         auto const values = values_at_record(*source, activity->current_record());
-        // Where the moment would be in a video of the range a render
-        // starts with.
-        auto const range = initial_render_range(activity->activity, activity->selection());
-        auto const time = VideoTime { .at = values[OverlayField::elapsed].value_or(0) - range.from, .length = range.to - range.from };
+        auto const time = preview_time(activity->activity, values[OverlayField::elapsed].value_or(0), activity->selection());
         tiles.request(renderer.tiles_needed(values, area, time));
         renderer.draw(values, area, time);
         EndScissorMode();

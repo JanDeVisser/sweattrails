@@ -484,7 +484,9 @@ sweattrails_test(
         overlay_render_test
         test/OverlayRenderTest.cpp
         src/App/overlay/Fields.cpp
+        src/App/overlay/Layout.cpp
         src/App/overlay/Render.cpp
+        src/App/overlay/Template.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Storage.cpp
         src/App/storage/Types.cpp

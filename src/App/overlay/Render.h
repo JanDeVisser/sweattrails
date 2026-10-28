@@ -21,6 +21,7 @@
 
 #include <JSON.h>
 
+#include <overlay/Layout.h>
 #include <storage/Activity.h>
 
 namespace ST {
@@ -90,6 +91,12 @@ RenderRange records_range(Activity const &activity, size_t first, size_t last);
 // lap is selected; the whole activity without one, or for a selection of
 // one record, which isn't a range.
 RenderRange initial_render_range(Activity const &activity, std::optional<std::pair<size_t, size_t>> selection);
+
+// Where the preview's moment, `elapsed` seconds into the activity, would
+// be in a video of the initial range. At the range's very end, which is
+// the selection's last record, it's at the video's last frame, which is
+// what the video shows there, rather than just past it.
+VideoTime preview_time(Activity const &activity, double elapsed, std::optional<std::pair<size_t, size_t>> selection);
 
 // The frames in the range, and when frame `n` is, from integers rather
 // than added up, so that a long render doesn't drift.
