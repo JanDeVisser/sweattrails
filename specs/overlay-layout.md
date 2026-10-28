@@ -639,7 +639,11 @@ most of the elements exist.
      tiles under it, tile filters, the attribution, fetching each
      frame's tiles during a render (OSM's policy doesn't allow fetching
      them before it), and some of the tile code prerequisites.
-7. **`group`, `image`, and `visible`/`fade`**.
+7. **`group`, `image`, and `visible`/`fade`**, split in three:
+   - 7a, [overlay-visibility.md](overlay-visibility.md): `visible` and
+     `fade`.
+   - 7b: `image`.
+   - 7c: `group`.
 
 Deferred, in no slice yet:
 
