@@ -1155,6 +1155,47 @@ void test_map_errors()
     CHECK_EQ(map(R"("extent": "lap")"), "element 1: \"extent\" isn't a property of a map");
 }
 
+// A map's properties cascade from the defaults and styles: the track's
+// strokes merge, and a marker without a radius keeps the map's own, and
+// the profile's its own. A style's drop line is for the profiles.
+void test_map_cascade()
+{
+    auto const layout = decode(R"({
+        "defaults": { "view": "follow", "zoom": 12, "clip": "rounded", "marker": { "outline": "#000000" },
+                      "track": { "done": { "color": "#ff0000", "width": 6 } }, "tiles": { "source": "osm" } },
+        "styles": { "dashboard": { "marker": { "drop_line": true }, "track": { "outline": { } } } },
+        "elements": [
+            { "type": "map", "size": { "width": 300, "height": 200 }, "style": "dashboard",
+              "track": { "done": { "width": 3 } } },
+            { "type": "map", "size": { "width": 300, "height": 200 }, "view": "fit", "clip": "rect" },
+            { "type": "profile", "size": { "width": 300, "height": 200 } } ] })");
+    CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
+    if (!layout || layout->elements.size() != 3) {
+        return;
+    }
+    auto const &styled = std::get<MapElement>(layout->elements[0]);
+    CHECK(styled.mode == MapMode::Follow);
+    CHECK_EQ(styled.zoom, 12);
+    CHECK(styled.clip == ClipKind::Rounded);
+    CHECK_EQ(show(styled.track.done.color), "255 0 0 255");
+    CHECK_EQ(styled.track.done.width, 3.0f);
+    CHECK_EQ(show(styled.track.remaining.color), "255 0 0 85");
+    CHECK_EQ(styled.track.remaining.width, 3.0f);
+    // An outline of nothing but itself: black at half its alpha.
+    CHECK_EQ(show(styled.track.outline.value_or(Stroke { }).color), "0 0 0 128");
+    CHECK(styled.marker.has_value());
+    if (styled.marker) {
+        CHECK_EQ(styled.marker->radius, 8.0f);
+        CHECK_EQ(show(styled.marker->outline.value_or(BLANK)), "0 0 0 255");
+        CHECK(!styled.marker->drop_line);
+    }
+    auto const &own = std::get<MapElement>(layout->elements[1]);
+    CHECK(own.mode == MapMode::Fit);
+    CHECK(own.clip == ClipKind::Rect);
+    auto const &profile = std::get<ProfileElement>(layout->elements[2]);
+    CHECK_EQ(profile.marker ? profile.marker->radius : 0.0f, 6.0f);
+}
+
 int main()
 {
     test_cascade();
@@ -1199,5 +1240,6 @@ int main()
     test_map();
     test_map_defaults();
     test_map_errors();
+    test_map_cascade();
     return ST::Test::test_result();
 }
