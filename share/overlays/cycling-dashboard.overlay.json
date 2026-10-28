@@ -30,6 +30,20 @@
         { "type": "text", "text": "{time_of_day:hms}", "style": "label",
           "at": { "x": 64, "y": 162 } },
 
+        // The elevation of the whole ride across the top, with where the
+        // rider is. "extent": "lap" shows the lap instead, for a ride split
+        // into climbs.
+        { "type": "profile", "extent": "all",
+          "done": { "line": { "color": "#ffb703", "width": 3 }, "fill": "#ffb70360" },
+          "remaining": { "line": { "color": "#ffffff", "width": 2 }, "fill": "#ffffff20" },
+          "marker": { "color": "#ffffff", "radius": 7, "outline": "#ffb703", "drop_line": true },
+          "marker_label": { "text": "{altitude:.0f} {altitude.unit} · {grade:+.1f}%", "style": "label" },
+          "axis_labels": { "min_max": true, "style": "label" },
+          "laps": { "color": "#ffffff60", "width": 1 },
+          "style": "panel", "padding": 12,
+          "at": { "x": "50%", "y": 40, "anchor": "top" },
+          "size": { "width": 900, "height": 120 } },
+
         // The last minute of heart rate, ending at the moment.
         { "type": "graph", "field": "heart_rate", "x_axis": "time", "window": 60,
           "line": { "color": "#f94144", "width": 3 }, "fill": "#f9414430",

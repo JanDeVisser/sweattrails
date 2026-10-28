@@ -508,6 +508,11 @@ that changes once a second looks jumpy.
   power, cadence and heart rate in the records with a 3-sample moving average.
   So the overlay's own smoothing defaults to none for those fields. Elements
   can set `"smooth": <seconds>` for more, as a trailing average.
+  *Note for the slice that builds this:* a profile's `smooth` is in meters
+  ([overlay-profile.md](overlay-profile.md)), and both cascade from the
+  defaults and styles, so a `"smooth": 3` in the defaults meant for values
+  would reach every profile as 3 m. Settle it then: such as a profile only
+  taking a `smooth` of its own, or another name for one of the two.
 - Numeric fields and the map marker are **interpolated** linearly between the
   two records around the current frame time. Displayed integers (heart rate,
   power) are rounded after the interpolation. `"interpolate": false` turns

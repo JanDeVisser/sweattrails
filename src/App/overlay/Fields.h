@@ -120,6 +120,9 @@ struct OverlaySource {
     i32                       utc_offset { 0 }; // Local time minus UTC, in seconds
     std::vector<ProfilePoint> profile { };      // The records with both, in order of distance
     std::vector<Mileage>      mileage { };      // The records with a distance, in order of it
+    // The area under the profile from its start to each of its points, in
+    // m², for the average altitude over a stretch.
+    std::vector<double> profile_area { };
     // As it was when the source was made: renaming the activity during a
     // render doesn't change the video halfway.
     std::string title { };
@@ -142,6 +145,11 @@ constexpr double DefaultGradeWindow = 30.0;
 // distance, so the window reaches past it. Nothing within half the window
 // of the ends, or without a profile.
 std::optional<double> grade_at(OverlaySource const &source, double distance, double window);
+
+// The average altitude from `from` to `to`, in m: weighted by distance, so
+// that it doesn't matter how far apart the records are. Clamped to the
+// profile's ends; none without a profile.
+std::optional<double> average_altitude(OverlaySource const &source, double from, double to);
 
 // Local time minus UTC where the activity was: the activity's own, or else
 // the system's time zone's at its start.

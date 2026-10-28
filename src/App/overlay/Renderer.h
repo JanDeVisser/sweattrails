@@ -53,8 +53,10 @@ private:
     void                draw(ValueElement const &value, FieldValues const &values, Rectangle const &area);
     void                draw(GaugeElement const &gauge, FieldValues const &values, Rectangle const &area);
     void                draw(GraphElement const &graph, FieldValues const &values, Rectangle const &area);
+    void                draw(ProfileElement const &profile, FieldValues const &values, Rectangle const &area);
     Rectangle           screen_box(Placement const &at, Vector2 size, Rectangle const &area) const;
     Rectangle           draw_panel(Panel const &panel, Rectangle const &box) const;
+    void                draw_trace(std::vector<Vector2> const &points, Trace const &trace, float bottom) const;
     std::optional<Font> font(TextStyle const &style, size_t element);
     void                draw_text(Font const &font, std::string_view text, Vector2 at, TextStyle const &style) const;
 };

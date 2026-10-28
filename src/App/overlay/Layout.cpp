@@ -40,19 +40,15 @@ constexpr double LongestWindow = 200;
 constexpr Names GaugeProperties { "field", "unit", "shape", "min", "max", "track", "fill", "thickness", "color_by" };
 constexpr Names GraphProperties { "field", "unit", "x_axis", "window", "min", "max", "line", "fill", "cursor" };
 
-constexpr Names LaterTypes { "profile", "map", "image", "group" };
+// `color_by_grade` is deferred: taken, and not drawn yet.
+constexpr Names ProfileProperties { "extent", "smooth", "min", "max", "min_span", "done", "remaining", "marker",
+    "marker_label", "axis_labels", "laps", "color_by_grade" };
+
+constexpr Names LaterTypes { "map", "image", "group" };
 
 // The properties of later slices' elements, from the design. Defaults and
 // styles may have them, for those elements.
 constexpr Names LaterProperties {
-    "extent",
-    "done",
-    "remaining",
-    "marker",
-    "marker_label",
-    "scale",
-    "axis_labels",
-    "laps", // profile
     "clip",
     "view",
     "zoom",
@@ -187,6 +183,15 @@ std::expected<Coordinate, LayoutError> coordinate(JSONValue const &json, std::st
         }
     }
     return error(std::format("\"{}\" isn't a number or a percentage, such as \"50%\"", property));
+}
+
+std::expected<bool, LayoutError> boolean(JSONValue const &json, std::string_view property)
+{
+    bool ret { false };
+    if (!json.is_boolean() || !json.convert(ret)) {
+        return error(std::format("\"{}\" isn't true or false", property));
+    }
+    return ret;
 }
 
 std::expected<double, LayoutError> not_negative(JSONValue const &json, std::string_view property)
@@ -630,6 +635,146 @@ std::expected<GraphElement, LayoutError> graph_element(JSONValue const &json)
     return ret;
 }
 
+// `{ "line": { ... }, "fill": "#..." }`, over `base`.
+std::expected<Trace, LayoutError> profile_trace(JSONValue const &json, std::string_view property, Trace base)
+{
+    if (!json.is_object()) {
+        return error(std::format("\"{}\" isn't a line and a fill, such as {{ \"line\": {{ \"width\": 3 }} }}", property));
+    }
+    TRY(check_properties(json, std::format("\"{}\"", property), { { "line", "fill" } }));
+    auto ret = base;
+    if (auto const line = json.get("line"); line) {
+        ret.line = TRY_EVAL(stroke(*line, std::format("{}.line", property), ret.line));
+    }
+    if (auto const fill = json.get("fill"); fill) {
+        ret.fill = TRY_EVAL(color(*fill, std::format("{}.fill", property)));
+    }
+    return ret;
+}
+
+// In the done line's color by default; `null` for none.
+std::expected<std::optional<Marker>, LayoutError> marker(JSONValue const &json, Color line)
+{
+    if (json.is_null()) {
+        return std::optional<Marker> { };
+    }
+    if (!json.is_object()) {
+        return error("\"marker\" isn't a dot, such as { \"color\": \"#ffffff\", \"radius\": 8 }, or null");
+    }
+    TRY(check_properties(json, "\"marker\"", { { "shape", "color", "radius", "outline", "drop_line" } }));
+    Marker ret { .color = line };
+    if (auto const shape = json.get("shape"); shape && string_of(*shape) != "dot") {
+        return error("\"marker.shape\" isn't dot");
+    }
+    if (auto const c = json.get("color"); c) {
+        ret.color = TRY_EVAL(color(*c, "marker.color"));
+    }
+    if (auto const radius = json.get("radius"); radius) {
+        ret.radius = static_cast<float>(TRY_EVAL(number(*radius, "marker.radius")));
+        if (ret.radius <= 0) {
+            return error("\"marker.radius\" isn't more than 0");
+        }
+    }
+    if (auto const outline = json.get("outline"); outline) {
+        ret.outline = TRY_EVAL(color(*outline, "marker.outline"));
+    }
+    if (auto const drop = json.get("drop_line"); drop) {
+        // `true` is a thin line in the marker's color, faintly.
+        auto const faint = Stroke { .color = Color { .r = ret.color.r, .g = ret.color.g, .b = ret.color.b, .a = static_cast<unsigned char>(ret.color.a / 2) }, .width = 1 };
+        if (drop->is_boolean()) {
+            ret.drop_line = TRY_EVAL(boolean(*drop, "marker.drop_line")) ? std::optional { faint } : std::nullopt;
+        } else {
+            ret.drop_line = TRY_EVAL(stroke(*drop, "marker.drop_line", faint));
+        }
+    }
+    return ret;
+}
+
+std::expected<JSONValue, LayoutError> cascaded(JSONValue const &element, JSONValue const &defaults, JSONValue const &styles);
+
+// A label's style: its own properties over its named style, over the
+// profile's.
+std::expected<TextStyle, LayoutError> label_style(JSONValue const &json, std::string_view property, TextStyle const &base, JSONValue const &styles)
+{
+    auto const cascaded_label = cascaded(json, JSONValue::object(), styles);
+    if (!cascaded_label) {
+        return error(std::format("\"{}\": {}", property, cascaded_label.error().message));
+    }
+    return text_style(*cascaded_label, base);
+}
+
+std::expected<ProfileElement, LayoutError> profile_element(JSONValue const &json, JSONValue const &styles)
+{
+    auto const [min, max] = TRY_EVAL(bounds(json));
+    ProfileElement ret {
+        .at = TRY_EVAL(sized_placement(json, "profile")),
+        .panel = TRY_EVAL(panel(json)),
+        .style = TRY_EVAL(text_style(json)),
+        .min = min,
+        .max = max,
+    };
+    ret.done.line.color = ret.style.color;
+    if (auto const extent = json.get("extent"); extent) {
+        if (extent->is_object()) {
+            return error("\"extent\": a part of the activity isn't there yet, only \"all\" and \"lap\"");
+        }
+        auto const name = string_of(*extent).value_or("");
+        if (name == "all") {
+            ret.extent = ProfileExtent::All;
+        } else if (name == "lap") {
+            ret.extent = ProfileExtent::Lap;
+        } else {
+            return error("\"extent\" isn't all or lap");
+        }
+    }
+    if (auto const smooth = json.get("smooth"); smooth) {
+        ret.smooth = TRY_EVAL(not_negative(*smooth, "smooth"));
+    }
+    if (auto const span = json.get("min_span"); span) {
+        ret.min_span = TRY_EVAL(number(*span, "min_span"));
+        if (ret.min_span <= 0) {
+            return error("\"min_span\" isn't more than 0");
+        }
+    }
+    if (auto const done = json.get("done"); done) {
+        ret.done = TRY_EVAL(profile_trace(*done, "done", ret.done));
+    }
+    if (auto const remaining = json.get("remaining"); remaining) {
+        ret.remaining = TRY_EVAL(profile_trace(*remaining, "remaining", ret.done));
+    }
+    auto const m = json.get("marker");
+    ret.marker = m ? TRY_EVAL(marker(*m, ret.done.line.color)) : std::optional { Marker { .color = ret.done.line.color } };
+    if (auto const label = json.get("marker_label"); label) {
+        if (!label->is_object()) {
+            return error("\"marker_label\" isn't a text, such as { \"text\": \"{altitude:.0f}\" }");
+        }
+        TRY(check_properties(*label, "\"marker_label\"", { { "text", "style" }, TextStyleProperties }));
+        auto const text = label->get("text");
+        if (!text) {
+            return error("\"marker_label\" needs a \"text\"");
+        }
+        auto parsed = parse_template(TRY_EVAL(string(*text, "marker_label.text")));
+        if (!parsed) {
+            return error(std::format("\"marker_label.text\": {}", parsed.error()));
+        }
+        ret.marker_label = ProfileLabel { .text = std::move(*parsed), .style = TRY_EVAL(label_style(*label, "marker_label", ret.style, styles)) };
+    }
+    if (auto const labels = json.get("axis_labels"); labels) {
+        if (!labels->is_object()) {
+            return error("\"axis_labels\" isn't an object, such as { \"min_max\": true }");
+        }
+        // Distance ticks are deferred: taken, and not drawn yet.
+        TRY(check_properties(*labels, "\"axis_labels\"", { { "min_max", "distance", "style" }, TextStyleProperties }));
+        if (auto const min_max = labels->get("min_max"); min_max && TRY_EVAL(boolean(*min_max, "axis_labels.min_max"))) {
+            ret.axis_labels = TRY_EVAL(label_style(*labels, "axis_labels", ret.style, styles));
+        }
+    }
+    if (auto const laps = json.get("laps"); laps) {
+        ret.laps = TRY_EVAL(stroke(*laps, "laps", Stroke { .width = 1 }));
+    }
+    return ret;
+}
+
 // The element's properties after the cascade: the defaults, its styles in
 // order, and its own.
 std::expected<JSONValue, LayoutError> cascaded(JSONValue const &element, JSONValue const &defaults, JSONValue const &styles)
@@ -720,6 +865,10 @@ std::expected<std::optional<OverlayElement>, LayoutError> element(JSONValue cons
         TRY(check_properties(json, "a gauge", { ElementProperties, { "color" }, BoxStyleProperties, GaugeProperties }));
         return std::optional<OverlayElement> { TRY_EVAL(gauge_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
     }
+    if (name == "profile") {
+        TRY(check_properties(json, "a profile", { ElementProperties, TextStyleProperties, BoxStyleProperties, ProfileProperties }));
+        return std::optional<OverlayElement> { TRY_EVAL(profile_element(TRY_EVAL(cascaded(json, defaults, styles)), styles)) };
+    }
     if (name == "graph") {
         TRY(check_properties(json, "a graph", { ElementProperties, { "color" }, BoxStyleProperties, GraphProperties }));
         return std::optional<OverlayElement> { TRY_EVAL(graph_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
@@ -786,7 +935,7 @@ std::expected<OverlayLayout, LayoutError> decode_layout(JSONValue const &json)
     }
     // What defaults and styles may hold: any element's properties but its
     // type and style.
-    auto const style_properties = { TextStyleProperties, BoxStyleProperties, TextProperties, ValueProperties, GaugeProperties, GraphProperties, LaterProperties,
+    auto const style_properties = { TextStyleProperties, BoxStyleProperties, TextProperties, ValueProperties, GaugeProperties, GraphProperties, ProfileProperties, LaterProperties,
         Names { "at", "size", "visible", "fade", "when", "smooth", "interpolate" } };
     TRY(check_properties(defaults, "the defaults", style_properties));
     for (auto it = styles.obj_begin(); it != styles.obj_end(); ++it) {
@@ -844,6 +993,16 @@ std::vector<std::string> element_fonts(OverlayElement const &element)
     }
     if (auto const *value = std::get_if<ValueElement>(&element)) {
         return { value->style.font, value->unit_style.font };
+    }
+    if (auto const *profile = std::get_if<ProfileElement>(&element)) {
+        std::vector<std::string> ret;
+        if (profile->marker_label) {
+            ret.push_back(profile->marker_label->style.font);
+        }
+        if (profile->axis_labels) {
+            ret.push_back(profile->axis_labels->font);
+        }
+        return ret;
     }
     return { };
 }
@@ -937,6 +1096,12 @@ std::set<int> layout_codepoints(OverlayLayout const &layout)
             add(value->missing);
             if (value->unit) {
                 add(value->unit->name);
+            }
+        } else if (auto const *profile = std::get_if<ProfileElement>(&element); profile && profile->marker_label) {
+            for (auto const &part : profile->marker_label->text.parts) {
+                if (auto const *literal = std::get_if<std::string>(&part)) {
+                    add(*literal);
+                }
             }
         }
     }

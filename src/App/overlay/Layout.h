@@ -163,7 +163,48 @@ struct GraphElement {
     std::optional<Cursor>    cursor { };
 };
 
-using OverlayElement = std::variant<TextElement, ValueElement, GaugeElement, GraphElement>;
+enum class ProfileExtent {
+    All, // The whole activity
+    Lap, // The lap the moment is in
+};
+
+// A part of the profile: before the moment, or after it.
+struct Trace {
+    Stroke               line { };
+    std::optional<Color> fill { };
+};
+
+struct Marker {
+    Color                 color { WHITE };
+    float                 radius { 6 };  // In design pixels
+    std::optional<Color>  outline { };   // A ring around the dot
+    std::optional<Stroke> drop_line { }; // Down to the bottom of the box
+};
+
+struct ProfileLabel {
+    Template  text { };
+    TextStyle style { };
+};
+
+struct ProfileElement {
+    size_t                      number { 0 }; // Its place in the layout's elements, from 1
+    Placement                   at { };       // With a size
+    Panel                       panel { };
+    TextStyle                   style { }; // What its labels' styles are over
+    ProfileExtent               extent { ProfileExtent::All };
+    double                      smooth { 20 }; // m, centred
+    std::optional<double>       min { };       // In the unit shown; none is "auto"
+    std::optional<double>       max { };
+    double                      min_span { 100 }; // The least an "auto" scale spans, in the unit shown
+    Trace                       done { };
+    std::optional<Trace>        remaining { }; // As `done` if none
+    std::optional<Marker>       marker { };
+    std::optional<ProfileLabel> marker_label { };
+    std::optional<TextStyle>    axis_labels { }; // The scale's lowest and highest, if asked for
+    std::optional<Stroke>       laps { };
+};
+
+using OverlayElement = std::variant<TextElement, ValueElement, GaugeElement, GraphElement, ProfileElement>;
 
 struct OverlayLayout {
     Vector2                     design_size { .x = 1920, .y = 1080 };
