@@ -1065,9 +1065,11 @@ float visibility_alpha(std::optional<Visibility> const &visible, VideoTime time)
     if (!visible) {
         return 1;
     }
-    auto const from = (visible->from < 0) ? time.length + visible->from : visible->from;
-    auto const to = !visible->to ? time.length : (*visible->to < 0) ? time.length + *visible->to
-                                                                    : *visible->to;
+    // Times from the start, inside the video, so that the element fades
+    // in and out within it.
+    auto const seconds = [&time](double t) { return (t < 0) ? time.length + t : t; };
+    auto const from = std::max(0.0, seconds(visible->from));
+    auto const to = std::min(time.length, visible->to ? seconds(*visible->to) : time.length);
     if (time.at < from || time.at >= to) {
         return 0;
     }

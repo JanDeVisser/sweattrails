@@ -1378,6 +1378,70 @@ void test_visibility_alpha()
     CHECK_EQ(std::format("{:.2f}", visibility_alpha(std::nullopt, VideoTime { .at = -5, .length = 1 })), "1.00");
 }
 
+// The window merged over the cascade: an element's "end" over a style's
+// `to`, the defaults' window with an element's own fade, and a window
+// that's only empty once merged, or a style's error, reported for the
+// element that uses it.
+void test_visible_cascade()
+{
+    auto const layout = decode(R"({
+        "defaults": { "visible": { "from": 2 } },
+        "styles": { "card": { "visible": { "to": 5 }, "fade": 0.5 } },
+        "elements": [
+            { "type": "text", "text": "a", "style": "card", "visible": { "to": "end" } },
+            { "type": "text", "text": "b", "fade": 1 },
+            { "type": "text", "text": "c", "style": "card", "fade": 0 } ] })");
+    CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
+    if (!layout || layout->elements.size() != 3) {
+        return;
+    }
+    auto const show = [&layout](size_t ix) {
+        auto const v = visibility_of(layout->elements[ix]);
+        return v ? std::format("{} {} {}", v->from, v->to ? std::format("{}", *v->to) : "end", v->fade) : std::string { "always" };
+    };
+    CHECK_EQ(show(0), "2 end 0.5");
+    CHECK_EQ(show(1), "2 end 1");
+    CHECK_EQ(show(2), "2 5 0");
+
+    CHECK_EQ(error_of(R"({ "styles": { "late": { "visible": { "from": 6 } } },
+        "elements": [ { "type": "text", "text": "a", "style": "late", "visible": { "to": 2 } } ] })"),
+        "element 1: \"visible\": it's never visible, as \"from\" isn't before \"to\"");
+    CHECK_EQ(error_of(R"({ "styles": { "slow": { "fade": -1 } },
+        "elements": [ { "type": "text", "text": "a", "style": "slow" } ] })"),
+        "element 1: \"fade\" isn't a number of 0 or more");
+    // Every type has it.
+    auto const types = decode(R"({ "elements": [
+        { "type": "gauge", "field": "speed", "size": { "width": 100, "height": 10 }, "visible": { "to": 3 } },
+        { "type": "graph", "field": "speed", "size": { "width": 100, "height": 50 }, "visible": { "to": 3 } },
+        { "type": "profile", "size": { "width": 100, "height": 50 }, "visible": { "to": 3 } } ] })");
+    CHECK_EQ(types ? std::string { "ok" } : types.error().to_string(), "ok");
+    if (types) {
+        for (auto const &element : types->elements) {
+            auto const v = visibility_of(element);
+            CHECK(v && v->to == 3.0);
+        }
+    }
+}
+
+// The edges: a fade longer than the window, a video of no length, and
+// windows reaching past the video's start or end, which still fade in and
+// out within the video, as the spec has it.
+void test_visibility_alpha_edges()
+{
+    auto const alpha = [](Visibility const &v, double at, double length) {
+        return std::format("{:.2f}", visibility_alpha(v, VideoTime { .at = at, .length = length }));
+    };
+    CHECK_EQ(alpha(Visibility { .from = 0, .to = 1, .fade = 2 }, 0.5, 60), "0.25");
+    CHECK_EQ(alpha(Visibility { .fade = 1 }, 0, 0), "0.00");
+    CHECK_EQ(alpha(Visibility { .to = -10 }, 2, 5), "0.00");
+    // An outro of 8 s in a video of 5 s: it fades in from the start.
+    CHECK_EQ(alpha(Visibility { .from = -8, .fade = 1 }, 0, 5), "0.00");
+    CHECK_EQ(alpha(Visibility { .from = -8, .fade = 1 }, 0.5, 5), "0.50");
+    // The dashboard's title card in a video of 3 s: it fades out at the end.
+    CHECK_EQ(alpha(Visibility { .to = 5, .fade = 0.5 }, 2.75, 3), "0.50");
+    CHECK_EQ(alpha(Visibility { .from = 1, .to = 10, .fade = 1 }, 4.5, 5), "0.50");
+}
+
 int main()
 {
     test_cascade();
@@ -1428,6 +1492,8 @@ int main()
     test_visible();
     test_visible_errors();
     test_visibility_alpha();
+    test_visible_cascade();
+    test_visibility_alpha_edges();
     test_map_tiles_edges();
     return ST::Test::test_result();
 }
