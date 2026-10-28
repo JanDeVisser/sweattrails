@@ -131,7 +131,7 @@ plain functions in a new `overlay/ElevationProfile`, next to
   `axis_labels` (optional: none unless `min_max`), `laps` (an optional
   stroke).
 - **`Trace { Stroke line, std::optional<Color> fill }`**, for `done` and
-  `remaining`. Without `done`, the line is the element's `color`, 2 px,
+  `remaining`, decoded by `profile_trace()` (`trace` is a logging macro). Without `done`, the line is the element's `color`, 2 px,
   as a graph's is.
 - **`Marker { color, radius, outline, drop_line }`**: `outline` an
   optional color; `drop_line` an optional stroke, which `true` makes from
@@ -174,8 +174,10 @@ No raylib drawing, so that tests reach it all:
 
 - **`profile_extent(source, profile, values)`**: from and to, in meters:
   the profile's ends for `"all"`, the current lap's first and last
-  distances for `"lap"` (the whole activity without laps). None without a
-  profile.
+  distances for `"lap"`, within the profile's ends (the whole activity
+  without laps). None without a profile, or for a lap without distances,
+  which draws its panel only. Smoothing near a lap's ends reaches into
+  the laps around it, which keeps the lap's shape as the whole ride's.
 - **`profile_columns(source, extent, smooth, unit, columns)`**: a value a
   pixel column, in the unit shown.
 - **`profile_bounds(columns, min, max, min_span)`**: `"auto"` is the
@@ -190,9 +192,13 @@ No raylib drawing, so that tests reach it all:
   None before the first distance, or outside the extent.
 - **`lap_starts(source, extent)`**: the distances where laps start, the
   first lap's excepted, within the extent.
-- **`label_box(marker, radius, label_size, content)`**: above and to the
+- **`label_box(marker, gap, label_size, content)`**: above and to the
   right of the marker, to its left past the right edge, below it where
-  there's no room above, and inside the content box.
+  there's no room above, and inside the content box. The gap is the
+  marker's radius and 4 design pixels; without a marker, the label is by
+  the moment on the line.
+- **`profile_x(distance, extent, content)`**: across the box, for the
+  marker and the lap lines.
 
 ### Drawing
 
@@ -202,8 +208,11 @@ No raylib drawing, so that tests reach it all:
   drop line, the marker with its outline as a ring, the axis labels at the
   content's top and bottom left, and the marker label.
 - Every frame works the columns out again: an average is two binary
-  searches, so 900 columns are far less than a frame's text. If the
-  render's speed says otherwise, the columns of `"all"` can be kept.
+  searches. Measured with the dashboard at 1080p, 300 frames took 3.8 s
+  with the profile and 3.5 s without, so under 1 ms a frame, and ffmpeg
+  is still what limits a render: the columns aren't kept.
+- The axis labels are at the content's left edge, as the spec has them,
+  and can sit on the line where the profile starts or ends low or high.
 
 ### Built-in layout
 
