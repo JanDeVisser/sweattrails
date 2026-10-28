@@ -277,6 +277,10 @@ is in `STYLE.md`, and how to write tests in `test/README.md`.
 
 The sport icons are by [Icons8](https://icons8.com).
 
+The overlay's icons, in `share/overlays/icons/`, are from
+[Tabler Icons](https://tabler.io/icons), by Paweł Kuna, under the MIT
+License (`share/overlays/icons/LICENSE`).
+
 The overlay's font is [Inter](https://rsms.me/inter/), by The Inter
 Project Authors, under the SIL Open Font License 1.1
 (`share/fonts/Inter-OFL.txt`).
