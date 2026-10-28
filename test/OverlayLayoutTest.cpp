@@ -1263,6 +1263,22 @@ void test_map_tiles_errors()
     CHECK_EQ(map(R"("attribution": { "text": "me" })"), "element 1: \"text\" isn't a property of \"attribution\"");
 }
 
+// The limits of the opacity are in, and a filter or source that isn't a
+// string is an error, as is an attribution style that isn't there.
+void test_map_tiles_edges()
+{
+    auto const map = [](std::string_view properties) {
+        return error_of(with_element(std::format(R"({{ "type": "map", "size": {{ "width": 300, "height": 300 }}, {} }})", properties)));
+    };
+    CHECK_EQ(map(R"("tiles": { "opacity": 0 })"), "ok");
+    CHECK_EQ(map(R"("tiles": { "opacity": 1 })"), "ok");
+    CHECK_EQ(map(R"("tiles": { "opacity": -0.1 })"), "element 1: \"tiles.opacity\" isn't a number from 0 to 1");
+    CHECK_EQ(map(R"("tiles": { "filter": 5 })"), "element 1: \"tiles.filter\" isn't none, grayscale, dark or a color");
+    CHECK_EQ(map(R"("tiles": { "filter": "" })"), "element 1: \"tiles.filter\" isn't none, grayscale, dark or a color");
+    CHECK_EQ(map(R"("tiles": { "source": 1 })"), "element 1: \"tiles.source\" isn't osm, the only source there is yet");
+    CHECK(map(R"("attribution": { "style": "nowhere" })").starts_with("element 1: \"attribution\": "));
+}
+
 int main()
 {
     test_cascade();
@@ -1310,5 +1326,6 @@ int main()
     test_map_cascade();
     test_map_tiles();
     test_map_tiles_errors();
+    test_map_tiles_edges();
     return ST::Test::test_result();
 }
