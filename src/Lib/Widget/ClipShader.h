@@ -27,7 +27,9 @@ struct ClipShader {
 
     // What's drawn from begin() to end() is clipped to `box`, with corners
     // rounded by `radius`, in the coordinates it's drawn in. The shader is
-    // loaded the first time, which needs the window.
+    // loaded the first time, which needs the window. Where it doesn't
+    // compile, such as on a GPU without OpenGL 3.3, it clips to `box`
+    // with scissor mode, with square corners.
     void begin(Rectangle box, float radius);
     void end();
 
@@ -36,6 +38,7 @@ private:
         Shader shader { };
         int    box { -1 };
         int    radius { -1 };
+        bool   valid { false };
     };
     std::optional<Loaded> m_loaded { };
 };

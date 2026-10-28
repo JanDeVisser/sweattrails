@@ -5,6 +5,7 @@
  */
 
 #include <ClipShader.h>
+#include <Logging.h>
 
 namespace ST {
 
@@ -71,7 +72,15 @@ void ClipShader::begin(Rectangle box, float radius)
             .shader = shader,
             .box = GetShaderLocation(shader, "clipBox"),
             .radius = GetShaderLocation(shader, "clipRadius"),
+            .valid = IsShaderValid(shader),
         };
+        if (!m_loaded->valid) {
+            warning(Widget, "The clip shader didn't compile; clipping to rectangles instead");
+        }
+    }
+    if (!m_loaded->valid) {
+        BeginScissorMode(static_cast<int>(box.x), static_cast<int>(box.y), static_cast<int>(box.width), static_cast<int>(box.height));
+        return;
     }
     float const clip_box[] { box.x, box.y, box.width, box.height };
     SetShaderValue(m_loaded->shader, m_loaded->box, clip_box, SHADER_UNIFORM_VEC4);
@@ -81,6 +90,10 @@ void ClipShader::begin(Rectangle box, float radius)
 
 void ClipShader::end()
 {
+    if (!m_loaded || !m_loaded->valid) {
+        EndScissorMode();
+        return;
+    }
     EndShaderMode();
 }
 
