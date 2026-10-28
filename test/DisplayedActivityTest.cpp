@@ -8,6 +8,7 @@
  */
 
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include <storage/Activity.h>
@@ -227,6 +228,22 @@ void test_lap_at()
 
 }
 
+// The range an overlay starts from: none, a dragged range, or a lap's
+// records, from its first to its last.
+void test_selection()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    CHECK(!d.selection());
+    d.set_segment(12);
+    d.set_segment(25);
+    CHECK(d.selection() == (std::pair { 12uz, 25uz }));
+    d.select_lap(1);
+    CHECK(d.selection() == (std::pair { 10uz, 39uz }));
+    d.whole_activity();
+    CHECK(!d.selection());
+}
+
 int main()
 {
     test_current_record();
@@ -241,5 +258,6 @@ int main()
     test_select_lap_replaces_a_dragged_range();
     test_lap_spans();
     test_lap_at();
+    test_selection();
     return ST::Test::test_result();
 }
