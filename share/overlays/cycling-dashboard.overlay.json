@@ -44,6 +44,17 @@
           "at": { "x": "50%", "y": 40, "anchor": "top" },
           "size": { "width": 900, "height": 120 } },
 
+        // The track in the top right, following the rider, in the
+        // profile's colors.
+        { "type": "map", "view": "follow", "zoom": 15, "clip": "circle",
+          "background": "#00000060", "border": { "color": "#ffffff40", "width": 2 },
+          "track": { "done": { "color": "#ffb703", "width": 5 },
+                     "remaining": { "color": "#ffffff80", "width": 3 },
+                     "outline": { "color": "#00000080", "width": 2 } },
+          "marker": { "color": "#ffffff", "radius": 8, "outline": "#ffb703" },
+          "at": { "x": -40, "y": 40, "anchor": "top-right" },
+          "size": { "width": 300, "height": 300 } },
+
         // The last minute of heart rate, ending at the moment.
         { "type": "graph", "field": "heart_rate", "x_axis": "time", "window": 60,
           "line": { "color": "#f94144", "width": 3 }, "fill": "#f9414430",

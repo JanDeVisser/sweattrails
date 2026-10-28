@@ -150,6 +150,8 @@ add_library(
         STATIC
         src/Lib/Widget/App.h
         src/Lib/Widget/App.cpp
+        src/Lib/Widget/ClipShader.h
+        src/Lib/Widget/ClipShader.cpp
         src/Lib/Widget/Colors.h
         src/Lib/Widget/Colors.cpp
         src/Lib/Widget/FontCache.h
@@ -198,6 +200,7 @@ add_executable(
         src/App/overlay/Renderer.cpp
         src/App/overlay/Shapes.cpp
         src/App/overlay/Template.cpp
+        src/App/overlay/TrackMap.cpp
         src/App/widget/Activity.cpp
         src/App/widget/ActivityMap.cpp
         src/App/widget/ActivitySelector.cpp
@@ -429,6 +432,25 @@ target_include_directories(overlay_elevation_profile_test PRIVATE src/App)
 target_link_libraries(overlay_elevation_profile_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
+        overlay_track_map_test
+        test/OverlayTrackMapTest.cpp
+        src/App/overlay/Fields.cpp
+        src/App/overlay/Layout.cpp
+        src/App/overlay/Shapes.cpp
+        src/App/overlay/Template.cpp
+        src/App/overlay/TrackMap.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(overlay_track_map_test PRIVATE src/App)
+target_link_libraries(overlay_track_map_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
         layout_file_test
         test/LayoutFileTest.cpp
         src/App/overlay/Fields.cpp
@@ -493,6 +515,7 @@ sweattrails_test(
         src/App/overlay/Renderer.cpp
         src/App/overlay/Shapes.cpp
         src/App/overlay/Template.cpp
+        src/App/overlay/TrackMap.cpp
         src/App/widget/DisplayedActivity.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Storage.cpp

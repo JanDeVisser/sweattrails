@@ -10,6 +10,7 @@
 #include <overlay/ElevationProfile.h>
 #include <overlay/Renderer.h>
 #include <overlay/Shapes.h>
+#include <overlay/TrackMap.h>
 
 namespace ST {
 
@@ -117,16 +118,43 @@ Rectangle OverlayRenderer::screen_box(Placement const &at, Vector2 size, Rectang
 // The panel behind the box, and the box inside its padding.
 Rectangle OverlayRenderer::draw_panel(Panel const &panel, Rectangle const &box) const
 {
-    // raylib's roundness is the share of the shorter side that's rounded.
-    auto const shorter = std::min(box.width, box.height);
-    auto const roundness = (shorter > 0) ? std::min(1.0f, 2 * panel.radius * m_scale / shorter) : 0.0f;
-    if (panel.background) {
-        DrawRectangleRounded(box, roundness, 0, *panel.background);
-    }
-    if (panel.border) {
-        DrawRectangleRoundedLinesEx(box, roundness, 0, panel.border->width * m_scale, panel.border->color);
-    }
+    auto const shape = ClipShape { .box = box, .radius = panel.radius * m_scale };
+    draw_background(panel, shape);
+    draw_border(panel, shape);
     return content_box(box, panel.padding * m_scale);
+}
+
+namespace {
+
+// raylib's roundness is the share of the shorter side that's rounded.
+float roundness(ClipShape const &shape)
+{
+    auto const shorter = std::min(shape.box.width, shape.box.height);
+    return (shorter > 0) ? std::min(1.0f, 2 * shape.radius / shorter) : 0.0f;
+}
+
+// A line through the points, if there are two.
+void draw_line(std::vector<Vector2> const &points, float width, Color color)
+{
+    if (points.size() > 1) {
+        DrawSplineLinear(points.data(), static_cast<int>(points.size()), width, color);
+    }
+}
+
+}
+
+void OverlayRenderer::draw_background(Panel const &panel, ClipShape const &shape) const
+{
+    if (panel.background) {
+        DrawRectangleRounded(shape.box, roundness(shape), 0, *panel.background);
+    }
+}
+
+void OverlayRenderer::draw_border(Panel const &panel, ClipShape const &shape) const
+{
+    if (panel.border) {
+        DrawRectangleRoundedLinesEx(shape.box, roundness(shape), 0, panel.border->width * m_scale, panel.border->color);
+    }
 }
 
 void OverlayRenderer::draw(TextElement const &text, FieldValues const &values, Rectangle const &area)
@@ -319,6 +347,47 @@ void OverlayRenderer::draw(ProfileElement const &profile, FieldValues const &val
             draw_text(*f, text, Vector2 { .x = box.x, .y = box.y }, label->style);
         }
     }
+}
+
+// The track in the clip's shape: the panel in it, the remaining track
+// and the done one over it, each with its outline under it, the marker,
+// and the border over the clip's edge.
+void OverlayRenderer::draw(MapElement const &map, FieldValues const &values, Rectangle const &area)
+{
+    auto const box = screen_box(map.at, box_size(map.at, { }, map.panel, m_scale), area);
+    auto const [outer, inner] = map_shapes(map.clip, box, map.panel.radius * m_scale, map.panel.padding * m_scale);
+    draw_background(map.panel, outer);
+
+    auto const now = values[OverlayField::elapsed];
+    auto const at = (values.source && now) ? position_at(*values.source, *now) : std::nullopt;
+    if (at) {
+        auto const &source = *values.source;
+        auto const  transform = (map.mode == MapMode::Follow) ? std::optional { follow_transform(*at, map.zoom, m_scale, inner.box) }
+                                                              : fit_transform(source.track, inner, m_scale);
+        auto const  split = split_track(source, *now);
+        auto const  done = screen_points(split.done, *transform);
+        auto const  remaining = screen_points(split.remaining, *transform);
+        auto const &track = map.track;
+
+        m_clip.begin(inner.box, inner.radius);
+        if (track.outline) {
+            auto const wider = 2 * track.outline->width * m_scale;
+            draw_line(remaining, track.remaining.width * m_scale + wider, track.outline->color);
+            draw_line(done, track.done.width * m_scale + wider, track.outline->color);
+        }
+        draw_line(remaining, track.remaining.width * m_scale, track.remaining.color);
+        draw_line(done, track.done.width * m_scale, track.done.color);
+        if (auto const &marker = map.marker; marker) {
+            auto const centre = transform->to_screen(*at);
+            auto const radius = marker->radius * m_scale;
+            if (marker->outline) {
+                DrawRing(centre, radius, radius + MarkerOutline * m_scale, 0, 360, 0, *marker->outline);
+            }
+            DrawCircleV(centre, radius, marker->color);
+        }
+        m_clip.end();
+    }
+    draw_border(map.panel, outer);
 }
 
 }

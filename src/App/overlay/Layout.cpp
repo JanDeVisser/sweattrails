@@ -44,17 +44,15 @@ constexpr Names GraphProperties { "field", "unit", "x_axis", "window", "min", "m
 constexpr Names ProfileProperties { "extent", "smooth", "min", "max", "min_span", "done", "remaining", "marker",
     "marker_label", "axis_labels", "laps", "color_by_grade" };
 
-constexpr Names LaterTypes { "map", "image", "group" };
+// `tiles` and `attribution` are for slice 6b, and `rotate` deferred: taken,
+// and not drawn yet.
+constexpr Names MapProperties { "view", "zoom", "clip", "track", "marker", "tiles", "attribution", "rotate" };
+
+constexpr Names LaterTypes { "image", "group" };
 
 // The properties of later slices' elements, from the design. Defaults and
 // styles may have them, for those elements.
 constexpr Names LaterProperties {
-    "clip",
-    "view",
-    "zoom",
-    "rotate",
-    "tiles",
-    "attribution", // map
     "src",
     "tint",     // image
     "children", // group
@@ -652,8 +650,10 @@ std::expected<Trace, LayoutError> profile_trace(JSONValue const &json, std::stri
     return ret;
 }
 
-// In the done line's color by default; `null` for none.
-std::expected<std::optional<Marker>, LayoutError> marker(JSONValue const &json, Color line)
+// Over the element's own marker, `base`; `null` for none.
+// A profile's marker can have a line down from it; a map's ignores one
+// from the defaults or a style, which can be for the profiles.
+std::expected<std::optional<Marker>, LayoutError> marker(JSONValue const &json, Marker base, bool with_drop_line)
 {
     if (json.is_null()) {
         return std::optional<Marker> { };
@@ -662,7 +662,7 @@ std::expected<std::optional<Marker>, LayoutError> marker(JSONValue const &json, 
         return error("\"marker\" isn't a dot, such as { \"color\": \"#ffffff\", \"radius\": 8 }, or null");
     }
     TRY(check_properties(json, "\"marker\"", { { "shape", "color", "radius", "outline", "drop_line" } }));
-    Marker ret { .color = line };
+    auto ret = base;
     if (auto const shape = json.get("shape"); shape && string_of(*shape) != "dot") {
         return error("\"marker.shape\" isn't dot");
     }
@@ -678,7 +678,7 @@ std::expected<std::optional<Marker>, LayoutError> marker(JSONValue const &json, 
     if (auto const outline = json.get("outline"); outline) {
         ret.outline = TRY_EVAL(color(*outline, "marker.outline"));
     }
-    if (auto const drop = json.get("drop_line"); drop) {
+    if (auto const drop = json.get("drop_line"); drop && with_drop_line) {
         // `true` is a thin line in the marker's color, faintly.
         auto const faint = Stroke { .color = Color { .r = ret.color.r, .g = ret.color.g, .b = ret.color.b, .a = static_cast<unsigned char>(ret.color.a / 2) }, .width = 1 };
         if (drop->is_boolean()) {
@@ -743,7 +743,8 @@ std::expected<ProfileElement, LayoutError> profile_element(JSONValue const &json
         ret.remaining = TRY_EVAL(profile_trace(*remaining, "remaining", ret.done));
     }
     auto const m = json.get("marker");
-    ret.marker = m ? TRY_EVAL(marker(*m, ret.done.line.color)) : std::optional { Marker { .color = ret.done.line.color } };
+    auto const own = Marker { .color = ret.done.line.color };
+    ret.marker = m ? TRY_EVAL(marker(*m, own, true)) : std::optional { own };
     if (auto const label = json.get("marker_label"); label) {
         if (!label->is_object()) {
             return error("\"marker_label\" isn't a text, such as { \"text\": \"{altitude:.0f}\" }");
@@ -772,6 +773,76 @@ std::expected<ProfileElement, LayoutError> profile_element(JSONValue const &json
     if (auto const laps = json.get("laps"); laps) {
         ret.laps = TRY_EVAL(stroke(*laps, "laps", Stroke { .width = 1 }));
     }
+    return ret;
+}
+
+// The done track in the map's color; the remaining one as the done one,
+// at a third of its alpha.
+std::expected<MapTrack, LayoutError> map_track(JSONValue const &json, Color color)
+{
+    MapTrack                 ret { .done = Stroke { .color = color, .width = 4 } };
+    std::optional<JSONValue> remaining { };
+    if (!json.is_null()) {
+        if (!json.is_object()) {
+            return error("\"track\" isn't an object, such as { \"done\": { \"width\": 6 } }");
+        }
+        TRY(check_properties(json, "\"track\"", { { "done", "remaining", "outline" } }));
+        if (auto const done = json.get("done"); done) {
+            ret.done = TRY_EVAL(stroke(*done, "track.done", ret.done));
+        }
+        remaining = json.get("remaining");
+        if (auto const outline = json.get("outline"); outline) {
+            ret.outline = TRY_EVAL(stroke(*outline, "track.outline", Stroke { .color = Color { .r = 0, .g = 0, .b = 0, .a = 128 } }));
+        }
+    }
+    auto const faint = Color { .r = ret.done.color.r, .g = ret.done.color.g, .b = ret.done.color.b, .a = static_cast<unsigned char>(ret.done.color.a / 3) };
+    ret.remaining = Stroke { .color = faint, .width = ret.done.width };
+    if (remaining) {
+        ret.remaining = TRY_EVAL(stroke(*remaining, "track.remaining", ret.remaining));
+    }
+    return ret;
+}
+
+std::expected<MapElement, LayoutError> map_element(JSONValue const &json)
+{
+    auto const color = TRY_EVAL(text_style(json)).color;
+    MapElement ret {
+        .at = TRY_EVAL(sized_placement(json, "map")),
+        .panel = TRY_EVAL(panel(json)),
+        .track = TRY_EVAL(map_track(json.get_with_default("track"), color)),
+    };
+    if (auto const view = json.get("view"); view) {
+        auto const name = string_of(*view).value_or("");
+        if (name == "fit") {
+            ret.mode = MapMode::Fit;
+        } else if (name == "follow") {
+            ret.mode = MapMode::Follow;
+        } else {
+            return error("\"view\" isn't fit or follow");
+        }
+    }
+    if (auto const zoom = json.get("zoom"); zoom) {
+        auto const z = number_of(*zoom);
+        if (!z || *z != std::floor(*z) || *z < 1 || *z > MaxMapZoom) {
+            return error(std::format("\"zoom\" isn't a whole number from 1 to {}", MaxMapZoom));
+        }
+        ret.zoom = static_cast<int>(*z);
+    }
+    if (auto const clip = json.get("clip"); clip) {
+        auto const name = string_of(*clip).value_or("");
+        if (name == "rect") {
+            ret.clip = ClipKind::Rect;
+        } else if (name == "rounded") {
+            ret.clip = ClipKind::Rounded;
+        } else if (name == "circle") {
+            ret.clip = ClipKind::Circle;
+        } else {
+            return error("\"clip\" isn't rect, rounded or circle");
+        }
+    }
+    auto const m = json.get("marker");
+    auto const own = Marker { .color = ret.track.done.color, .radius = 8 };
+    ret.marker = m ? TRY_EVAL(marker(*m, own, false)) : std::optional { own };
     return ret;
 }
 
@@ -865,6 +936,13 @@ std::expected<std::optional<OverlayElement>, LayoutError> element(JSONValue cons
         TRY(check_properties(json, "a gauge", { ElementProperties, { "color" }, BoxStyleProperties, GaugeProperties }));
         return std::optional<OverlayElement> { TRY_EVAL(gauge_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
     }
+    if (name == "map") {
+        TRY(check_properties(json, "a map", { ElementProperties, { "color" }, BoxStyleProperties, MapProperties }));
+        if (auto const m = json.get("marker"); m && m->is_object() && m->get("drop_line")) {
+            return error("\"drop_line\" isn't a property of a map's marker");
+        }
+        return std::optional<OverlayElement> { TRY_EVAL(map_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
+    }
     if (name == "profile") {
         TRY(check_properties(json, "a profile", { ElementProperties, TextStyleProperties, BoxStyleProperties, ProfileProperties }));
         return std::optional<OverlayElement> { TRY_EVAL(profile_element(TRY_EVAL(cascaded(json, defaults, styles)), styles)) };
@@ -935,7 +1013,7 @@ std::expected<OverlayLayout, LayoutError> decode_layout(JSONValue const &json)
     }
     // What defaults and styles may hold: any element's properties but its
     // type and style.
-    auto const style_properties = { TextStyleProperties, BoxStyleProperties, TextProperties, ValueProperties, GaugeProperties, GraphProperties, ProfileProperties, LaterProperties,
+    auto const style_properties = { TextStyleProperties, BoxStyleProperties, TextProperties, ValueProperties, GaugeProperties, GraphProperties, ProfileProperties, MapProperties, LaterProperties,
         Names { "at", "size", "visible", "fade", "when", "smooth", "interpolate" } };
     TRY(check_properties(defaults, "the defaults", style_properties));
     for (auto it = styles.obj_begin(); it != styles.obj_end(); ++it) {

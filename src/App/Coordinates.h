@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <format>
 #include <sstream>
 #include <string>
@@ -17,7 +18,10 @@ struct Coordinates {
     float32 lat { 0 };
     float32 lon { 0 };
 
-    [[nodiscard]] bool        in_box(Box const &box) const;
+    [[nodiscard]] bool in_box(Box const &box) const;
+    // A device without a fix records 0° for both, or near it. Near 0° for
+    // one of them is a real place: along the equator, or at Greenwich.
+    [[nodiscard]] bool        has_fix() const { return std::abs(lat) > 0.1f || std::abs(lon) > 0.1f; }
     [[nodiscard]] std::string to_string() const;
 
     bool operator==(Coordinates const &) const = default;

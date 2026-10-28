@@ -151,6 +151,49 @@ void test_builtin_layout(std::string_view name, size_t elements)
     }
 }
 
+// The dashboard's map, as the spec's Version 1 scope has it: a circle,
+// 300 by 300, following at zoom 15, the done track in the profile's amber,
+// the remaining one faint white with an outline, and a white marker
+// ringed in amber.
+void test_dashboard_map()
+{
+    LayoutFile file { fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays" / "cycling-dashboard.overlay.json" };
+    CHECK(file.reload_if_changed());
+    if (!file.layout) {
+        return;
+    }
+    std::vector<MapElement> maps;
+    Color                   profile_amber { };
+    for (auto const &element : file.layout->elements) {
+        if (auto const *map = std::get_if<MapElement>(&element); map) {
+            maps.push_back(*map);
+        }
+        if (auto const *profile = std::get_if<ProfileElement>(&element); profile) {
+            profile_amber = profile->done.line.color;
+        }
+    }
+    CHECK_EQ(maps.size(), 1uz);
+    if (maps.size() != 1) {
+        return;
+    }
+    auto const &map = maps[0];
+    auto const  same = [](Color a, Color b) { return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a; };
+    CHECK(map.clip == ClipKind::Circle);
+    CHECK(map.mode == MapMode::Follow);
+    CHECK_EQ(map.zoom, 15);
+    CHECK_EQ(map.at.size ? map.at.size->x : 0.0f, 300.0f);
+    CHECK_EQ(map.at.size ? map.at.size->y : 0.0f, 300.0f);
+    CHECK(map.panel.background.has_value());
+    CHECK(map.panel.border.has_value());
+    CHECK(same(map.track.done.color, profile_amber));
+    CHECK(map.track.outline.has_value());
+    CHECK(map.marker.has_value());
+    if (map.marker) {
+        CHECK(same(map.marker->color, WHITE));
+        CHECK(same(map.marker->outline.value_or(BLANK), profile_amber));
+    }
+}
+
 // A file that isn't there yet: an error, once, until it's made.
 void test_missing_file()
 {
@@ -173,7 +216,7 @@ void test_error_names_file_element_and_property()
     put(path, R"({ "elements": [
         // A comment, as layouts have them.
         { "type": "text", "text": "a" },
-        { "type": "map" },
+        { "type": "image" },
         { "type": "value", "field": "speed", "colour": "#ffffff" }
     ] })");
     LayoutFile file { path };
@@ -211,7 +254,7 @@ OverlayLayout decoded(std::string_view json)
 void test_layout_fonts()
 {
     auto const               layout = decoded(R"({ "elements": [
-        { "type": "map" },
+        { "type": "image" },
         { "type": "text", "text": "a", "font": "A.ttf" },
         { "type": "value", "field": "speed", "font": "A.ttf", "unit_style": { "font": "B.ttf" } }
     ] })");
@@ -255,7 +298,8 @@ int main()
     test_chosen_layout();
     test_builtin_layout("cycling-basic", 11);
     test_builtin_layout("running-basic", 9);
-    test_builtin_layout("cycling-dashboard", 16);
+    test_builtin_layout("cycling-dashboard", 17);
+    test_dashboard_map();
     test_layout_fonts();
     test_missing_file();
     test_error_names_file_element_and_property();

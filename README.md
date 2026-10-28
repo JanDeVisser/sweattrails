@@ -153,8 +153,8 @@ place of the data panel and the map, at the moment marked in the graph,
 and Ctrl+Shift+O picks the layout. A layout is a JSON file that says
 what's shown where; the built-in ones,
 `share/overlays/cycling-basic.overlay.json`, `running-basic` and
-`cycling-dashboard`, with an elevation profile, a power gauge and a heart
-rate graph, are a good
+`cycling-dashboard`, with a map, an elevation profile, a power gauge and a
+heart rate graph, are a good
 start for your own. Put those in the `overlays` folder in SweatTrails'
 data folder, which the app makes when it starts
 (`~/Library/Application Support/sweattrails/overlays` on macOS), named
@@ -215,6 +215,21 @@ marker:
   "marker_label": { "text": "{altitude:.0f} {altitude.unit} · {grade:+.1f}%", "font_size": 22 },
   "axis_labels": { "min_max": true }, "laps": { "color": "#ffffff60" },
   "at": { "x": "50%", "y": 40, "anchor": "top" }, "size": { "width": 900, "height": 120 } }
+```
+
+A `map` shows the track, the part ridden in one color and the rest in
+another, with a marker where the rider is: the whole track with
+`"view": "fit"`, or following the rider at an OpenStreetMap zoom level with
+`"view": "follow"`. It's clipped to a `rect`, a `rounded` rectangle or a
+`circle`, and so is its panel. There are no map tiles under it yet:
+
+```json
+{ "type": "map", "view": "follow", "zoom": 15, "clip": "circle",
+  "background": "#00000060", "border": { "color": "#ffffff40", "width": 2 },
+  "track": { "done": { "color": "#ffb703", "width": 5 }, "remaining": { "color": "#ffffff80", "width": 3 },
+             "outline": { "color": "#00000080", "width": 2 } },
+  "marker": { "color": "#ffffff", "radius": 8, "outline": "#ffb703" },
+  "at": { "x": -40, "y": 40, "anchor": "top-right" }, "size": { "width": 300, "height": 300 } }
 ```
 
 Ctrl+E renders the overlay to a ProRes 4444 movie with alpha, which Final
