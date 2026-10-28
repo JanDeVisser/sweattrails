@@ -1,6 +1,6 @@
 # Overlay map: the tiles
 
-Status: In review
+Status: Done
 
 ## Goal
 
