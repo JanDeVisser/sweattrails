@@ -165,6 +165,10 @@ not to the frame. So instead:
   context: no file in `share/` to install or miss.
 - A `rect` clip uses the same shader, which keeps one way of drawing a
   map.
+- It's **`ClipShader`** in the Widget library (`src/Lib/Widget`), with
+  `begin(box, radius)` and `end()`, since nothing in it is the overlay's.
+  A circle is a rounded rectangle with half its side for a radius, so the
+  shader has one shape.
 
 ### The layout
 
@@ -172,8 +176,16 @@ not to the frame. So instead:
   18), `clip` (`Rect`, `Rounded`, `Circle`), `track` (`done`,
   `remaining`: strokes; `outline`: an optional stroke) and `marker`
   (optional).
-- The profile's `marker()` decoder is shared, with what each element
-  takes: a map's marker has no `drop_line`.
+- The profile's `marker()` decoder is shared. It decodes over the
+  element's own default marker (a profile's radius 6, a map's 8), so that
+  a `marker` in the defaults doesn't change a map's radius to a
+  profile's. A map's marker ignores a `drop_line` from the defaults or a
+  style, which can be for the profiles; one the map gives itself is an
+  error.
+- The remaining track's default is the done one's color, at a third of
+  its alpha, and its width, so that a layout that colors only the done
+  track gets a faint track of the same color. An outline without a color
+  is black at half its alpha.
 - `map` leaves `LaterTypes`; `view`, `zoom`, `clip`, `track`, `tiles`,
   `attribution` and `rotate` leave `LaterProperties`. `tiles`,
   `attribution` and `rotate` are taken and ignored.
@@ -199,8 +211,9 @@ No raylib drawing, so that tests reach it:
 
 - **`MapTransform { world center, scale, screen center }`**, with
   `to_screen(world point)`: pixels per zoom-0 world pixel.
-- **`fit_transform(track, content)`**: the track's bounds with 10% to
-  spare, at the scale where they fit, but no more than zoom 18's.
+- **`fit_transform(track, content, layout scale)`**: the track's bounds
+  with 10% to spare, at the scale where they fit, but no more than zoom
+  18's at the layout's scale.
 - **`follow_transform(position, zoom, layout scale, content)`**: centred
   on the position, at `2^zoom` times the layout's scale.
 - **`split_track(source, seconds)`**: the track's points before the
@@ -208,9 +221,11 @@ No raylib drawing, so that tests reach it:
 - **`screen_points(points, transform)`**: in screen pixels, leaving out a
   point less than a pixel from the one before it, which a long ride in a
   small `fit` map has thousands of.
-- **`ClipShape { kind, Rectangle box, radius }`** for the content box:
-  a circle as big as fits in its middle, a rounded rectangle with the
-  panel's radius less its padding, or the box.
+- **`ClipShape { Rectangle box, radius }`**, from `clip_shape(kind,
+  box, corner)`: a circle as big as fits in the box's middle, a rounded
+  rectangle with the corner as given, at most half the shorter side, or
+  the box. The panel's shape is for the box, the clip's for the content
+  box, with the panel's radius less its padding.
 
 ### Drawing
 
@@ -220,7 +235,11 @@ No raylib drawing, so that tests reach it:
 - Then, in the clip shader: the outlines under the remaining and done
   traces, wider by the outline's width on each side, the traces, and the
   marker with its outline ring.
-- The border is drawn last, over the clip's edge.
+- The border is drawn last, over the clip's edge. `draw_panel()` is
+  drawing the background and drawing the border, in a `ClipShape`, which
+  the map draws apart.
+- Measured with the dashboard at 1080p: 300 frames took 4.0 s with the
+  map and 3.8 s without, so under 1 ms a frame.
 
 ### Built-in layout
 
