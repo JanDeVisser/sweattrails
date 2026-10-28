@@ -174,6 +174,11 @@ Rectangle attribution_box(Rectangle panel, ClipKind clip, Vector2 text, float ga
     if (y + text.y > area.y + area.height) {
         y = panel.y - gap - text.y;
     }
+    // No room above either, as for a map as tall as the frame: inside it,
+    // at its bottom, but still on the screen.
+    if (y < area.y) {
+        y = std::min(panel.y + panel.height, area.y + area.height) - gap - text.y;
+    }
     return Rectangle { .x = x, .y = y, .width = text.x, .height = text.y };
 }
 

@@ -91,7 +91,8 @@ std::vector<PlacedTile> map_tiles(MapTransform const &transform, Rectangle box, 
 
 // Where the tiles' credit goes, of `text`'s size: `gap` below the map's
 // panel, right-aligned with it, or centred under a circle; above it if
-// it would go past the bottom of `area`. Inside the area across.
+// it would go past the bottom of `area`; inside it, at its bottom, if
+// neither fits. Inside the area across.
 Rectangle attribution_box(Rectangle panel, ClipKind clip, Vector2 text, float gap, Rectangle area);
 
 // The tiles' filter, for the clip shader.

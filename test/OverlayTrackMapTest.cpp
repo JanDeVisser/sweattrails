@@ -308,6 +308,103 @@ void test_color_filter()
     CHECK_EQ(show(filter(TileFilterKind::Tint, Color { 255, 183, 3, 255 }).apply(WHITE)), "255 183 3 255");
 }
 
+// fit's scale is anywhere between two levels: the tiles are drawn from 0.7
+// to 1.4 times as big.
+void test_tile_level_between()
+{
+    auto const at = [](double times) {
+        return static_cast<int>(tile_level(MapTransform { .scale = std::ldexp(1.0, 15) * times }, 1));
+    };
+    CHECK_EQ(at(0.71), 15);
+    CHECK_EQ(at(1.41), 15);
+    CHECK_EQ(at(1.42), 16);
+    CHECK_EQ(at(0.70), 14);
+}
+
+// Near the world's bottom right corner: none past its edges either.
+void test_map_tiles_far_edge()
+{
+    MapTransform const corner { .center = { 250, 250 }, .scale = 2, .screen_center = { 100, 100 } };
+    CHECK_EQ(show(map_tiles(corner, Rectangle { 0, 0, 200, 200 }, 1)), "1/1/1 at -144 -144 256 256");
+}
+
+// At street level, somewhere real, drawn 1.33 times as big: the tiles
+// cover the box, and each starts where the one before it ends.
+void test_map_tiles_no_seams()
+{
+    auto const         at = world_pixel(Coordinates { .lat = 52.37, .lon = 4.89 }, 0);
+    MapTransform const transform { .center = at, .scale = std::ldexp(1.0, 18) * 4 / 3, .screen_center = { 200, 200 } };
+    Rectangle const    box { 50, 50, 300, 300 };
+    auto const         tiles = map_tiles(transform, box, 18);
+    CHECK(tiles.size() >= 4 && tiles.size() <= 9);
+    if (tiles.empty()) {
+        return;
+    }
+    auto left = tiles[0].screen.x;
+    auto top = tiles[0].screen.y;
+    auto right = left;
+    auto bottom = top;
+    for (auto ix = 0uz; ix < tiles.size(); ++ix) {
+        auto const &[tile, screen] = tiles[ix];
+        CHECK_EQ(static_cast<int>(tile.zoom), 18);
+        CHECK(screen.width == 341 || screen.width == 342);
+        CHECK(screen.height == 341 || screen.height == 342);
+        if (ix + 1 < tiles.size() && tiles[ix + 1].tile.y == tile.y) {
+            CHECK_EQ(tiles[ix + 1].screen.x, screen.x + screen.width);
+            CHECK_EQ(tiles[ix + 1].tile.x, tile.x + 1);
+        }
+        for (auto const &below : tiles) {
+            if (below.tile.x == tile.x && below.tile.y == tile.y + 1) {
+                CHECK_EQ(below.screen.y, screen.y + screen.height);
+            }
+        }
+        left = std::min(left, screen.x);
+        top = std::min(top, screen.y);
+        right = std::max(right, screen.x + screen.width);
+        bottom = std::max(bottom, screen.y + screen.height);
+    }
+    CHECK(left <= box.x && top <= box.y);
+    CHECK(right >= box.x + box.width && bottom >= box.y + box.height);
+}
+
+// In the preview, the area isn't at the screen's corner.
+void test_attribution_box_in_an_area()
+{
+    Rectangle const area { 200, 100, 960, 540 };
+    Vector2 const   text { 100, 20 };
+    CHECK_EQ(show(attribution_box(Rectangle { 300, 200, 150, 150 }, ClipKind::Rect, text, 4, area)), "350 354 100 20");
+    CHECK_EQ(show(attribution_box(Rectangle { 300, 500, 150, 140 }, ClipKind::Rect, text, 4, area)), "350 476 100 20");
+    CHECK_EQ(show(attribution_box(Rectangle { 150, 200, 150, 150 }, ClipKind::Circle, text, 4, area)), "200 354 100 20");
+}
+
+// A map as tall as the frame, as in a map-only layout: no room below it,
+// nor above. The policy says the credit mustn't be off-screen.
+void test_attribution_box_full_height()
+{
+    Rectangle const area { 0, 0, 1920, 1080 };
+    Vector2 const   text { 200, 20 };
+    auto const      box = attribution_box(Rectangle { 100, 0, 600, 1080 }, ClipKind::Rect, text, 4, area);
+    CHECK(box.y >= area.y);
+    CHECK(box.y + box.height <= area.y + area.height);
+    // Inside the map, at its bottom.
+    CHECK_EQ(show(box), "500 1056 200 20");
+}
+
+void test_color_filter_more()
+{
+    auto const filter = [](TileFilterKind kind, Color tint = WHITE) {
+        return color_filter(TileFilter { .kind = kind, .tint = tint });
+    };
+    // A gray in the middle stays about there in the dark map.
+    CHECK_EQ(show(filter(TileFilterKind::Dark).apply(Color { 128, 128, 128, 255 })), "127 127 127 255");
+    // OSM's blue water: Rec. 601 luma, (0.299 * 170 + 0.587 * 211 + 0.114 * 223) = 200.
+    CHECK_EQ(show(filter(TileFilterKind::Grayscale).apply(Color { 170, 211, 223, 255 })), "200 200 200 255");
+    CHECK_EQ(show(filter(TileFilterKind::Tint, Color { 255, 183, 3, 255 }).apply(BLACK)), "0 0 0 255");
+    // The layer's opacity is in the alpha, which every filter keeps.
+    CHECK_EQ(show(filter(TileFilterKind::Tint, Color { 255, 183, 3, 255 }).apply(Color { 255, 255, 255, 153 })), "255 183 3 153");
+    CHECK_EQ(show(filter(TileFilterKind::Grayscale).apply(Color { 0, 0, 255, 153 })), "29 29 29 153");
+}
+
 int main()
 {
     test_fit();
@@ -323,5 +420,11 @@ int main()
     test_map_tiles();
     test_attribution_box();
     test_color_filter();
+    test_tile_level_between();
+    test_map_tiles_far_edge();
+    test_map_tiles_no_seams();
+    test_attribution_box_in_an_area();
+    test_attribution_box_full_height();
+    test_color_filter_more();
     return ST::Test::test_result();
 }
