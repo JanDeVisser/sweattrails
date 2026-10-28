@@ -227,7 +227,8 @@ struct SweatTrails : public Main<Job, Notification> {
     // The overlay's render to video, while it runs. Only used on the UI
     // thread, where it draws.
     std::unique_ptr<OverlayRender> overlay_render { nullptr };
-    int                            render_percent { -1 }; // As the status line says it
+    int                            render_percent { -1 };    // As the status line says it
+    bool                           render_waiting { false }; // For tiles, as the status line says
 
     std::shared_ptr<WidgetStack>     widget_stack { nullptr };
     std::shared_ptr<ActivityDisplay> activity_display { nullptr };

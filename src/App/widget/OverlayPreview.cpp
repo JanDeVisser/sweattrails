@@ -24,8 +24,12 @@ constexpr Color CheckerLight { .r = 0x2c, .g = 0x2c, .b = 0x2c, .a = 0xff };
 
 OverlayPreview::OverlayPreview(pWidget const &parent)
     : Widget(parent)
+    , tiles(
+          [](Tile const &tile) { return tile.get_cached_tile(SweatTrails::the()->storage); },
+          [](pTileDownload const &download) { SweatTrails::the()->schedule<JobType::DownloadTiles>(download); })
     , renderer([](std::string_view name) { return SweatTrails::the()->find_font(name); })
 {
+    renderer.set_tiles(&tiles, 1);
     policy = SizePolicy::Hide;
     padding = { 10, 10, 10, 10 };
 }
@@ -112,7 +116,10 @@ void OverlayPreview::draw()
     }
     if (activity && source) {
         BeginScissorMode(static_cast<int>(area.x), static_cast<int>(area.y), static_cast<int>(area.width), static_cast<int>(area.height));
-        renderer.draw(values_at_record(*source, activity->current_record()), area);
+        // What's not there yet is left out, until it has downloaded.
+        auto const values = values_at_record(*source, activity->current_record());
+        tiles.request(renderer.tiles_needed(values, area));
+        renderer.draw(values, area);
         EndScissorMode();
     }
     if (layout.skipped > 0) {

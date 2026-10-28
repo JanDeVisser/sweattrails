@@ -29,17 +29,19 @@ constexpr int Supersampling = 2;
 
 }
 
-OverlayRender::OverlayRender(RenderJob job, FontFinder find)
+OverlayRender::OverlayRender(RenderJob job, FontFinder find, TileFetcher cached, TileScheduler schedule)
     : m_job(std::move(job))
     , m_source(m_job.activity->activity)
+    , m_tiles(std::move(cached), std::move(schedule))
     , m_renderer(std::move(find))
 {
     m_frames = frame_count(m_job.range, m_job.settings.fps);
+    m_renderer.set_tiles(&m_tiles, Supersampling);
 }
 
-std::expected<std::unique_ptr<OverlayRender>, std::string> OverlayRender::start(RenderJob job, FontFinder find)
+std::expected<std::unique_ptr<OverlayRender>, std::string> OverlayRender::start(RenderJob job, FontFinder find, TileFetcher cached, TileScheduler schedule)
 {
-    std::unique_ptr<OverlayRender> render { new OverlayRender(std::move(job), std::move(find)) };
+    std::unique_ptr<OverlayRender> render { new OverlayRender(std::move(job), std::move(find), std::move(cached), std::move(schedule)) };
     auto const                    &job_ = render->m_job;
     render->m_renderer.set_layout(job_.layout, job_.layout_file);
     if (render->m_renderer.error()) {
@@ -88,7 +90,14 @@ void OverlayRender::step(double budget)
     }
     auto const until = GetTime() + budget;
     while (m_frame < m_frames && m_encoder->can_write() && GetTime() < until) {
-        render_frame();
+        // A frame waits for its tiles, which are only fetched once a frame
+        // shows them: OSM doesn't allow fetching them ahead.
+        auto const values = values_at_time(m_source, frame_time(m_job.range, m_job.settings.fps, m_frame));
+        m_waiting = !m_tiles.request(m_renderer.tiles_needed(values, large_area()));
+        if (m_waiting) {
+            return;
+        }
+        render_frame(values);
         // A font raylib couldn't load: the frames would be blank.
         if (auto const &error = m_renderer.error(); error) {
             m_encoder->stop();
@@ -106,11 +115,16 @@ void OverlayRender::step(double budget)
     }
 }
 
-void OverlayRender::render_frame()
+Rectangle OverlayRender::large_area() const
 {
     auto const [width, height] = m_job.settings.resolution;
-    auto const values = values_at_time(m_source, frame_time(m_job.range, m_job.settings.fps, m_frame));
-    auto const large = Rectangle { .x = 0, .y = 0, .width = static_cast<float>(width * Supersampling), .height = static_cast<float>(height * Supersampling) };
+    return Rectangle { .x = 0, .y = 0, .width = static_cast<float>(width * Supersampling), .height = static_cast<float>(height * Supersampling) };
+}
+
+void OverlayRender::render_frame(FieldValues const &values)
+{
+    auto const [width, height] = m_job.settings.resolution;
+    auto const large = large_area();
     BeginTextureMode(m_large);
     ClearBackground(BLANK);
     // The colors are blended as usual, but the alpha adds up, rather than
