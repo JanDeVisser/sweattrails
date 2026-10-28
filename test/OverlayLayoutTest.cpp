@@ -1457,7 +1457,7 @@ void test_image()
               "at": { "x": 40, "y": -110, "anchor": "bottom-left" }, "size": { "width": 32, "height": 24 } },
             { "type": "image", "src": "logo.png", "size": { "width": 200 }, "visible": { "to": 5 } },
             { "type": "image", "src": "logo.png", "size": { "height": 50 } },
-            { "type": "image", "src": "/Users/me/logo.jpg" } ] })");
+            { "type": "image", "src": "/Users/me/logo.png" } ] })");
     CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
     if (!layout || layout->elements.size() != 4) {
         return;
@@ -1487,6 +1487,13 @@ void test_image_errors()
 {
     CHECK_EQ(error_of(with_element(R"({ "type": "image" })")), "element 1: an image needs a \"src\"");
     CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": 5 })")), "element 1: \"src\" isn't a string");
+    CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "photo.jpg" })")),
+        "element 1: the picture `photo.jpg` isn't a PNG: only PNG pictures are supported");
+    CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "logo.svg" })")),
+        "element 1: the picture `logo.svg` isn't a PNG: only PNG pictures are supported");
+    CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "logo" })")),
+        "element 1: the picture `logo` isn't a PNG: only PNG pictures are supported");
+    CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "LOGO.PNG" })")), "ok");
     CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "a.png", "tint": "red" })")),
         "element 1: \"tint\": `red` isn't a color: give one as \"#rrggbb\" or \"#rrggbbaa\"");
     CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "a.png", "size": { "width": 0 } })")),

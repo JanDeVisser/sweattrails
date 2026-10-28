@@ -7,9 +7,11 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <filesystem>
 #include <format>
 #include <map>
 
+#include <StringUtil.h>
 #include <Utf8.h>
 
 #include <Colors.h>
@@ -969,6 +971,10 @@ std::expected<ImageElement, LayoutError> image_element(JSONValue const &json)
         return error("an image needs a \"src\"");
     }
     ret.src = TRY_EVAL(string(*src, "src"));
+    // The raylib we build with reads no JPEG, and SVG isn't drawn.
+    if (to_lower(std::filesystem::path { ret.src }.extension().string()) != ".png") {
+        return error(std::format("the picture `{}` isn't a PNG: only PNG pictures are supported", ret.src));
+    }
     if (auto const tint = json.get("tint"); tint) {
         ret.tint = TRY_EVAL(color(*tint, "tint"));
     }

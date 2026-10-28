@@ -241,7 +241,7 @@ downloads each frame's tiles as it gets to them, and waits for them:
 the first render of a ride takes longer, and the next ones read them from
 the cache. A tile that can't be downloaded is left out.
 
-An `image` shows a PNG or a JPEG, looked for next to the layout file and
+An `image` shows a PNG, looked for next to the layout file and
 then with the built-in layouts. It's never stretched: give it a `width`,
 a `height`, both to fit it in that box, or neither for its own size, and
 a `tint` to color it. The app has white icons to tint in

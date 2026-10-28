@@ -24,9 +24,10 @@ of it is built now, and where it departs from the reference.
   "size": { "width": 32, "height": 32 } }
 ```
 
-- **`src`**: the picture's file, a PNG or a JPEG: raylib reads both,
-  PNG has the alpha icons and logos need, and JPEG is for photos. SVG
-  isn't, as raylib can't draw it and it would take another dependency;
+- **`src`**: the picture's file, a PNG, which has the alpha icons and
+  logos need. JPEG isn't, after the review: the raylib we build with
+  reads no JPEG, and a photo can be saved as a PNG. SVG
+  isn't either, as raylib can't draw it and it would take another dependency;
   a PNG at twice its design size is as sharp at 4K. A relative path is looked for next to
   the layout file first, and then in `share/overlays/`, the built-in
   layouts' folder, as the reference has it; an absolute path is used as
@@ -78,10 +79,11 @@ for users' layouts.
 
 ### Errors
 
-- `src` is needed, and is a string; `tint` is a color; `size`'s sides
+- `src` is needed, and is a string whose file ends in `.png`, in any
+  case; `tint` is a color; `size`'s sides
   are more than 0, as for other elements.
 - A picture that isn't there, or doesn't load, as a file that isn't a
-  PNG or a JPEG, or one too big for the GPU, is an error, as a font
+  PNG though it's named one, or one too big for the GPU, is an error, as a font
   that isn't there is: the preview shows it, with the file's name and
   the element's number, and a render doesn't start. A video with a hole
   where the logo was is worse than an error before it's made.
@@ -91,13 +93,14 @@ for users' layouts.
 
 ### Version 1 scope
 
-In: `image` with `src`, PNG and JPEG, found next to the layout or in
+In: `image` with `src`, PNG only, found next to the layout or in
 `share/overlays/`; `size`, optional and never stretching; `tint`; a
 panel, `visible` and `fade`; the five icons; the dashboard's icons.
 
 *(Deferred)*:
 
 - SVG.
+- JPEG, which needs a raylib built with it, or a decoder of our own.
 - Watching a picture's file for changes.
 - Stretching a picture to its box, or cropping it to fill it.
 - Animated pictures.
@@ -280,5 +283,8 @@ the bolt in the gauge's yellow, `#f9c74f`, as the gauge has no amber.
 
 ### Resolution
 
+1. Fixed, with Jan: JPEG is out of Version 1 and deferred. A `src`
+   that doesn't end in `.png` is an error when the layout is read, which
+   says only PNG pictures are supported (`test_image_errors`).
 6. The review's tests are committed, apart from `test_jpeg()`, which
    became a test of the error for a picture that isn't a PNG (see 1).
