@@ -185,6 +185,10 @@ struct TileDownload {
 
 using pTileDownload = std::shared_ptr<TileDownload>;
 
+// A TileDownload's `map` for a new map, or another activity's: unique
+// among all the maps that download tiles, the app's and the overlay's.
+u64 next_tile_owner();
+
 // Sent to the UI thread for each tile that downloaded.
 struct MapTile {
     pTileDownload download { };
@@ -216,6 +220,9 @@ std::vector<Tile> tiles_to_unload(std::vector<std::pair<Tile, size_t>> loaded, s
 
 // The view's tiles that `have` says aren't there yet, for a download.
 std::vector<Tile> missing_tiles(MapView const &view, TileLoaded const &have);
+
+// What asking for `wanted` does to the download going on, as below.
+std::optional<std::vector<Tile>> next_download(std::vector<Tile> const &wanted, TileLoaded const &have, std::vector<Tile> const *current);
 
 // What a change of the view does to the download going on, of `current`
 // (none if null): nothing, if it has all the view's missing tiles, as when

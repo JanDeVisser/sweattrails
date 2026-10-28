@@ -49,7 +49,7 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
     failed.clear();
     track.clear();
     has_map = false;
-    ++map_id;
+    map_id = next_tile_owner();
     this->activity = activity;
     if (!this->activity) {
         return;

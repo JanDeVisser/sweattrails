@@ -366,7 +366,21 @@ std::vector<Tile> missing_tiles(MapView const &view, TileLoaded const &have)
 
 std::optional<std::vector<Tile>> next_download(MapView const &view, TileLoaded const &have, std::vector<Tile> const *current)
 {
-    auto       missing = missing_tiles(view, have);
+    std::vector<Tile> wanted;
+    for (auto const &placed : view.tiles()) {
+        wanted.push_back(placed.tile);
+    }
+    return next_download(wanted, have, current);
+}
+
+std::optional<std::vector<Tile>> next_download(std::vector<Tile> const &wanted, TileLoaded const &have, std::vector<Tile> const *current)
+{
+    std::vector<Tile> missing;
+    for (auto const &tile : wanted) {
+        if (!have(tile)) {
+            missing.push_back(tile);
+        }
+    }
     auto const in_current = [current](Tile const &tile) {
         return current != nullptr && std::ranges::find(*current, tile) != current->end();
     };
@@ -374,6 +388,12 @@ std::optional<std::vector<Tile>> next_download(MapView const &view, TileLoaded c
         return { };
     }
     return missing;
+}
+
+u64 next_tile_owner()
+{
+    static std::atomic<u64> last { 0 };
+    return ++last;
 }
 
 std::vector<TilePiece> cover(Tile const &tile, TileLoaded const &loaded)
