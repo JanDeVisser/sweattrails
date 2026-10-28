@@ -150,6 +150,8 @@ add_library(
         STATIC
         src/Lib/Widget/App.h
         src/Lib/Widget/App.cpp
+        src/Lib/Widget/ClipShader.h
+        src/Lib/Widget/ClipShader.cpp
         src/Lib/Widget/Colors.h
         src/Lib/Widget/Colors.cpp
         src/Lib/Widget/FontCache.h
