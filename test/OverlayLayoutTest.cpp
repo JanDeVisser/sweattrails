@@ -1334,6 +1334,11 @@ void test_visible_errors()
     CHECK_EQ(text(R"("visible": { "from": 6, "to": 2 })"), "element 1: \"visible\": it's never visible, as \"from\" isn't before \"to\"");
     CHECK_EQ(text(R"("visible": { "from": 3, "to": 3 })"), "element 1: \"visible\": it's never visible, as \"from\" isn't before \"to\"");
     CHECK_EQ(text(R"("visible": { "from": -2, "to": -5 })"), "element 1: \"visible\": it's never visible, as \"from\" isn't before \"to\"");
+    // Ending at the start, from the start or from the end.
+    CHECK_EQ(text(R"("visible": { "from": -5, "to": 0 })"),
+        "element 1: \"visible\": it's never visible, as \"to\" is the video's start: its end is \"end\"");
+    CHECK_EQ(text(R"("visible": { "to": 0 })"),
+        "element 1: \"visible\": it's never visible, as \"to\" is the video's start: its end is \"end\"");
     // Empty for some videos only.
     CHECK(decode(with_element(R"({ "type": "text", "text": "a", "visible": { "from": 5, "to": -5 } })")).has_value());
     CHECK(decode(with_element(R"({ "type": "text", "text": "a", "visible": { "from": -5, "to": 5 } })")).has_value());

@@ -982,6 +982,10 @@ std::expected<std::optional<Visibility>, LayoutError> visibility(JSONValue const
             }
             ret.to = *t;
         }
+        // Ending at the video's start: probably meant as its end.
+        if (ret.to == 0.0) {
+            return error("\"visible\": it's never visible, as \"to\" is the video's start: its end is \"end\"");
+        }
         // Both from the start, or both from the end: empty whatever the
         // video's length.
         if (ret.to && (ret.from < 0) == (*ret.to < 0) && ret.from >= *ret.to) {
