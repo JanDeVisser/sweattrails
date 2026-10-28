@@ -185,7 +185,7 @@ void test_later_elements()
     auto const layout = decode(R"({
         "styles": { "panel": { "background": "#00000060", "radius": 16, "padding": 16 } },
         "elements": [
-            { "type": "map", "view": "follow", "zoom": 15, "anything": true },
+            { "type": "image", "src": "logo.png", "anything": true },
             { "type": "text", "text": "a", "style": "panel", "visible": { "from": 5 }, "fade": 0.5 },
             { "type": "group", "children": [] }
         ]
@@ -262,7 +262,7 @@ void test_place()
 // skipped, so that it's the one the user finds in the file.
 void test_error_index_counts_skipped()
 {
-    CHECK_EQ(error_of(R"({ "elements": [ { "type": "map" }, { "type": "image" }, { "type": "text", "text": "a", "colour": "#fff" } ] })"),
+    CHECK_EQ(error_of(R"({ "elements": [ { "type": "group" }, { "type": "image" }, { "type": "text", "text": "a", "colour": "#fff" } ] })"),
         "element 3: \"colour\" isn't a property of a text");
 }
 
@@ -1059,6 +1059,102 @@ void test_profile_errors()
         "element 1: \"laps\" isn't a line, such as { \"color\": \"#ffffff\", \"width\": 2 }");
 }
 
+// A map as the spec's example has it.
+void test_map()
+{
+    auto const layout = decode(with_element(R"({ "type": "map", "size": { "width": 420, "height": 420 },
+        "clip": "circle", "background": "#00000060", "border": { "color": "#ffffff", "width": 4 },
+        "view": "follow", "zoom": 16,
+        "track": { "done": { "color": "#ffb703", "width": 6 }, "remaining": { "color": "#ffffff80" },
+                   "outline": { "width": 3 } },
+        "marker": { "color": "#ffffff", "radius": 10, "outline": "#ffb703" },
+        "tiles": { "source": "osm" }, "attribution": { "font_size": 14 }, "rotate": "north" })"));
+    CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
+    if (!layout || layout->elements.size() != 1) {
+        return;
+    }
+    auto const &m = std::get<MapElement>(layout->elements[0]);
+    CHECK(m.mode == MapMode::Follow);
+    CHECK_EQ(m.zoom, 16);
+    CHECK(m.clip == ClipKind::Circle);
+    CHECK_EQ(show(m.panel.background.value_or(BLANK)), "0 0 0 96");
+    CHECK_EQ(m.panel.border.value_or(Stroke { }).width, 4.0f);
+    CHECK_EQ(show(m.track.done.color), "255 183 3 255");
+    CHECK_EQ(m.track.done.width, 6.0f);
+    // The remaining track is over the done one: its width is done's.
+    CHECK_EQ(show(m.track.remaining.color), "255 255 255 128");
+    CHECK_EQ(m.track.remaining.width, 6.0f);
+    CHECK_EQ(show(m.track.outline.value_or(Stroke { }).color), "0 0 0 128");
+    CHECK_EQ(m.track.outline.value_or(Stroke { }).width, 3.0f);
+    CHECK(m.marker.has_value());
+    if (m.marker) {
+        CHECK_EQ(show(m.marker->color), "255 255 255 255");
+        CHECK_EQ(m.marker->radius, 10.0f);
+        CHECK_EQ(show(m.marker->outline.value_or(BLANK)), "255 183 3 255");
+    }
+    CHECK(element_fonts(layout->elements[0]).empty());
+}
+
+// What a map is without saying: fit, zoom 15, rect, the done track in its
+// color, 4 px, the remaining one at a third of its alpha, no outline, and a
+// marker in the done track's color.
+void test_map_defaults()
+{
+    auto const layout = decode(R"({ "defaults": { "color": "#00ff00", "marker": { "drop_line": true } }, "elements": [
+        { "type": "map", "size": { "width": 300, "height": 300 } },
+        { "type": "map", "size": { "width": 300, "height": 300 }, "marker": null,
+          "track": { "done": { "color": "#ff0000" } } } ] })");
+    CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
+    if (!layout || layout->elements.size() != 2) {
+        return;
+    }
+    auto const &m = std::get<MapElement>(layout->elements[0]);
+    CHECK(m.mode == MapMode::Fit);
+    CHECK_EQ(m.zoom, 15);
+    CHECK(m.clip == ClipKind::Rect);
+    CHECK_EQ(show(m.track.done.color), "0 255 0 255");
+    CHECK_EQ(m.track.done.width, 4.0f);
+    CHECK_EQ(show(m.track.remaining.color), "0 255 0 85");
+    CHECK_EQ(m.track.remaining.width, 4.0f);
+    CHECK(!m.track.outline);
+    // A drop line from the defaults is for the profiles.
+    CHECK(m.marker.has_value());
+    if (m.marker) {
+        CHECK_EQ(show(m.marker->color), "0 255 0 255");
+        CHECK_EQ(m.marker->radius, 8.0f);
+        CHECK(!m.marker->outline);
+        CHECK(!m.marker->drop_line);
+    }
+    // The remaining track takes the done one's color.
+    auto const &red = std::get<MapElement>(layout->elements[1]);
+    CHECK_EQ(show(red.track.remaining.color), "255 0 0 85");
+    CHECK(!red.marker);
+}
+
+void test_map_errors()
+{
+    auto const map = [](std::string_view rest) {
+        return error_of(with_element(std::format(R"({{ "type": "map", "size": {{ "width": 300, "height": 300 }}{}{} }})", rest.empty() ? "" : ", ", rest)));
+    };
+    CHECK_EQ(map(""), "ok");
+    CHECK_EQ(error_of(with_element(R"({ "type": "map" })")), "element 1: a map needs a \"size\"");
+    CHECK_EQ(map(R"("view": "overview")"), "element 1: \"view\" isn't fit or follow");
+    CHECK_EQ(map(R"("zoom": 0)"), "element 1: \"zoom\" isn't a whole number from 1 to 18");
+    CHECK_EQ(map(R"("zoom": 19)"), "element 1: \"zoom\" isn't a whole number from 1 to 18");
+    CHECK_EQ(map(R"("zoom": 15.5)"), "element 1: \"zoom\" isn't a whole number from 1 to 18");
+    CHECK_EQ(map(R"("zoom": "close")"), "element 1: \"zoom\" isn't a whole number from 1 to 18");
+    CHECK_EQ(map(R"("clip": "square")"), "element 1: \"clip\" isn't rect, rounded or circle");
+    CHECK_EQ(map(R"("track": "#fff")"), "element 1: \"track\" isn't an object, such as { \"done\": { \"width\": 6 } }");
+    CHECK_EQ(map(R"("track": { "ahead": { } })"), "element 1: \"ahead\" isn't a property of \"track\"");
+    CHECK_EQ(map(R"("track": { "done": { "width": 0 } })"), "element 1: \"track.done.width\" isn't more than 0");
+    CHECK_EQ(map(R"("track": { "outline": "#000" })"),
+        "element 1: \"track.outline\" isn't a line, such as { \"color\": \"#ffffff\", \"width\": 2 }");
+    CHECK_EQ(map(R"("marker": { "radius": 0 })"), "element 1: \"marker.radius\" isn't more than 0");
+    CHECK_EQ(map(R"("marker": { "drop_line": true })"), "element 1: \"drop_line\" isn't a property of a map's marker");
+    CHECK_EQ(map(R"("font_size": 20)"), "element 1: \"font_size\" isn't a property of a map");
+    CHECK_EQ(map(R"("extent": "lap")"), "element 1: \"extent\" isn't a property of a map");
+}
+
 int main()
 {
     test_cascade();
@@ -1100,5 +1196,8 @@ int main()
     test_profile_defaults();
     test_profile_without_a_marker();
     test_profile_errors();
+    test_map();
+    test_map_defaults();
+    test_map_errors();
     return ST::Test::test_result();
 }

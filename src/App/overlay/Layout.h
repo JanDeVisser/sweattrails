@@ -204,7 +204,35 @@ struct ProfileElement {
     std::optional<Stroke>       laps { };
 };
 
-using OverlayElement = std::variant<TextElement, ValueElement, GaugeElement, GraphElement, ProfileElement>;
+enum class MapMode {
+    Fit,    // The whole track, still
+    Follow, // Centred on the rider
+};
+
+enum class ClipKind {
+    Rect,
+    Rounded, // With the panel's radius
+    Circle,
+};
+
+struct MapTrack {
+    Stroke                done { .width = 4 };
+    Stroke                remaining { .width = 4 };
+    std::optional<Stroke> outline { }; // Around both, this much wider on each side
+};
+
+struct MapElement {
+    size_t                number { 0 }; // Its place in the layout's elements, from 1
+    Placement             at { };       // With a size
+    Panel                 panel { };    // In the clip's shape
+    MapMode               mode { MapMode::Fit };
+    int                   zoom { 15 }; // OSM's level, for Follow
+    ClipKind              clip { ClipKind::Rect };
+    MapTrack              track { };
+    std::optional<Marker> marker { };
+};
+
+using OverlayElement = std::variant<TextElement, ValueElement, GaugeElement, GraphElement, ProfileElement, MapElement>;
 
 struct OverlayLayout {
     Vector2                     design_size { .x = 1920, .y = 1080 };

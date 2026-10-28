@@ -321,4 +321,8 @@ void OverlayRenderer::draw(ProfileElement const &profile, FieldValues const &val
     }
 }
 
+void OverlayRenderer::draw(MapElement const &, FieldValues const &, Rectangle const &)
+{
+}
+
 }

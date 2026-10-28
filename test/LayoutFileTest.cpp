@@ -173,7 +173,7 @@ void test_error_names_file_element_and_property()
     put(path, R"({ "elements": [
         // A comment, as layouts have them.
         { "type": "text", "text": "a" },
-        { "type": "map" },
+        { "type": "image" },
         { "type": "value", "field": "speed", "colour": "#ffffff" }
     ] })");
     LayoutFile file { path };
@@ -211,7 +211,7 @@ OverlayLayout decoded(std::string_view json)
 void test_layout_fonts()
 {
     auto const               layout = decoded(R"({ "elements": [
-        { "type": "map" },
+        { "type": "image" },
         { "type": "text", "text": "a", "font": "A.ttf" },
         { "type": "value", "field": "speed", "font": "A.ttf", "unit_style": { "font": "B.ttf" } }
     ] })");
