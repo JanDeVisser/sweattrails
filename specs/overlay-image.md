@@ -1,6 +1,6 @@
 # Overlay images: logos and icons
 
-Status: In progress
+Status: In review
 
 ## Goal
 
@@ -186,8 +186,9 @@ struct ImageElement {
 
 ### Built-in layout
 
-Each label in the dashboard moves 32 px to the right, and an image of
-24 px goes before it, anchored as the label, tinted as the spec says.
+Each label in the dashboard moves 32 px to the right, and an image 24
+px wide goes before it, anchored as the label, tinted as the spec says:
+the bolt in the gauge's yellow, `#f9c74f`, as the gauge has no amber.
 
 ## Test plan
 
@@ -196,9 +197,9 @@ Each label in the dashboard moves 32 px to the right, and an image of
   a `tint` that isn't a color, a side of 0; `image` no longer skipped.
 - `LayoutFileTest`: `find_image()` for an absolute path, next to the
   layout, in the built-in folder, the layout's first, and neither;
-  `layout_images()` naming the element whose picture isn't there; the
-  dashboard's four icons, found.
-- `OverlayShapesTest` (or where `place_in_box()` is tested):
+  `layout_images()` naming the element whose picture isn't there; every
+  built-in layout's pictures found; the dashboard's four icons.
+- `OverlayShapesTest`:
   `image_size()` and `fit_picture()`, for wide and tall pictures in
   wide and tall boxes, with each anchor.
 - Tests that used `image` as a skipped type use `group`.
