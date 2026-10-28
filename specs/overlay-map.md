@@ -271,4 +271,82 @@ No raylib drawing, so that tests reach it:
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug**: `fit` cuts off the track in a `circle` clip, and can in a
+   `rounded` one. `fit_transform()` (`src/App/overlay/TrackMap.cpp:572`)
+   fits the track's bounds into the clip's box, and `Renderer.cpp:463`
+   passes it `inner.box`, the circle's bounding square. The corners of
+   the bounds are then at 0.64 of the side from the middle, outside the
+   circle's radius of 0.5. So a ride whose start or end is in a corner of
+   its bounds (a diagonal or an L-shaped route) loses those ends, and the
+   marker vanishes there. With `rounded`, the corners cut in by about
+   0.29 of the radius, more than the 10% margin (4.5% of the side) once
+   the radius is over about 0.15 of the side: say 60 on a 300 box.
+   `test_fit_in_a_circle` in `OverlayTrackMapTest` fails on this. Fix:
+   give `fit_transform()` the `ClipShape`, and for a circle fit the
+   bounds' diagonal, `hypot(width, height)`, into the diameter; for a
+   rounded clip, take the corner's cut into account, or simply fit the
+   diagonal there too when the radius is large.
+2. **Suggestion**: a position within 0.1° of 0° on *one* axis counts as
+   no fix (`src/App/overlay/Fields.cpp:387`, as in
+   `widget/ActivityMap.cpp:69`). That drops every position in a strip
+   about 14 km wide along the prime meridian (Greenwich, east London,
+   Le Havre, Castellón) and 22 km wide along the equator: there the
+   track goes straight across and the marker holds. It's what the spec
+   says, but a device without a fix records both near 0, so the check
+   could be that both are, in both places, in a spec of its own.
+   `test_track_gap_and_near_zero` pins down today's behavior and would
+   change with it.
+3. **Suggestion**: `ClipShader::begin()` (`src/Lib/Widget/ClipShader.cpp:796`)
+   doesn't check that the shader loaded. If it doesn't compile (it's
+   hard-coded `#version 330`, so any context other than GL 3.3 core),
+   raylib hands back its default shader, and the map draws unclipped
+   without a message: in `follow`, the track spreads over the whole
+   frame. Check `IsShaderValid()` once after loading, log it, and fall
+   back to scissor mode or leave the track out.
+4. **Suggestion**: the panel and clip shapes for the padding are worked
+   out in the renderer (`Renderer.cpp:453-455`: the inner radius is the
+   panel's less the padding), so the Test plan's "`clip_shape()` for the
+   three shapes with padding" isn't tested, as it can't be there. A
+   `map_shapes(kind, box, radius, padding)` in `TrackMap` returning the
+   outer and inner `ClipShape`s would let a test reach it.
+5. **Suggestion**: the Architecture's Drawing section says a circle panel
+   is drawn with `DrawCircleV()` and `DrawRing()`; the code draws every
+   shape with `DrawRectangleRounded()` and `DrawRectangleRoundedLinesEx()`,
+   at roundness 1 for a circle. Update the spec to what was built.
+6. **Missing tests**, now added: the cycling-dashboard's map as the
+   Version 1 scope has it (`LayoutFileTest`: a circle, 300x300, follow at
+   15, the done track and marker outline in the profile's amber, an
+   outline, a white marker); map properties cascading from the defaults
+   and a style, with the track's strokes merging, a marker radius staying
+   8 for a map and 6 for a profile, a style's `drop_line` ignored, an
+   outline of `{ }` being black at half alpha, and `fit`, `rect` and
+   `rounded` by name (`OverlayLayoutTest`); a gap of exactly `MaxGap`
+   glided across and one over it held, and a position near 0° on only
+   one axis left out (`OverlayFieldsTest`); `split_track()` at exactly a
+   record and `fit_transform()` in a content box away from the origin
+   (`OverlayTrackMapTest`).
+
+### Resolution
+
+1. Fixed: `fit_transform()` takes the `ClipShape`. In a circle it fits
+   the bounds' diagonal into the diameter; in a rounded rectangle, the
+   sides less what a corner cuts in where the bounds' corner would be.
+   `test_fit_in_a_rounded_rectangle` added.
+2. Fixed, in this spec rather than one of its own, as it's one line in
+   each place: `Coordinates::has_fix()` is false only with both
+   coordinates near 0°, in the overlay and in the app's map.
+   `test_track_gap_and_near_zero` now has a point at Greenwich and one on
+   the equator.
+3. Fixed: the shader is checked with `IsShaderValid()` after loading;
+   where it's not valid, it's logged once and the map clips to the box
+   with scissor mode.
+4. Fixed: `map_shapes()` in `TrackMap`, with `test_map_shapes`.
+5. Fixed: the Drawing section says what was built.
+6. Committed.
+
+The GLSL reads right: it's the usual rounded-box signed distance, the
+attribute and uniform names are raylib's defaults, the uniforms are set
+before `BeginShaderMode()` flushes the batch, so two maps in a frame each
+get their own box, and nothing in the app moves the drawing with
+`rlPushMatrix()`, which would put `vertexPosition` in other coordinates
+than the box.
