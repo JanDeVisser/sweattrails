@@ -1,6 +1,6 @@
 # Overlay map: the track
 
-Status: Draft
+Status: Ready
 
 ## Goal
 
