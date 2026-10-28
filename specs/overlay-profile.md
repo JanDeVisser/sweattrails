@@ -239,4 +239,42 @@ No raylib drawing, so that tests reach it all:
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: with `"extent": "lap"`, the whole lap flashes from done to
+   remaining at each lap's end.** `profile_extent()`
+   (`src/App/overlay/ElevationProfile.cpp:41-47`) ends a lap at its last
+   record's distance, but the frame stays in the lap until the next lap's
+   first record (the lap field doesn't glide), while the distance glides
+   on. Between the two records the distance is past `extent.to`, so
+   `profile_marker()` (line 137) gives none, the renderer splits at
+   `content.x - 1` (`Renderer.cpp`, `draw(ProfileElement)`), and the lap is
+   all `remaining` without a marker, for a record's interval at the end of
+   every lap. The stretch between laps is also in neither lap's profile.
+   In the test's 5 m records, at 19.5 s: lap 1, 97.5 m, extent 0-95, no
+   marker. Fix: end a lap's extent at the next lap's first distance (the
+   activity's last for the last lap), and/or clamp a distance past the
+   extent's end to it, so that all of it is done. Test:
+   `test_marker_at_the_end_of_a_lap`, fails.
+   *Resolved:* both. A lap's extent runs to the next lap's first distance,
+   and a distance past the end puts the marker at the end, so all of it
+   is done (e21c5c2). The test now expects the marker at 97.5 m.
+2. **Bug: a lap past the profile's end gets an extent that runs
+   backwards.** `ElevationProfile.cpp:47` clamps the lap's distances to the
+   profile's ends after the check on line 44, so a lap with distances but
+   no altitudes (an altimeter that gave out, a last lap indoors) becomes
+   `200-195`, and a lap ending where the profile starts becomes an empty
+   range. The renderer then draws a flat line at the profile's last
+   altitude, with negative column widths, instead of the panel only; an
+   empty range divides by zero in `profile_x()`. Fix: check
+   `to <= from` after clamping. Test: `test_lap_past_the_profile`, fails.
+   *Resolved:* checked after clamping (aad177f).
+3. **Missing test, added: a lap without distances.** The test plan's "a
+   lap without distances" wasn't tested. `test_lap_without_distances`
+   passes. *Committed* with the fix for 1.
+4. **Suggestion: `smooth` means seconds elsewhere.** `smooth` is an
+   element property (`Layout.cpp:26`) that the layout reference has as
+   seconds of trailing average for values, and the defaults and styles
+   take it. Once values use it, a `"smooth": 3` in the defaults would
+   make every profile smooth over 3 m. Worth deciding now whether a
+   profile skips a cascaded `smooth`, or the profile's gets another name.
+   *Deferred:* values don't have a `smooth` yet. The layout reference
+   notes the clash for the slice that brings it (593d2c0).
