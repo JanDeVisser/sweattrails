@@ -13,11 +13,26 @@
 
 #pragma once
 
+#include <array>
 #include <optional>
 
 #include <raylib.h>
 
 namespace ST {
+
+// Changes the colors drawn: each channel, from 0 to 1, is its row times
+// the color's red, green, blue and alpha, plus its offset.
+struct ColorMatrix {
+    std::array<std::array<float, 4>, 4> rows {
+        std::array { 1.0f, 0.0f, 0.0f, 0.0f },
+        std::array { 0.0f, 1.0f, 0.0f, 0.0f },
+        std::array { 0.0f, 0.0f, 1.0f, 0.0f },
+        std::array { 0.0f, 0.0f, 0.0f, 1.0f },
+    };
+    std::array<float, 4> offset { };
+
+    [[nodiscard]] Color apply(Color color) const; // As the shader does, for tests
+};
 
 struct ClipShader {
     ClipShader() = default;
@@ -26,11 +41,12 @@ struct ClipShader {
     ClipShader &operator=(ClipShader const &) = delete;
 
     // What's drawn from begin() to end() is clipped to `box`, with corners
-    // rounded by `radius`, in the coordinates it's drawn in. The shader is
-    // loaded the first time, which needs the window. Where it doesn't
-    // compile, such as on a GPU without OpenGL 3.3, it clips to `box`
-    // with scissor mode, with square corners.
-    void begin(Rectangle box, float radius);
+    // rounded by `radius`, in the coordinates it's drawn in, with its
+    // colors changed by `colors`. The shader is loaded the first time,
+    // which needs the window. Where it doesn't compile, such as on a GPU
+    // without OpenGL 3.3, it clips to `box` with scissor mode, with square
+    // corners, and doesn't change the colors.
+    void begin(Rectangle box, float radius, ColorMatrix const &colors = { });
     void end();
 
 private:
@@ -38,6 +54,8 @@ private:
         Shader shader { };
         int    box { -1 };
         int    radius { -1 };
+        int    rows { -1 };
+        int    offset { -1 };
         bool   valid { false };
     };
     std::optional<Loaded> m_loaded { };

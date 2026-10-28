@@ -198,8 +198,9 @@ No drawing, so tests reach it:
   1080p render would fetch level 16 tiles, four times as many.
 - **`map_tiles(MapTransform const &, Rectangle box, u8 level)`**: the
   `PlacedTile`s covering the box, each with its rectangle on the screen,
-  its edges rounded out to whole pixels so that scaled tiles leave no
-  seams. Tiles past the world's edges are left out, as in
+  its edges at whole pixels, the same for neighbours, so that scaled
+  tiles leave no seams; rounded out, they'd overlap, which shows as
+  lines at an opacity under 1. Tiles past the world's edges are left out, as in
   `MapView::tiles()`.
 - **`attribution_box(Rectangle map, ClipKind, Vector2 text, float gap,
   Rectangle area)`**: below the map, right-aligned with it, or centred

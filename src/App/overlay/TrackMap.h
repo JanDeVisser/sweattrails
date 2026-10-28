@@ -17,6 +17,8 @@
 
 #include <raylib.h>
 
+#include <ClipShader.h>
+
 #include <Map.h>
 #include <overlay/Fields.h>
 #include <overlay/Layout.h>
@@ -75,5 +77,24 @@ SplitTrack split_track(OverlaySource const &source, double seconds);
 // On the screen, leaving out a point less than a pixel from the one before
 // it; the last is always there.
 std::vector<Vector2> screen_points(std::vector<WorldPoint> const &points, MapTransform const &transform);
+
+// The OSM level whose tiles are nearest the map's scale, from 0 to 18, with
+// `detail` drawing pixels to a pixel of the result: a render draws at
+// twice the size.
+u8 tile_level(MapTransform const &transform, float detail);
+
+// The tiles at `level` that cover the box, each where it goes on the
+// screen. Their edges are at whole pixels, the same for neighbours, so
+// that scaled tiles have no seams and don't overlap. Tiles past the
+// world's edges are left out.
+std::vector<PlacedTile> map_tiles(MapTransform const &transform, Rectangle box, u8 level);
+
+// Where the tiles' credit goes, of `text`'s size: `gap` below the map's
+// panel, right-aligned with it, or centred under a circle; above it if
+// it would go past the bottom of `area`. Inside the area across.
+Rectangle attribution_box(Rectangle panel, ClipKind clip, Vector2 text, float gap, Rectangle area);
+
+// The tiles' filter, for the clip shader.
+ColorMatrix color_filter(TileFilter const &filter);
 
 }

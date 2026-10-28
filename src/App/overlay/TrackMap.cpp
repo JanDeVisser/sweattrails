@@ -125,6 +125,85 @@ ClipShape clip_shape(ClipKind kind, Rectangle content, float corner)
     return ClipShape { .box = content };
 }
 
+u8 tile_level(MapTransform const &transform, float detail)
+{
+    auto const level = std::lround(std::log2(transform.scale / detail));
+    return static_cast<u8>(std::clamp(level, 0l, static_cast<long>(MaxMapZoom)));
+}
+
+std::vector<PlacedTile> map_tiles(MapTransform const &transform, Rectangle box, u8 level)
+{
+    // A tile's side in world pixels at zoom 0, where the transform is.
+    auto const count = static_cast<i64>(1) << level;
+    auto const side = world_size(0) / static_cast<double>(count);
+    auto const to_world = [&transform](float screen, float screen_center, double center) {
+        return center + static_cast<double>(screen - screen_center) / transform.scale;
+    };
+    // The tile a world pixel is in, and the one a box ending there ends
+    // with: not the next one, if it ends at a tile's edge.
+    auto const first = [side](double world) { return static_cast<i64>(std::floor(world / side)); };
+    auto const last = [side](double world) { return static_cast<i64>(std::ceil(world / side)) - 1; };
+    auto const left = std::max<i64>(0, first(to_world(box.x, transform.screen_center.x, transform.center.x)));
+    auto const right = std::min(count - 1, last(to_world(box.x + box.width, transform.screen_center.x, transform.center.x)));
+    auto const top = std::max<i64>(0, first(to_world(box.y, transform.screen_center.y, transform.center.y)));
+    auto const bottom = std::min(count - 1, last(to_world(box.y + box.height, transform.screen_center.y, transform.center.y)));
+
+    auto const edge = [&transform, side](i64 x, i64 y) {
+        auto const at = transform.to_screen(WorldPoint { .x = static_cast<double>(x) * side, .y = static_cast<double>(y) * side });
+        return Vector2 { .x = std::round(at.x), .y = std::round(at.y) };
+    };
+    std::vector<PlacedTile> ret;
+    for (auto y = top; y <= bottom; ++y) {
+        for (auto x = left; x <= right; ++x) {
+            auto const from = edge(x, y);
+            auto const to = edge(x + 1, y + 1);
+            ret.push_back(PlacedTile {
+                .tile = Tile { .x = static_cast<u32>(x), .y = static_cast<u32>(y), .zoom = level },
+                .screen = Rectangle { .x = from.x, .y = from.y, .width = to.x - from.x, .height = to.y - from.y },
+            });
+        }
+    }
+    return ret;
+}
+
+Rectangle attribution_box(Rectangle panel, ClipKind clip, Vector2 text, float gap, Rectangle area)
+{
+    auto x = (clip == ClipKind::Circle) ? panel.x + (panel.width - text.x) / 2 : panel.x + panel.width - text.x;
+    x = std::max(area.x, std::min(x, area.x + area.width - text.x));
+    auto y = panel.y + panel.height + gap;
+    if (y + text.y > area.y + area.height) {
+        y = panel.y - gap - text.y;
+    }
+    return Rectangle { .x = x, .y = y, .width = text.x, .height = text.y };
+}
+
+ColorMatrix color_filter(TileFilter const &filter)
+{
+    // Rec. 601's luma: how bright each channel looks.
+    constexpr std::array Luma { 0.299f, 0.587f, 0.114f, 0.0f };
+    auto const           times = [&Luma](float f) {
+        return std::array { Luma[0] * f, Luma[1] * f, Luma[2] * f, 0.0f };
+    };
+    ColorMatrix ret;
+    switch (filter.kind) {
+    case TileFilterKind::None:
+        break;
+    case TileFilterKind::Grayscale:
+        ret.rows = { Luma, Luma, Luma, ret.rows[3] };
+        break;
+    case TileFilterKind::Dark:
+        ret.rows = { times(-1), times(-1), times(-1), ret.rows[3] };
+        ret.offset = { 1, 1, 1, 0 };
+        break;
+    case TileFilterKind::Tint: {
+        auto const channel = [](unsigned char c) { return static_cast<float>(c) / 255.0f; };
+        ret.rows = { times(channel(filter.tint.r)), times(channel(filter.tint.g)), times(channel(filter.tint.b)), ret.rows[3] };
+        break;
+    }
+    }
+    return ret;
+}
+
 MapShapes map_shapes(ClipKind kind, Rectangle box, float radius, float padding)
 {
     return MapShapes {

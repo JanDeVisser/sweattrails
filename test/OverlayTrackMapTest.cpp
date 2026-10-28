@@ -224,6 +224,90 @@ void test_map_shapes()
 
 }
 
+// The level nearest the scale: as asked for at 1080p, one more at 4K, the
+// same at 1440p, drawn bigger, and at a render's double size, as at its
+// own.
+void test_tile_level()
+{
+    auto const at = [](double scale, float detail) {
+        return static_cast<int>(tile_level(MapTransform { .scale = scale }, detail));
+    };
+    CHECK_EQ(at(std::ldexp(1.0, 15), 1), 15);
+    CHECK_EQ(at(std::ldexp(1.0, 16), 1), 16);
+    CHECK_EQ(at(std::ldexp(1.0, 15) * 4 / 3, 1), 15);
+    CHECK_EQ(at(std::ldexp(1.0, 16), 2), 15);
+    CHECK_EQ(at(std::ldexp(1.0, 15) * 1.5, 1), 16);
+    CHECK_EQ(at(0.001, 1), 0);
+    CHECK_EQ(at(std::ldexp(1.0, 22), 1), 18);
+}
+
+std::string show(std::vector<PlacedTile> const &tiles)
+{
+    std::string ret;
+    for (auto const &[tile, screen] : tiles) {
+        ret += std::format("{}{}/{}/{} at {}", ret.empty() ? "" : ", ", tile.zoom, tile.x, tile.y, show(screen));
+    }
+    return ret;
+}
+
+void test_map_tiles()
+{
+    // The world's middle at the box's middle: the four tiles of level 1.
+    MapTransform const middle { .center = { 128, 128 }, .scale = 2, .screen_center = { 100, 100 } };
+    CHECK_EQ(show(map_tiles(middle, Rectangle { 0, 0, 200, 200 }, 1)),
+        "1/0/0 at -156 -156 256 256, 1/1/0 at 100 -156 256 256, 1/0/1 at -156 100 256 256, 1/1/1 at 100 100 256 256");
+    // A box ending at a tile's edge doesn't have the next tile.
+    CHECK_EQ(map_tiles(middle, Rectangle { 0, 0, 100, 100 }, 1).size(), 1uz);
+
+    // Scaled, a tile is 166.4 px: its edges at whole pixels, shared with
+    // the next one.
+    MapTransform const scaled { .center = { 128, 128 }, .scale = 1.3, .screen_center = { 100.3f, 100 } };
+    auto const         tiles = map_tiles(scaled, Rectangle { 0, 0, 200, 200 }, 1);
+    CHECK_EQ(tiles.size(), 4uz);
+    if (tiles.size() == 4) {
+        CHECK_EQ(show(tiles[0].screen), "-66 -66 166 166");
+        CHECK_EQ(show(tiles[1].screen), "100 -66 167 166");
+    }
+
+    // Near the world's top left corner: none past its edges.
+    MapTransform const corner { .center = { 10, 10 }, .scale = 2, .screen_center = { 100, 100 } };
+    CHECK_EQ(show(map_tiles(corner, Rectangle { 0, 0, 200, 200 }, 1)), "1/0/0 at 80 80 256 256");
+}
+
+void test_attribution_box()
+{
+    Rectangle const area { 0, 0, 1920, 1080 };
+    Vector2 const   text { 200, 20 };
+    Rectangle const panel { 100, 100, 300, 300 };
+    CHECK_EQ(show(attribution_box(panel, ClipKind::Rect, text, 4, area)), "200 404 200 20");
+    CHECK_EQ(show(attribution_box(panel, ClipKind::Rounded, text, 4, area)), "200 404 200 20");
+    CHECK_EQ(show(attribution_box(panel, ClipKind::Circle, text, 4, area)), "150 404 200 20");
+    // At the bottom of the frame, above the map.
+    CHECK_EQ(show(attribution_box(Rectangle { 100, 760, 300, 300 }, ClipKind::Rect, text, 4, area)), "200 736 200 20");
+    // A small circle at the frame's right edge: inside the frame.
+    CHECK_EQ(show(attribution_box(Rectangle { 1800, 100, 100, 100 }, ClipKind::Circle, text, 4, area)), "1720 204 200 20");
+}
+
+std::string show(Color c)
+{
+    return std::format("{} {} {} {}", c.r, c.g, c.b, c.a);
+}
+
+void test_color_filter()
+{
+    auto const filter = [](TileFilterKind kind, Color tint = WHITE) {
+        return color_filter(TileFilter { .kind = kind, .tint = tint });
+    };
+    Color const red { 255, 0, 0, 255 };
+    CHECK_EQ(show(filter(TileFilterKind::None).apply(red)), "255 0 0 255");
+    CHECK_EQ(show(filter(TileFilterKind::Grayscale).apply(red)), "76 76 76 255");
+    CHECK_EQ(show(filter(TileFilterKind::Grayscale).apply(Color { 128, 128, 128, 255 })), "128 128 128 255");
+    // Dark: white roads go black, and black ones white. The alpha stays.
+    CHECK_EQ(show(filter(TileFilterKind::Dark).apply(WHITE)), "0 0 0 255");
+    CHECK_EQ(show(filter(TileFilterKind::Dark).apply(Color { 0, 0, 0, 128 })), "255 255 255 128");
+    CHECK_EQ(show(filter(TileFilterKind::Tint, Color { 255, 183, 3, 255 }).apply(WHITE)), "255 183 3 255");
+}
+
 int main()
 {
     test_fit();
@@ -235,5 +319,9 @@ int main()
     test_screen_points();
     test_clip_shape();
     test_map_shapes();
+    test_tile_level();
+    test_map_tiles();
+    test_attribution_box();
+    test_color_filter();
     return ST::Test::test_result();
 }
