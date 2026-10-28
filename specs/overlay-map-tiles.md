@@ -1,6 +1,6 @@
 # Overlay map: the tiles
 
-Status: In progress
+Status: In review
 
 ## Goal
 
@@ -216,7 +216,7 @@ No drawing, so tests reach it:
 // The tiles of one renderer's maps: loaded from the cache at once, else
 // downloaded on the job thread, one download at a time.
 struct OverlayTiles {
-    OverlayTiles(TileFetcher cached, std::function<void(pTileDownload)> schedule);
+    OverlayTiles(TileFetcher cached, TileScheduler schedule, TileTextures textures = gl_tile_textures());
     ~OverlayTiles(); // Unloads the textures, cancels the download
 
     // Loads the cached ones of `tiles`, and asks for the others, unless
@@ -237,16 +237,17 @@ struct OverlayTiles {
   never replaced.
 - Textures are unloaded past 64, least recently drawn first, with
   `tiles_to_unload()`; 64 is many times what a frame has in view.
-- The logic is in pure functions where it can be, as for the app's map,
-  so that tests don't need a GL context: the texture loading is behind
-  the `cached` fetcher and a small loader. `OverlayTiles` is tested with
-  a fake fetcher and scheduler, without textures, through a loader that
-  a test replaces.
+- Tests have no GL context: `TileTextures` loads and unloads the
+  textures, which a test makes up, and the cache and the job thread are
+  the `cached` fetcher and the `schedule` function. A cached tile that
+  doesn't decode counts as failed.
+- `next_download()` gets an overload for a list of tiles, which the
+  `MapView` one now calls.
 - `TileDownload::map` (an id) is how the notifications find their owner:
   `notif_map_tile()` and `notif_map_tiles_done()` hand each to the app's
   map, the preview's tiles and the render's tiles, and each ignores
-  downloads that aren't its own. Its downloads get ids from the same
-  counter as the app's map's.
+  downloads that aren't its own. The ids come from `next_tile_owner()`,
+  which the app's map now takes its ids from too.
 - It's in the app, not the Widget library: it's about OSM tiles and the
   app's jobs. The app's map keeps its own tile code, which also draws
   placeholders from other levels while zooming; moving it onto
@@ -258,7 +259,8 @@ struct OverlayTiles {
   none, as in tests, tiles aren't drawn. And `tiles_needed(values,
   area)`: the tiles of every map with tiles at that moment, worked out
   as `draw()` does.
-- **`OverlayRender`** owns an `OverlayTiles`. `step()` asks for the next
+- **`OverlayRender`** owns an `OverlayTiles`, and `start()` takes the
+  cache's fetcher and the scheduler for it. `step()` asks for the next
   frame's tiles before drawing it, and if they're not all there, returns
   until a later step, while the notifications bring them. `waiting()`
   says so, and the status line says "Rendering x.mov: 42%, downloading
@@ -283,8 +285,9 @@ struct OverlayTiles {
   the clip's fade; the identity for the track and the marker. In the
   Widget library, as a general color matrix, with nothing of OSM in it.
   The scissor fallback draws the tiles unfiltered.
-- The attribution is drawn after the border, at `attribution_box()`,
-  with the renderer's `draw_text()`, outside the clip.
+- The attribution is drawn after the border, at `attribution_box()` of
+  the panel's shape, with the renderer's `draw_text()`, outside the clip;
+  only when the tiles are drawn, so not for a map without a position.
 
 ### Tile code prerequisites
 
