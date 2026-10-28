@@ -192,6 +192,13 @@ void test_dashboard_map()
         CHECK(same(map.marker->color, WHITE));
         CHECK(same(map.marker->outline.value_or(BLANK), profile_amber));
     }
+    // Dark OpenStreetMap, behind the footage, with its credit.
+    CHECK(map.tiles.has_value());
+    if (map.tiles) {
+        CHECK_EQ(map.tiles->opacity, 0.6f);
+        CHECK(map.tiles->filter.kind == TileFilterKind::Dark);
+    }
+    CHECK_EQ(map.attribution.font_size, 14.0f);
 }
 
 // A file that isn't there yet: an error, once, until it's made.
