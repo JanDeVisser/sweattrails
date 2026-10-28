@@ -484,4 +484,9 @@ void OverlayRenderer::draw_attribution(MapElement const &map, Rectangle const &p
     draw_text(*f, OsmAttribution, Vector2 { .x = box.x, .y = box.y }, map.attribution);
 }
 
+// Not drawn yet: the pictures are loaded and drawn in the next step.
+void OverlayRenderer::draw(ImageElement const &, FieldValues const &, Rectangle const &)
+{
+}
+
 }

@@ -71,6 +71,7 @@ private:
     void                draw(GraphElement const &graph, FieldValues const &values, Rectangle const &area);
     void                draw(ProfileElement const &profile, FieldValues const &values, Rectangle const &area);
     void                draw(MapElement const &map, FieldValues const &values, Rectangle const &area);
+    void                draw(ImageElement const &image, FieldValues const &values, Rectangle const &area);
     Rectangle           screen_box(Placement const &at, Vector2 size, Rectangle const &area) const;
     Rectangle           draw_panel(Panel const &panel, Rectangle const &box) const;
     void                draw_background(Panel const &panel, ClipShape const &shape) const;

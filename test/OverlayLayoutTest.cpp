@@ -185,7 +185,7 @@ void test_later_elements()
     auto const layout = decode(R"({
         "styles": { "panel": { "background": "#00000060", "radius": 16, "padding": 16 } },
         "elements": [
-            { "type": "image", "src": "logo.png", "anything": true },
+            { "type": "group", "anything": true },
             { "type": "text", "text": "a", "style": "panel", "visible": { "from": 5 }, "fade": 0.5 },
             { "type": "group", "children": [] }
         ]
@@ -262,7 +262,7 @@ void test_place()
 // skipped, so that it's the one the user finds in the file.
 void test_error_index_counts_skipped()
 {
-    CHECK_EQ(error_of(R"({ "elements": [ { "type": "group" }, { "type": "image" }, { "type": "text", "text": "a", "colour": "#fff" } ] })"),
+    CHECK_EQ(error_of(R"({ "elements": [ { "type": "group" }, { "type": "group" }, { "type": "text", "text": "a", "colour": "#fff" } ] })"),
         "element 3: \"colour\" isn't a property of a text");
 }
 
@@ -416,7 +416,7 @@ void test_codepoints()
 void test_element_numbers()
 {
     auto const layout = decode(R"({ "elements": [
-        { "type": "text", "text": "a" }, { "type": "image" }, { "type": "value", "field": "speed" } ] })");
+        { "type": "text", "text": "a" }, { "type": "group" }, { "type": "value", "field": "speed" } ] })");
     CHECK(layout.has_value());
     if (layout && layout->elements.size() == 2) {
         CHECK_EQ(element_number(layout->elements[0]), 1uz);
@@ -1447,6 +1447,60 @@ void test_visibility_alpha_edges()
     CHECK_EQ(alpha(Visibility { .from = 1, .to = 10, .fade = 1 }, 4.5, 5), "0.50");
 }
 
+// A picture's size: its own, one side, or a box; tinted, with a panel.
+void test_image()
+{
+    auto const layout = decode(R"({
+        "styles": { "panel": { "background": "#00000060", "padding": 8 } },
+        "elements": [
+            { "type": "image", "src": "icons/heart.png", "tint": "#f94144", "style": "panel",
+              "at": { "x": 40, "y": -110, "anchor": "bottom-left" }, "size": { "width": 32, "height": 24 } },
+            { "type": "image", "src": "logo.png", "size": { "width": 200 }, "visible": { "to": 5 } },
+            { "type": "image", "src": "logo.png", "size": { "height": 50 } },
+            { "type": "image", "src": "/Users/me/logo.jpg" } ] })");
+    CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
+    if (!layout || layout->elements.size() != 4) {
+        return;
+    }
+    CHECK_EQ(layout->skipped, 0uz);
+    auto const image = [&layout](size_t ix) { return std::get<ImageElement>(layout->elements[ix]); };
+    auto const size = [](ImageElement const &i) {
+        auto const side = [](std::optional<float> s) { return s ? std::format("{}", *s) : std::string { "-" }; };
+        return std::format("{} {}", side(i.width), side(i.height));
+    };
+    auto const heart = image(0);
+    CHECK_EQ(heart.src, "icons/heart.png");
+    CHECK_EQ(show(heart.tint), "249 65 68 255");
+    CHECK(heart.at.anchor == Anchor::BottomLeft);
+    CHECK(!heart.at.size);
+    CHECK_EQ(size(heart), "32 24");
+    CHECK_EQ(heart.panel.padding, 8.0f);
+    CHECK_EQ(heart.number, 1uz);
+    CHECK_EQ(size(image(1)), "200 -");
+    CHECK(image(1).visible.has_value());
+    CHECK_EQ(size(image(2)), "- 50");
+    CHECK_EQ(size(image(3)), "- -");
+    CHECK_EQ(show(image(3).tint), "255 255 255 255");
+}
+
+void test_image_errors()
+{
+    CHECK_EQ(error_of(with_element(R"({ "type": "image" })")), "element 1: an image needs a \"src\"");
+    CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": 5 })")), "element 1: \"src\" isn't a string");
+    CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "a.png", "tint": "red" })")),
+        "element 1: \"tint\": `red` isn't a color: give one as \"#rrggbb\" or \"#rrggbbaa\"");
+    CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "a.png", "size": { "width": 0 } })")),
+        "element 1: \"size.width\" isn't more than 0");
+    CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "a.png", "size": { "height": -3 } })")),
+        "element 1: \"size.height\" isn't more than 0");
+    CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "a.png", "size": { "depth": 3 } })")),
+        "element 1: \"depth\" isn't a property of \"size\"");
+    CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "a.png", "size": 30 })")),
+        "element 1: \"size\" isn't an object with a width, a height, or both");
+    CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "a.png", "font": "A.ttf" })")),
+        "element 1: \"font\" isn't a property of an image");
+}
+
 int main()
 {
     test_cascade();
@@ -1497,6 +1551,8 @@ int main()
     test_visible();
     test_visible_errors();
     test_visibility_alpha();
+    test_image();
+    test_image_errors();
     test_visible_cascade();
     test_visibility_alpha_edges();
     test_map_tiles_edges();

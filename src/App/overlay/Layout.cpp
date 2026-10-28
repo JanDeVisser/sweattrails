@@ -47,13 +47,13 @@ constexpr Names ProfileProperties { "extent", "smooth", "min", "max", "min_span"
 // `rotate` is deferred: taken, and not done yet.
 constexpr Names MapProperties { "view", "zoom", "clip", "track", "marker", "tiles", "attribution", "rotate" };
 
-constexpr Names LaterTypes { "image", "group" };
+constexpr Names ImageProperties { "src", "tint" };
+
+constexpr Names LaterTypes { "group" };
 
 // The properties of later slices' elements, from the design. Defaults and
 // styles may have them, for those elements.
 constexpr Names LaterProperties {
-    "src",
-    "tint",     // image
     "children", // group
 };
 
@@ -958,6 +958,42 @@ float fraction_y(Anchor a)
     }
 }
 
+std::expected<ImageElement, LayoutError> image_element(JSONValue const &json)
+{
+    // Its size may have only one side, which placement() doesn't take.
+    auto unsized = json;
+    unsized.erase("size");
+    ImageElement ret { .at = TRY_EVAL(placement(unsized)), .panel = TRY_EVAL(panel(json)) };
+    auto const   src = json.get("src");
+    if (!src) {
+        return error("an image needs a \"src\"");
+    }
+    ret.src = TRY_EVAL(string(*src, "src"));
+    if (auto const tint = json.get("tint"); tint) {
+        ret.tint = TRY_EVAL(color(*tint, "tint"));
+    }
+    if (auto const size = json.get("size"); size) {
+        if (!size->is_object()) {
+            return error("\"size\" isn't an object with a width, a height, or both");
+        }
+        TRY(check_properties(*size, "\"size\"", { { "width", "height" } }));
+        auto const side = [&size](char const *name) -> std::expected<std::optional<float>, LayoutError> {
+            auto const s = size->get(name);
+            if (!s) {
+                return std::optional<float> { };
+            }
+            auto const n = TRY_EVAL(number(*s, std::format("size.{}", name)));
+            if (n <= 0) {
+                return error(std::format("\"size.{}\" isn't more than 0", name));
+            }
+            return std::optional { static_cast<float>(n) };
+        };
+        ret.width = TRY_EVAL(side("width"));
+        ret.height = TRY_EVAL(side("height"));
+    }
+    return ret;
+}
+
 // None without `visible` or `fade`: the element always shows.
 std::expected<std::optional<Visibility>, LayoutError> visibility(JSONValue const &json)
 {
@@ -1055,6 +1091,10 @@ std::expected<std::optional<OverlayElement>, LayoutError> typed_element(JSONValu
         TRY(check_properties(json, "a profile", { ElementProperties, TextStyleProperties, BoxStyleProperties, ProfileProperties }));
         return std::optional<OverlayElement> { TRY_EVAL(profile_element(TRY_EVAL(cascaded(json, defaults, styles)), styles)) };
     }
+    if (name == "image") {
+        TRY(check_properties(json, "an image", { ElementProperties, BoxStyleProperties, ImageProperties }));
+        return std::optional<OverlayElement> { TRY_EVAL(image_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
+    }
     if (name == "graph") {
         TRY(check_properties(json, "a graph", { ElementProperties, { "color" }, BoxStyleProperties, GraphProperties }));
         return std::optional<OverlayElement> { TRY_EVAL(graph_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
@@ -1141,7 +1181,7 @@ std::expected<OverlayLayout, LayoutError> decode_layout(JSONValue const &json)
     }
     // What defaults and styles may hold: any element's properties but its
     // type and style.
-    auto const style_properties = { TextStyleProperties, BoxStyleProperties, TextProperties, ValueProperties, GaugeProperties, GraphProperties, ProfileProperties, MapProperties, LaterProperties,
+    auto const style_properties = { TextStyleProperties, BoxStyleProperties, TextProperties, ValueProperties, GaugeProperties, GraphProperties, ProfileProperties, MapProperties, ImageProperties, LaterProperties,
         Names { "at", "size", "visible", "fade", "when", "smooth", "interpolate" } };
     TRY(check_properties(defaults, "the defaults", style_properties));
     for (auto it = styles.obj_begin(); it != styles.obj_end(); ++it) {
