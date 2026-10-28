@@ -244,7 +244,8 @@ the cache. A tile that can't be downloaded is left out.
 An `image` shows a PNG, looked for next to the layout file and
 then with the built-in layouts. It's never stretched: give it a `width`,
 a `height`, both to fit it in that box, or neither for its own size, and
-a `tint` to color it. The app has white icons to tint in
+a `tint` to color it. An image's `size` replaces one from a style or the
+defaults rather than merging with it. The app has white icons to tint in
 `share/overlays/icons/`: `heart`, `bolt`, `speedometer`, `cadence` and
 `mountain`:
 

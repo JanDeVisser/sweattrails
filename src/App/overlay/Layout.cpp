@@ -691,7 +691,7 @@ std::expected<std::optional<Marker>, LayoutError> marker(JSONValue const &json, 
     return ret;
 }
 
-std::expected<JSONValue, LayoutError> cascaded(JSONValue const &element, JSONValue const &defaults, JSONValue const &styles);
+std::expected<JSONValue, LayoutError> cascaded(JSONValue const &element, JSONValue const &defaults, JSONValue const &styles, Names whole = { });
 
 // A label's style: its own properties over its named style, over the
 // profile's.
@@ -900,9 +900,18 @@ std::expected<MapElement, LayoutError> map_element(JSONValue const &json, JSONVa
 }
 
 // The element's properties after the cascade: the defaults, its styles in
-// order, and its own.
-std::expected<JSONValue, LayoutError> cascaded(JSONValue const &element, JSONValue const &defaults, JSONValue const &styles)
+// order, and its own. The objects in `whole` replace those under them
+// rather than merge with them.
+std::expected<JSONValue, LayoutError> cascaded(JSONValue const &element, JSONValue const &defaults, JSONValue const &styles, Names whole)
 {
+    auto const cascade = [whole](JSONValue base, JSONValue const &over) {
+        for (auto const name : whole) {
+            if (over.get(std::string { name })) {
+                base.erase(std::string { name });
+            }
+        }
+        return ST::cascade(std::move(base), over);
+    };
     auto ret = defaults;
     if (auto const style = element.get("style"); style) {
         std::vector<std::string> names;
@@ -1099,7 +1108,9 @@ std::expected<std::optional<OverlayElement>, LayoutError> typed_element(JSONValu
     }
     if (name == "image") {
         TRY(check_properties(json, "an image", { ElementProperties, BoxStyleProperties, ImageProperties }));
-        return std::optional<OverlayElement> { TRY_EVAL(image_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
+        // One side of a size is the other in the picture's aspect ratio,
+        // which merging it with a size under it would undo.
+        return std::optional<OverlayElement> { TRY_EVAL(image_element(TRY_EVAL(cascaded(json, defaults, styles, { "size" })))) };
     }
     if (name == "graph") {
         TRY(check_properties(json, "a graph", { ElementProperties, { "color" }, BoxStyleProperties, GraphProperties }));

@@ -1536,6 +1536,36 @@ void test_image_cascade()
     CHECK(!logo.width && !logo.height && !logo.at.size);
 }
 
+// An image's size replaces the one under it, rather than merge with it:
+// one side means the other is in the picture's aspect ratio.
+void test_image_size_replaces()
+{
+    auto const layout = decode(R"({
+        "defaults": { "size": { "width": 760, "height": 170 } },
+        "styles": { "icon": { "size": { "height": 24 } } },
+        "elements": [
+            { "type": "image", "src": "a.png", "size": { "width": 24 } },
+            { "type": "image", "src": "a.png", "style": "icon" },
+            { "type": "image", "src": "a.png", "style": "icon", "size": { "width": 30 } },
+            { "type": "image", "src": "a.png" },
+            { "type": "text", "text": "a", "size": { "width": 100 } } ] })");
+    CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
+    if (!layout || layout->elements.size() != 5) {
+        return;
+    }
+    auto const sides = [&layout](size_t ix) {
+        auto const image = std::get<ImageElement>(layout->elements[ix]);
+        return std::format("{} {}", image.width ? std::format("{}", *image.width) : "-", image.height ? std::format("{}", *image.height) : "-");
+    };
+    CHECK_EQ(sides(0), "24 -");
+    CHECK_EQ(sides(1), "- 24");
+    CHECK_EQ(sides(2), "30 -");
+    CHECK_EQ(sides(3), "760 170");
+    // Other elements still merge it.
+    auto const text = std::get<TextElement>(layout->elements[4]);
+    CHECK(text.at.size.has_value() && text.at.size->x == 100 && text.at.size->y == 170);
+}
+
 void test_image_size_errors()
 {
     CHECK_EQ(error_of(with_element(R"({ "type": "image", "src": "a.png", "size": { "width": "big" } })")),
@@ -1553,6 +1583,7 @@ void test_image_size_errors()
 int main()
 {
     test_image_cascade();
+    test_image_size_replaces();
     test_image_size_errors();
     test_cascade();
     test_styles();

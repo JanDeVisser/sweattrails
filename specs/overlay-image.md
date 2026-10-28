@@ -41,6 +41,9 @@ of it is built now, and where it departs from the reference.
     its `anchor` is, as a value's content does.
   - It's drawn smooth at the size it ends up, also much smaller than
     its file, as an icon of 96 px at 24 design pixels is at 1080p.
+  - In the cascade, an image's `size` replaces one from its styles or
+    the defaults rather than merging with it, as one side means
+    something else than two (after the review).
 - **`tint`**: multiplies the picture's colors, so that a white icon
   takes any color, and its alpha fades it. White, which changes
   nothing, by default.
@@ -161,6 +164,8 @@ struct ImageElement {
 - **`fit_picture(Rectangle content, Vector2 picture, Anchor anchor)`**:
   the picture as big as fits in the content without stretching, where
   the anchor is in it, with `place_in_box()`.
+- `cascaded()` takes the properties that replace those under them
+  whole, rather than merge: `size`, for an image.
 - The box is then as for a text: the content and the panel's padding
   around it, or, with both sides, `width` by `height` is the box, as
   `size` is for other elements, and the picture fits inside the
@@ -303,5 +308,7 @@ the bolt in the gauge's yellow, `#f9c74f`, as the gauge has no amber.
    rather than premultiplied, as the render's own blend mode for the
    frame would have to be broken into (`test_bleed_colors`,
    `test_decoded_icon`).
+4. Fixed: an image's `size` replaces the one under it in the cascade,
+   also a style's over the defaults' (`test_image_size_replaces`).
 6. The review's tests are committed, apart from `test_jpeg()`, which
    became a test of the error for a picture that isn't a PNG (see 1).
