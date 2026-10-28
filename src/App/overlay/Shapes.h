@@ -34,6 +34,15 @@ Rectangle content_box(Rectangle box, float padding);
 // else its content's, measured, with the padding around it.
 Vector2 box_size(Placement const &at, Vector2 content, Panel const &panel, float scale);
 
+// An image's content, in design pixels: the picture's own size, a pixel
+// to a design pixel; the side given, and the other in the picture's
+// aspect ratio; or both as given.
+Vector2 image_size(Vector2 picture, std::optional<float> width, std::optional<float> height);
+
+// The picture as big as fits in `content` without stretching, where
+// `anchor` is in it.
+Rectangle fit_picture(Rectangle content, Vector2 picture, Anchor anchor);
+
 // The lowest and the highest value a gauge or a graph shows, in the unit
 // shown: the element's own, or the activity's range for "auto".
 struct Bounds {

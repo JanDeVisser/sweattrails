@@ -343,10 +343,42 @@ void test_grade_graph()
     CHECK_EQ(show(graph_columns(source, grade, unit_of(OverlayField::grade), 50, 4)), "10 10 10 10");
 }
 
+// The picture's own size, a side and the other in its aspect ratio, or
+// both as given.
+void test_image_size()
+{
+    auto const    show_size = [](Vector2 v) { return std::format("{} {}", v.x, v.y); };
+    Vector2 const logo { 400, 100 };
+    CHECK_EQ(show_size(image_size(logo, { }, { })), "400 100");
+    CHECK_EQ(show_size(image_size(logo, 200.0f, { })), "200 50");
+    CHECK_EQ(show_size(image_size(logo, { }, 50.0f)), "200 50");
+    CHECK_EQ(show_size(image_size(logo, 30.0f, 30.0f)), "30 30");
+    // A picture of nothing has no aspect ratio.
+    CHECK_EQ(show_size(image_size(Vector2 { }, 20.0f, { })), "20 0");
+}
+
+// As big as fits, unstretched, where the anchor is.
+void test_fit_picture()
+{
+    Rectangle const square { 10, 20, 100, 100 };
+    Vector2 const   wide { 400, 100 };
+    Vector2 const   tall { 50, 200 };
+    CHECK_EQ(show(fit_picture(square, wide, Anchor::TopLeft)), "10 20 100 25");
+    CHECK_EQ(show(fit_picture(square, wide, Anchor::Center)), "10 57.5 100 25");
+    CHECK_EQ(show(fit_picture(square, wide, Anchor::BottomRight)), "10 95 100 25");
+    CHECK_EQ(show(fit_picture(square, tall, Anchor::TopLeft)), "10 20 25 100");
+    CHECK_EQ(show(fit_picture(square, tall, Anchor::Right)), "85 20 25 100");
+    // Bigger than the picture: scaled up, still unstretched.
+    CHECK_EQ(show(fit_picture(Rectangle { 0, 0, 800, 100 }, wide, Anchor::Center)), "200 0 400 100");
+    CHECK_EQ(show(fit_picture(square, Vector2 { }, Anchor::Center)), "10 20 0 0");
+}
+
 }
 
 int main()
 {
+    test_image_size();
+    test_fit_picture();
     test_content_box();
     test_box_size();
     test_shown_bounds();

@@ -28,6 +28,9 @@ namespace ST {
 
 struct OverlayRenderer {
     explicit OverlayRenderer(FontFinder find, ImageFinder find_image = { });
+    ~OverlayRenderer(); // Unloads the pictures
+    OverlayRenderer(OverlayRenderer const &) = delete;
+    OverlayRenderer &operator=(OverlayRenderer const &) = delete;
 
     // The layout to draw, from `file`, whose name starts the errors, and
     // next to which its pictures are looked for first. Finds its fonts and
@@ -66,25 +69,28 @@ private:
     float                                        m_alpha { 1 };     // Of the element being drawn, as it fades
     std::map<std::string, std::filesystem::path> m_font_paths { };  // By the layout's name for them
     std::map<std::string, std::filesystem::path> m_image_paths { }; // By their src
+    std::map<std::string, Texture2D>             m_pictures { };    // Loaded when first drawn, by their src
 
-    void                draw_element(OverlayElement const &element, FieldValues const &values, Rectangle const &area);
-    void                draw(TextElement const &text, FieldValues const &values, Rectangle const &area);
-    void                draw(ValueElement const &value, FieldValues const &values, Rectangle const &area);
-    void                draw(GaugeElement const &gauge, FieldValues const &values, Rectangle const &area);
-    void                draw(GraphElement const &graph, FieldValues const &values, Rectangle const &area);
-    void                draw(ProfileElement const &profile, FieldValues const &values, Rectangle const &area);
-    void                draw(MapElement const &map, FieldValues const &values, Rectangle const &area);
-    void                draw(ImageElement const &image, FieldValues const &values, Rectangle const &area);
-    Rectangle           screen_box(Placement const &at, Vector2 size, Rectangle const &area) const;
-    Rectangle           draw_panel(Panel const &panel, Rectangle const &box) const;
-    void                draw_background(Panel const &panel, ClipShape const &shape) const;
-    void                draw_border(Panel const &panel, ClipShape const &shape) const;
-    void                draw_tiles(MapElement const &map, MapTransform const &transform, ClipShape const &clip);
-    void                draw_attribution(MapElement const &map, Rectangle const &panel, Rectangle const &area);
-    void                draw_trace(std::vector<Vector2> const &points, Trace const &trace, float bottom) const;
-    std::optional<Font> font(TextStyle const &style, size_t element);
-    [[nodiscard]] Color faded(Color color) const;
-    void                draw_text(Font const &font, std::string_view text, Vector2 at, TextStyle const &style) const;
+    void                     draw_element(OverlayElement const &element, FieldValues const &values, Rectangle const &area);
+    void                     draw(TextElement const &text, FieldValues const &values, Rectangle const &area);
+    void                     draw(ValueElement const &value, FieldValues const &values, Rectangle const &area);
+    void                     draw(GaugeElement const &gauge, FieldValues const &values, Rectangle const &area);
+    void                     draw(GraphElement const &graph, FieldValues const &values, Rectangle const &area);
+    void                     draw(ProfileElement const &profile, FieldValues const &values, Rectangle const &area);
+    void                     draw(MapElement const &map, FieldValues const &values, Rectangle const &area);
+    void                     draw(ImageElement const &image, FieldValues const &values, Rectangle const &area);
+    Rectangle                screen_box(Placement const &at, Vector2 size, Rectangle const &area) const;
+    Rectangle                draw_panel(Panel const &panel, Rectangle const &box) const;
+    void                     draw_background(Panel const &panel, ClipShape const &shape) const;
+    void                     draw_border(Panel const &panel, ClipShape const &shape) const;
+    void                     draw_tiles(MapElement const &map, MapTransform const &transform, ClipShape const &clip);
+    void                     draw_attribution(MapElement const &map, Rectangle const &panel, Rectangle const &area);
+    void                     draw_trace(std::vector<Vector2> const &points, Trace const &trace, float bottom) const;
+    std::optional<Font>      font(TextStyle const &style, size_t element);
+    std::optional<Texture2D> picture(ImageElement const &image);
+    void                     unload_pictures();
+    [[nodiscard]] Color      faded(Color color) const;
+    void                     draw_text(Font const &font, std::string_view text, Vector2 at, TextStyle const &style) const;
 };
 
 }

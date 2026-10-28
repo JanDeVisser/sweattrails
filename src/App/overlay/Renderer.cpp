@@ -81,8 +81,22 @@ void OverlayRenderer::set_layout(OverlayLayout const &layout, fs::path const &fi
     m_fonts.set_codepoints(layout_codepoints(layout));
 }
 
+OverlayRenderer::~OverlayRenderer()
+{
+    unload_pictures();
+}
+
+void OverlayRenderer::unload_pictures()
+{
+    for (auto const &[src, texture] : m_pictures) {
+        UnloadTexture(texture);
+    }
+    m_pictures.clear();
+}
+
 void OverlayRenderer::clear()
 {
+    unload_pictures();
     m_layout.reset();
     m_error.reset();
     m_font_paths.clear();
@@ -492,9 +506,53 @@ void OverlayRenderer::draw_attribution(MapElement const &map, Rectangle const &p
     draw_text(*f, OsmAttribution, Vector2 { .x = box.x, .y = box.y }, map.attribution);
 }
 
-// Not drawn yet: the pictures are loaded and drawn in the next step.
-void OverlayRenderer::draw(ImageElement const &, FieldValues const &, Rectangle const &)
+// Loaded the first time it's drawn, as there's no GL context to load it
+// in before, in tests. One that's there but doesn't load is an error from
+// the next frame on, as a font is.
+std::optional<Texture2D> OverlayRenderer::picture(ImageElement const &image)
 {
+    if (auto const it = m_pictures.find(image.src); it != m_pictures.end()) {
+        return it->second;
+    }
+    auto const path = m_image_paths.find(image.src);
+    if (path == m_image_paths.end()) {
+        return { };
+    }
+    auto loaded = LoadImage(path->second.string().c_str());
+    auto texture = (loaded.data != nullptr) ? LoadTextureFromImage(loaded) : Texture2D { };
+    UnloadImage(loaded);
+    if (texture.id == 0) {
+        if (!m_error) {
+            m_error = std::format("{}: element {}: the picture `{}` can't be loaded from `{}`",
+                m_file_name, image.number, image.src, path->second.string());
+        }
+        return { };
+    }
+    // Smooth also much smaller than its file, as an icon is.
+    GenTextureMipmaps(&texture);
+    SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
+    m_pictures[image.src] = texture;
+    return texture;
+}
+
+// The picture fits inside the panel's padding without stretching. With a
+// width and a height, that's the box; else the picture's size, or a side
+// and the other in its aspect ratio, is the content.
+void OverlayRenderer::draw(ImageElement const &image, FieldValues const &, Rectangle const &area)
+{
+    auto const texture = picture(image);
+    if (!texture) {
+        return;
+    }
+    auto const own = Vector2 { .x = static_cast<float>(texture->width), .y = static_cast<float>(texture->height) };
+    auto const size = image_size(own, image.width, image.height);
+    auto       at = image.at;
+    if (image.width && image.height) {
+        at.size = size;
+    }
+    auto const content = draw_panel(image.panel, screen_box(at, box_size(at, Vector2 { .x = size.x * m_scale, .y = size.y * m_scale }, image.panel, m_scale), area));
+    auto const shown = fit_picture(content, own, image.at.anchor);
+    DrawTexturePro(*texture, Rectangle { .x = 0, .y = 0, .width = own.x, .height = own.y }, shown, Vector2 { }, 0, faded(image.tint));
 }
 
 }

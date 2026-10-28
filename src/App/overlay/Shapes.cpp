@@ -26,6 +26,31 @@ Vector2 box_size(Placement const &at, Vector2 content, Panel const &panel, float
     return Vector2 { .x = content.x + padding, .y = content.y + padding };
 }
 
+Vector2 image_size(Vector2 picture, std::optional<float> width, std::optional<float> height)
+{
+    if (width && height) {
+        return Vector2 { .x = *width, .y = *height };
+    }
+    if (width) {
+        return Vector2 { .x = *width, .y = (picture.x > 0) ? *width * picture.y / picture.x : 0 };
+    }
+    if (height) {
+        return Vector2 { .x = (picture.y > 0) ? *height * picture.x / picture.y : 0, .y = *height };
+    }
+    return picture;
+}
+
+Rectangle fit_picture(Rectangle content, Vector2 picture, Anchor anchor)
+{
+    if (picture.x <= 0 || picture.y <= 0) {
+        return Rectangle { .x = content.x, .y = content.y, .width = 0, .height = 0 };
+    }
+    auto const scale = std::min(content.width / picture.x, content.height / picture.y);
+    auto const size = Vector2 { .x = picture.x * scale, .y = picture.y * scale };
+    auto const at = place_in_box(Vector2 { .x = content.width, .y = content.height }, size, anchor);
+    return Rectangle { .x = content.x + at.x, .y = content.y + at.y, .width = size.x, .height = size.y };
+}
+
 std::optional<Bounds> shown_bounds(OverlaySource const &source, OverlayField field, FieldUnit const &unit,
     std::optional<double> min, std::optional<double> max)
 {
