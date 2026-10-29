@@ -142,10 +142,11 @@ std::string clock_time(i64 time)
 SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<StravaClient> const &client, i64 after)
 {
     SourceOutcome outcome { .source = "Strava", .kind = SourceOutcome::Kind::Titled };
-    if (!client) {
-        outcome.kind = SourceOutcome::Kind::NotSetUp;
-        outcome.message = "Strava isn't set up. Register an app with Strava, and put its client ID and secret in the settings, as "
-                          "\"strava\": { \"client_id\": \"...\", \"client_secret\": \"...\" }. The README says how.";
+    // Without a client ID, the user doesn't use Strava; without the secret,
+    // they do, and should hear about it.
+    if (auto problem = strava_setup_problem(client); problem) {
+        outcome.kind = client ? SourceOutcome::Kind::Failed : SourceOutcome::Kind::NotSetUp;
+        outcome.message = std::move(*problem);
         return outcome;
     }
     auto const tokens_file = strava_tokens_file(the->user_config_dir);
@@ -610,9 +611,8 @@ void cmd_strava_login(pSweatTrails const &sweattrails, JSONValue const &)
         return;
     }
     auto const request = make_download_request(sweattrails->settings, JSONValue { }, Sources { .strava = true });
-    if (!request.strava_client) {
-        message_box("Strava isn't set up. Register an app with Strava, and put its client ID and secret in the settings, as "
-                    "\"strava\": { \"client_id\": \"...\", \"client_secret\": \"...\" }. The README says how.");
+    if (auto const problem = strava_setup_problem(request.strava_client); problem) {
+        message_box(*problem);
         return;
     }
     auto const state = random_token(16);

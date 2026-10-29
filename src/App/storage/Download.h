@@ -27,12 +27,17 @@ std::optional<std::string> wahoo_client_id(JSONValue const &settings);
 // The app the user registered with Strava.
 struct StravaClient {
     std::string id { };
-    std::string secret { };
+    std::string secret { }; // Empty if it's missing from the settings
 };
 
 // `strava.client_id` and `strava.client_secret` from the settings: without
-// both, the user doesn't use Strava.
+// an ID, the user doesn't use Strava. With an ID and no secret, they do,
+// and should hear that the secret is missing.
 std::optional<StravaClient> strava_client(JSONValue const &settings);
+
+// What to tell the user about Strava's setup: how to set it up without a
+// client, that the secret is missing without one, or nothing.
+std::optional<std::string> strava_setup_problem(std::optional<StravaClient> const &client);
 
 // What a download is asked to do: the task's arguments, with the settings
 // filling in what they don't say.

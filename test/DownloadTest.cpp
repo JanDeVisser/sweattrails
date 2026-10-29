@@ -60,15 +60,22 @@ void test_client_id()
 void test_strava_client()
 {
     CHECK(!strava_client(JSONValue { }).has_value());
-    auto settings = MUST_EVAL(JSONValue::deserialize(R"({"strava": {"client_id": " 12345 "}})"));
+    CHECK(strava_setup_problem(std::nullopt).value_or("").starts_with("Strava isn't set up."));
+    auto settings = MUST_EVAL(JSONValue::deserialize(R"({"strava": {"client_secret": "s3cr3t"}})"));
     CHECK(!strava_client(settings).has_value());
-    settings["strava"]["client_secret"] = JSONValue { "" };
-    CHECK(!strava_client(settings).has_value());
+    // An ID without the secret: the user uses Strava, and hears what's
+    // missing.
+    settings = MUST_EVAL(JSONValue::deserialize(R"({"strava": {"client_id": " 12345 "}})"));
+    CHECK(strava_client(settings).has_value());
+    CHECK(strava_setup_problem(strava_client(settings)).value_or("").starts_with("Strava's client secret is missing."));
+    settings["strava"]["client_secret"] = JSONValue { " " };
+    CHECK(strava_setup_problem(strava_client(settings)).has_value());
     settings["strava"]["client_secret"] = JSONValue { "s3cr3t" };
     auto const client = strava_client(settings);
     CHECK(client.has_value());
     CHECK_EQ(client->id, "12345");
     CHECK_EQ(client->secret, "s3cr3t");
+    CHECK(!strava_setup_problem(client).has_value());
 }
 
 void test_download_request()

@@ -101,11 +101,23 @@ std::optional<std::string> wahoo_client_id(JSONValue const &settings)
 std::optional<StravaClient> strava_client(JSONValue const &settings)
 {
     auto id = string_setting(settings, "strava", "client_id");
-    auto secret = string_setting(settings, "strava", "client_secret");
-    if (!id || !secret) {
+    if (!id) {
         return { };
     }
-    return StravaClient { .id = std::move(*id), .secret = std::move(*secret) };
+    return StravaClient { .id = std::move(*id), .secret = string_setting(settings, "strava", "client_secret").value_or("") };
+}
+
+std::optional<std::string> strava_setup_problem(std::optional<StravaClient> const &client)
+{
+    if (!client) {
+        return "Strava isn't set up. Register an app with Strava, and put its client ID and secret in the settings, as "
+               "\"strava\": { \"client_id\": \"...\", \"client_secret\": \"...\" }. The README says how.";
+    }
+    if (client->secret.empty()) {
+        return "Strava's client secret is missing. Put it in the settings with the client ID, as "
+               "\"strava\": { \"client_id\": \"...\", \"client_secret\": \"...\" }.";
+    }
+    return { };
 }
 
 DownloadRequest make_download_request(JSONValue const &settings, JSONValue const &arguments, Sources sources)
