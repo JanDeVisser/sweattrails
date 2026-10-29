@@ -151,21 +151,15 @@ std::expected<void, std::variant<CURLcode, LibCError>> download(std::string url,
     return { };
 }
 
-std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) const
+// A file there is taken for complete, by get_cached_tile() among others.
+// So it's downloaded to another name, and only renamed when it's complete:
+// the UI thread may read the cache during the download, and the app may
+// quit in the middle of one.
+std::expected<void, LibCError> download_file(std::string const &url, fs::path const &file)
 {
-    if (auto cached = get_cached_tile(storage.tiles_dir); cached) {
-        return cached;
-    }
-    auto const url = std::format("https://tile.openstreetmap.org/{}/{}/{}.png", zoom, x, y);
-
-    auto const tile_dir = TRY_EVAL(ensure_directory(storage.tiles_dir / std::format("{}/{}", zoom, x)));
-    auto const tile_file = tile_dir / std::format("{}.png", y);
-
-    // get_cached_tile() takes any file with the tile's name for the tile. So
-    // download to another name, and only rename it when it's complete: the
-    // UI thread may read the cache during the download, and the app may quit
-    // in the middle of one.
-    auto const part_file = tile_dir / std::format("{}.png.part", y);
+    TRY(ensure_directory(file.parent_path()));
+    auto part_file = file;
+    part_file += ".part";
 
     auto const exit_code = download(url, part_file);
     if (!exit_code.has_value()) {
@@ -175,7 +169,7 @@ std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) con
             std::visit(
                 overloaded {
                     [&url](CURLcode c) -> LibCError {
-                        return LibCError { std::format("Error fetching tile `{}`: curl error: {} ({})", url, curl_easy_strerror(c), static_cast<int>(c)) };
+                        return LibCError { std::format("Error fetching `{}`: curl error: {} ({})", url, curl_easy_strerror(c), static_cast<int>(c)) };
                     },
                     [](LibCError c) -> LibCError {
                         return c;
@@ -184,12 +178,22 @@ std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) con
                 exit_code.error()));
     }
     std::error_code ec { };
-    fs::rename(part_file, tile_file, ec);
+    fs::rename(part_file, file, ec);
     if (ec) {
         auto const message = ec.message();
         fs::remove(part_file, ec);
-        return std::unexpected(LibCError { "Could not cache tile `{}`: {}", url, message });
+        return std::unexpected(LibCError { "Could not save `{}`: {}", url, message });
     }
+    return { };
+}
+
+std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) const
+{
+    if (auto cached = get_cached_tile(storage.tiles_dir); cached) {
+        return cached;
+    }
+    auto const url = std::format("https://tile.openstreetmap.org/{}/{}/{}.png", zoom, x, y);
+    TRY(download_file(url, storage.tiles_dir / std::format("{}/{}/{}.png", zoom, x, y)));
     trace(Map, "fetched tile {}", url);
     return get_cached_tile(storage.tiles_dir);
 }

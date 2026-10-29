@@ -67,6 +67,11 @@ struct Tile {
     auto operator<=>(Tile const &) const = default;
 };
 
+// Downloads `url` to `file`, making its directory. A file there is always
+// complete: it's downloaded to another name first. Only call this on the
+// job thread, as Tile::get_tile().
+std::expected<void, LibCError> download_file(std::string const &url, fs::path const &file);
+
 // OSM's licence asks for this wherever its tiles are shown.
 constexpr char const OsmAttribution[] = "© OpenStreetMap contributors";
 
