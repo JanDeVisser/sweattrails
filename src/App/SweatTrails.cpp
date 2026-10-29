@@ -372,7 +372,7 @@ void start_download(pSweatTrails const &sweattrails, JSONValue const &arguments,
         return;
     }
     sweattrails->downloading = true;
-    sweattrails->schedule<JobType::Download>(make_download_request(sweattrails->settings, arguments, garmin, wahoo));
+    sweattrails->schedule<JobType::Download>(make_download_request(sweattrails->settings, arguments, Sources { .garmin = garmin, .wahoo = wahoo }));
 }
 
 void cmd_download(pSweatTrails const &sweattrails, JSONValue const &arguments)
@@ -421,7 +421,7 @@ void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &)
             server.error().to_string(), WahooCallbackPort));
         return;
     }
-    auto const days = make_download_request(sweattrails->settings, JSONValue { }, false, true).wahoo_days;
+    auto const days = make_download_request(sweattrails->settings, JSONValue { }, Sources { .wahoo = true }).wahoo_days;
     auto const pkce = Pkce::make();
     auto const state = random_token(16);
     auto const url = Wahoo { .client_id = *client_id }.authorize_url(pkce.challenge, state);
@@ -882,7 +882,7 @@ void SweatTrails::notif_download_done(Notification::Payload const &data)
     the->downloading = false;
     the->set_status("");
     // Not while a login is waiting for the browser already.
-    if (report.ask_login && !the->wahoo_logging_in) {
+    if (report.ask_login == "Wahoo" && !the->wahoo_logging_in) {
         auto const log_in = [](pSweatTrails const &sweattrails, QueryOption selection) {
             if (selection == QueryOption::QueryOptionYes) {
                 sweattrails->bus.submit("st-wahoo-login", JSONValue { });
