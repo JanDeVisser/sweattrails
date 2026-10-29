@@ -148,11 +148,14 @@ struct App : public Layout {
         // monitors can only be asked about once there's a window.
         InitWindow(800, 600, app->window_title());
         app->monitor = start_monitor(app->monitor, GetMonitorCount());
-        // Where the window goes when it's un-maximized, too.
+        // Where the window goes when it's un-maximized, too. Without one,
+        // it stays at 800x600, which is still something to grab.
         auto const restored = restored_window(GetMonitorPosition(app->monitor),
             Vector2 { .x = static_cast<float>(GetMonitorWidth(app->monitor)), .y = static_cast<float>(GetMonitorHeight(app->monitor)) });
-        SetWindowSize(static_cast<int>(restored.width), static_cast<int>(restored.height));
-        SetWindowPosition(static_cast<int>(restored.x), static_cast<int>(restored.y));
+        if (restored) {
+            SetWindowSize(static_cast<int>(restored->width), static_cast<int>(restored->height));
+            SetWindowPosition(static_cast<int>(restored->x), static_cast<int>(restored->y));
+        }
         ClearWindowState(FLAG_WINDOW_HIDDEN);
         // On macOS, the zoom: the screen less the menu bar and the Dock.
         MaximizeWindow();

@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include <raylib.h>
 
 namespace ST {
@@ -16,7 +18,8 @@ int start_monitor(int saved, int monitor_count);
 
 // The window before it's maximized, and after it's un-maximized: two
 // thirds of the monitor's width and height, centred on it, in whole
-// screen coordinates.
-Rectangle restored_window(Vector2 monitor_position, Vector2 monitor_size);
+// screen coordinates. Nothing if that leaves no window, as for a monitor
+// raylib gives a size of 0 for, when it can't find its video mode.
+std::optional<Rectangle> restored_window(Vector2 monitor_position, Vector2 monitor_size);
 
 }

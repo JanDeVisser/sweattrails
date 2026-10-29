@@ -7,6 +7,7 @@
 #include <cmath>
 #include <format>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <Window.h>
@@ -17,8 +18,12 @@ using namespace ST;
 
 namespace {
 
-std::string show(Rectangle const &r)
+std::string show(std::optional<Rectangle> const &window)
 {
+    if (!window) {
+        return "none";
+    }
+    auto const &r = *window;
     return std::format("{},{} {}x{}", r.x, r.y, r.width, r.height);
 }
 
@@ -56,14 +61,20 @@ bool whole(float f)
     return std::floor(f) == f;
 }
 
-// Whatever the size, the window is whole, two thirds of the monitor rounded
-// down, on it, and centred to within one.
+// Whatever the size, from 2, where two thirds is at least 1, the window is
+// whole, two thirds of the monitor rounded down, on it, and centred to
+// within one.
 void test_restored_window_sizes()
 {
-    for (auto size = 1; size <= 8000; ++size) {
+    for (auto size = 2; size <= 8000; ++size) {
         auto const s = static_cast<float>(size);
         for (auto const position : { -8000.0f, 0.0f, 1800.0f }) {
-            auto const r = restored_window({ position, position }, { s, s });
+            auto const window = restored_window({ position, position }, { s, s });
+            if (!window) {
+                CHECK_EQ(show(window), std::format("size {} at {}", size, position));
+                return;
+            }
+            auto const r = *window;
             auto const left = r.x - position;
             auto const right = position + s - (r.x + r.width);
             if (!whole(r.x) || !whole(r.width) || r.width != static_cast<float>(size * 2 / 3)
@@ -92,7 +103,9 @@ void test_frames_start_under_a_modal()
 // raylib gives a size of 0 for a monitor it can't find the video mode of.
 void test_restored_window_no_size()
 {
-    CHECK_EQ(show(restored_window({ 100, 50 }, { 0, 0 })), "100,50 0x0");
+    CHECK_EQ(show(restored_window({ 100, 50 }, { 0, 0 })), "none");
+    CHECK_EQ(show(restored_window({ 0, 0 }, { 1920, 0 })), "none");
+    CHECK_EQ(show(restored_window({ 0, 0 }, { 1, 1080 })), "none");
 }
 
 }
