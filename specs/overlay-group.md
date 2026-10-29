@@ -1,6 +1,6 @@
 # Overlay groups: elements that move and show together
 
-Status: In progress
+Status: In review
 
 ## Goal
 
@@ -189,12 +189,15 @@ percentages and negative coordinates about it.
 
 ### Drawing
 
-- **`visit_shown(elements, area, time, alpha, visit)`**, a private
-  const member of the renderer: calls `visit(element, area, alpha)` for
+- **`visit_shown(elements, area, time, alpha, scale, visit)`**, a
+  private const member of the renderer, with `visit` a `std::function`:
+  calls `visit(element, area, alpha)` for
   each element whose alpha, times its group's, is more than 0, and goes
   into a shown group's children with its `content` box and its alpha.
   `draw()` and `tiles_needed()` both use it, so they agree on what
-  shows where, and a map in a hidden group asks for no tiles.
+  shows where, and a map in a hidden group asks for no tiles. It takes
+  the scale, as `tiles_needed()` works one out for its area rather
+  than use the one `draw()` keeps.
 - `draw(GroupElement)` draws the panel only; its children are visited
   after it, so they're drawn over it.
 - `m_alpha` is the element's alpha times its groups', and `faded()`
