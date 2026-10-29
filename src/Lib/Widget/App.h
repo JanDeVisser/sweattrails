@@ -16,6 +16,7 @@
 #include <Options.h>
 
 #include <Widget.h>
+#include <Window.h>
 
 namespace ST {
 
@@ -138,13 +139,26 @@ struct App : public Layout {
         SetTraceLogLevel(LOG_WARNING);
         // raylib draws shapes without smoothing their edges: multisampling
         // does, for everything drawn in the window. It has to be asked for
-        // before the window is made.
-        SetConfigFlags(FLAG_MSAA_4X_HINT);
-        InitWindow(static_cast<int>(app->viewport.width), static_cast<int>(app->viewport.height), app->window_title());
+        // before the window is made. MaximizeWindow() does nothing to a
+        // window that isn't resizable, and a hidden one doesn't flash at the
+        // wrong size and place before it's maximized.
+        SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIDDEN);
+        // Not 0x0: raylib makes that as large as the whole monitor, which on
+        // macOS covers the menu bar, the Dock and the other apps. The
+        // monitors can only be asked about once there's a window.
+        InitWindow(800, 600, app->window_title());
+        app->monitor = start_monitor(app->monitor, GetMonitorCount());
+        // Where the window goes when it's un-maximized, too.
+        auto const restored = restored_window(GetMonitorPosition(app->monitor),
+            Vector2 { .x = static_cast<float>(GetMonitorWidth(app->monitor)), .y = static_cast<float>(GetMonitorHeight(app->monitor)) });
+        SetWindowSize(static_cast<int>(restored.width), static_cast<int>(restored.height));
+        SetWindowPosition(static_cast<int>(restored.x), static_cast<int>(restored.y));
+        ClearWindowState(FLAG_WINDOW_HIDDEN);
+        // On macOS, the zoom: the screen less the menu bar and the Dock.
+        MaximizeWindow();
         app->viewport.width = static_cast<float>(GetScreenWidth());
         app->viewport.height = static_cast<float>(GetScreenHeight());
-        SetWindowMonitor(app->monitor);
-        SetWindowState(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_MAXIMIZED | FLAG_VSYNC_HINT);
+        SetWindowState(FLAG_VSYNC_HINT);
         if (!app->icon_file.empty()) {
             Image icon = LoadImage(app->icon_file.c_str());
             SetWindowIcon(icon);
@@ -153,7 +167,6 @@ struct App : public Layout {
         SetMouseCursor(app->m_cursor);
         SetExitKey(KEY_NULL);
         SetTargetFPS(60);
-        MaximizeWindow();
         s_app = app;
         s_app->initialize();
         return dynamic_pointer_cast<AppClass>(s_app);
