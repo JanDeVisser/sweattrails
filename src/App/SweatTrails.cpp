@@ -249,6 +249,19 @@ void SweatTrails::job_download_tiles(Job::Payload const &data)
     SweatTrails::the()->notify<NotificationType::MapTilesDone>(MapTilesDone { download, std::move(failed) });
 }
 
+void SweatTrails::job_prepare_zwift_world(Job::Payload const &data)
+{
+    auto const &world = std::get<ZwiftWorld>(data);
+    auto const  the = SweatTrails::the();
+    auto        map = ::ST::prepare_zwift_world(the->zwift_cache(), world);
+    if (!map) {
+        the->notify<NotificationType::ZwiftWorldReady>(ZwiftWorldReady { .cache_name = world.cache_name(), .error = map.error().to_string() });
+        return;
+    }
+    info(ST, "Cut {}'s map into tiles", world.name);
+    the->notify<NotificationType::ZwiftWorldReady>(ZwiftWorldReady { .cache_name = world.cache_name(), .map = std::move(*map) });
+}
+
 void SweatTrails::job_download(Job::Payload const &data)
 {
     run_downloads(SweatTrails::the(), std::get<DownloadRequest>(data));
@@ -693,7 +706,7 @@ void start_render(pSweatTrails const &sweattrails, RenderJob job)
         std::move(job),
         [](std::string_view name) { return SweatTrails::the()->find_font(name); },
         SweatTrails::image_finder(),
-        [](Tile const &tile) { return tile.get_cached_tile(SweatTrails::the()->storage); },
+        [](Tile const &tile) { return tile.get_cached_tile(SweatTrails::the()->storage.tiles_dir); },
         [](pTileDownload const &download) { SweatTrails::the()->schedule<JobType::DownloadTiles>(download); });
     if (!render) {
         sweattrails->set_status(std::format("Couldn't render the overlay: {}", render.error()));
@@ -923,6 +936,31 @@ void SweatTrails::notif_map_tiles_done(Notification::Payload const &data)
     }
 }
 
+// A world that failed stays on OpenStreetMap: there's nothing the user can
+// do about it, so it's only logged.
+void SweatTrails::notif_zwift_world_ready(Notification::Payload const &data)
+{
+    auto const  the = SweatTrails::the();
+    auto const &ready = std::get<ZwiftWorldReady>(data);
+    the->zwift_preparing.erase(ready.cache_name);
+    if (!ready.map) {
+        warning(ST, "No Zwift map for {}: {}", ready.cache_name, ready.error);
+        the->zwift_failed.insert(ready.cache_name);
+        return;
+    }
+    the->activity_display->map->world_ready(ready);
+}
+
+void SweatTrails::prepare_zwift_world(ZwiftWorld const &world)
+{
+    auto const name = world.cache_name();
+    if (zwift_preparing.contains(name) || zwift_failed.contains(name)) {
+        return;
+    }
+    zwift_preparing.insert(name);
+    schedule<JobType::PrepareZwiftWorld>(world);
+}
+
 void SweatTrails::show_activity(Activity const &activity)
 {
     trace(ST, "Showing activity {}", activity.id);
@@ -946,6 +984,11 @@ void SweatTrails::initialize()
         }
     }
     storage = MUST_EVAL(Storage::init(app_name));
+    if (auto worlds = read_zwift_worlds(system_config_dir / "zwift-worlds.json"); worlds) {
+        zwift_worlds = std::move(*worlds);
+    } else {
+        warning(ST, "No Zwift maps: {}", worlds.error().to_string());
+    }
 
     widget_stack = add_widget<WidgetStack>();
     activity_display = widget_stack->add_widget<ActivityDisplay>();

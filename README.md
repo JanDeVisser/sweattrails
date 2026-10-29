@@ -90,6 +90,21 @@ the one selected, and Escape closes the list. Left and Right go to the
 month before or after that has activities, and Shift+Left and
 Shift+Right a year back or on.
 
+## Zwift
+
+A ride in Zwift shows on the map of its Zwift world rather than on
+OpenStreetMap, where Watopia, for example, is open sea. The first time a
+world comes up, the map shows OpenStreetMap for a few seconds while the
+app downloads Zwift's image of the world and cuts it into map tiles,
+kept with OpenStreetMap's; from then on it's there right away. This works
+for the files Zwift makes, as Garmin Connect and Strava pass them on.
+
+The worlds, their images and where each lies, are in
+`share/zwift-worlds.json`. Zwift doesn't document its images, and may
+move them: a world whose image doesn't download stays on OpenStreetMap,
+and a new world, or a new image, is an edit to that file (and
+`ninja -C build install`).
+
 ## Garmin Connect
 
 SweatTrails downloads your activities from Garmin Connect with Garmin's
@@ -335,3 +350,8 @@ Project Authors, under the SIL Open Font License 1.1
 
 The map tiles are from [OpenStreetMap](https://www.openstreetmap.org),
 © OpenStreetMap contributors.
+
+The maps of Zwift's worlds are Zwift's, downloaded from Zwift when they're
+shown. Where each lies on the earth is from
+[zwift-data](https://github.com/andipaetzold/zwift-data), by Andi
+Pätzold, under the MIT License.

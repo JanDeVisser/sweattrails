@@ -190,6 +190,8 @@ add_executable(
         src/App/Map.h
         src/App/Map.cpp
         src/App/Range.h
+        src/App/Zwift.h
+        src/App/Zwift.cpp
         src/App/fit/FIT.cpp
         src/App/fit/Profile.cpp
         src/App/overlay/Encoder.cpp
@@ -343,6 +345,22 @@ sweattrails_test(
 )
 target_include_directories(activity_selector_test PRIVATE src/App)
 target_link_libraries(activity_selector_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        zwift_test
+        test/ZwiftTest.cpp
+        src/App/Zwift.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(zwift_test PRIVATE src/App)
+target_link_libraries(zwift_test PRIVATE ${CURL_LIBRARIES})
+target_compile_definitions(zwift_test PRIVATE SWEATTRAILS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
 sweattrails_test(
         map_test

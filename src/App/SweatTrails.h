@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <set>
 #include <string_view>
 #include <thread>
 #include <utility>
@@ -16,6 +17,7 @@
 
 #include <App.h>
 
+#include <Zwift.h>
 #include <overlay/OverlayRender.h>
 #include <storage/Activity.h>
 #include <storage/Download.h>
@@ -78,7 +80,8 @@ struct WahooLogin {
     S(ProcessInbox, std::monostate)       \
     S(DownloadTiles, pTileDownload)       \
     S(Download, DownloadRequest)          \
-    S(WahooLogin, WahooLogin)
+    S(WahooLogin, WahooLogin)             \
+    S(PrepareZwiftWorld, ZwiftWorld)
 
 enum class JobType {
     JOBTYPE(ENUMVALUE2)
@@ -116,16 +119,17 @@ struct WahooLoginEnded {
     bool        downloading { false }; // The login worked, and a download follows
 };
 
-#define NOTIFICATIONTYPE(S)         \
-    S(Message, std::string)         \
-    S(ActivityList, Activities)     \
-    S(Activity, Activity)           \
-    S(ImportingFile, ImportingFile) \
-    S(MapTile, MapTile)             \
-    S(MapTilesDone, MapTilesDone)   \
-    S(Downloading, Downloading)     \
-    S(DownloadDone, DownloadReport) \
-    S(WahooLoginEnded, WahooLoginEnded)
+#define NOTIFICATIONTYPE(S)             \
+    S(Message, std::string)             \
+    S(ActivityList, Activities)         \
+    S(Activity, Activity)               \
+    S(ImportingFile, ImportingFile)     \
+    S(MapTile, MapTile)                 \
+    S(MapTilesDone, MapTilesDone)       \
+    S(Downloading, Downloading)         \
+    S(DownloadDone, DownloadReport)     \
+    S(WahooLoginEnded, WahooLoginEnded) \
+    S(ZwiftWorldReady, ZwiftWorldReady)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -148,6 +152,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void job_download_tiles(Job::Payload const &data);
     static void job_download(Job::Payload const &data);
     static void job_wahoo_login(Job::Payload const &data);
+    static void job_prepare_zwift_world(Job::Payload const &data);
 
     // The payload variant starts with a std::monostate, so a job type's
     // payload comes one after its value.
@@ -163,6 +168,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 job_download_tiles,
                 job_download,
                 job_wahoo_login,
+                job_prepare_zwift_world,
             });
     }
 
@@ -181,6 +187,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_downloading(Notification::Payload const &data);
     static void notif_download_done(Notification::Payload const &data);
     static void notif_wahoo_login_ended(Notification::Payload const &data);
+    static void notif_zwift_world_ready(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -197,6 +204,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_downloading,
                 notif_download_done,
                 notif_wahoo_login_ended,
+                notif_zwift_world_ready,
             });
     }
 
@@ -230,6 +238,14 @@ struct SweatTrails : public Main<Job, Notification> {
     int                            render_percent { -1 };    // As the status line says it
     bool                           render_waiting { false }; // For tiles, as the status line says
 
+    // From share/zwift-worlds.json; none if it can't be read.
+    std::vector<ZwiftWorld> zwift_worlds { };
+    // The worlds being cut, and the ones that failed, which aren't tried
+    // again until the app restarts. By cache name; only used on the UI
+    // thread.
+    std::set<std::string> zwift_preparing { };
+    std::set<std::string> zwift_failed { };
+
     std::shared_ptr<WidgetStack>     widget_stack { nullptr };
     std::shared_ptr<ActivityDisplay> activity_display { nullptr };
     std::shared_ptr<Label>           status { nullptr };
@@ -255,6 +271,11 @@ struct SweatTrails : public Main<Job, Notification> {
     // An empty text, while a login waits, shows that it waits.
     void set_status(std::string_view const &text);
     void show_activity(Activity const &activity);
+    // Where Zwift worlds' maps are cut into tiles.
+    [[nodiscard]] fs::path zwift_cache() const { return storage.tiles_dir / "zwift"; }
+    // Has the job cut the world into tiles, unless it's doing that already,
+    // or failed to before.
+    void prepare_zwift_world(ZwiftWorld const &world);
     // Renders a few of the overlay's frames, and says how far it is.
     void step_render();
     void stop_render();

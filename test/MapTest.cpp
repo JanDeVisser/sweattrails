@@ -220,12 +220,12 @@ void test_cached_tile()
     Tile const missing { .x = 4578, .y = 5980, .zoom = 14 };
     cache.put(cached, "cached png");
 
-    auto const hit = cached.get_cached_tile(cache.storage);
+    auto const hit = cached.get_cached_tile(cache.storage.tiles_dir);
     CHECK(hit.has_value());
     if (hit) {
         CHECK_EQ(*hit, "cached png");
     }
-    CHECK(!missing.get_cached_tile(cache.storage).has_value());
+    CHECK(!missing.get_cached_tile(cache.storage.tiles_dir).has_value());
 }
 
 // The job fetches with get_tile(). A tile that a cancelled download
@@ -842,10 +842,22 @@ void test_next_download()
     next = next_download(view, all, nullptr);
     CHECK(next.has_value() && next->empty());
 }
+// Above a Zwift world's native zoom, the map scales up the tile at it.
+void test_ancestor()
+{
+    Tile const tile { .x = 63147, .y = 34905, .zoom = 18 };
+    CHECK_EQ(tile.ancestor(16), (Tile { .x = 15786, .y = 8726, .zoom = 16 }));
+    CHECK_EQ(tile.ancestor(17), (Tile { .x = 31573, .y = 17452, .zoom = 17 }));
+    CHECK_EQ(tile.ancestor(18), tile);
+    CHECK_EQ(tile.ancestor(19), tile);
+    CHECK_EQ(tile.ancestor(16).box().contains(tile.box()), true);
+}
+
 }
 
 int main()
 {
+    test_ancestor();
     test_all_tiles_arrive();
     test_failed_tiles_are_counted_and_not_sent();
     test_nothing_is_fetched_when_cancelled();

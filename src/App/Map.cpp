@@ -83,9 +83,9 @@ Box Tile::box() const
 // TODO: This uses std::filesystem calls that throw, which end the app on
 // e.g. an unreadable directory. Use the error_code overloads, as the job
 // thread code in Storage does.
-std::expected<std::string, LibCError> Tile::get_cached_tile(Storage const &storage) const
+std::expected<std::string, LibCError> Tile::get_cached_tile(fs::path const &cache) const
 {
-    auto const file_name = (storage.tiles_dir / std::format("{}/{}/{}.png", zoom, x, y)).string();
+    auto const file_name = (cache / std::format("{}/{}/{}.png", zoom, x, y)).string();
     if (!fs::exists(file_name)) {
         return std::unexpected(LibCError { ENOENT });
     }
@@ -103,7 +103,7 @@ static size_t write_cb(char *ptr, size_t size, size_t nmemb, void *stream)
     }
 }
 
-std::expected<void, std::variant<CURLcode, LibCError>> download(std::string url, fs::path dest)
+std::expected<void, std::variant<CURLcode, LibCError>> download(std::string url, fs::path dest, DownloadLimit limit)
 {
     static CURL *curl = nullptr;
 
@@ -118,8 +118,18 @@ std::expected<void, std::variant<CURLcode, LibCError>> download(std::string url,
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_CA_CACHE_TIMEOUT, 604800L);
-    // A connection that hangs would keep an overlay render waiting.
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+    // A connection that hangs would keep an overlay render waiting. The
+    // handle is kept between downloads, so each sets all of these.
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
+    if (limit == DownloadLimit::Total) {
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 0L);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 0L);
+    } else {
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
+    }
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, UserAgent);
@@ -151,23 +161,17 @@ std::expected<void, std::variant<CURLcode, LibCError>> download(std::string url,
     return { };
 }
 
-std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) const
+// A file there is taken for complete, by get_cached_tile() among others.
+// So it's downloaded to another name, and only renamed when it's complete:
+// the UI thread may read the cache during the download, and the app may
+// quit in the middle of one.
+std::expected<void, LibCError> download_file(std::string const &url, fs::path const &file, DownloadLimit limit)
 {
-    if (auto cached = get_cached_tile(storage); cached) {
-        return cached;
-    }
-    auto const url = std::format("https://tile.openstreetmap.org/{}/{}/{}.png", zoom, x, y);
+    TRY(ensure_directory(file.parent_path()));
+    auto part_file = file;
+    part_file += ".part";
 
-    auto const tile_dir = TRY_EVAL(ensure_directory(storage.tiles_dir / std::format("{}/{}", zoom, x)));
-    auto const tile_file = tile_dir / std::format("{}.png", y);
-
-    // get_cached_tile() takes any file with the tile's name for the tile. So
-    // download to another name, and only rename it when it's complete: the
-    // UI thread may read the cache during the download, and the app may quit
-    // in the middle of one.
-    auto const part_file = tile_dir / std::format("{}.png.part", y);
-
-    auto const exit_code = download(url, part_file);
+    auto const exit_code = download(url, part_file, limit);
     if (!exit_code.has_value()) {
         std::error_code ec { };
         fs::remove(part_file, ec);
@@ -175,7 +179,7 @@ std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) con
             std::visit(
                 overloaded {
                     [&url](CURLcode c) -> LibCError {
-                        return LibCError { std::format("Error fetching tile `{}`: curl error: {} ({})", url, curl_easy_strerror(c), static_cast<int>(c)) };
+                        return LibCError { std::format("Error fetching `{}`: curl error: {} ({})", url, curl_easy_strerror(c), static_cast<int>(c)) };
                     },
                     [](LibCError c) -> LibCError {
                         return c;
@@ -184,14 +188,33 @@ std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) con
                 exit_code.error()));
     }
     std::error_code ec { };
-    fs::rename(part_file, tile_file, ec);
+    fs::rename(part_file, file, ec);
     if (ec) {
         auto const message = ec.message();
         fs::remove(part_file, ec);
-        return std::unexpected(LibCError { "Could not cache tile `{}`: {}", url, message });
+        return std::unexpected(LibCError { "Could not save `{}`: {}", url, message });
     }
+    return { };
+}
+
+std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) const
+{
+    if (auto cached = get_cached_tile(storage.tiles_dir); cached) {
+        return cached;
+    }
+    auto const url = std::format("https://tile.openstreetmap.org/{}/{}/{}.png", zoom, x, y);
+    TRY(download_file(url, storage.tiles_dir / std::format("{}/{}/{}.png", zoom, x, y)));
     trace(Map, "fetched tile {}", url);
-    return get_cached_tile(storage);
+    return get_cached_tile(storage.tiles_dir);
+}
+
+Tile Tile::ancestor(u8 up_to) const
+{
+    if (up_to >= zoom) {
+        return *this;
+    }
+    auto const levels = zoom - up_to;
+    return Tile { .x = x >> levels, .y = y >> levels, .zoom = up_to };
 }
 
 std::string Tile::to_string() const
@@ -398,7 +421,7 @@ u64 next_tile_owner()
 
 std::vector<TilePiece> cover(Tile const &tile, TileLoaded const &loaded)
 {
-    for (u8 up = 1; up <= 3 && up <= tile.zoom; ++up) {
+    for (u8 up = 1; up <= CoverLevels && up <= tile.zoom; ++up) {
         auto const ancestor = Tile { .x = tile.x >> up, .y = tile.y >> up, .zoom = static_cast<u8>(tile.zoom - up) };
         if (!loaded(ancestor)) {
             continue;

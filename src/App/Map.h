@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <expected>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -35,6 +36,8 @@
 
 namespace ST {
 
+namespace fs = std::filesystem;
+
 struct Storage;
 
 struct Tile {
@@ -44,15 +47,19 @@ struct Tile {
 
     static Tile for_coordinates(Coordinates const &pos, u8 zoom);
 
-    [[nodiscard]] Box                                   box() const;
-    [[nodiscard]] Coordinates                           coordinates() const;
-    [[nodiscard]] float                                 north() const { return box().north(); }
-    [[nodiscard]] float                                 south() const { return box().south(); }
-    [[nodiscard]] float                                 east() const { return box().east(); }
-    [[nodiscard]] float                                 west() const { return box().west(); }
-    [[nodiscard]] bool                                  contains(Coordinates const &) const;
-    [[nodiscard]] std::expected<std::string, LibCError> get_cached_tile(Storage const &storage) const;
+    [[nodiscard]] Box         box() const;
+    [[nodiscard]] Coordinates coordinates() const;
+    [[nodiscard]] float       north() const { return box().north(); }
+    [[nodiscard]] float       south() const { return box().south(); }
+    [[nodiscard]] float       east() const { return box().east(); }
+    [[nodiscard]] float       west() const { return box().west(); }
+    [[nodiscard]] bool        contains(Coordinates const &) const;
+    // The tile from a cache of tiles in `<zoom>/<x>/<y>.png`: OpenStreetMap's,
+    // the storage's tiles_dir, or a Zwift world's.
+    [[nodiscard]] std::expected<std::string, LibCError> get_cached_tile(fs::path const &cache) const;
     [[nodiscard]] std::string                           to_string() const;
+    // The tile at `up_to`, a zoom no higher than this one's, that holds it.
+    [[nodiscard]] Tile ancestor(u8 up_to) const;
 
     // The cached tile, or else downloads it. Only call this on the job
     // thread: downloads are slow, and use a curl handle that isn't shared
@@ -61,6 +68,19 @@ struct Tile {
 
     auto operator<=>(Tile const &) const = default;
 };
+
+// How long a download may take: a tile 30 seconds, and a large file, such
+// as a Zwift world's image, as long as it keeps coming, at 1 KB/s or more
+// over 30 seconds.
+enum class DownloadLimit {
+    Total,
+    Stall,
+};
+
+// Downloads `url` to `file`, making its directory. A file there is always
+// complete: it's downloaded to another name first. Only call this on the
+// job thread, as Tile::get_tile().
+std::expected<void, LibCError> download_file(std::string const &url, fs::path const &file, DownloadLimit limit = DownloadLimit::Total);
 
 // OSM's licence asks for this wherever its tiles are shown.
 constexpr char const OsmAttribution[] = "© OpenStreetMap contributors";
@@ -74,6 +94,16 @@ constexpr u8 MaxFitZoom = 16;
 
 // The map zooms out this many levels past the whole route, for context.
 constexpr u8 ZoomOutPastFit = 2;
+
+// Where the activity map's tiles come from: OpenStreetMap, or a Zwift
+// world's map, cut into tiles. See specs/zwift-maps.md.
+struct MapSource {
+    fs::path    dir { };                        // The tiles' cache
+    char const *attribution { OsmAttribution }; // The licence's credit
+    bool        downloads { true };             // A world's tiles are all there, or past its edge
+    u8          max_zoom { MaxMapZoom };        // Above it, the tile at it is scaled up
+    Color       background { LIGHTGRAY };       // Where there's no tile
+};
 
 // A point's place on the map: its Web Mercator position in pixels, from 0
 // to 256 << zoom. Doubles, since at zoom 18 that's up to 67 million, which a
@@ -135,8 +165,11 @@ struct TilePiece {
 
 using TileLoaded = std::function<bool(Tile const &)>;
 
+// How many levels up cover() looks for a loaded tile.
+constexpr u8 CoverLevels = 3;
+
 // What to draw for a tile that isn't loaded yet: the part of its nearest
-// loaded ancestor, up to three levels up, that covers it, as after zooming
+// loaded ancestor, up to CoverLevels levels up, that covers it, as after zooming
 // in; or else those of its four children that are loaded, as after zooming
 // out. Nothing means grey.
 std::vector<TilePiece> cover(Tile const &tile, TileLoaded const &loaded);

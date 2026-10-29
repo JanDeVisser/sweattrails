@@ -25,7 +25,7 @@ constexpr Color CheckerLight { .r = 0x2c, .g = 0x2c, .b = 0x2c, .a = 0xff };
 OverlayPreview::OverlayPreview(pWidget const &parent)
     : Widget(parent)
     , tiles(
-          [](Tile const &tile) { return tile.get_cached_tile(SweatTrails::the()->storage); },
+          [](Tile const &tile) { return tile.get_cached_tile(SweatTrails::the()->storage.tiles_dir); },
           [](pTileDownload const &download) { SweatTrails::the()->schedule<JobType::DownloadTiles>(download); })
     , renderer([](std::string_view name) { return SweatTrails::the()->find_font(name); }, SweatTrails::image_finder())
 {
