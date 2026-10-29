@@ -438,3 +438,32 @@ both clients keep their tokens the same way: `wahoo-tokens.json` and
    `test/ActivityLoadTest.cpp` (passes: a rename wins over Strava's name,
    and clearing it brings Strava's back, also when Strava's came after
    the rename).
+
+### Resolution
+
+All eight were fixed, each in its own commit.
+
+1. Fixed: the app's fonts load General Punctuation, U+2000 to U+206F,
+   as well as 32 to 1023, so "…", curly quotes and dashes are drawn.
+   Emoji would take another font, and wait.
+2. Fixed: `activity_starts()` returns each activity as a `StoredStart`,
+   with the sidecar next to the FIT file it found, and looks a month
+   either side of the times asked for. Matching and saving use that
+   sidecar. `sidecar_of()` stays, for the store as the inbox would file
+   it now. The Reviewer's test passes.
+3. Fixed: `StravaUpdate::error` keeps what stopped the descriptions, and
+   it ends Strava's sentence.
+4. Fixed: `list_activities()` returns a `StravaListing`, with the
+   activities listed so far and, when a page after the first failed,
+   why in `stopped`. Their titles are saved, their descriptions wait for
+   the next time, and the message says the list stopped short.
+5. Fixed: descriptions are fetched newest first.
+6. Fixed: a Strava activity's description is fetched once, and saved to
+   every activity that matches it.
+7. Fixed: with a client ID and no secret, Ctrl+G and the login say the
+   secret is missing (`strava_setup_problem()`). Without an ID, Strava
+   still isn't mentioned.
+8. Fixed: the login question passes on what was asked for, as
+   `st-strava-login`'s `days` or `history` arguments, and the login
+   fetches that after it.
+9. The Reviewer's tests are kept.
