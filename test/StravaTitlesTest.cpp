@@ -242,6 +242,7 @@ void test_descriptions_stop_at_a_failure()
     CHECK_EQ(update.descriptions, 0u);
     CHECK_EQ(update.waiting, 2u);
     CHECK(!update.resets_at.has_value());
+    CHECK_EQ(update.error, "Strava answered HTTP 500 for `/api/v3/activities/101`");
     CHECK_EQ(t.description_requests(), 1u);
 }
 

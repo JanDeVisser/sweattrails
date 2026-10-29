@@ -97,7 +97,7 @@ StravaResult<StravaUpdate> update_strava_titles(Strava &strava, Storage const &s
             if (description.error().kind == StravaError::Kind::RateLimited) {
                 update.resets_at = description.error().resets_at;
             } else {
-                warning(Strava, "Could not fetch a description from Strava: {}", description.error().to_string());
+                update.error = description.error().to_string();
             }
             break;
         }

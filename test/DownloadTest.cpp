@@ -182,6 +182,10 @@ void test_strava_report()
     CHECK_EQ(download_report({ strava(Kind::Titled, 40, 28, 12, "14:45") }, false).text,
         "Strava: 40 new titles. 12 descriptions are left for after 14:45.");
     CHECK_EQ(download_report({ strava(Kind::Titled, 0, 0, 1) }, false).text, "Strava: nothing new. 1 description is left for next time.");
+    auto stopped = strava(Kind::Titled, 40, 0, 12);
+    stopped.message = "Could not reach Strava: timed out";
+    CHECK_EQ(download_report({ stopped }, false).text,
+        "Strava: 40 new titles. 12 descriptions are left for next time. Could not reach Strava: timed out.");
     auto const all = download_report({ garmin(Kind::Downloaded, 2), wahoo(Kind::NotSetUp, 0, "No ID."), strava(Kind::Titled, 2) }, false);
     CHECK_EQ(all.text, "Garmin Connect: 2 new activities. Strava: 2 new titles.");
     CHECK(download_report({ strava(Kind::Titled, 2) }, true).text.empty());

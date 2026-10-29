@@ -66,6 +66,9 @@ std::string titled_sentence(SourceOutcome const &outcome)
         ret += std::format(" {} left for {}.", plural(outcome.waiting, "description is", "descriptions are"),
             outcome.resets_at.empty() ? std::string { "next time" } : std::format("after {}", outcome.resets_at));
     }
+    if (!outcome.message.empty()) {
+        ret += std::format(" {}{}", outcome.message, outcome.message.ends_with('.') ? "" : ".");
+    }
     return ret;
 }
 

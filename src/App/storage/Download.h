@@ -77,7 +77,7 @@ struct SourceOutcome {
     size_t      descriptions { 0 }; // For Titled
     size_t      waiting { 0 };      // For Titled: descriptions left for the next time
     std::string resets_at { };      // For Titled: when they can be fetched, such as "14:45"
-    std::string message { };        // For NotSetUp and Failed: what to tell the user
+    std::string message { };        // For NotSetUp and Failed: what to tell the user; for Titled, what stopped the descriptions
 };
 
 // What to tell the user when the download is done.

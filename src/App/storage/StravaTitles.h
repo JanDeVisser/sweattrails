@@ -39,6 +39,7 @@ struct StravaUpdate {
     size_t             descriptions { 0 }; // Descriptions fetched
     size_t             waiting { 0 };      // Descriptions still to fetch
     std::optional<i64> resets_at { };      // When Strava's limit resets, if it was reached
+    std::string        error { };          // What else stopped the descriptions, if anything
     std::vector<i64>   changed { };        // The activities whose title or notes changed, by start time
 };
 
@@ -47,8 +48,9 @@ using StravaTitlesProgress = std::function<void(size_t index, size_t count)>;
 // Gives the activities in the store that started between `after` and
 // `before`, Unix times, the names of the Strava activities they match, and
 // then fetches their descriptions, with `progress` called before each.
-// Descriptions stop at Strava's limit, or at the first one that fails, and
-// the rest are left for the next time. Runs on the job thread.
+// Descriptions stop at Strava's limit, or at the first one that fails,
+// with its error, and the rest are left for the next time. Runs on the job
+// thread.
 StravaResult<StravaUpdate> update_strava_titles(Strava &strava, Storage const &storage, i64 after, i64 before, StravaTitlesProgress const &progress = { });
 
 }

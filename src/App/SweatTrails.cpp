@@ -179,6 +179,7 @@ SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<Strava
     outcome.descriptions = update->descriptions;
     outcome.waiting = update->waiting;
     outcome.resets_at = update->resets_at ? clock_time(*update->resets_at) : std::string { };
+    outcome.message = update->error;
     return outcome;
 }
 
