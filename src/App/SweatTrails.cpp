@@ -466,6 +466,38 @@ void cmd_previous_lap(pSweatTrails const &sweattrails, JSONValue const &)
     }
 }
 
+// The activity before (`step` -1) or after (+1) the one on display, in
+// another month if need be, as choosing it in Ctrl+M's list shows it. At
+// the first and the last, nothing.
+void show_activity_next_to(pSweatTrails const &sweattrails, int step)
+{
+    auto const activity = activity_for_keys(sweattrails);
+    if (activity == nullptr) {
+        return;
+    }
+    auto const next = sweattrails->storage.activity_next_to(activity->activity.id, step);
+    if (!next) {
+        message_box(std::format("The activities can't be listed: {}", next.error().to_string()));
+        return;
+    }
+    if (!*next) {
+        return;
+    }
+    if (auto const loaded = MUST_EVAL((*next)->load(sweattrails->storage, LoadingDepth::Deep)); loaded) {
+        sweattrails->show_activity(*loaded);
+    }
+}
+
+void cmd_next_activity(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    show_activity_next_to(sweattrails, 1);
+}
+
+void cmd_previous_activity(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    show_activity_next_to(sweattrails, -1);
+}
+
 void cmd_whole_activity(pSweatTrails const &sweattrails, JSONValue const &)
 {
     if (auto activity = activity_for_keys(sweattrails)) {
@@ -903,6 +935,11 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_DOWN, KModNone });
     bus.add_task<SweatTrails>("st-previous-lap", self(), cmd_previous_lap)
         .bind(KeyCombo { KEY_UP, KModNone });
+    // As Left and Right go through the months in Ctrl+M's list.
+    bus.add_task<SweatTrails>("st-next-activity", self(), cmd_next_activity)
+        .bind(KeyCombo { KEY_RIGHT, KModNone });
+    bus.add_task<SweatTrails>("st-previous-activity", self(), cmd_previous_activity)
+        .bind(KeyCombo { KEY_LEFT, KModNone });
     bus.add_task<SweatTrails>("st-whole-activity", self(), cmd_whole_activity)
         .bind(KeyCombo { KEY_ESCAPE, KModNone });
     // F2 rather than Ctrl+R, which often means reload, and Cmd+Shift+R
