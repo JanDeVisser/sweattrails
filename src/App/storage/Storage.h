@@ -54,7 +54,6 @@ struct Storage {
     fs::path activity_dir { };
     fs::path tiles_dir { };
     fs::path overlays_dir { }; // The user's overlay layouts
-    // std::optional<Strava> strava { };
 
     // Threading: the paths above don't change after init(), and can be used
     // from any thread. `years` (and `current`) are rebuilt by rescan(), so
@@ -88,8 +87,22 @@ struct Storage {
     StorageResult<InboxOutcome>              organize_fit_file(std::string_view const &file_name);
     // Whether the store has an activity that starts at `start_time`, a Unix
     // time: the inbox files activities by their start time.
-    [[nodiscard]] bool  has_activity(i64 start_time) const;
+    [[nodiscard]] bool has_activity(i64 start_time) const;
+    // The sidecar of the activity that starts at `start_time`, whether it's
+    // there or not.
+    [[nodiscard]] fs::path sidecar_of(i64 start_time) const;
+    // The start times of the activities from `from` to `to`, Unix times,
+    // earliest first. From the FIT files' names: none is read, and one
+    // that isn't named by its start time isn't there.
+    StorageResult<std::vector<i64>> activity_starts(i64 from, i64 to) const;
+    // The start time of the store's oldest activity, as activity_starts()
+    // sees them.
+    StorageResult<std::optional<i64>> oldest_start() const;
+
     Error<StorageError> move_with_sidecar(std::string_view const &file_name, fs::path const &dest_dir, std::string_view const &dest_stem) const;
+
+private:
+    StorageResult<std::vector<i64>> month_starts(Month const &month) const;
 };
 
 }

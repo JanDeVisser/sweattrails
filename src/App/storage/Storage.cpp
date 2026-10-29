@@ -230,6 +230,72 @@ bool Storage::has_activity(i64 start_time) const
     return fs::exists(activity_dir / month_dir_name(start) / std::format("{}.fit", start_time), ec);
 }
 
+fs::path Storage::sidecar_of(i64 start_time) const
+{
+    auto const start = DateTime::from_timestamp(static_cast<i32>(start_time));
+    return activity_dir / month_dir_name(start) / std::format("{}.json", start_time);
+}
+
+StorageResult<std::vector<i64>> Storage::activity_starts(i64 from, i64 to) const
+{
+    auto const month_of = [](i64 time) {
+        auto const date = DateTime::from_timestamp(static_cast<i32>(time));
+        return Month { static_cast<size_t>(date.year), date.month };
+    };
+    auto const       first = month_of(from);
+    auto const       last = month_of(to);
+    std::vector<i64> ret;
+    for (auto const &month : TRY_EVAL(months_with_activities())) {
+        if (month < first || last < month) {
+            continue;
+        }
+        for (auto const start : TRY_EVAL(month_starts(month))) {
+            if (start >= from && start <= to) {
+                ret.push_back(start);
+            }
+        }
+    }
+    std::ranges::sort(ret);
+    return ret;
+}
+
+StorageResult<std::optional<i64>> Storage::oldest_start() const
+{
+    for (auto const &month : TRY_EVAL(months_with_activities())) {
+        auto const starts = TRY_EVAL(month_starts(month));
+        if (!starts.empty()) {
+            return std::optional { std::ranges::min(starts) };
+        }
+    }
+    return std::optional<i64> { };
+}
+
+StorageResult<std::vector<i64>> Storage::month_starts(Month const &month) const
+{
+    std::vector<i64> ret;
+    auto const       dir = month.dir(*this);
+    if (!dir) {
+        return ret;
+    }
+    std::error_code ec { };
+    for (fs::directory_iterator it { *dir, ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
+        auto const &path = it->path();
+        if (path.extension() != ".fit") {
+            continue;
+        }
+        auto const stem = path.stem().string();
+        i64        start { 0 };
+        auto const res = std::from_chars(stem.data(), stem.data() + stem.size(), start);
+        if (res.ec == std::errc { } && res.ptr == stem.data() + stem.size()) {
+            ret.push_back(start);
+        }
+    }
+    if (ec) {
+        return std::unexpected(StorageError { LibCError { ec } });
+    }
+    return ret;
+}
+
 StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
 {
     // Collect the file names first: organizing a file moves it out of the

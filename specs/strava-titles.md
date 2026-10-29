@@ -262,7 +262,9 @@ both clients keep their tokens the same way: `wahoo-tokens.json` and
 - **`Storage::activity_starts(i64 from, i64 to)`**: the start times of
   the store's activities between two times, from the month directories'
   `<start time>.fit` names: no FIT file is read. And
-  `Storage::oldest_start()`, for the history.
+  `Storage::oldest_start()`, for the history, and
+  `Storage::sidecar_of(start)`. A FIT file that isn't named by its start
+  time, such as one copied in by hand, isn't matched.
 - **`match_strava(strava, starts)`**, pure: for each start time in the
   store, the Strava activity nearest it within 60 seconds, if any.
 - **`StravaTitle { id, name, description }`**, the sidecar's `"strava"`
@@ -275,7 +277,9 @@ both clients keep their tokens the same way: `wahoo-tokens.json` and
      writes `"strava"` with them, keeping the description only if the
      name is the same. That's all the titles, with no more requests.
   3. Then fetches the description of each match without one, until
-     they're done or Strava says 429.
+     they're done or Strava says 429. Any other failure stops them too,
+     without a time to wait for, rather than failing request after
+     request without a connection.
 
   It returns `StravaUpdate { titles, descriptions, waiting,
   resets_at }`: how many titles changed, how many descriptions came, how
