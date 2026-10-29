@@ -183,7 +183,9 @@ void ActivityMap::view_changed()
 void ActivityMap::request_tiles()
 {
     // A world's tiles aren't downloaded: one that isn't there is past its
-    // edge, and above its native zoom, the tile at it is scaled up.
+    // edge, and above its native zoom, the tile at it is scaled up. Those
+    // that aren't there go with the failed ones, so that they aren't looked
+    // for on disk on every step of a drag.
     auto const cached_or_failed = [this](Tile const &tile) {
         if (loaded(tile) != nullptr || failed.contains(tile)) {
             return true;
@@ -195,7 +197,14 @@ void ActivityMap::request_tiles()
             }
             return true;
         }
-        return load_cached(tile) || !source.downloads;
+        if (load_cached(tile)) {
+            return true;
+        }
+        if (!source.downloads) {
+            failed.insert(tile);
+            return true;
+        }
+        return false;
     };
     auto next = next_download(navigator.view, cached_or_failed, download ? &download->tiles : nullptr);
     unload_least_recently_drawn();
