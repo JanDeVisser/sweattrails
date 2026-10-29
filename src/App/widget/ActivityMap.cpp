@@ -79,12 +79,15 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
 }
 
 // OpenStreetMap, unless it's a ride in Zwift whose world is cut into tiles.
-// Until a world is, it's OpenStreetMap, and the job cuts it.
+// Until a world is, it's OpenStreetMap, and the job cuts it, after it has
+// downloaded the view's tiles: there's one job thread, and the cut takes
+// some seconds, which would leave the map grey.
 void ActivityMap::choose_source()
 {
     auto const the = SweatTrails::the();
     source = MapSource { .dir = the->storage.tiles_dir };
     waiting_for_world.clear();
+    world_to_cut.reset();
     auto const *world = zwift_world(the->zwift_worlds, activity->activity);
     if (world == nullptr) {
         return;
@@ -94,7 +97,7 @@ void ActivityMap::choose_source()
         return;
     }
     waiting_for_world = world->cache_name();
-    the->prepare_zwift_world(*world);
+    world_to_cut = *world;
 }
 
 void ActivityMap::world_ready(ZwiftWorldReady const &ready)
@@ -103,6 +106,7 @@ void ActivityMap::world_ready(ZwiftWorldReady const &ready)
         return;
     }
     waiting_for_world.clear();
+    world_to_cut.reset();
     change_source(world_source(*ready.map));
 }
 
@@ -161,12 +165,23 @@ void ActivityMap::show_whole_route()
     }
 }
 
-// Loads the view's tiles that are cached, and downloads the others, unless
-// they failed before. The download for the view before, if it's still
-// going, is dropped: only the tile it's fetching finishes.
+// The view's tiles, and then the Zwift world's cut, if the map waits for
+// one: on the one job thread, the view's tiles come first.
 void ActivityMap::view_changed()
 {
     view_pending = false;
+    request_tiles();
+    if (world_to_cut) {
+        SweatTrails::the()->prepare_zwift_world(*world_to_cut);
+        world_to_cut.reset();
+    }
+}
+
+// Loads the view's tiles that are cached, and downloads the others, unless
+// they failed before. The download for the view before, if it's still
+// going, is dropped: only the tile it's fetching finishes.
+void ActivityMap::request_tiles()
+{
     // A world's tiles aren't downloaded: one that isn't there is past its
     // edge, and above its native zoom, the tile at it is scaled up.
     auto const cached_or_failed = [this](Tile const &tile) {

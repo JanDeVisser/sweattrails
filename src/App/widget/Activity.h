@@ -62,6 +62,7 @@ struct ActivityMap : public Widget {
     MapNavigator                       navigator { };
     MapSource                          source { };
     std::string                        waiting_for_world { }; // The cache name of the Zwift world being cut for it
+    std::optional<ZwiftWorld>          world_to_cut { };      // Once the view's OSM tiles are asked for
     bool                               has_map { false };
     bool                               view_pending { false }; // The tiles aren't loaded for the view yet
     std::vector<WorldPoint>            track { };              // At zoom 0; NaN without a position
@@ -90,6 +91,7 @@ private:
     void                            choose_source();
     void                            change_source(MapSource new_source);
     void                            view_changed();
+    void                            request_tiles();
     [[nodiscard]] bool              load_cached(Tile const &tile);
     [[nodiscard]] LoadedTile const *loaded(Tile const &tile) const;
     void                            load_tile(Tile const &tile, std::string const &png);
