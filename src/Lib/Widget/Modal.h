@@ -212,10 +212,12 @@ struct ListBox : public Modal {
     }
 
     // In characters: the prefix's width, and each column's, as wide as the
-    // widest among the entries on display, so that they line up.
+    // widest among the entries on display, so that they line up. The
+    // columns are counted from the row's right end, so that a row with
+    // fewer has its last one under the others' last.
     struct Widths {
         size_t              prefix { 0 };
-        std::vector<size_t> columns { };
+        std::vector<size_t> columns { }; // From the right
         bool                icon { false };
     };
 
@@ -226,8 +228,9 @@ struct ListBox : public Modal {
             ret.icon = ret.icon || !e.icon.empty();
             ret.prefix = std::max(ret.prefix, char_count(e.prefix));
             ret.columns.resize(std::max(ret.columns.size(), e.columns.size()));
-            for (size_t ix = 0; ix < e.columns.size(); ++ix) {
-                ret.columns[ix] = std::max(ret.columns[ix], char_count(e.columns[ix]));
+            for (size_t from_right = 0; from_right < e.columns.size(); ++from_right) {
+                auto const &column = e.columns[e.columns.size() - 1 - from_right];
+                ret.columns[from_right] = std::max(ret.columns[from_right], char_count(column));
             }
         }
         return ret;
@@ -275,10 +278,10 @@ struct ListBox : public Modal {
             auto const text = shown_text(e);
             render_text(text_x, y_offset, first_chars(text, maxlen), FontSize::Medium, text_color);
             auto x = right;
-            for (size_t col = e.columns.size(); col > 0; --col) {
-                auto const &column = e.columns[col - 1];
+            for (size_t from_right = 0; from_right < e.columns.size(); ++from_right) {
+                auto const &column = e.columns[e.columns.size() - 1 - from_right];
                 render_text(x - static_cast<float>(char_count(column)) * char_width, y_offset, column, FontSize::Medium, text_color);
-                x -= static_cast<float>(w.columns[col - 1] + 2) * char_width;
+                x -= static_cast<float>(w.columns[from_right] + 2) * char_width;
             }
             y_offset += row_height;
         }

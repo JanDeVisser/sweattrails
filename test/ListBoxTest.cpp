@@ -304,7 +304,8 @@ void test_select()
     CHECK_EQ(list->selection, 0);
 }
 
-// The prefix and each column are as wide as the widest on display.
+// The prefix and each column are as wide as the widest on display, the
+// columns counted from the right.
 void test_widths()
 {
     auto list = std::make_shared<RowList>();
@@ -315,7 +316,14 @@ void test_widths()
     CHECK(!w.icon);
     list->search = "zwift";
     list->filter();
-    CHECK_EQ(list->widths().columns, (std::vector<size_t> { 0uz, 7uz }));
+    CHECK_EQ(list->widths().columns, (std::vector<size_t> { 7uz, 0uz }));
+    // A row with fewer columns lines up its last with the others' last.
+    list->entries.clear();
+    list->add("a", 1, "", { "1", "22" });
+    list->add("b", 2, "", { "333" });
+    list->search = { };
+    list->filter();
+    CHECK_EQ(list->widths().columns, (std::vector<size_t> { 3uz, 1uz }));
 }
 
 // Cut by characters, not bytes, so that an é isn't cut in two.

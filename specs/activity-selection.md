@@ -262,4 +262,6 @@ struct ListBoxEntry {
    doesn't stand in the way. `load_to_show()` and the loop are in
    `SweatTrails.cpp`, with the commands, which no test reaches; a FIT
    file that loads for the list but not in full is also hard to make.
+3. Fixed: the columns are counted from the row's right end, so a row
+   with fewer lines its last one up under the others' (`test_widths`).
 6. The review's tests are committed, with fix 1.
