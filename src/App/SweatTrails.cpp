@@ -732,16 +732,26 @@ void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
         // with the list already open shouldn't open another.
         return;
     }
+    auto const months = sweattrails->storage.months_with_activities();
+    if (!months) {
+        message_box(std::format("The activities can't be listed: {}", months.error().to_string()));
+        return;
+    }
+    if (months->empty()) {
+        message_box("There are no activities yet");
+        return;
+    }
     auto activity_selected = [sweattrails](std::shared_ptr<ActivitySelector> const &selector, ActivityID const &id) -> void {
         auto activity = MUST_EVAL(id.load(selector->storage, LoadingDepth::Deep));
         sweattrails->show_activity(*activity);
         selector->status = ModalStatus::Dismissed;
     };
-    auto const &selector = Widget::make<ActivitySelector>(
-        activity_selected,
-        sweattrails->last_activity.month,
-        sweattrails->storage);
+    // At the activity on display, or else at the latest month.
+    auto const &shown = sweattrails->last_activity;
+    auto const  month = std::ranges::binary_search(*months, shown.month) ? shown.month : months->back();
+    auto const &selector = Widget::make<ActivitySelector>(activity_selected, *months, month, sweattrails->storage);
     selector->show();
+    selector->select(shown);
 }
 
 void cmd_message(pSweatTrails const &, JSONValue const &msg)

@@ -328,6 +328,8 @@ sweattrails_test(
         activity_selector_test
         test/ActivitySelectorTest.cpp
         src/App/widget/ActivitySelector.cpp
+        src/App/widget/DataFields.cpp
+        src/App/widget/SportIcon.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Storage.cpp
         src/App/storage/Types.cpp

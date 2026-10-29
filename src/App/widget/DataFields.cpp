@@ -17,8 +17,6 @@
 
 namespace ST {
 
-namespace {
-
 std::string format_moving_time(Duration const &moving)
 {
     if (moving.hours == 0 && moving.minutes == 0) {
@@ -28,14 +26,6 @@ std::string format_moving_time(Duration const &moving)
         return std::format("{:02}:{:02}", moving.minutes, moving.seconds);
     }
     return std::format("{}:{:02}:{:02}", moving.hours, moving.minutes, moving.seconds);
-}
-
-std::string format_elapsed_time(Duration const &elapsed)
-{
-    if (elapsed.hours == 0) {
-        return std::format("{:02}:{:02}.{:03}", elapsed.minutes, elapsed.seconds, static_cast<int>(elapsed.fraction * 1000));
-    }
-    return std::format("{}:{:02}:{:02}", elapsed.hours, elapsed.minutes, elapsed.seconds);
 }
 
 std::string format_distance(float32 meters)
@@ -51,6 +41,16 @@ std::string format_distance(float32 meters)
         return std::format("{:.1f} km", km);
     }
     return std::format("{:.0f} km", km);
+}
+
+namespace {
+
+std::string format_elapsed_time(Duration const &elapsed)
+{
+    if (elapsed.hours == 0) {
+        return std::format("{:02}:{:02}.{:03}", elapsed.minutes, elapsed.seconds, static_cast<int>(elapsed.fraction * 1000));
+    }
+    return std::format("{}:{:02}:{:02}", elapsed.hours, elapsed.minutes, elapsed.seconds);
 }
 
 std::string format_pace(float32 seconds_per_km)

@@ -32,6 +32,11 @@ struct DataLine {
     std::optional<DataField> right { };
 };
 
+// As the data panel shows them, also in Ctrl+M's list: "42.3 km", or
+// "850 m" under a kilometer; "1:32:10", or "41:07" under an hour.
+std::string format_distance(float32 meters);
+std::string format_moving_time(Duration const &moving);
+
 // The line under the activity's title: the distance, the active time and
 // the TSS, as far as the activity has them, e.g. "42.3 km · 1:32:10 · TSS 87".
 std::string activity_summary(Activity const &activity);
