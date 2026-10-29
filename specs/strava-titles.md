@@ -1,6 +1,6 @@
 # Titles from Strava
 
-Status: In progress, on branch feature/strava-titles
+Status: In review, on branch feature/strava-titles
 
 ## Goal
 
@@ -91,9 +91,10 @@ never mentions it to them.
   activities in the store that match them their Strava titles. Its
   message says what Strava did, as for the other sources, such as
   "Strava: 3 new titles."
-- **The history**: a new task, `st-strava-titles`, does the same from the
-  store's oldest activity, or for the last `days` if it's given. Listing
-  is cheap, 200 activities a request, so all titles come in one run.
+- **The history**: a new task, `st-strava-titles` (Ctrl+Shift+G), does
+  the same from the store's oldest activity, or for the last `days` if
+  it's given. Listing is cheap, 200 activities a request, so all titles
+  come in one run.
 - **Matching**: a Strava activity matches an activity in the store whose
   start time is within 60 seconds of its `start_date`; of several, each
   store activity takes the nearest. The same ride recorded on two
@@ -349,23 +350,29 @@ both clients keep their tokens the same way: `wahoo-tokens.json` and
     `start_date`; entries without an ID or a start are skipped.
   - `description()`; a 429 is `RateLimited`, with `rate_limit_reset()`
     at the next quarter hour, or midnight UTC when the day is used up.
-- `StravaTitlesTest`, in a temporary store with FIT files from
-  `TestFit.h`:
+- `StravaTitlesTest`, in a temporary store (`TempStore.h`), against the
+  fake Strava in `FakeStrava.h`, which `StravaTest` shares:
   - `match_strava()`: exact, within 60 s, past it, the nearest of two,
     one Strava activity for two in the store.
   - `update_strava_titles()`: titles written to the sidecars, the rest of
     the sidecar kept; no sidecar makes one; one that isn't JSON is left;
     descriptions fetched once, and again after a rename on Strava;
-    stopping at 429 keeps the titles, and the next run fetches the rest.
+    stopping at 429 keeps the titles, and the next run fetches the rest;
+    another failure stops them too; without a login nothing is asked.
   - `Storage::activity_starts()` and `oldest_start()`.
 - `ActivityLoadTest`: the title's priority, with each of the five; the
-  `.strava` file's name and description; `notes`.
+  `.strava` file's name and description; `notes`; `read_names()` after
+  the sidecar changed; `save_sidecar_strava()`.
 - `DownloadTest`: `make_download_request()` with Strava;
   `download_report()`'s Strava sentences and which login it asks for.
-- `WahooTest` passes with `OAuthTokens`.
-- `StringUtilTest`: `clamp_lines()`.
-- By hand: logging in to Strava, Ctrl+G, `st-strava-titles`, the notes
-  under the title, and a rename winning over Strava's title.
+- `WahooTest` passes with `OAuthTokens`, and `login_code()` names the
+  service.
+- `StringUtilTest`: `clamp_lines()`, and `wrap_words()` at newlines.
+- By hand: logging in to Strava (does the browser come back to
+  localhost:8090?), that Strava's `start_date` is the FIT file's start,
+  Ctrl+G, Ctrl+Shift+G, the notes under the title, the title on display
+  changing when Strava's comes in, and a rename winning over Strava's
+  title.
 
 ## Review notes
 

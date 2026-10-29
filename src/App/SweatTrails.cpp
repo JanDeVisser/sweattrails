@@ -1195,7 +1195,9 @@ void SweatTrails::initialize()
     bus.add_task<SweatTrails>("st-wahoo-download", self(), cmd_wahoo_download);
     // No key: Ctrl+G offers it when it's needed.
     bus.add_task<SweatTrails>("st-wahoo-login", self(), cmd_wahoo_login);
-    bus.add_task<SweatTrails>("st-strava-titles", self(), cmd_strava_titles);
+    // Ctrl+G's titles go back strava.days; this goes back all the way.
+    bus.add_task<SweatTrails>("st-strava-titles", self(), cmd_strava_titles)
+        .bind(KeyCombo { KEY_G, KModControl | KModShift });
     bus.add_task<SweatTrails>("st-strava-login", self(), cmd_strava_login);
     bus.add_task<SweatTrails>("st-message", self(), cmd_message);
     // The table and the data panel follow the lap these select.
