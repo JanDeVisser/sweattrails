@@ -140,7 +140,6 @@ void test_builtin_layout(std::string_view name, size_t elements)
         return;
     }
     CHECK_EQ(file.layout->elements.size(), elements);
-    CHECK_EQ(file.layout->skipped, 0uz);
     auto const shipped = [](std::string const &font) {
         return fs::exists(fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "fonts" / font);
     };
@@ -280,7 +279,7 @@ void test_error_names_file_element_and_property()
     put(path, R"({ "elements": [
         // A comment, as layouts have them.
         { "type": "text", "text": "a" },
-        { "type": "group" },
+        { "type": "group", "size": { "width": 100, "height": 100 }, "children": [] },
         { "type": "value", "field": "speed", "colour": "#ffffff" }
     ] })");
     LayoutFile file { path };
@@ -313,14 +312,14 @@ OverlayLayout decoded(std::string_view json)
     return MUST_EVAL(decode_layout(MUST_EVAL(JSONValue::deserialize(json))));
 }
 
-// The fonts are looked up once each, and a missing one names the element
-// that uses it, counting the elements of later slices that were skipped.
+// The fonts are looked up once each, also those of a group's children,
+// and a missing one names the element that uses it.
 void test_layout_fonts()
 {
     auto const               layout = decoded(R"({ "elements": [
-        { "type": "group" },
         { "type": "text", "text": "a", "font": "A.ttf" },
-        { "type": "value", "field": "speed", "font": "A.ttf", "unit_style": { "font": "B.ttf" } }
+        { "type": "group", "size": { "width": 100, "height": 100 }, "children": [
+            { "type": "value", "field": "speed", "font": "A.ttf", "unit_style": { "font": "B.ttf" } } ] }
     ] })");
     std::vector<std::string> asked;
     auto const               find_all = [&asked](std::string_view name) -> std::optional<fs::path> {
@@ -344,12 +343,12 @@ void test_layout_fonts()
     auto const missing = layout_fonts(layout, only_a);
     CHECK(!missing.has_value());
     if (!missing) {
-        CHECK_EQ(missing.error().to_string(), "element 3: the font `B.ttf` isn't in any of the font directories");
+        CHECK_EQ(missing.error().to_string(), "element 2.1: the font `B.ttf` isn't in any of the font directories");
     }
     auto const none = layout_fonts(layout, [](std::string_view) -> std::optional<fs::path> { return { }; });
     CHECK(!none.has_value());
     if (!none) {
-        CHECK_EQ(none.error().to_string(), "element 2: the font `A.ttf` isn't in any of the font directories");
+        CHECK_EQ(none.error().to_string(), "element 1: the font `A.ttf` isn't in any of the font directories");
     }
 }
 }

@@ -90,8 +90,8 @@ void OverlayRenderer::set_layout(OverlayLayout const &layout, fs::path const &fi
 // the video. Decoding needs no GL context; making a texture does.
 bool OverlayRenderer::decode_pictures(OverlayLayout const &layout)
 {
-    for (auto const &element : layout.elements) {
-        auto const *image = std::get_if<ImageElement>(&element);
+    for (auto const *element : all_elements(layout.elements)) {
+        auto const *image = std::get_if<ImageElement>(element);
         if (image == nullptr || m_decoded.contains(image->src)) {
             continue;
         }
@@ -578,6 +578,11 @@ void OverlayRenderer::draw(ImageElement const &image, FieldValues const &, Recta
     auto const on_screen = [&area](Rectangle r) { return Rectangle { .x = area.x + r.x, .y = area.y + r.y, .width = r.width, .height = r.height }; };
     draw_panel(image.panel, on_screen(box.panel));
     DrawTexturePro(*texture, Rectangle { .x = 0, .y = 0, .width = own.x, .height = own.y }, on_screen(box.picture), Vector2 { }, 0, faded(image.tint));
+}
+
+// Drawn in the next step.
+void OverlayRenderer::draw(GroupElement const &, FieldValues const &, Rectangle const &)
+{
 }
 
 }

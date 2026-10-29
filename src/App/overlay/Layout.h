@@ -293,13 +293,25 @@ struct ImageElement {
     Color                     tint { WHITE };
 };
 
-using OverlayElement = std::variant<TextElement, ValueElement, GaugeElement, GraphElement, ProfileElement, MapElement, ImageElement>;
+struct GroupElement;
+
+using OverlayElement = std::variant<TextElement, ValueElement, GaugeElement, GraphElement, ProfileElement, MapElement, ImageElement, GroupElement>;
+
+// A panel, with its children placed in its box less its padding, drawn
+// over it, and shown while it shows. Its text properties came down to the
+// children in the cascade.
+struct GroupElement {
+    ElementNumber               number { };
+    std::optional<Visibility>   visible { }; // None: always
+    Placement                   at { };      // Always with a size
+    Panel                       panel { };
+    std::vector<OverlayElement> children { };
+};
 
 struct OverlayLayout {
     Vector2                     design_size { .x = 1920, .y = 1080 };
     Units                       units { Units::Metric };
     std::vector<OverlayElement> elements { };
-    size_t                      skipped { 0 }; // Elements of later slices
 };
 
 // What's wrong with a layout: the element, counted from 1, if it's in one.
@@ -346,9 +358,11 @@ Color threshold_color(std::vector<Threshold> const &thresholds, std::optional<do
 // for a gauge or a graph.
 std::vector<std::string> element_fonts(OverlayElement const &element);
 
-// The element's place in the layout's elements, from 1, counting those
-// that were skipped.
 ElementNumber element_number(OverlayElement const &element);
+
+// Every element, with each group's children after it, and theirs: for
+// what needs all of them, but not where they are.
+std::vector<OverlayElement const *> all_elements(std::vector<OverlayElement> const &elements);
 
 // The characters the layout draws besides ASCII, such as `·`, for loading
 // the fonts with.

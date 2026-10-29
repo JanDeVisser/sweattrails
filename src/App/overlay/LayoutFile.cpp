@@ -54,15 +54,15 @@ bool LayoutFile::reload_if_changed()
 std::expected<std::map<std::string, fs::path>, LayoutError> layout_fonts(OverlayLayout const &layout, FontFinder const &find)
 {
     std::map<std::string, fs::path> ret;
-    for (auto const &element : layout.elements) {
-        for (auto const &name : element_fonts(element)) {
+    for (auto const *element : all_elements(layout.elements)) {
+        for (auto const &name : element_fonts(*element)) {
             if (ret.contains(name)) {
                 continue;
             }
             auto const path = find(name);
             if (!path) {
                 return std::unexpected(LayoutError {
-                    .element = element_number(element),
+                    .element = element_number(*element),
                     .message = std::format("the font `{}` isn't in any of the font directories", name),
                 });
             }
@@ -90,8 +90,8 @@ std::optional<fs::path> find_image(std::string_view src, fs::path const &layout_
 std::expected<std::map<std::string, fs::path>, LayoutError> layout_images(OverlayLayout const &layout, fs::path const &layout_dir, ImageFinder const &find)
 {
     std::map<std::string, fs::path> ret;
-    for (auto const &element : layout.elements) {
-        auto const *image = std::get_if<ImageElement>(&element);
+    for (auto const *element : all_elements(layout.elements)) {
+        auto const *image = std::get_if<ImageElement>(element);
         if (image == nullptr || ret.contains(image->src)) {
             continue;
         }

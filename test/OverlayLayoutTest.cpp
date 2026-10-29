@@ -178,23 +178,107 @@ void test_value()
     }
 }
 
-// Elements of later slices are skipped and counted, and box styles, which
-// they use, aren't errors on a text or a value.
-void test_later_elements()
+// A group: its placement, which needs a size, its panel, when it shows,
+// and its children, which can be groups too.
+void test_group()
 {
     auto const layout = decode(R"({
-        "styles": { "panel": { "background": "#00000060", "radius": 16, "padding": 16 } },
+        "styles": { "panel": { "background": "#00000060", "radius": 16, "padding": 12 } },
         "elements": [
-            { "type": "group", "anything": true },
-            { "type": "text", "text": "a", "style": "panel", "visible": { "from": 5 }, "fade": 0.5 },
-            { "type": "group", "children": [] }
-        ]
-    })");
-    CHECK(layout.has_value());
-    if (layout) {
-        CHECK_EQ(layout->elements.size(), 1uz);
-        CHECK_EQ(layout->skipped, 2uz);
+            { "type": "group", "style": "panel", "visible": { "to": 5 }, "fade": 0.5,
+              "at": { "x": 40, "y": -40, "anchor": "bottom-left" }, "size": { "width": 260, "height": 140 },
+              "children": [
+                { "type": "text", "text": "a", "at": { "x": 0, "y": -10, "anchor": "bottom-left" } },
+                { "type": "group", "size": { "width": 50, "height": 20 }, "children": [ { "type": "value", "field": "speed" } ] } ] },
+            { "type": "group", "size": { "width": 10, "height": 10 }, "children": [] } ] })");
+    CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
+    if (!layout || layout->elements.size() != 2) {
+        return;
     }
+    auto const group = std::get<GroupElement>(layout->elements[0]);
+    CHECK_EQ(group.at.x.value, 40.0);
+    CHECK_EQ(group.at.y.value, -40.0);
+    CHECK(group.at.anchor == Anchor::BottomLeft);
+    CHECK(group.at.size.has_value() && group.at.size->x == 260 && group.at.size->y == 140);
+    CHECK_EQ(show(group.panel.background.value_or(BLANK)), "0 0 0 96");
+    CHECK_EQ(group.panel.padding, 12.0f);
+    CHECK(group.visible.has_value() && group.visible->to == 5.0 && group.visible->fade == 0.5);
+    CHECK_EQ(group.children.size(), 2uz);
+    if (group.children.size() == 2) {
+        auto const text = std::get<TextElement>(group.children[0]);
+        CHECK_EQ(text.at.y.value, -10.0);
+        // A child doesn't get the group's panel, nor when it shows.
+        CHECK(!text.panel.background);
+        CHECK_EQ(text.panel.padding, 0.0f);
+        CHECK(!text.visible);
+        auto const inner = std::get<GroupElement>(group.children[1]);
+        CHECK_EQ(inner.children.size(), 1uz);
+        CHECK(!inner.children.empty() && std::holds_alternative<ValueElement>(inner.children[0]));
+    }
+    // Empty: a panel and nothing more.
+    CHECK(std::get<GroupElement>(layout->elements[1]).children.empty());
+}
+
+// A child's properties: the defaults, the group's text properties, the
+// child's styles, and its own.
+void test_group_cascade()
+{
+    auto const layout = decode(R"({
+        "defaults": { "font_size": 64, "color": "#ffffff", "font": "Inter-Bold.ttf" },
+        "styles": { "label": { "font_size": 22 }, "warm": { "color": "#ff0000", "font_size": 40, "border": { "color": "#ffffff", "width": 1 } } },
+        "elements": [
+            { "type": "group", "style": "warm", "shadow": { "color": "#000000", "offset": [2, 2] }, "padding": 10,
+              "size": { "width": 100, "height": 100 },
+              "children": [
+                { "type": "text", "text": "a" },
+                { "type": "text", "text": "b", "style": "label" },
+                { "type": "text", "text": "c", "style": "label", "font_size": 30, "color": "#00ff00" },
+                { "type": "group", "size": { "width": 10, "height": 10 }, "children": [ { "type": "text", "text": "d" } ] } ] } ] })");
+    CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
+    if (!layout || layout->elements.size() != 1) {
+        return;
+    }
+    auto const &children = std::get<GroupElement>(layout->elements[0]).children;
+    if (children.size() != 4) {
+        CHECK_EQ(children.size(), 4uz);
+        return;
+    }
+    auto const style = [](OverlayElement const &e) {
+        auto const &s = std::get<TextElement>(e).style;
+        return std::format("{} {} {} {}", s.font, s.font_size, show(s.color), s.shadow ? "shadow" : "-");
+    };
+    // The group's, from its style and its own, over the defaults.
+    CHECK_EQ(style(children[0]), "Inter-Bold.ttf 40 255 0 0 255 shadow");
+    // The child's style beats the group's.
+    CHECK_EQ(style(children[1]), "Inter-Bold.ttf 22 255 0 0 255 shadow");
+    CHECK_EQ(style(children[2]), "Inter-Bold.ttf 30 0 255 0 255 shadow");
+    // Down through a group in a group.
+    auto const &inner = std::get<GroupElement>(children[3]);
+    CHECK(!inner.children.empty() && style(inner.children[0]) == "Inter-Bold.ttf 40 255 0 0 255 shadow");
+    // The group's box properties stay with it.
+    CHECK(!std::get<TextElement>(children[0]).panel.border);
+    CHECK_EQ(std::get<TextElement>(children[0]).panel.padding, 0.0f);
+    CHECK(!inner.panel.border);
+}
+
+void test_group_errors()
+{
+    CHECK_EQ(error_of(with_element(R"({ "type": "group", "children": [] })")), "element 1: a group needs a \"size\"");
+    CHECK_EQ(error_of(with_element(R"({ "type": "group", "size": { "width": 10, "height": 10 } })")),
+        "element 1: a group needs \"children\", a list of elements");
+    CHECK_EQ(error_of(with_element(R"({ "type": "group", "size": { "width": 10, "height": 10 }, "children": {} })")),
+        "element 1: a group needs \"children\", a list of elements");
+    CHECK_EQ(error_of(with_element(R"({ "type": "group", "size": { "width": 10, "height": 10 }, "children": [], "text": "a" })")),
+        "element 1: \"text\" isn't a property of a group");
+    CHECK_EQ(error_of(with_element(R"({ "type": "group", "size": { "width": 10, "height": 10 }, "children": [], "font_size": 0 })")),
+        "element 1: \"font_size\" isn't more than 0");
+    // A child's error names it by the group's number and its own.
+    CHECK_EQ(error_of(R"({ "elements": [ { "type": "text", "text": "a" },
+        { "type": "group", "size": { "width": 10, "height": 10 }, "children": [ { "type": "text", "text": "b" }, 3 ] } ] })"),
+        "element 2.2: it isn't an object");
+    CHECK_EQ(error_of(R"({ "elements": [ { "type": "group", "size": { "width": 10, "height": 10 }, "children": [
+        { "type": "group", "size": { "width": 10, "height": 10 }, "children": [ { "type": "image" } ] } ] } ] })"),
+        "element 1.1.1: an image needs a \"src\"");
 }
 
 void test_errors()
@@ -258,12 +342,12 @@ void test_place()
     CHECK_EQ(layout_scale(Vector2 { .x = 1920, .y = 1080 }, Vector2 { .x = 3840, .y = 1080 }), 1.0f);
 }
 
-// The index counts every element, also those of later slices that are
-// skipped, so that it's the one the user finds in the file.
-void test_error_index_counts_skipped()
+// A type that isn't one is an error; none is taken and skipped any more.
+void test_no_later_elements()
 {
-    CHECK_EQ(error_of(R"({ "elements": [ { "type": "group" }, { "type": "group" }, { "type": "text", "text": "a", "colour": "#fff" } ] })"),
-        "element 3: \"colour\" isn't a property of a text");
+    CHECK_EQ(error_of(with_element(R"({ "type": "chart" })")), "element 1: \"type\": `chart` isn't an element type");
+    CHECK_EQ(error_of(R"({ "styles": { "s": { "children": [] } } })"), "\"children\" isn't a property of the style `s`");
+    CHECK_EQ(error_of(R"({ "defaults": { "children": [] } })"), "\"children\" isn't a property of the defaults");
 }
 
 // A typo in the defaults or a style is an error there, not in the first
@@ -412,16 +496,25 @@ void test_codepoints()
     CHECK_EQ(codepoints.size(), 2uz);
 }
 
-// Each element knows its place in the file, counting the skipped ones.
+// Each element knows its place in the file, and a group's children their
+// place in it after the group's.
 void test_element_numbers()
 {
     auto const layout = decode(R"({ "elements": [
-        { "type": "text", "text": "a" }, { "type": "group" }, { "type": "value", "field": "speed" } ] })");
-    CHECK(layout.has_value());
-    if (layout && layout->elements.size() == 2) {
-        CHECK_EQ(element_number(layout->elements[0]), "1");
-        CHECK_EQ(element_number(layout->elements[1]), "3");
+        { "type": "text", "text": "a" },
+        { "type": "group", "size": { "width": 100, "height": 100 }, "children": [
+            { "type": "text", "text": "b" },
+            { "type": "group", "size": { "width": 10, "height": 10 }, "children": [ { "type": "value", "field": "speed" } ] } ] },
+        { "type": "value", "field": "speed" } ] })");
+    CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
+    if (!layout || layout->elements.size() != 3) {
+        return;
     }
+    std::vector<std::string> numbers;
+    for (auto const *element : all_elements(layout->elements)) {
+        numbers.push_back(element_number(*element));
+    }
+    CHECK_EQ(std::format("{}", numbers), R"(["1", "2", "2.1", "2.2", "2.2.1", "3"])");
 }
 
 // Content smaller than its box goes where the anchor is in the box; a
@@ -1462,7 +1555,6 @@ void test_image()
     if (!layout || layout->elements.size() != 4) {
         return;
     }
-    CHECK_EQ(layout->skipped, 0uz);
     auto const image = [&layout](size_t ix) { return std::get<ImageElement>(layout->elements[ix]); };
     auto const size = [](ImageElement const &i) {
         auto const side = [](std::optional<float> s) { return s ? std::format("{}", *s) : std::string { "-" }; };
@@ -1590,12 +1682,14 @@ int main()
     test_layout_properties();
     test_text();
     test_value();
-    test_later_elements();
+    test_group();
+    test_group_cascade();
+    test_group_errors();
     test_errors();
     test_place();
     test_element_numbers();
     test_place_in_box();
-    test_error_index_counts_skipped();
+    test_no_later_elements();
     test_typos_in_defaults_and_styles();
     test_cascade_in_layout();
     test_unit_style_shadow_merges();
