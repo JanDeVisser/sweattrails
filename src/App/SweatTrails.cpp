@@ -466,6 +466,64 @@ void cmd_previous_lap(pSweatTrails const &sweattrails, JSONValue const &)
     }
 }
 
+// The activity in full, or why it can't be shown: it can list, but fail
+// to load all of it, or be gone since it was listed.
+std::expected<Activity, std::string> load_to_show(Storage &storage, ActivityID const &id)
+{
+    auto const loaded = id.load(storage, LoadingDepth::Deep);
+    if (!loaded) {
+        return std::unexpected(std::format("`{}` can't be loaded: {}", id.name, loaded.error().to_string()));
+    }
+    if (!*loaded) {
+        return std::unexpected(std::format("`{}` isn't there any more", id.name));
+    }
+    return **loaded;
+}
+
+// The activity before (`step` -1) or after (+1) the one on display, in
+// another month if need be, as choosing it in Ctrl+M's list shows it. At
+// the first and the last, nothing. One that doesn't load is passed over,
+// and named, so that it doesn't stand in the way.
+void show_activity_next_to(pSweatTrails const &sweattrails, int step)
+{
+    auto const activity = activity_for_keys(sweattrails);
+    if (activity == nullptr) {
+        return;
+    }
+    std::vector<std::string> skipped;
+    auto                     id = activity->activity.id;
+    while (true) {
+        auto const next = sweattrails->storage.activity_next_to(id, step);
+        if (!next) {
+            skipped.push_back(std::format("The activities can't be listed: {}", next.error().to_string()));
+            break;
+        }
+        if (!*next) {
+            break;
+        }
+        auto loaded = load_to_show(sweattrails->storage, **next);
+        if (loaded) {
+            sweattrails->show_activity(*loaded);
+            break;
+        }
+        skipped.push_back(loaded.error());
+        id = **next;
+    }
+    if (!skipped.empty()) {
+        message_box(join(skipped, "\n"));
+    }
+}
+
+void cmd_next_activity(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    show_activity_next_to(sweattrails, 1);
+}
+
+void cmd_previous_activity(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    show_activity_next_to(sweattrails, -1);
+}
+
 void cmd_whole_activity(pSweatTrails const &sweattrails, JSONValue const &)
 {
     if (auto activity = activity_for_keys(sweattrails)) {
@@ -732,16 +790,38 @@ void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
         // with the list already open shouldn't open another.
         return;
     }
+    auto const months = sweattrails->storage.months_with_activities();
+    if (!months) {
+        message_box(std::format("The activities can't be listed: {}", months.error().to_string()));
+        return;
+    }
+    if (months->empty()) {
+        message_box("There are no activities yet");
+        return;
+    }
     auto activity_selected = [sweattrails](std::shared_ptr<ActivitySelector> const &selector, ActivityID const &id) -> void {
-        auto activity = MUST_EVAL(id.load(selector->storage, LoadingDepth::Deep));
-        sweattrails->show_activity(*activity);
         selector->status = ModalStatus::Dismissed;
+        if (auto const activity = load_to_show(selector->storage, id); activity) {
+            sweattrails->show_activity(*activity);
+        } else {
+            message_box(activity.error());
+        }
     };
-    auto const &selector = Widget::make<ActivitySelector>(
-        activity_selected,
-        sweattrails->last_activity.month,
-        sweattrails->storage);
+    // At the activity on display, or else at the latest month that lists
+    // any.
+    auto const &shown = sweattrails->last_activity;
+    auto        month = shown.month;
+    if (!std::ranges::binary_search(*months, shown.month)) {
+        auto const latest = sweattrails->storage.listed_month(months->back(), -1, true);
+        if (!latest || !*latest) {
+            message_box("There are no activities yet");
+            return;
+        }
+        month = (*latest)->id;
+    }
+    auto const &selector = Widget::make<ActivitySelector>(activity_selected, month, sweattrails->storage);
     selector->show();
+    selector->select(shown);
 }
 
 void cmd_message(pSweatTrails const &, JSONValue const &msg)
@@ -893,6 +973,11 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_DOWN, KModNone });
     bus.add_task<SweatTrails>("st-previous-lap", self(), cmd_previous_lap)
         .bind(KeyCombo { KEY_UP, KModNone });
+    // As Left and Right go through the months in Ctrl+M's list.
+    bus.add_task<SweatTrails>("st-next-activity", self(), cmd_next_activity)
+        .bind(KeyCombo { KEY_RIGHT, KModNone });
+    bus.add_task<SweatTrails>("st-previous-activity", self(), cmd_previous_activity)
+        .bind(KeyCombo { KEY_LEFT, KModNone });
     bus.add_task<SweatTrails>("st-whole-activity", self(), cmd_whole_activity)
         .bind(KeyCombo { KEY_ESCAPE, KModNone });
     // F2 rather than Ctrl+R, which often means reload, and Cmd+Shift+R

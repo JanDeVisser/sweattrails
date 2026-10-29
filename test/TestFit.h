@@ -92,8 +92,9 @@ struct FITBuilder {
 inline constexpr u8 NoSubSport = 0xFF;
 
 // A ride of `count` seconds, with its total ascent; 0xFFFF is FIT's
-// invalid value, as a device without a climb writes it.
-inline void add_session(FITBuilder &fit, u32 count, u16 total_ascent, u8 sub_sport = NoSubSport)
+// invalid value, as a device without a climb writes it. It starts `start`
+// seconds after Start.
+inline void add_session(FITBuilder &fit, u32 count, u16 total_ascent, u8 sub_sport = NoSubSport, u32 start = 0)
 {
     fit.definition(0, 18,
         {
@@ -106,8 +107,8 @@ inline void add_session(FITBuilder &fit, u32 count, u16 total_ascent, u8 sub_spo
             { .num = 22, .size = 2, .base_type = Uint16 },
         });
     fit.message(0);
-    fit.u32_le(Start + count);
-    fit.u32_le(Start);
+    fit.u32_le(Start + start + count);
+    fit.u32_le(Start + start);
     fit.byte(2); // Cycling
     fit.byte(sub_sport);
     fit.u32_le(count * 1000);

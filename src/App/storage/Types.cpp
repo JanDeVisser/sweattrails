@@ -6,6 +6,7 @@
  * C++ translation of zig/storage/types.zig.
  */
 
+#include <algorithm>
 #include <format>
 #include <system_error>
 
@@ -30,6 +31,24 @@ bool eql_ignore_case(std::string_view const &lhs, std::string_view const &rhs)
 std::string Month::dir_name() const
 {
     return std::format("{:04}/{:02}", year, static_cast<u8>(month) + 1);
+}
+
+Month Month::plus(int months) const
+{
+    auto const index = static_cast<int>(year) * 12 + static_cast<int>(month) + months;
+    return Month { static_cast<size_t>(index / 12), static_cast<DateTime::Month>(index % 12) };
+}
+
+std::optional<Month> month_after(std::span<Month const> months, Month const &from)
+{
+    auto const it = std::ranges::upper_bound(months, from);
+    return (it != months.end()) ? std::optional { *it } : std::nullopt;
+}
+
+std::optional<Month> month_before(std::span<Month const> months, Month const &from)
+{
+    auto const it = std::ranges::lower_bound(months, from);
+    return (it != months.begin()) ? std::optional { *std::prev(it) } : std::nullopt;
 }
 
 std::optional<fs::path> Month::dir(Storage const &storage) const

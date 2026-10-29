@@ -66,11 +66,10 @@ StorageResult<Storage> Storage::init(std::string_view const &app_name)
     return ret;
 }
 
-Error<StorageError> Storage::rescan()
+StorageResult<std::vector<Month>> Storage::months_with_activities() const
 {
-    trace(Storage, "rescan()");
-    years.clear();
-    std::error_code ec { };
+    std::vector<Month> ret;
+    std::error_code    ec { };
     for (fs::directory_iterator it { activity_dir, ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
         auto const     &entry = *it;
         std::error_code entry_ec { };
@@ -89,36 +88,71 @@ Error<StorageError> Storage::rescan()
         if (res.ec != std::errc { } || res.ptr != name.data() + name.length()) {
             continue;
         }
-        Year year { .year = year_num, .months = { } };
         for (size_t month = 0; month < 12; ++month) {
             // A month directory that can't be read is skipped, rather than
-            // failing the whole rescan.
+            // failing the whole scan.
             Month const month_id { year_num, static_cast<DateTime::Month>(month) };
             auto const  has_activities = month_id.has_activities(*this);
             if (!has_activities) {
                 warning(Storage, "Skipping `{}`: {}", month_id.dir_name(), has_activities.error().to_string());
             }
             if (has_activities.value_or(false)) {
-                if (!year.months) {
-                    year.months = std::array<bool, 12> { };
-                }
-                (*year.months)[month] = true;
-            } else if (year.months) {
-                (*year.months)[month] = false;
+                ret.push_back(month_id);
             }
-        }
-        // find_newest() and find_current_folder() expect every year to have
-        // months. A year directory without any, e.g. because they're all
-        // unreadable, has nothing to show anyway.
-        if (year.months) {
-            years.emplace_back(year);
         }
     }
     if (ec) {
         return std::unexpected(StorageError { LibCError { ec } });
     }
-    std::stable_sort(years.begin(), years.end(), Year::less_than);
+    std::ranges::sort(ret);
+    return ret;
+}
+
+// find_newest() and find_current_folder() expect every year to have
+// months: a year directory without any has nothing to show anyway.
+Error<StorageError> Storage::rescan()
+{
+    trace(Storage, "rescan()");
+    years.clear();
+    for (auto const &month : TRY_EVAL(months_with_activities())) {
+        if (years.empty() || years.back().year != month.year) {
+            years.push_back(Year { .year = month.year, .months = std::array<bool, 12> { } });
+        }
+        (*years.back().months)[static_cast<size_t>(month.month)] = true;
+    }
     return { };
+}
+
+StorageResult<std::optional<Activities>> Storage::listed_month(Month const &from, int step, bool inclusive)
+{
+    auto const months = TRY_EVAL(months_with_activities());
+    auto const next = [&months, step](Month const &m) { return (step > 0) ? month_after(months, m) : month_before(months, m); };
+    auto       month = (inclusive && std::ranges::binary_search(months, from)) ? std::optional { from } : next(from);
+    for (; month; month = next(*month)) {
+        auto listed = TRY_EVAL(month->list(*this));
+        if (!listed.activities.empty()) {
+            return std::optional { std::move(listed) };
+        }
+    }
+    return std::optional<Activities> { };
+}
+
+StorageResult<std::optional<ActivityID>> Storage::activity_next_to(ActivityID const &id, int step)
+{
+    auto const  same_month = TRY_EVAL(id.month.list(*this));
+    auto const &activities = same_month.activities;
+    auto const  here = std::ranges::find_if(activities, [&id](Activity const &a) { return a.id.name == id.name; });
+    if (here != activities.end()) {
+        auto const ix = std::distance(activities.begin(), here) + step;
+        if (ix >= 0 && ix < std::ssize(activities)) {
+            return std::optional { activities[static_cast<size_t>(ix)].id };
+        }
+    }
+    auto const listed = TRY_EVAL(listed_month(id.month, step, false));
+    if (!listed) {
+        return std::optional<ActivityID> { };
+    }
+    return std::optional { (step > 0) ? listed->activities.front().id : listed->activities.back().id };
 }
 
 std::optional<Year> Storage::find_year(size_t year) const

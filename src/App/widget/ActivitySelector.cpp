@@ -1,11 +1,29 @@
+#include <format>
 #include <memory>
+
+#include <config.h>
 
 #include <Date.h>
 
 #include <storage/Storage.h>
 #include <widget/ActivitySelector.h>
+#include <widget/DataFields.h>
+#include <widget/SportIcon.h>
 
 namespace ST {
+
+ActivityList::ListBoxEntry activity_entry(Activity const &activity)
+{
+    ActivityList::ListBoxEntry ret { activity.title, activity.id };
+    auto const                &start = activity.segment.start_time;
+    ret.icon = std::format(SWEATTRAILS_DATADIR "/icons/{}", sport_icon_file(activity.sport, activity.sub_sport));
+    // The day padded, so that the times line up: "Sat  4  10:00".
+    ret.prefix = std::format("{} {:>2}  {:02}:{:02}", weekday_name(start.day_of_week).substr(0, 3), start.day_of_month, start.hour, start.minute);
+    auto const &segment = activity.segment;
+    ret.columns = { (segment.distance > 0) ? format_distance(segment.distance) : std::string { }, format_moving_time(segment.moving) };
+    return ret;
+}
+
 ActivitySelector::ActivitySelector(Submit const &submit, Month const &month, Storage &storage)
     : ListBox(std::format("{} {}", month_name(month.month), month.year))
     , submit_fnc(submit)
@@ -26,7 +44,7 @@ void ActivitySelector::populate()
     prompt = std::format("{} {}", month_name(month.month), month.year);
     auto activities = MUST_EVAL(month.list(storage));
     for (auto const &a : activities.activities) {
-        entries.emplace_back(std::format("{} {}", a.segment.start_time, a.title), a.id);
+        entries.push_back(activity_entry(a));
     }
 }
 
@@ -35,27 +53,34 @@ void ActivitySelector::submit()
     submit_fnc(std::dynamic_pointer_cast<ActivitySelector>(self()), selected().payload);
 }
 
+// Only to months that list activities: one with only a broken FIT file
+// would show as an empty list. A month that can't be read is nowhere to go.
+std::optional<Month> ActivitySelector::destination(KeyboardModifier modifier, int key) const
+{
+    if ((key != KEY_LEFT && key != KEY_RIGHT) || (modifier != KModNone && modifier != KModShift)) {
+        return { };
+    }
+    auto const step = (key == KEY_RIGHT) ? 1 : -1;
+    auto const listed = (modifier == KModNone)
+        ? storage.listed_month(month, step, false)
+        : storage.listed_month(month.plus(12 * step), step, true);
+    if (!listed || !*listed) {
+        return { };
+    }
+    return (*listed)->id;
+}
+
+// refresh() fits the box to the new month's prompt, and starts at the top.
+// At either end, the key does nothing.
 bool ActivitySelector::process_key(KeyboardModifier modifier, int key)
 {
-    // Left and Right go to the previous and next month. refresh() sorts the
-    // new month's entries, fits the box to its prompt, and starts at the top.
-    if (status == ModalStatus::Active && modifier == KModNone) {
-        if (key == KEY_LEFT) {
-            auto m = static_cast<DateTime::Month>(static_cast<int>(month.month) - 1);
-            auto y = (m != DateTime::Month::December) ? month.year : month.year - 1;
-            month = Month { y, m };
+    if (status == ModalStatus::Active && (key == KEY_LEFT || key == KEY_RIGHT) && (modifier == KModNone || modifier == KModShift)) {
+        if (auto const to = destination(modifier, key); to) {
+            month = *to;
             populate();
             refresh();
-            return true;
         }
-        if (key == KEY_RIGHT) {
-            auto m = static_cast<DateTime::Month>(static_cast<int>(month.month) + 1);
-            auto y = (m != DateTime::Month::January) ? month.year : month.year + 1;
-            month = Month { y, m };
-            populate();
-            refresh();
-            return true;
-        }
+        return true;
     }
     return ListBox::process_key(modifier, key);
 }

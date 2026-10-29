@@ -8,6 +8,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <string>
+#include <vector>
 
 #include <raylib.h>
 
@@ -76,12 +79,34 @@ struct ListBoxConfig {
 
 constexpr static ListBoxConfig DefaultListBoxConfig { };
 
+// The first `count` characters of UTF-8 `text`, not cutting one in two.
+inline std::string_view first_chars(std::string_view text, size_t count)
+{
+    size_t ix = 0;
+    for (; ix < text.size() && count > 0; --count) {
+        ++ix;
+        while (ix < text.size() && (static_cast<unsigned char>(text[ix]) & 0xC0) == 0x80) {
+            ++ix;
+        }
+    }
+    return text.substr(0, ix);
+}
+
+// The number of characters in UTF-8 `text`.
+inline size_t char_count(std::string_view text)
+{
+    return static_cast<size_t>(std::ranges::count_if(text, [](char ch) { return (static_cast<unsigned char>(ch) & 0xC0) != 0x80; }));
+}
+
 template<typename Payload, ListBoxConfig Config = DefaultListBoxConfig, typename ToString = std::nullptr_t>
 struct ListBox : public Modal {
     using pListBox = std::shared_ptr<ListBox>;
     struct ListBoxEntry {
-        std::string text;
-        Payload     payload;
+        std::string              text; // What a search matches
+        Payload                  payload;
+        std::string              icon { };    // An image file, drawn before the row at its height
+        std::string              prefix { };  // Drawn before the text, not searched
+        std::vector<std::string> columns { }; // At the row's end, right-aligned, lined up across rows
 
         ListBoxEntry(std::string_view const &text, Payload const &payload)
             : text(text)
@@ -93,20 +118,40 @@ struct ListBox : public Modal {
     };
 
     using ListBoxEntries = std::vector<ListBoxEntry>;
-    ListBoxEntries entries { };
-    ListBoxEntries matches { };
-    std::string    search { };
-    ScrollRange    scroll { }; // Of the entries on display
-    Scrollbar      scrollbar { };
-    Rectangle      track { };     // The scrollbar's, where draw() drew it
-    Rectangle      rows_area { }; // The entries', where draw() drew them
-    int            selection { -1 };
-    ToString       to_string_fnc { nullptr };
+    ListBoxEntries                   entries { };
+    ListBoxEntries                   matches { };
+    std::string                      search { };
+    ScrollRange                      scroll { }; // Of the entries on display
+    Scrollbar                        scrollbar { };
+    Rectangle                        track { };     // The scrollbar's, where draw() drew it
+    Rectangle                        rows_area { }; // The entries', where draw() drew them
+    int                              selection { -1 };
+    ToString                         to_string_fnc { nullptr };
+    std::map<std::string, Texture2D> icons { }; // By file, loaded when first drawn
 
     explicit ListBox(std::string_view const &prompt, ToString to_string = nullptr)
         : Modal(prompt)
         , to_string_fnc(std::move(to_string))
     {
+    }
+
+    ~ListBox() override
+    {
+        for (auto const &[file, texture] : icons) {
+            UnloadTexture(texture);
+        }
+    }
+
+    // Selects the entry with `payload`, if it's on display, and scrolls to
+    // it.
+    void select(Payload const &payload)
+    {
+        auto const &entries_shown = shown();
+        auto const  it = std::ranges::find_if(entries_shown, [&payload](ListBoxEntry const &e) { return e.payload == payload; });
+        if (it != entries_shown.end()) {
+            selection = static_cast<int>(std::distance(entries_shown.begin(), it));
+            scroll_to_selection();
+        }
     }
 
     void initialize() override
@@ -143,16 +188,75 @@ struct ListBox : public Modal {
         scroll.scroll_to(selection);
     }
 
+    // An entry's text as it's shown: the text, or what to_string_fnc or the
+    // payload make of it.
+    [[nodiscard]] std::string shown_text(ListBoxEntry const &e) const
+    {
+        if constexpr (!std::is_same<ToString, std::nullptr_t>::value) {
+            assert(to_string_fnc != nullptr);
+            return to_string_fnc(e.text, e.payload);
+        } else if constexpr (std::is_convertible<Payload, std::string>()) {
+            return std::string { e.payload };
+        }
+        return e.text;
+    }
+
+    Texture2D const &icon(std::string const &file)
+    {
+        if (auto const it = icons.find(file); it != icons.end()) {
+            return it->second;
+        }
+        auto texture = LoadTexture(file.c_str());
+        SetTextureFilter(texture, TEXTURE_FILTER_BILINEAR);
+        return icons[file] = texture;
+    }
+
+    // In characters: the prefix's width, and each column's, as wide as the
+    // widest among the entries on display, so that they line up. The
+    // columns are counted from the row's right end, so that a row with
+    // fewer has its last one under the others' last.
+    struct Widths {
+        size_t              prefix { 0 };
+        std::vector<size_t> columns { }; // From the right
+        bool                icon { false };
+    };
+
+    [[nodiscard]] Widths widths() const
+    {
+        Widths ret;
+        for (auto const &e : shown()) {
+            ret.icon = ret.icon || !e.icon.empty();
+            ret.prefix = std::max(ret.prefix, char_count(e.prefix));
+            ret.columns.resize(std::max(ret.columns.size(), e.columns.size()));
+            for (size_t from_right = 0; from_right < e.columns.size(); ++from_right) {
+                auto const &column = e.columns[e.columns.size() - 1 - from_right];
+                ret.columns[from_right] = std::max(ret.columns[from_right], char_count(column));
+            }
+        }
+        return ret;
+    }
+
     void draw_entries(size_t y_offset)
     {
         auto const &cell = App::the()->cells[static_cast<size_t>(FontSize::Medium)];
         auto const  row_height = (cell.y * textsize) + 2;
+        auto const  char_width = cell.x * textsize;
         auto const  bar_width = scroll.overflows() ? cell.x : 0.0f;
-        size_t      maxlen = (viewport.width - 28 - bar_width) / (cell.x * textsize);
         auto const &entries_to_draw = shown();
         rows_area = Rectangle { .x = viewport.x, .y = viewport.y + y_offset, .width = viewport.width - 10 - bar_width, .height = scroll.lines * row_height };
         track = Rectangle { .x = viewport.x + viewport.width - 8 - bar_width, .y = rows_area.y, .width = bar_width, .height = rows_area.height };
         Scrollbar::draw(track, scroll);
+
+        // The row, from the left: the icon, the prefix and the text, and the
+        // columns at its right end, two characters apart.
+        auto const w = widths();
+        auto const text_x = 10.0f + (w.icon ? row_height + char_width : 0.0f) + (w.prefix > 0 ? static_cast<float>(w.prefix + 2) * char_width : 0.0f);
+        auto       columns_width = 0.0f;
+        for (auto const width : w.columns) {
+            columns_width += static_cast<float>(width + 2) * char_width;
+        }
+        auto const right = viewport.width - 18 - bar_width;
+        auto const maxlen = static_cast<size_t>(std::max(0.0f, (right - columns_width - text_x) / char_width));
         for (int ix = scroll.top_line; ix < scroll.top_line + scroll.lines && ix < shown_count(); ++ix) {
             auto const &e = entries_to_draw[static_cast<size_t>(ix)];
             auto        text_color = RAYWHITE; // Theme::the().fg();
@@ -160,21 +264,26 @@ struct ListBox : public Modal {
                 draw_rectangle(8, y_offset - 1, -8 - bar_width, cell.y * textsize + 1, RAYWHITE /*Theme::the().selection_bg()*/);
                 text_color = DARKGRAY; // Theme::the().selection_fg();
             }
-            // Keep the text in a string: a string_view of the temporaries
-            // below would dangle.
-            std::string text { e.text };
-            if constexpr (!std::is_same<ToString, std::nullptr_t>::value) {
-                assert(to_string_fnc != nullptr);
-                text = to_string_fnc(e.text, e.payload);
-            } else if constexpr (std::is_convertible<Payload, std::string>()) {
-                text = std::string { e.payload };
+            if (!e.icon.empty()) {
+                auto const &texture = icon(e.icon);
+                auto const  side = row_height - 2;
+                DrawTexturePro(texture, Rectangle { 0, 0, static_cast<float>(texture.width), static_cast<float>(texture.height) },
+                    Rectangle { viewport.x + 10, viewport.y + y_offset, side, side }, Vector2 { }, 0, text_color);
             }
-            std::string_view sv { text };
-            if (sv.length() > maxlen) {
-                sv = sv.substr(0, maxlen);
+            if (!e.prefix.empty()) {
+                render_text(text_x - static_cast<float>(w.prefix + 2) * char_width, y_offset, e.prefix, FontSize::Medium, text_color);
             }
-            render_text(10ul, y_offset, sv, FontSize::Medium, text_color);
-            y_offset += (cell.y * textsize) + 2;
+            // Keep the text in a string: a string_view of a temporary would
+            // dangle.
+            auto const text = shown_text(e);
+            render_text(text_x, y_offset, first_chars(text, maxlen), FontSize::Medium, text_color);
+            auto x = right;
+            for (size_t from_right = 0; from_right < e.columns.size(); ++from_right) {
+                auto const &column = e.columns[e.columns.size() - 1 - from_right];
+                render_text(x - static_cast<float>(char_count(column)) * char_width, y_offset, column, FontSize::Medium, text_color);
+                x -= static_cast<float>(w.columns[from_right] + 2) * char_width;
+            }
+            y_offset += row_height;
         }
     }
 
@@ -335,13 +444,7 @@ struct ListBox : public Modal {
                 return;
             }
             for (auto const &e : entries) {
-                std::string sv { e.text };
-                if constexpr (!std::is_same_v<ToString, std::nullptr_t>) {
-                    assert(to_string_fnc != nullptr);
-                    sv = to_string_fnc(e.text, e.payload);
-                } else if constexpr (std::is_convertible<Payload, std::string>()) {
-                    sv = std::string { e.payload };
-                }
+                auto const sv = shown_text(e);
                 if (strcasestr(sv.c_str(), search.c_str()) != nullptr) {
                     matches.push_back(e);
                 }
