@@ -178,6 +178,22 @@ void test_picture_that_doesnt_decode()
     CHECK_EQ(renderer.error().value_or("none"), "none");
 }
 
+// One in a group's child, also in a hidden group, is named by the child's
+// number.
+void test_picture_in_group_that_doesnt_decode()
+{
+    Test::TempDir dir { "overlay-image-group" };
+    put(dir.path / "broken.png", "not a PNG");
+    auto const      next_to_layout = [](std::string_view src, fs::path const &layout_dir) { return std::optional { layout_dir / src }; };
+    OverlayRenderer renderer { any_font, next_to_layout };
+    renderer.set_layout(layout_of(R"({ "type": "text", "text": "a" },
+        { "type": "group", "size": { "width": 100, "height": 100 }, "visible": { "from": 60 }, "children": [
+            { "type": "text", "text": "b" }, { "type": "image", "src": "broken.png" } ] })"),
+        dir.path / "mine.overlay.json");
+    CHECK_EQ(renderer.error().value_or("none"),
+        std::format("mine.overlay.json: element 2.2: the picture `broken.png` can't be loaded from `{}`", (dir.path / "broken.png").string()));
+}
+
 }
 
 int main()
@@ -188,5 +204,6 @@ int main()
     test_bleed_colors();
     test_decoded_icon();
     test_picture_that_doesnt_decode();
+    test_picture_in_group_that_doesnt_decode();
     return Test::test_result();
 }

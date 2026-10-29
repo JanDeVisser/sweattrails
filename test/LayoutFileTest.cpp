@@ -422,6 +422,30 @@ void test_layout_images()
     CHECK(found && found->at("a.png") == fs::path { "/layouts/a.png" });
 }
 
+// A picture only a group's child shows is looked for, and one that isn't
+// there is named by the child's number.
+void test_layout_images_in_groups()
+{
+    auto const               layout = decoded(R"({ "elements": [
+        { "type": "text", "text": "a" },
+        { "type": "group", "size": { "width": 100, "height": 100 }, "children": [
+            { "type": "image", "src": "icons/heart.png" },
+            { "type": "group", "size": { "width": 10, "height": 10 }, "children": [ { "type": "image", "src": "logo.png" } ] } ] }
+    ] })");
+    std::vector<std::string> asked;
+    auto const               find = [&asked](std::string_view src, fs::path const &dir) -> std::optional<fs::path> {
+        asked.push_back(std::string { src });
+        return (src == "logo.png") ? std::nullopt : std::optional { dir / src };
+    };
+    auto const images = layout_images(layout, "/layouts", find);
+    CHECK(!images.has_value());
+    if (!images) {
+        CHECK_EQ(images.error().to_string(),
+            "element 2.2.1: the picture `logo.png` isn't there: it's looked for next to the layout, and with the built-in layouts");
+    }
+    CHECK_EQ(asked, (std::vector<std::string> { "icons/heart.png", "logo.png" }));
+}
+
 // A path up from the layout's folder is next to the layout too; an
 // absolute one isn't looked for anywhere else.
 void test_find_image_paths()
@@ -467,6 +491,7 @@ int main()
     test_dashboard_icons();
     test_find_image();
     test_layout_images();
+    test_layout_images_in_groups();
     test_layout_fonts();
     test_missing_file();
     test_error_names_file_element_and_property();

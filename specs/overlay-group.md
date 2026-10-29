@@ -237,4 +237,78 @@ card's texts are placed in its box by percentages.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: a map in a group keeps its tiles' credit inside the group's
+   box, not on the canvas.** `draw(MapElement)` (`Renderer.cpp:526`)
+   passes its `area` to `draw_attribution()`, and `attribution_box()`
+   keeps the credit inside that area. For a child that area is now the
+   group's content box, not the canvas. The credit only belongs on the
+   screen, and the spec says children aren't clipped to the group. A map
+   that fills its group, the usual "map in a panel", has no room below
+   or above it inside the content box. So `attribution_box()` falls back
+   to drawing the credit over the map's bottom edge, where the same map
+   alone on the canvas gets it below the map. A credit that's right-aligned
+   is also pushed left to stay inside the group. The fix is to pass the
+   canvas (the `area` given to `draw()`) down for the attribution. The
+   one `area` visit_shown() hands over could become a pair: the box to
+   place in, and the canvas. This can't be tested without a window, as
+   only `draw()` calls it.
+2. **Suggestion: properties in the layout's `defaults` reach a group's
+   children as well as the group.** This is as the spec has it, but two
+   effects may surprise users, and the README could mention them:
+   - A `visible` or `fade` in the defaults applies to the group and again
+     to each child, so a child fades at alpha squared. A group that says
+     `"visible": { "to": "end" }` still has its children disappear when
+     the defaults' `to` ends. `test_group_defaults_visible` pins the
+     decoding.
+   - A `background` or `padding` in the defaults draws a panel behind
+     every child inside the group too. That's no worse than today, but
+     it isn't the "no box property comes down" a user might read.
+3. **Suggestion: the title card's date is 0.4 design px lower than
+   before.** It was at `"y": "52%"` of 1080, which is 561.6. Now it's at
+   `122` in the group's box, which starts at 440, so 562. At 1080p this
+   probably rounds the same, which would explain the identical frame
+   dump. At a 4K render it's 0.8 px. `"y": 121.6` would match exactly.
+   All the other converted coordinates check out: top left −40/−40;
+   bottom left x −40 and y −40 from the group's bottom at 1040 (928, 930
+   and 1020 all match); the title at 50%/50% of the box is 960/540.
+4. **Missing test (added): pictures only a child uses.** The Test plan's
+   LayoutFileTest line covered fonts but not pictures.
+   `test_layout_images_in_groups` checks that a nested child's picture is
+   looked for, and that a missing one is named `element 2.2.1`.
+   `OverlayImageTest`'s `test_picture_in_group_that_doesnt_decode`
+   covers the renderer's `decode_pictures()` error for a child in a hidden
+   group (`element 2.2: the picture ... can't be loaded`). Both pass.
+5. **Missing test (added): more of the cascade and errors.** All of these
+   pass, in `OverlayLayoutTest`:
+   - `test_group_cascade_unit_style_and_shadow`: a value child's
+     `unit_style` over the group's `font_size` and `color`. A group's
+     `"shadow": null` takes the defaults' shadow away from its children.
+   - `test_group_placement_stays`: a group's `at` and `size` don't reach
+     a text or an image child.
+   - `test_group_more_errors`: a child's `fade` error is
+     `element 1.2`, a missing style in a child is `element 1.1`, and the
+     element after a group is numbered as one. Also the group's own
+     `visible` and `padding` errors.
+   - `test_group_codepoints`: a nested child's `°` is loaded.
+6. **Suggestion: `test_in_group` (OverlayTilesNeededTest) can't show
+   where the group puts the map.** Tile IDs depend on the map's size and
+   view, not on where it is on the screen. So comparing with the map
+   alone would pass even if `group_box()` were wrong or got the wrong
+   scale. Placement is covered by `test_group_box`, so the comment
+   should say what the test does check: hidden groups and multiplied
+   visibility.
+
+Checked without findings:
+- The skipping is fully removed. There's no `LaterTypes`,
+  `LaterProperties` or `skipped` left, nor the preview's note.
+  `children` in defaults and styles is an error.
+- `all_elements()` is used by every walk of the layout's elements:
+  fonts, pictures, codepoints, `decode_pictures()`, and the tests.
+- visit_shown(): it multiplies alpha, skips a hidden group's children,
+  and `draw()` and `tiles_needed()` pass the same scale. `m_alpha` is
+  reset after drawing.
+- The numbering through `within()` and `set_number()` is correct.
+
+### Resolution
+
+4. and 5. The review's tests are committed.

@@ -281,6 +281,111 @@ void test_group_errors()
         "element 1.1.1: an image needs a \"src\"");
 }
 
+// A value's unit_style is over its style, which has the group's text
+// properties under it; a group's `"shadow": null` takes the defaults'
+// shadow away from its children.
+void test_group_cascade_unit_style_and_shadow()
+{
+    auto const layout = decode(R"({
+        "defaults": { "font": "Inter-Bold.ttf", "font_size": 64, "shadow": { "color": "#00000080", "offset": [2, 2] } },
+        "styles": { "unit": { "unit_style": { "font": "Inter-Regular.ttf" } } },
+        "elements": [
+            { "type": "group", "font_size": 40, "color": "#ff0000", "shadow": null, "size": { "width": 100, "height": 100 },
+              "children": [
+                { "type": "value", "field": "speed", "style": "unit" },
+                { "type": "value", "field": "speed" } ] } ] })");
+    CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
+    if (!layout || layout->elements.size() != 1) {
+        return;
+    }
+    auto const &children = std::get<GroupElement>(layout->elements[0]).children;
+    if (children.size() != 2) {
+        CHECK_EQ(children.size(), 2uz);
+        return;
+    }
+    auto const show_style = [](TextStyle const &s) {
+        return std::format("{} {} {} {}", s.font, s.font_size, show(s.color), s.shadow ? "shadow" : "-");
+    };
+    auto const &unit = std::get<ValueElement>(children[0]);
+    CHECK_EQ(show_style(unit.style), "Inter-Bold.ttf 40 255 0 0 255 -");
+    CHECK_EQ(show_style(unit.unit_style), "Inter-Regular.ttf 40 255 0 0 255 -");
+    auto const &plain = std::get<ValueElement>(children[1]);
+    CHECK_EQ(show_style(plain.unit_style), "Inter-Bold.ttf 40 255 0 0 255 -");
+}
+
+// The group's at and size are its own: a child without them is at the
+// box's top left, measured, and an image its picture's size.
+void test_group_placement_stays()
+{
+    auto const layout = decode(R"({ "elements": [
+        { "type": "group", "at": { "x": 40, "y": -40, "anchor": "bottom-right" }, "size": { "width": 100, "height": 50 },
+          "children": [ { "type": "text", "text": "a" }, { "type": "image", "src": "a.png" } ] } ] })");
+    CHECK_EQ(layout ? std::string { "ok" } : layout.error().to_string(), "ok");
+    if (!layout || layout->elements.size() != 1) {
+        return;
+    }
+    auto const &children = std::get<GroupElement>(layout->elements[0]).children;
+    if (children.size() != 2) {
+        CHECK_EQ(children.size(), 2uz);
+        return;
+    }
+    auto const &text = std::get<TextElement>(children[0]);
+    CHECK_EQ(text.at.x.value, 0.0);
+    CHECK_EQ(text.at.y.value, 0.0);
+    CHECK(text.at.anchor == Anchor::TopLeft);
+    CHECK(!text.at.size);
+    auto const &image = std::get<ImageElement>(children[1]);
+    CHECK(!image.width && !image.height);
+}
+
+// A child's error in when it shows, and in the element after a group,
+// which is numbered as if the group were one element.
+void test_group_more_errors()
+{
+    CHECK_EQ(error_of(with_element(R"({ "type": "group", "size": { "width": 10, "height": 10 },
+        "children": [ { "type": "text", "text": "a" }, { "type": "text", "text": "b", "fade": -1 } ] })")),
+        "element 1.2: \"fade\" isn't a number of 0 or more");
+    CHECK_EQ(error_of(R"({ "elements": [
+        { "type": "group", "size": { "width": 10, "height": 10 }, "children": [ { "type": "text", "text": "a" }, { "type": "text", "text": "b" } ] },
+        { "type": "text", "text": "c", "colour": "#fff" } ] })"),
+        "element 2: \"colour\" isn't a property of a text");
+    CHECK_EQ(error_of(with_element(R"({ "type": "group", "size": { "width": 10, "height": 10 },
+        "children": [ { "type": "text", "text": "a", "style": "nope" } ] })")),
+        "element 1.1: \"style\": there's no style `nope`");
+    CHECK_EQ(error_of(with_element(R"({ "type": "group", "size": { "width": 10, "height": 10 }, "children": [], "visible": { "to": 0 } })")),
+        "element 1: \"visible\": it's never visible, as \"to\" is the video's start: its end is \"end\"");
+    CHECK_EQ(error_of(with_element(R"({ "type": "group", "size": { "width": 10, "height": 10 }, "children": [], "padding": -1 })")),
+        "element 1: \"padding\" is less than 0");
+}
+
+// The characters only a child draws are loaded too.
+void test_group_codepoints()
+{
+    auto const layout = decode(with_element(R"({ "type": "group", "size": { "width": 10, "height": 10 },
+        "children": [ { "type": "group", "size": { "width": 10, "height": 10 }, "children": [ { "type": "text", "text": "°" } ] } ] })"));
+    CHECK(layout.has_value());
+    if (layout) {
+        CHECK(layout_codepoints(*layout).contains(0xb0));
+    }
+}
+
+// A `visible` in the defaults is every element's, a group's children's
+// too: they show while both it and the group's do.
+void test_group_defaults_visible()
+{
+    auto const layout = decode(R"({ "defaults": { "visible": { "to": 10 } }, "elements": [
+        { "type": "group", "size": { "width": 10, "height": 10 }, "visible": { "to": "end" },
+          "children": [ { "type": "text", "text": "a" } ] } ] })");
+    CHECK(layout.has_value());
+    if (!layout || layout->elements.empty()) {
+        return;
+    }
+    auto const &group = std::get<GroupElement>(layout->elements[0]);
+    CHECK(group.visible && !group.visible->to);
+    CHECK(!group.children.empty() && std::get<TextElement>(group.children[0]).visible
+        && std::get<TextElement>(group.children[0]).visible->to == 10.0);
+}
+
 void test_errors()
 {
     CHECK_EQ(error_of("[]"), "the layout isn't a JSON object");
@@ -1685,6 +1790,11 @@ int main()
     test_group();
     test_group_cascade();
     test_group_errors();
+    test_group_cascade_unit_style_and_shadow();
+    test_group_placement_stays();
+    test_group_more_errors();
+    test_group_codepoints();
+    test_group_defaults_visible();
     test_errors();
     test_place();
     test_element_numbers();
