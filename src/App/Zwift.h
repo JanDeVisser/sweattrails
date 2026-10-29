@@ -15,10 +15,13 @@
 #include <string>
 #include <vector>
 
+#include <raylib.h>
+
 #include <Error.h>
 #include <JSON.h>
 
 #include <Coordinates.h>
+#include <Map.h>
 
 namespace ST {
 
@@ -42,6 +45,27 @@ struct ZwiftWorld {
 
     static Decoded<ZwiftWorld> decode(JSONValue const &json);
 };
+
+// A world's map is cut into tiles from this zoom, where a world is a part
+// of one tile, up to its native zoom.
+constexpr u8 MinWorldZoom = 8;
+
+// The zoom nearest the image's resolution, where an image pixel is about a
+// map pixel: 16 for Watopia's 8192 pixels.
+u8 native_zoom(ZwiftWorld const &world, float image_width);
+
+// A tile of a world's map: the part of the image it shows, and where that
+// goes in the tile. Only an edge tile shows the image in part of it.
+struct WorldTile {
+    Tile      tile { };
+    Rectangle source { }; // In the image's pixels
+    Rectangle place { };  // In the tile's 256 pixels
+};
+
+// The tiles at `zoom` that the world's image touches. The image is
+// stretched between its corners' places on the map: over a world 0.1° high,
+// that's the same as Web Mercator to well under a pixel.
+std::vector<WorldTile> world_tiles(ZwiftWorld const &world, Vector2 image_size, u8 zoom);
 
 // The worlds in `file`. A world without its four fields is left out, with
 // a warning.

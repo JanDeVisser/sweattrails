@@ -5,6 +5,7 @@
  */
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <span>
 #include <string>
@@ -20,6 +21,9 @@
 namespace ST {
 
 namespace {
+
+// OpenStreetMap's tile size, which a world's tiles have too.
+constexpr double TileSize = 256;
 
 // A corner is `[latitude, longitude]`.
 Decoded<Coordinates> decode_corner(JSONValue const &json, std::string_view key)
@@ -89,6 +93,58 @@ std::expected<std::vector<ZwiftWorld>, LibCError> read_zwift_worlds(fs::path con
         worlds.push_back(std::move(*world));
     }
     return worlds;
+}
+
+u8 native_zoom(ZwiftWorld const &world, float image_width)
+{
+    auto const width_at_0 = world_pixel(world.south_east, 0).x - world_pixel(world.north_west, 0).x;
+    if (width_at_0 <= 0 || image_width <= 0) {
+        return MinWorldZoom;
+    }
+    auto const zoom = std::round(std::log2(image_width / width_at_0));
+    return static_cast<u8>(std::clamp(zoom, static_cast<double>(MinWorldZoom), static_cast<double>(MaxMapZoom)));
+}
+
+std::vector<WorldTile> world_tiles(ZwiftWorld const &world, Vector2 image_size, u8 zoom)
+{
+    auto const nw = world_pixel(world.north_west, zoom);
+    auto const se = world_pixel(world.south_east, zoom);
+    if (se.x <= nw.x || se.y <= nw.y) {
+        return { };
+    }
+    auto const scale_x = image_size.x / (se.x - nw.x);
+    auto const scale_y = image_size.y / (se.y - nw.y);
+    auto const first_x = static_cast<u32>(nw.x / TileSize);
+    auto const first_y = static_cast<u32>(nw.y / TileSize);
+    auto const last_x = static_cast<u32>(std::ceil(se.x / TileSize)) - 1;
+    auto const last_y = static_cast<u32>(std::ceil(se.y / TileSize)) - 1;
+
+    std::vector<WorldTile> tiles;
+    for (auto y = first_y; y <= last_y; ++y) {
+        for (auto x = first_x; x <= last_x; ++x) {
+            // The part of the tile the image covers, in world pixels.
+            auto const left = std::max(nw.x, static_cast<double>(x) * TileSize);
+            auto const top = std::max(nw.y, static_cast<double>(y) * TileSize);
+            auto const right = std::min(se.x, static_cast<double>(x + 1) * TileSize);
+            auto const bottom = std::min(se.y, static_cast<double>(y + 1) * TileSize);
+            tiles.push_back(WorldTile {
+                .tile = Tile { .x = x, .y = y, .zoom = zoom },
+                .source = Rectangle {
+                    .x = static_cast<float>((left - nw.x) * scale_x),
+                    .y = static_cast<float>((top - nw.y) * scale_y),
+                    .width = static_cast<float>((right - left) * scale_x),
+                    .height = static_cast<float>((bottom - top) * scale_y),
+                },
+                .place = Rectangle {
+                    .x = static_cast<float>(left - static_cast<double>(x) * TileSize),
+                    .y = static_cast<float>(top - static_cast<double>(y) * TileSize),
+                    .width = static_cast<float>(right - left),
+                    .height = static_cast<float>(bottom - top),
+                },
+            });
+        }
+    }
+    return tiles;
 }
 
 ZwiftWorld const *zwift_world(std::span<ZwiftWorld const> worlds, Activity const &activity)
