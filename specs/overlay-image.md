@@ -1,6 +1,6 @@
 # Overlay images: logos and icons
 
-Status: In review
+Status: Done
 
 ## Goal
 
