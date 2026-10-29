@@ -118,10 +118,16 @@ void App::start()
     CloseWindow();
 }
 
-void App::on_process_input()
+// Every frame, also while a modal has the input: IsWindowResized() is only
+// true in the frame after the resize, so one missed is missed for good.
+// Tests have no window to ask about.
+void App::start_frame()
 {
     time = GetTime();
     ++frame_count;
+    if (!IsWindowReady()) {
+        return;
+    }
     if (IsWindowResized()) {
         viewport.width = static_cast<float>(GetScreenWidth());
         viewport.height = static_cast<float>(GetScreenHeight());
@@ -136,6 +142,7 @@ void App::handle_keyboard(pWidget const &focus)
 
 void App::process_input()
 {
+    start_frame();
     m_new_keys.clear();
     m_requested_cursor = default_cursor;
     KeyboardModifier modifier = modifier_current();

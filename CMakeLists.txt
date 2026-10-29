@@ -166,6 +166,8 @@ add_library(
         src/Lib/Widget/TextLine.cpp
         src/Lib/Widget/Widget.h
         src/Lib/Widget/Widget.cpp
+        src/Lib/Widget/Window.h
+        src/Lib/Widget/Window.cpp
 )
 
 target_include_directories(
@@ -304,6 +306,7 @@ sweattrails_test(scroll_test test/ScrollTest.cpp)
 sweattrails_test(table_test test/TableTest.cpp)
 sweattrails_test(text_line_test test/TextLineTest.cpp)
 sweattrails_test(colors_test test/ColorsTest.cpp)
+sweattrails_test(window_test test/WindowTest.cpp)
 sweattrails_test(font_cache_test test/FontCacheTest.cpp)
 sweattrails_test(pick_box_test test/PickBoxTest.cpp)
 sweattrails_test(input_box_test test/InputBoxTest.cpp)
