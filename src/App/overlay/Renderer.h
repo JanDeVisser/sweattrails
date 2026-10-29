@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -73,6 +74,10 @@ private:
     std::map<std::string, Image>                 m_decoded { };     // By their src, until made a texture
     std::map<std::string, Texture2D>             m_pictures { };    // Made when first drawn, by their src
 
+    // The element, the area it's placed in, and its alpha times its groups'.
+    using ShownVisitor = std::function<void(OverlayElement const &element, Rectangle const &area, float alpha)>;
+    void                     visit_shown(std::vector<OverlayElement> const &elements, Rectangle const &area, VideoTime time, float alpha, float scale,
+        ShownVisitor const &visit) const;
     void                     draw_element(OverlayElement const &element, FieldValues const &values, Rectangle const &area);
     void                     draw(TextElement const &text, FieldValues const &values, Rectangle const &area);
     void                     draw(ValueElement const &value, FieldValues const &values, Rectangle const &area);

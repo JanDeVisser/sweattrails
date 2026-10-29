@@ -53,6 +53,14 @@ struct ImageBox {
 };
 ImageBox image_box(ImageElement const &image, Vector2 picture, Vector2 canvas, float scale);
 
+// A group's panel in `area`, at `scale`, and the box inside its padding
+// that its children are placed in, as elements are on the canvas.
+struct GroupBox {
+    Rectangle panel;
+    Rectangle content;
+};
+GroupBox group_box(GroupElement const &group, Rectangle area, float scale);
+
 // The lowest and the highest value a gauge or a graph shows, in the unit
 // shown: the element's own, or the activity's range for "auto".
 struct Bounds {

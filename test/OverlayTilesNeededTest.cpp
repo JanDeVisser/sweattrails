@@ -203,6 +203,35 @@ void test_hidden()
     CHECK(at(10).empty());
 }
 
+// A map in a group asks for the tiles it would alone, while both the
+// group and the map show.
+void test_in_group()
+{
+    Ride                r;
+    OverlaySource const source { r.activity };
+    auto                tiles = no_tiles();
+    OverlayRenderer     alone { any_font };
+    alone.set_layout(layout_of(FollowMap), "test.overlay.json");
+    alone.set_tiles(&tiles, 2);
+    auto const expected = alone.tiles_needed(at_second(source, 1.5), frame(3840, 2160), Always);
+
+    OverlayRenderer renderer { any_font };
+    renderer.set_layout(layout_of(std::format(R"({{ "type": "group", "size": {{ "width": 600, "height": 600 }}, "padding": 20,
+        "at": {{ "x": -40, "y": 40, "anchor": "top-right" }}, "visible": {{ "to": 10 }},
+        "children": [ {{ "type": "group", "size": {{ "width": 400, "height": 400 }}, "children": [
+            {}, {{ "type": "map", "view": "follow", "zoom": 15, "size": {{ "width": 300, "height": 300 }}, "tiles": {{ }}, "visible": {{ "from": 5 }} }} ] }} ] }})",
+                            FollowMap)),
+        "test.overlay.json");
+    renderer.set_tiles(&tiles, 2);
+    auto const at = [&](double t) { return renderer.tiles_needed(at_second(source, 1.5), frame(3840, 2160), VideoTime { .at = t, .length = 60 }); };
+    auto const shown = at(1);
+    CHECK(!shown.empty());
+    CHECK(shown == expected);
+    // The second map shows too, from 5 s, and the group's gone at 10.
+    CHECK(at(6).size() > shown.size());
+    CHECK(at(10).empty());
+}
+
 int main()
 {
     test_levels();
@@ -210,5 +239,6 @@ int main()
     test_none();
     test_fit();
     test_hidden();
+    test_in_group();
     return ST::Test::test_result();
 }

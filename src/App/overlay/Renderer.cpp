@@ -148,13 +148,29 @@ void OverlayRenderer::draw(FieldValues const &values, Rectangle const &area, Vid
     // The title can have characters the layout doesn't, such as `ü`: the
     // fonts are loaded again with them, once.
     m_fonts.add_codepoints(values.title);
-    for (auto const &element : m_layout->elements) {
-        m_alpha = visibility_alpha(std::visit([](auto const &e) { return e.visible; }, element), time);
-        if (m_alpha > 0) {
-            draw_element(element, values, area);
+    visit_shown(m_layout->elements, area, time, 1, m_scale, [this, &values](OverlayElement const &element, Rectangle const &in, float alpha) {
+        m_alpha = alpha;
+        draw_element(element, values, in);
+    });
+    m_alpha = 1;
+}
+
+// A group's children are placed in its box less its padding, and show at
+// its alpha times theirs: after the group, so that they're drawn over its
+// panel.
+void OverlayRenderer::visit_shown(std::vector<OverlayElement> const &elements, Rectangle const &area, VideoTime time, float alpha, float scale,
+    ShownVisitor const &visit) const
+{
+    for (auto const &element : elements) {
+        auto const shown = alpha * visibility_alpha(std::visit([](auto const &e) { return e.visible; }, element), time);
+        if (shown <= 0) {
+            continue;
+        }
+        visit(element, area, shown);
+        if (auto const *group = std::get_if<GroupElement>(&element)) {
+            visit_shown(group->children, group_box(*group, area, scale).content, time, shown, scale, visit);
         }
     }
-    m_alpha = 1;
 }
 
 void OverlayRenderer::set_tiles(OverlayTiles *tiles, float detail)
@@ -170,19 +186,19 @@ std::vector<Tile> OverlayRenderer::tiles_needed(FieldValues const &values, Recta
     }
     auto const        scale = layout_scale(m_layout->design_size, Vector2 { .x = area.width, .y = area.height });
     std::vector<Tile> ret;
-    for (auto const &element : m_layout->elements) {
+    visit_shown(m_layout->elements, area, time, 1, scale, [this, &values, scale, &ret](OverlayElement const &element, Rectangle const &in, float) {
         auto const *map = std::get_if<MapElement>(&element);
-        if (map == nullptr || !map->tiles || visibility_alpha(map->visible, time) <= 0) {
-            continue;
+        if (map == nullptr || !map->tiles) {
+            return;
         }
-        auto const frame = map_frame(*map, values, area, scale);
+        auto const frame = map_frame(*map, values, in, scale);
         if (!frame.transform) {
-            continue;
+            return;
         }
         for (auto const &placed : map_tiles(*frame.transform, frame.shapes.track.box, tile_level(*frame.transform, m_detail))) {
             ret.push_back(placed.tile);
         }
-    }
+    });
     return ret;
 }
 
@@ -580,9 +596,10 @@ void OverlayRenderer::draw(ImageElement const &image, FieldValues const &, Recta
     DrawTexturePro(*texture, Rectangle { .x = 0, .y = 0, .width = own.x, .height = own.y }, on_screen(box.picture), Vector2 { }, 0, faded(image.tint));
 }
 
-// Drawn in the next step.
-void OverlayRenderer::draw(GroupElement const &, FieldValues const &, Rectangle const &)
+// Only the panel: visit_shown() goes into the children.
+void OverlayRenderer::draw(GroupElement const &group, FieldValues const &, Rectangle const &area)
 {
+    draw_panel(group.panel, group_box(group, area, m_scale).panel);
 }
 
 }
