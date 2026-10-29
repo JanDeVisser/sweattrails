@@ -625,6 +625,20 @@ target_include_directories(activity_load_test PRIVATE src/App)
 target_link_libraries(activity_load_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
+        activity_months_test
+        test/ActivityMonthsTest.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(activity_months_test PRIVATE src/App)
+target_link_libraries(activity_months_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
         sport_icon_test
         test/SportIconTest.cpp
         src/App/widget/SportIcon.cpp

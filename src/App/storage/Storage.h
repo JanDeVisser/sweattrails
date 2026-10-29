@@ -67,7 +67,13 @@ struct Storage {
 
     static StorageResult<Storage> init(std::string_view const &app_name);
 
-    Error<StorageError>                      rescan();
+    Error<StorageError> rescan();
+    // The months with an activity file, oldest first. Reads the
+    // directories, not `years`, so it can be used from any thread.
+    StorageResult<std::vector<Month>> months_with_activities() const;
+    // The activity before (`step` -1) or after (+1) `id` by start time,
+    // in another month if need be. None at the first or the last.
+    StorageResult<std::optional<ActivityID>> activity_next_to(ActivityID const &id, int step);
     std::optional<Year>                      find_year(size_t year) const;
     StorageResult<Years>                     get_years();
     StorageResult<std::optional<Activities>> find_current_folder();

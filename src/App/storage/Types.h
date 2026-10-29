@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <format>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -115,7 +116,17 @@ struct Month {
     [[nodiscard]] StorageResult<bool>       has_activities(Storage const &storage) const;
     [[nodiscard]] StorageResult<Activities> list(Storage &storage) const;
     [[nodiscard]] std::string               dir_name() const;
+    // `months` later, or earlier if negative, across the years.
+    [[nodiscard]] Month plus(int months) const;
 };
+
+// The nearest month in `months`, oldest first, after or before `from`.
+std::optional<Month> month_after(std::span<Month const> months, Month const &from);
+std::optional<Month> month_before(std::span<Month const> months, Month const &from);
+
+// `from` moved by `years`, if it's in `months`, else the nearest month in
+// `months` past that, going the same way.
+std::optional<Month> years_from(std::span<Month const> months, Month const &from, int years);
 
 using Index = std::variant<RootIndex, YearIndex, Month>;
 
