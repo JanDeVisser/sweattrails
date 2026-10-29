@@ -93,8 +93,10 @@ test can reach it without a window.
 int start_monitor(int saved, int monitor_count);
 
 // The window before it's maximized, and after it's un-maximized: two
-// thirds of the monitor's width and height, centred on it.
-Rectangle restored_window(Vector2 monitor_position, Vector2 monitor_size);
+// thirds of the monitor's width and height, centred on it. Nothing if
+// that leaves no window, for a monitor raylib gives no size for: the
+// window then stays at the size it was made at.
+std::optional<Rectangle> restored_window(Vector2 monitor_position, Vector2 monitor_size);
 ```
 
 ### Starting (`App::create()`)
@@ -119,7 +121,10 @@ Rectangle restored_window(Vector2 monitor_position, Vector2 monitor_size);
    less the menu bar and the Dock.
 6. The viewport takes the window's size after that, as now. If
    maximizing finishes later, `IsWindowResized()` in
-   `on_process_input()` already picks the new size up.
+   `App::start_frame()` picks the new size up. That was
+   `on_process_input()`, which a modal skipped: it now runs at the top of
+   `App::process_input()` in every frame, and leaves the window alone
+   when there isn't one, as in tests (review note 1).
 
 `SetWindowMonitor()` goes, as does `FLAG_WINDOW_MAXIMIZED` in
 `SetWindowState()`, which only calls `MaximizeWindow()` again:
@@ -197,3 +202,21 @@ arithmetic. Falling back to monitor 0 is saved: `create()` sets
 the first `Main::process_input()` writes it if it differs from the state
 file. The float arithmetic is exact for integer sizes, so whole
 multiples of three don't round down by one.
+
+### Resolution
+
+1. Fixed: `App::on_process_input()` became `App::start_frame()`, at the
+   top of `App::process_input()`, so the time, the frame count, resizes
+   and the current monitor are followed under a modal too. It doesn't
+   ask raylib about the window when there isn't one, as in tests.
+   `test_frames_start_under_a_modal` in `window_test` fails on the old
+   code and passes.
+2. Fixed: `restored_window()` returns nothing when two thirds of the
+   monitor leaves no window, and `App::create()` then keeps the 800x600
+   window. `test_restored_window_no_size` checks 0x0, no height, and a
+   pixel wide.
+3. The README says that Wayland doesn't let the app place its window,
+   so it may not start on the last monitor, and that glfw warns about
+   it. The code stays as it is until Linux is tried.
+4. The review's tests are committed. The sweep starts at 2, as a monitor
+   one wide now gives no window.
