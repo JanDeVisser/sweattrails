@@ -229,6 +229,105 @@ void test_empty_list(TestList &list)
     CHECK(list.submitted.empty());
 }
 
+// A list whose payload isn't its text, as an activity's isn't, with a
+// prefix and columns, unsorted.
+struct RowList : ListBox<int, ListBoxConfig { .search = true, .sort = false }> {
+    RowList()
+        : ListBox("rows")
+    {
+    }
+
+    void add(std::string_view text, int payload, std::string_view prefix, std::vector<std::string> columns)
+    {
+        auto &e = entries.emplace_back(text, payload);
+        e.prefix = prefix;
+        e.columns = std::move(columns);
+    }
+
+    void setup()
+    {
+        entries.clear();
+        add("Morning ride", 1, "Tue 14  09:32", { "42.3 km", "1:32:10" });
+        add("Intervals", 2, "Thu 16  18:05", { "8.1 km", "41:07" });
+        add("Zwift", 3, "Sat 4  10:00", { "", "1:00:00" });
+        add("Long one", 4, "Sun 5  08:00", { "120 km", "4:12:00" });
+        sort();
+        search = { };
+        filter();
+        selection = 0;
+        scroll.top_line = 0;
+        scroll.lines = 2;
+        status = ModalStatus::Active;
+    }
+
+    void submit() override
+    {
+    }
+};
+
+// Searching matches the text, not the prefix or the columns.
+void test_search_ignores_prefix_and_columns()
+{
+    auto list = std::make_shared<RowList>();
+    list->setup();
+    list->search = "km";
+    list->filter();
+    CHECK_EQ(list->shown_count(), 0);
+    list->search = "Tue";
+    list->filter();
+    CHECK_EQ(list->shown_count(), 0);
+    list->search = "inter";
+    list->filter();
+    CHECK_EQ(list->shown_count(), 1);
+    // Not sorted: in the order they were added.
+    list->search = { };
+    list->filter();
+    CHECK_EQ(list->entries[2].text, "Zwift");
+}
+
+// select() finds the payload among the entries on display, and scrolls to
+// it; one that isn't shown leaves the selection.
+void test_select()
+{
+    auto list = std::make_shared<RowList>();
+    list->setup();
+    list->select(4);
+    CHECK_EQ(list->selection, 3);
+    CHECK(list->scroll.top_line <= 3 && 3 < list->scroll.top_line + list->scroll.lines);
+    list->select(7);
+    CHECK_EQ(list->selection, 3);
+    list->search = "inter";
+    list->filter();
+    list->select(4);
+    CHECK_EQ(list->selection, 0);
+    list->select(2);
+    CHECK_EQ(list->selection, 0);
+}
+
+// The prefix and each column are as wide as the widest on display.
+void test_widths()
+{
+    auto list = std::make_shared<RowList>();
+    list->setup();
+    auto const w = list->widths();
+    CHECK_EQ(w.prefix, 13uz);
+    CHECK_EQ(w.columns, (std::vector<size_t> { 7uz, 7uz }));
+    CHECK(!w.icon);
+    list->search = "zwift";
+    list->filter();
+    CHECK_EQ(list->widths().columns, (std::vector<size_t> { 0uz, 7uz }));
+}
+
+// Cut by characters, not bytes, so that an é isn't cut in two.
+void test_first_chars()
+{
+    CHECK_EQ(first_chars("Col du Télégraphe", 8), "Col du T");
+    CHECK_EQ(first_chars("Col du Télégraphe", 9), "Col du Té");
+    CHECK_EQ(first_chars("abc", 10), "abc");
+    CHECK_EQ(first_chars("abc", 0), "");
+    CHECK_EQ(char_count("Télégraphe"), 10uz);
+}
+
 }
 
 int main()
@@ -245,5 +344,9 @@ int main()
     test_scrolling_after_search(*list);
     test_page_down_after_wheel(*list);
     test_empty_list(*list);
+    test_search_ignores_prefix_and_columns();
+    test_select();
+    test_widths();
+    test_first_chars();
     return Test::test_result();
 }
