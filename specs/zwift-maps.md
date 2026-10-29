@@ -1,6 +1,6 @@
 # Zwift maps
 
-Status: In review
+Status: Done
 
 ## Goal
 
