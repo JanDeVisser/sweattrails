@@ -1217,11 +1217,11 @@ std::expected<OverlayLayout, LayoutError> decode_layout(JSONValue const &json)
         auto decoded = element(e, defaults, styles);
         if (!decoded) {
             auto err = decoded.error();
-            err.element = ix;
+            err.element = std::to_string(ix);
             return std::unexpected(err);
         }
         if (*decoded) {
-            std::visit([ix](auto &el) { el.number = ix; }, **decoded);
+            std::visit([ix](auto &el) { el.number = std::to_string(ix); }, **decoded);
             ret.elements.push_back(std::move(**decoded));
         } else {
             ++ret.skipped;
@@ -1273,7 +1273,7 @@ std::vector<std::string> element_fonts(OverlayElement const &element)
     return { };
 }
 
-size_t element_number(OverlayElement const &element)
+ElementNumber element_number(OverlayElement const &element)
 {
     return std::visit([](auto const &e) { return e.number; }, element);
 }

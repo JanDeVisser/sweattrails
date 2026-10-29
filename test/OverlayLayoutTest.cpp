@@ -419,8 +419,8 @@ void test_element_numbers()
         { "type": "text", "text": "a" }, { "type": "group" }, { "type": "value", "field": "speed" } ] })");
     CHECK(layout.has_value());
     if (layout && layout->elements.size() == 2) {
-        CHECK_EQ(element_number(layout->elements[0]), 1uz);
-        CHECK_EQ(element_number(layout->elements[1]), 3uz);
+        CHECK_EQ(element_number(layout->elements[0]), "1");
+        CHECK_EQ(element_number(layout->elements[1]), "3");
     }
 }
 
@@ -720,7 +720,7 @@ void test_gauge()
     CHECK_EQ(show(arc.fill), "255 183 3 255");
     CHECK_EQ(arc.thickness.value_or(0), 14.0f);
     CHECK_EQ(arc.thresholds.size(), 2uz);
-    CHECK_EQ(arc.number, 1uz);
+    CHECK_EQ(arc.number, "1");
 
     auto const &bar = std::get<GaugeElement>(layout->elements[1]);
     CHECK(bar.shape == GaugeShape::Bar);
@@ -730,7 +730,7 @@ void test_gauge()
     CHECK_EQ(show(bar.fill), "255 0 0 255");
     CHECK_EQ(show(bar.track), "255 0 0 51");
     CHECK(!bar.thickness);
-    CHECK_EQ(bar.number, 2uz);
+    CHECK_EQ(bar.number, "2");
 }
 
 // A graph's axis, window, stroke and cursor, and its defaults: a 2 px line
@@ -1475,7 +1475,7 @@ void test_image()
     CHECK(!heart.at.size);
     CHECK_EQ(size(heart), "32 24");
     CHECK_EQ(heart.panel.padding, 8.0f);
-    CHECK_EQ(heart.number, 1uz);
+    CHECK_EQ(heart.number, "1");
     CHECK_EQ(size(image(1)), "200 -");
     CHECK(image(1).visible.has_value());
     CHECK_EQ(size(image(2)), "- 50");

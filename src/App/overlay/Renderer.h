@@ -88,7 +88,7 @@ private:
     void                     draw_tiles(MapElement const &map, MapTransform const &transform, ClipShape const &clip);
     void                     draw_attribution(MapElement const &map, Rectangle const &panel, Rectangle const &area);
     void                     draw_trace(std::vector<Vector2> const &points, Trace const &trace, float bottom) const;
-    std::optional<Font>      font(TextStyle const &style, size_t element);
+    std::optional<Font>      font(TextStyle const &style, ElementNumber const &element);
     bool                     decode_pictures(OverlayLayout const &layout);
     std::optional<Texture2D> picture(ImageElement const &image);
     void                     unload_pictures();

@@ -188,7 +188,7 @@ std::vector<Tile> OverlayRenderer::tiles_needed(FieldValues const &values, Recta
 
 // A font that's there but can't be loaded, such as a broken file, is an
 // error from the next frame on, as one that isn't there is.
-std::optional<Font> OverlayRenderer::font(TextStyle const &style, size_t element)
+std::optional<Font> OverlayRenderer::font(TextStyle const &style, ElementNumber const &element)
 {
     auto const path = m_font_paths.find(style.font);
     if (path == m_font_paths.end()) {
