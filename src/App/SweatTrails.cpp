@@ -466,25 +466,51 @@ void cmd_previous_lap(pSweatTrails const &sweattrails, JSONValue const &)
     }
 }
 
+// The activity in full, or why it can't be shown: it can list, but fail
+// to load all of it, or be gone since it was listed.
+std::expected<Activity, std::string> load_to_show(Storage &storage, ActivityID const &id)
+{
+    auto const loaded = id.load(storage, LoadingDepth::Deep);
+    if (!loaded) {
+        return std::unexpected(std::format("`{}` can't be loaded: {}", id.name, loaded.error().to_string()));
+    }
+    if (!*loaded) {
+        return std::unexpected(std::format("`{}` isn't there any more", id.name));
+    }
+    return **loaded;
+}
+
 // The activity before (`step` -1) or after (+1) the one on display, in
 // another month if need be, as choosing it in Ctrl+M's list shows it. At
-// the first and the last, nothing.
+// the first and the last, nothing. One that doesn't load is passed over,
+// and named, so that it doesn't stand in the way.
 void show_activity_next_to(pSweatTrails const &sweattrails, int step)
 {
     auto const activity = activity_for_keys(sweattrails);
     if (activity == nullptr) {
         return;
     }
-    auto const next = sweattrails->storage.activity_next_to(activity->activity.id, step);
-    if (!next) {
-        message_box(std::format("The activities can't be listed: {}", next.error().to_string()));
-        return;
+    std::vector<std::string> skipped;
+    auto                     id = activity->activity.id;
+    while (true) {
+        auto const next = sweattrails->storage.activity_next_to(id, step);
+        if (!next) {
+            skipped.push_back(std::format("The activities can't be listed: {}", next.error().to_string()));
+            break;
+        }
+        if (!*next) {
+            break;
+        }
+        auto loaded = load_to_show(sweattrails->storage, **next);
+        if (loaded) {
+            sweattrails->show_activity(*loaded);
+            break;
+        }
+        skipped.push_back(loaded.error());
+        id = **next;
     }
-    if (!*next) {
-        return;
-    }
-    if (auto const loaded = MUST_EVAL((*next)->load(sweattrails->storage, LoadingDepth::Deep)); loaded) {
-        sweattrails->show_activity(*loaded);
+    if (!skipped.empty()) {
+        message_box(join(skipped, "\n"));
     }
 }
 
@@ -774,9 +800,12 @@ void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
         return;
     }
     auto activity_selected = [sweattrails](std::shared_ptr<ActivitySelector> const &selector, ActivityID const &id) -> void {
-        auto activity = MUST_EVAL(id.load(selector->storage, LoadingDepth::Deep));
-        sweattrails->show_activity(*activity);
         selector->status = ModalStatus::Dismissed;
+        if (auto const activity = load_to_show(selector->storage, id); activity) {
+            sweattrails->show_activity(*activity);
+        } else {
+            message_box(activity.error());
+        }
     };
     // At the activity on display, or else at the latest month that lists
     // any.

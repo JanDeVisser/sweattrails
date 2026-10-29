@@ -256,4 +256,10 @@ struct ListBoxEntry {
    for `activity_next_to()`. `test_destinations_skip_months_that_list_nothing`
    failed before, and passes. `years_from()`, which only looked at the
    months, went with it.
+2. Fixed: an activity that lists but doesn't load in full, or is gone,
+   is named in a message instead of ending the app, for Left and Right
+   and for the list. Left and Right pass over it to the next one, so it
+   doesn't stand in the way. `load_to_show()` and the loop are in
+   `SweatTrails.cpp`, with the commands, which no test reaches; a FIT
+   file that loads for the list but not in full is also hard to make.
 6. The review's tests are committed, with fix 1.
