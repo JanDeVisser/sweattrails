@@ -68,6 +68,7 @@ private:
     OverlayTiles                                *m_tiles { nullptr };
     float                                        m_detail { 1 };
     float                                        m_scale { 0 };
+    Rectangle                                    m_canvas { };      // What draw() draws in, also in a group
     float                                        m_alpha { 1 };     // Of the element being drawn, as it fades
     std::map<std::string, std::filesystem::path> m_font_paths { };  // By the layout's name for them
     std::map<std::string, std::filesystem::path> m_image_paths { }; // By their src
@@ -92,7 +93,7 @@ private:
     void                     draw_background(Panel const &panel, ClipShape const &shape) const;
     void                     draw_border(Panel const &panel, ClipShape const &shape) const;
     void                     draw_tiles(MapElement const &map, MapTransform const &transform, ClipShape const &clip);
-    void                     draw_attribution(MapElement const &map, Rectangle const &panel, Rectangle const &area);
+    void                     draw_attribution(MapElement const &map, Rectangle const &panel);
     void                     draw_trace(std::vector<Vector2> const &points, Trace const &trace, float bottom) const;
     std::optional<Font>      font(TextStyle const &style, ElementNumber const &element);
     bool                     decode_pictures(OverlayLayout const &layout);

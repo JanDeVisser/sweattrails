@@ -148,6 +148,7 @@ void OverlayRenderer::draw(FieldValues const &values, Rectangle const &area, Vid
     // The title can have characters the layout doesn't, such as `ü`: the
     // fonts are loaded again with them, once.
     m_fonts.add_codepoints(values.title);
+    m_canvas = area;
     visit_shown(m_layout->elements, area, time, 1, m_scale, [this, &values](OverlayElement const &element, Rectangle const &in, float alpha) {
         m_alpha = alpha;
         draw_element(element, values, in);
@@ -523,7 +524,7 @@ void OverlayRenderer::draw(MapElement const &map, FieldValues const &values, Rec
     }
     draw_border(map.panel, outer);
     if (map.tiles && m_tiles != nullptr && transform) {
-        draw_attribution(map, outer.box, area);
+        draw_attribution(map, outer.box);
     }
 }
 
@@ -541,14 +542,16 @@ void OverlayRenderer::draw_tiles(MapElement const &map, MapTransform const &tran
     m_clip.end();
 }
 
-void OverlayRenderer::draw_attribution(MapElement const &map, Rectangle const &panel, Rectangle const &area)
+// On the canvas, also for a map in a group: the group's box would leave
+// no room for it around a map that fills it.
+void OverlayRenderer::draw_attribution(MapElement const &map, Rectangle const &panel)
 {
     auto const f = font(map.attribution, map.number);
     if (!f) {
         return;
     }
     auto const measured = MeasureTextEx(*f, OsmAttribution, static_cast<float>(f->baseSize), 0);
-    auto const box = attribution_box(panel, map.clip, measured, AttributionGap * m_scale, area);
+    auto const box = attribution_box(panel, map.clip, measured, AttributionGap * m_scale, m_canvas);
     draw_text(*f, OsmAttribution, Vector2 { .x = box.x, .y = box.y }, map.attribution);
 }
 

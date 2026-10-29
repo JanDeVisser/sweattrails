@@ -202,6 +202,9 @@ percentages and negative coordinates about it.
   after it, so they're drawn over it.
 - `m_alpha` is the element's alpha times its groups', and `faded()`
   works as it does.
+- `m_canvas` is the area `draw()` was given, which a map's tiles'
+  credit is kept inside, also for a map in a group: the group's box
+  leaves no room for it around a map that fills it (after the review).
 
 ### Built-in layout
 
@@ -311,4 +314,8 @@ Checked without findings:
 
 ### Resolution
 
+1. Fixed: the credit is placed on the canvas, `m_canvas`, which
+   `draw()` keeps as it does the scale. Checked with a frame dump: a map
+   that fills its group had its credit over its bottom edge, and now has
+   it below, as a map alone does.
 4. and 5. The review's tests are committed.
