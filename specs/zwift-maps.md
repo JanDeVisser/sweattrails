@@ -161,28 +161,40 @@ and `number`.
 
 ### Cutting the image into tiles
 
-- **`world_tiles(world, image_width, image_height, zoom)`**, in
-  `Zwift.cpp`: the tiles at a zoom that the world's image touches, each
-  with the part of the image it shows and where that goes in the tile,
-  both as rectangles. The image's corners are put on the map with
-  `world_pixel()`, and the image is stretched between them: over a
-  world 0.1° high, Web Mercator and a plain linear mapping differ by far
-  less than a pixel. Pure arithmetic, so a test can check it.
+- **`world_area(world, zoom)`**, in `Zwift.cpp`: where the world lies
+  on the map at a zoom, in whole map pixels, from its corners'
+  `world_pixel()`s rounded. The image is scaled to that size to be cut
+  into the zoom's tiles, one image pixel to a map pixel: stretched
+  between its corners, which over a world 0.1° high is Web Mercator to
+  far less than a pixel.
+- **`world_tiles(world, zoom)`**: the tiles the world's area touches,
+  each with the part of the scaled image it shows and where that goes
+  in the tile, as rectangles of whole pixels and of the same size, so
+  that each of the image's pixels is in one tile (review note 1). Pure
+  arithmetic, so a test can check it.
 - **The world's zoom levels**: from 8 (`MinWorldZoom`), where a world is
   a part of one tile, up to its **native zoom**, `native_zoom()`, the
   zoom nearest the image's resolution (16 for Watopia, where an image
-  pixel is 0.88 of a map pixel). Cut from Zwift's image, Watopia is 905
+  pixel is 0.88 of a map pixel), but at least `MinNativeZoom`, 15: the
+  highest zoom, 18, less `CoverLevels`, how far up `cover()` looks for a
+  tile to scale up. A smaller image is scaled up to be cut there, so
+  that it shows at every zoom (review note 2). The twelve worlds'
+  images are all 15 or 16. Cut from Zwift's image, Watopia is 905
   tiles, 21 MB, in 4.4 seconds with the download.
 - **`prepare_zwift_world(storage, world)`**, on the job thread:
   1. Downloads the image to `tiles/zwift/<cache name>.png` with
      `download_file()`, which `Tile::get_tile()` now uses too: to a
      `.part` file first, renamed when it's complete. An image that's
      there isn't downloaded again; one that doesn't decode is removed.
-  2. Decodes it with raylib's `LoadImageFromMemory()`, which only uses
-     the CPU, so it's safe on the job thread. 200 MB in memory for a
-     moment, for Watopia.
+     A tile's download has 30 seconds in all; an image's goes on as
+     long as it comes at 1 KB/s or more (`DownloadLimit::Stall`, review
+     note 4).
+  2. Decodes it with raylib's `LoadImage()`, which only uses the CPU, so
+     it's safe on the job thread. Converting it to RGBA and scaling it
+     to the native zoom each hold two copies for a moment: some 360 MB
+     at most, for Watopia (review note 5).
   3. From the native zoom down, scales the whole image to the zoom's
-     size, half the one before, and writes each tile from
+     `world_area()`, half the one before, and writes each tile from
      `world_tiles()` to `tiles/zwift/<cache name>/<zoom>/<x>/<y>.png`:
      the image's part, on the background where the tile goes past the
      image's edge. That's quicker than scaling each tile from the
@@ -219,13 +231,17 @@ struct MapSource {
   storage, so it reads either cache.
 - `ActivityMap::set_activity()` starts on OpenStreetMap. For a Zwift
   ride in a known world, it uses the world's tiles if its `world.json`
-  is there, and otherwise schedules `PrepareZwiftWorld` (once per world
-  at a time), and changes to the world when `ZwiftWorldReady` comes for
-  it and the ride is still on display: it unloads the OSM tiles and
-  loads the view again.
+  is there, and otherwise keeps the world in `world_to_cut`.
+  `view_changed()` asks for the view's OSM tiles first, and then
+  schedules `PrepareZwiftWorld` (once per world at a time): there's one
+  job thread, and the cut takes seconds, which would keep the tiles
+  waiting (review note 3). It changes to the world when
+  `ZwiftWorldReady` comes for it and the ride is still on display: it
+  unloads the OSM tiles and loads the view again.
 - With a world's source, `view_changed()` doesn't download: a tile
   that isn't cached is past the world's edge, and is drawn in the
-  background color. Above the native zoom, it loads the native tile
+  background color. It goes with the failed tiles, so that it isn't
+  looked for on disk again on every step of a drag (review note 6). Above the native zoom, it loads the native tile
   that holds the one wanted, `Tile::ancestor()`, so that `cover()`
   draws it scaled up, as it draws a placeholder now.
 - `ActivityMap::world_ready()` changes the source with
@@ -367,3 +383,27 @@ the ride again while its world is being cut waits for the same job.
 `world.json` is written last. Downloads go to a `.part` file. Only raylib's
 CPU image functions run on the job thread. The README credits Zwift and
 zwift-data.
+
+### Resolution
+
+1. Fixed: `world_area()` and `world_tiles()` lay the image, scaled to
+   each zoom's size, one image pixel to a map pixel, in whole pixels;
+   each tile's part is copied without scaling.
+   `test_no_column_is_lost_at_a_seam` gives each column its own color
+   and finds each where it lies on the map. The review's version of it
+   failed on the old cut; this one passes. The other tile tests now
+   check whole pixels, and that each pixel is in one tile.
+2. Fixed: `native_zoom()` is at least `MinNativeZoom`, 15, which is
+   `MaxMapZoom` less `CoverLevels`, now named in `Map.h`.
+   `test_native_tile_covers_up_to_the_highest_zoom` failed with the
+   old native zoom of 14 for a 2048-pixel Watopia, and passes. None of
+   the twelve worlds' images was affected: they're all 15 or 16.
+3. Fixed: the map asks for the cut after the view's OSM tiles. Not
+   tested: it needs the app's job queue.
+4. Fixed: `DownloadLimit::Stall` for a world's image. No test without
+   the network.
+5. The Architecture says some 360 MB, for a moment.
+6. Fixed, the first part: a world's missing tiles go with the failed
+   ones. A `world.json` whose tiles were deleted isn't handled:
+   deleting `world.json` too has the world cut again.
+7. to 9. The review's tests are committed, and pass.
