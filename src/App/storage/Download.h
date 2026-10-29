@@ -87,8 +87,9 @@ struct SourceOutcome {
 
 // What to tell the user when the download is done.
 struct DownloadReport {
-    std::string text { };      // Nothing to say if empty
-    std::string ask_login { }; // The source to offer the login to, if any
+    std::string text { };            // Nothing to say if empty
+    std::string ask_login { };       // The source to offer the login to, if any
+    JSONValue   login_arguments { }; // For the login's task: what to fetch after it
 };
 
 // One sentence per source, such as "Garmin Connect: 2 new activities.

@@ -353,12 +353,12 @@ void SweatTrails::job_wahoo_login(Job::Payload const &data)
     run_downloads(the, DownloadRequest { .wahoo = true, .wahoo_days = login.days, .wahoo_client_id = login.client_id });
 }
 
-void SweatTrails::job_strava_titles(Job::Payload const &data)
+// Fetches the titles the request asks for, and tells the UI how it went.
+// The login it may offer fetches the same titles after it.
+void run_strava_titles(pSweatTrails const &the, StravaTitlesRequest const &request)
 {
-    auto const &request = std::get<StravaTitlesRequest>(data);
-    auto const  the = SweatTrails::the();
-    auto const  now = static_cast<i64>(std::time(nullptr));
-    auto        after = now - static_cast<i64>(request.days.value_or(0)) * 24 * 60 * 60;
+    auto const now = static_cast<i64>(std::time(nullptr));
+    auto       after = now - static_cast<i64>(request.days.value_or(0)) * 24 * 60 * 60;
     if (!request.days) {
         auto const oldest = the->storage.oldest_start();
         if (!oldest) {
@@ -367,17 +367,30 @@ void SweatTrails::job_strava_titles(Job::Payload const &data)
         }
         after = oldest->value_or(now) - StravaMatchSeconds;
     }
-    the->notify<NotificationType::DownloadDone>(download_report({ download_from_strava(the, request.client, after) }, false));
+    auto report = download_report({ download_from_strava(the, request.client, after) }, false);
+    report.login_arguments = JSONValue::object();
+    if (request.days) {
+        report.login_arguments.set("days", JSONValue { *request.days });
+    } else {
+        report.login_arguments.set("history", JSONValue { true });
+    }
+    the->notify<NotificationType::DownloadDone>(report);
+}
+
+void SweatTrails::job_strava_titles(Job::Payload const &data)
+{
+    run_strava_titles(SweatTrails::the(), std::get<StravaTitlesRequest>(data));
 }
 
 void SweatTrails::job_strava_login(Job::Payload const &data)
 {
     auto const &login = std::get<StravaLogin>(data);
     auto const  the = SweatTrails::the();
+    auto const &client = login.titles.client.value();
     Strava      strava {
         .fetch = http_fetch,
-        .client_id = login.client.id,
-        .client_secret = login.client.secret,
+        .client_id = client.id,
+        .client_secret = client.secret,
         .tokens_file = strava_tokens_file(the->user_config_dir),
     };
     if (auto const exchanged = strava.exchange_code(login.code); !exchanged) {
@@ -386,7 +399,8 @@ void SweatTrails::job_strava_login(Job::Payload const &data)
     }
     info(ST, "Logged in to Strava");
     the->notify<NotificationType::LoginEnded>(LoginEnded { .downloading = true });
-    run_downloads(the, DownloadRequest { .strava = true, .strava_days = login.days, .strava_client = login.client });
+    // What the user logged in for. The report says how it went.
+    run_strava_titles(the, login.titles);
 }
 
 pSweatTrails SweatTrails::the()
@@ -605,13 +619,20 @@ void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &)
         });
 }
 
-void cmd_strava_login(pSweatTrails const &sweattrails, JSONValue const &)
+// Logs in to Strava, and then fetches titles. Arguments: `days`, how far
+// back, else `strava.days` from the settings, or `history`, back to the
+// store's oldest activity, as Ctrl+Shift+G does.
+void cmd_strava_login(pSweatTrails const &sweattrails, JSONValue const &arguments)
 {
     if (!can_log_in(sweattrails)) {
         return;
     }
-    auto const request = make_download_request(sweattrails->settings, JSONValue { }, Sources { .strava = true });
-    if (auto const problem = strava_setup_problem(request.strava_client); problem) {
+    auto const          request = make_download_request(sweattrails->settings, arguments, Sources { .strava = true });
+    StravaTitlesRequest titles { .days = request.strava_days, .client = request.strava_client };
+    if (arguments.is_object() && arguments.try_get<bool>("history").value_or(false)) {
+        titles.days.reset();
+    }
+    if (auto const problem = strava_setup_problem(titles.client); problem) {
         message_box(*problem);
         return;
     }
@@ -619,10 +640,10 @@ void cmd_strava_login(pSweatTrails const &sweattrails, JSONValue const &)
     start_login(sweattrails,
         LoginFlow {
             .service = "Strava",
-            .url = Strava { .client_id = request.strava_client->id }.authorize_url(state),
+            .url = Strava { .client_id = titles.client->id }.authorize_url(state),
             .state = state,
-            .on_code = [client = *request.strava_client, days = request.strava_days](pSweatTrails const &the, std::string const &code) {
-                the->schedule<JobType::StravaLogin>(StravaLogin { .client = client, .code = code, .days = days });
+            .on_code = [titles](pSweatTrails const &the, std::string const &code) {
+                the->schedule<JobType::StravaLogin>(StravaLogin { .code = code, .titles = titles });
             },
         });
 }
@@ -1056,9 +1077,9 @@ void SweatTrails::notif_download_done(Notification::Payload const &data)
     // Not while a login is waiting for the browser already.
     if (!report.ask_login.empty() && the->logging_in.empty()) {
         auto const task = (report.ask_login == "Strava") ? "st-strava-login" : "st-wahoo-login";
-        auto const log_in = [task](pSweatTrails const &sweattrails, QueryOption selection) {
+        auto const log_in = [task, arguments = report.login_arguments](pSweatTrails const &sweattrails, QueryOption selection) {
             if (selection == QueryOption::QueryOptionYes) {
-                sweattrails->bus.submit(task, JSONValue { });
+                sweattrails->bus.submit(task, arguments);
             }
         };
         query_box(the, std::format("{} Log in to {} now?", report.text, report.ask_login), log_in, QueryOptionYesNo);

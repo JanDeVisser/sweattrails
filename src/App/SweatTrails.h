@@ -75,18 +75,18 @@ struct WahooLogin {
     int         days { WahooDefaultDays }; // For the download after the login
 };
 
-// What the Strava login brought back from the browser.
-struct StravaLogin {
-    StravaClient client { };
-    std::string  code { };
-    int          days { StravaDefaultDays }; // For the titles after the login
-};
-
 // The st-strava-titles task: the titles of the last `days`, or, without,
 // of the store's whole history.
 struct StravaTitlesRequest {
     std::optional<int>          days { };
     std::optional<StravaClient> client { };
+};
+
+// What the Strava login brought back from the browser, and the titles to
+// fetch after it.
+struct StravaLogin {
+    std::string         code { };
+    StravaTitlesRequest titles { };
 };
 
 #define JOBTYPE(S)                        \
