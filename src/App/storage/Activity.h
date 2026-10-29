@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -75,18 +76,51 @@ std::optional<std::string> sidecar_title(fs::path const &sidecar);
 // sidecar, `"title"`. It wins over the service's name.
 std::optional<std::string> sidecar_own_title(fs::path const &sidecar);
 
-// Both names, from one read of the sidecar.
+// What Strava has for an activity, under SweatTrails' key `"strava"` in its
+// sidecar: see specs/strava-titles.md. The description is fetched with a
+// request of its own: until it is, it isn't there, and a description
+// fetched empty is "".
+struct StravaTitle {
+    u64                        id { 0 };
+    std::string                name { };
+    std::optional<std::string> description { };
+
+    static Decoded<StravaTitle> decode(JSONValue const &json);
+    [[nodiscard]] JSONValue     encode() const;
+    bool                        operator==(StravaTitle const &) const = default;
+};
+
+// The names in a sidecar, from one read of it.
 struct SidecarTitles {
     std::optional<std::string> service { }; // sidecar_title()
     std::optional<std::string> own { };     // sidecar_own_title()
+    std::optional<StravaTitle> strava { };
 };
 
 SidecarTitles sidecar_titles(fs::path const &sidecar);
 
-// Saves the user's name for the activity in its sidecar, keeping the rest
-// of it, or removes it for an empty `title`. Makes the sidecar if there
-// isn't one, and removes it if nothing else is left in it. A sidecar that
-// isn't a JSON object is left as it is, and is an error.
+// The name and description in a `.strava` file, which the old Zig app
+// wrote next to some activities: Strava's activity, as JSON. Nothing for a
+// file that isn't there or can't be read.
+struct StravaFileNames {
+    std::optional<std::string> name { };
+    std::optional<std::string> description { };
+};
+
+StravaFileNames read_strava_file(fs::path const &file);
+
+// Changes the activity's sidecar with `change`, keeping the rest of it.
+// Makes the sidecar if there isn't one, and removes it if nothing is left
+// in it. A sidecar that isn't a JSON object is left as it is, and is an
+// error.
+std::expected<void, LibCError> update_sidecar(fs::path const &sidecar, std::function<void(JSONValue &)> const &change);
+
+// Saves what Strava has for the activity in its sidecar, with
+// update_sidecar().
+std::expected<void, LibCError> save_sidecar_strava(fs::path const &sidecar, StravaTitle const &strava);
+
+// Saves the user's name for the activity in its sidecar, with
+// update_sidecar(), or removes it for an empty `title`.
 std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::string_view title);
 
 struct Segment {
@@ -190,7 +224,6 @@ private:
     bool                load_fit_file_filter(FITDataRecord const &rec);
     StorageResult<bool> load_fit_file(FITFile &fit_file);
     StorageResult<bool> load_fit_file_by_name(fs::path const &file);
-    // StorageResult<bool> load_strava_file(fs::path const &dir);
 };
 
 struct Activities {

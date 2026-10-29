@@ -169,22 +169,28 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
         if (!TRY_EVAL(load_fit_file_by_name(dir / std::format("{}.fit", id.name)))) {
             return false;
         }
-        // After the FIT file, so that the service's name wins over the
-        // workout's, and the user's over both.
+        // After the FIT file, so that each name wins over the ones before:
+        // the workout's, the service's, the old app's `.strava` file's,
+        // Strava's in the sidecar, and the user's. See
+        // specs/strava-titles.md.
         sidecar = dir / std::format("{}.json", id.name);
         auto const names = sidecar_titles(sidecar);
-        if (names.service) {
-            title = *names.service;
-        }
+        auto const old_strava = read_strava_file(dir / std::format("{}.strava", id.name));
+        auto const take = [this](std::optional<std::string> const &name) {
+            if (name && !name->empty()) {
+                title = *name;
+            }
+        };
+        take(names.service);
+        take(old_strava.name);
+        take(names.strava.transform([](StravaTitle const &strava) { return strava.name; }));
         original_title = title;
-        if (names.own) {
-            title = *names.own;
+        take(names.own);
+        if (names.strava && names.strava->description) {
+            notes = *names.strava->description;
+        } else {
+            notes = old_strava.description.value_or("");
         }
-        // if (id.files.contains(ActivityFile::Strava)) {
-        //     if (!TRY_EVAL(load_strava_file(dir))) {
-        //         return false;
-        //     }
-        // }
     }
     TRY(analyze());
     return true;
@@ -194,6 +200,9 @@ namespace {
 
 // SweatTrails' own key in the sidecar, for the name the user gave it.
 constexpr char const OwnTitleKey[] = "title";
+
+// And for what Strava has for it.
+constexpr char const StravaKey[] = "strava";
 
 std::optional<JSONValue> read_sidecar(fs::path const &sidecar)
 {
@@ -236,13 +245,59 @@ std::optional<std::string> service_title(JSONValue const &json)
 
 }
 
+Decoded<StravaTitle> StravaTitle::decode(JSONValue const &json)
+{
+    if (!json.is_object()) {
+        return std::unexpected(JSONError::expected(JSONType::Object, json.type(), "StravaTitle"));
+    }
+    StravaTitle ret {
+        .id = TRY_EVAL(json.try_get<u64>("id")),
+        .name = TRY_EVAL(json.try_get<std::string>("name")),
+    };
+    if (auto const description = json.try_get<std::string>("description"); description) {
+        ret.description = *description;
+    }
+    return ret;
+}
+
+JSONValue StravaTitle::encode() const
+{
+    auto json = JSONValue::object();
+    json.set("id", JSONValue { id });
+    json.set("name", JSONValue { name });
+    if (description) {
+        json.set("description", JSONValue { *description });
+    }
+    return json;
+}
+
 SidecarTitles sidecar_titles(fs::path const &sidecar)
 {
     auto const json = read_sidecar(sidecar);
     if (!json) {
         return { };
     }
-    return SidecarTitles { .service = service_title(*json), .own = non_empty_string(*json, OwnTitleKey) };
+    SidecarTitles ret { .service = service_title(*json), .own = non_empty_string(*json, OwnTitleKey) };
+    if (auto const strava = json->get(StravaKey); strava) {
+        if (auto decoded = StravaTitle::decode(*strava); decoded) {
+            ret.strava = std::move(*decoded);
+        } else {
+            trace(Storage, "Ignoring `{}`'s \"strava\": {}", sidecar.string(), decoded.error().to_string());
+        }
+    }
+    return ret;
+}
+
+StravaFileNames read_strava_file(fs::path const &file)
+{
+    auto const json = read_sidecar(file);
+    if (!json || !json->is_object()) {
+        return { };
+    }
+    return StravaFileNames {
+        .name = non_empty_string(*json, "name"),
+        .description = non_empty_string(*json, "description"),
+    };
 }
 
 std::optional<std::string> sidecar_title(fs::path const &sidecar)
@@ -256,6 +311,24 @@ std::optional<std::string> sidecar_own_title(fs::path const &sidecar)
 }
 
 std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::string_view title)
+{
+    return update_sidecar(sidecar, [title](JSONValue &json) {
+        if (title.empty()) {
+            json.erase(OwnTitleKey);
+        } else {
+            json.set(OwnTitleKey, JSONValue { std::string { title } });
+        }
+    });
+}
+
+std::expected<void, LibCError> save_sidecar_strava(fs::path const &sidecar, StravaTitle const &strava)
+{
+    return update_sidecar(sidecar, [&strava](JSONValue &json) {
+        json.set(StravaKey, strava.encode());
+    });
+}
+
+std::expected<void, LibCError> update_sidecar(fs::path const &sidecar, std::function<void(JSONValue &)> const &change)
 {
     std::error_code ec { };
     auto const      exists = fs::exists(sidecar, ec);
@@ -271,12 +344,8 @@ std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::
         }
         json = std::move(*read);
     }
-    if (title.empty()) {
-        json.erase(OwnTitleKey);
-    } else {
-        json.set(OwnTitleKey, JSONValue { std::string { title } });
-    }
-    // Nothing left: the app made it, for the name, and it can go.
+    change(json);
+    // Nothing left: the app made it, for a name, and it can go.
     if (json.empty()) {
         if (exists && !fs::remove(sidecar, ec)) {
             return std::unexpected(LibCError { ec });
@@ -477,26 +546,6 @@ StorageResult<bool> Activity::load_fit_file(FITFile &fit_file)
     }
     return segment.start_time.timestamp > 0;
 }
-
-// StorageResult<bool> Activity::load_strava_file(fs::path const &dir)
-// {
-//     auto const file_name = (dir / std::format("{}.strava", id.name)).string();
-//     auto       text = read_file_by_name(file_name);
-//     if (!text) {
-//         return std::unexpected(StorageError { text.error() });
-//     }
-//     auto json = JSONValue::deserialize(*text);
-//     if (!json) {
-//         return std::unexpected(StorageError { json.error() });
-//     }
-//     auto strava_activity = decode<strava::Activity>(*json);
-//     if (!strava_activity) {
-//         return std::unexpected(StorageError { strava_activity.error() });
-//     }
-//     title = strava_activity->name.value_or(segment.start_time.format());
-//     notes = strava_activity->description.value_or("");
-//     return true;
-// }
 
 Error<StorageError> Activities::list()
 {
