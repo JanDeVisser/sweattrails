@@ -132,8 +132,11 @@ void test_native_zoom()
     CHECK_EQ(native_zoom(worlds.front(), WatopiaImage.x), 16);
     // Half the pixels is a level less.
     CHECK_EQ(native_zoom(worlds.front(), WatopiaImage.x / 2), 15);
-    CHECK_EQ(native_zoom(worlds.front(), 1), MinWorldZoom);
-    CHECK_EQ(native_zoom(worlds.front(), 0), MinWorldZoom);
+    CHECK_EQ(native_zoom(worlds.front(), WatopiaImage.x * 2), 17);
+    // A small image is cut at MinNativeZoom all the same.
+    CHECK_EQ(native_zoom(worlds.front(), WatopiaImage.x / 4), MinNativeZoom);
+    CHECK_EQ(native_zoom(worlds.front(), 1), MinNativeZoom);
+    CHECK_EQ(native_zoom(worlds.front(), 0), MinNativeZoom);
     CHECK_EQ(native_zoom(worlds.front(), 1e9f), MaxMapZoom);
 }
 
@@ -249,8 +252,9 @@ void test_cut_a_world()
         std::println(stderr, "{}", map.error().to_string());
         return;
     }
-    // 64 pixels over Watopia's 0.155° is about zoom 9.
-    CHECK_EQ(map->native_zoom, 9);
+    // 64 pixels over Watopia's 0.155° is about zoom 9, which is scaled up
+    // to be cut up to MinNativeZoom.
+    CHECK_EQ(map->native_zoom, MinNativeZoom);
     CHECK(same(map->background, BLUE));
     CHECK_EQ(map->dir.string(), (small.dir.path / "Small").string());
 
@@ -258,14 +262,14 @@ void test_cut_a_world()
     CHECK_EQ(source.dir.string(), map->dir.string());
     CHECK_EQ(std::string { source.attribution }, "Map © Zwift");
     CHECK(!source.downloads);
-    CHECK_EQ(source.max_zoom, 9);
+    CHECK_EQ(source.max_zoom, MinNativeZoom);
     CHECK(same(source.background, BLUE));
 
     auto const again = cut_world(small.dir.path, small.world);
     CHECK(again.has_value());
-    CHECK_EQ(again.transform([](WorldMap const &m) { return m.native_zoom; }).value_or(0), 9);
+    CHECK_EQ(again.transform([](WorldMap const &m) { return m.native_zoom; }).value_or(0), MinNativeZoom);
 
-    for (auto zoom = MinWorldZoom; zoom <= 9; ++zoom) {
+    for (auto zoom = MinWorldZoom; zoom <= MinNativeZoom; ++zoom) {
         for (auto const &[tile, source, place] : world_tiles(small.world, zoom)) {
             auto const png = tile.get_cached_tile(map->dir);
             CHECK(png.has_value());
@@ -277,13 +281,15 @@ void test_cut_a_world()
             CHECK_EQ(image.height, 256);
             // The world's top left corner is inside its first tile: left of
             // and above it is the sea, and in the middle of the image's part,
-            // the image.
+            // the image. Scaled up, the blue top left pixel runs into the
+            // red around it, in the first tile.
             if (place.x >= 1 && place.y >= 1) {
                 CHECK(same(GetImageColor(image, 0, 0), BLUE));
             }
             auto const mid_x = static_cast<int>(place.x + place.width / 2);
             auto const mid_y = static_cast<int>(place.y + place.height / 2);
-            if (place.width >= 4 && place.height >= 4) {
+            auto const first = source.x == 0 && source.y == 0;
+            if (place.width >= 4 && place.height >= 4 && !first) {
                 CHECK(same(GetImageColor(image, mid_x, mid_y), RED));
             }
             UnloadImage(image);
@@ -385,6 +391,27 @@ void test_interrupted_cut_is_done_again()
     CHECK(cut_world(small.dir.path, small.world).has_value());
 }
 
+// Above a world's native zoom, ActivityMap draws the native tile scaled up
+// with cover(), up to the map's highest zoom. Watopia's corners with an
+// image 2048 pixels wide, half the size of London's, are zoom 14, but cut
+// up to 15.
+void test_native_tile_covers_up_to_the_highest_zoom()
+{
+    auto const worlds = MUST_EVAL(read_zwift_worlds(ShippedWorlds));
+    auto const native_zoom_of_2048 = native_zoom(worlds.front(), 2048);
+    CHECK_EQ(native_zoom_of_2048, 15);
+    auto const deepest = Tile::for_coordinates(Coordinates { .lat = -11.68f, .lon = 166.95f }, MaxMapZoom);
+    auto const native = deepest.ancestor(native_zoom_of_2048);
+    for (auto zoom = native_zoom_of_2048 + 1; zoom <= MaxMapZoom; ++zoom) {
+        auto const tile = deepest.ancestor(static_cast<u8>(zoom));
+        auto const pieces = cover(tile, [&native](Tile const &t) { return t == native; });
+        if (pieces.empty()) {
+            std::println(stderr, "Nothing drawn at zoom {} for a world of native zoom {}", zoom, native_zoom_of_2048);
+        }
+        CHECK(!pieces.empty());
+    }
+}
+
 // A world whose corners lie on tiles' edges touches only the tiles inside.
 void test_world_tiles_on_tile_edges()
 {
@@ -421,6 +448,7 @@ int main()
     test_cut_world_with_a_bad_world_file();
     test_no_column_is_lost_at_a_seam();
     test_interrupted_cut_is_done_again();
+    test_native_tile_covers_up_to_the_highest_zoom();
     test_world_tiles_on_tile_edges();
     return ST::Test::test_result();
 }

@@ -411,7 +411,7 @@ u64 next_tile_owner()
 
 std::vector<TilePiece> cover(Tile const &tile, TileLoaded const &loaded)
 {
-    for (u8 up = 1; up <= 3 && up <= tile.zoom; ++up) {
+    for (u8 up = 1; up <= CoverLevels && up <= tile.zoom; ++up) {
         auto const ancestor = Tile { .x = tile.x >> up, .y = tile.y >> up, .zoom = static_cast<u8>(tile.zoom - up) };
         if (!loaded(ancestor)) {
             continue;

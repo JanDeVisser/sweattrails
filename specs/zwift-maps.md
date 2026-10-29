@@ -273,4 +273,97 @@ struct MapSource {
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: an image column is lost at tile seams, and each tile is
+   resampled.** `write_tile()` (`src/App/Zwift.cpp:172`) passes
+   `world_tiles()`'s float source rectangle to `ImageFromImage()`, which
+   truncates its x and its width separately. When the image's width at a
+   zoom rounds down (`Zwift.cpp:201`), a whole tile's source is just under
+   256 pixels wide. For example, Watopia at zoom 13 is 903.4 map pixels
+   wide, and so its image is 903 pixels wide. Tile 7894 then has source x
+   156.2 and width 255.89, which copies columns 156 to 410. Tile 7895
+   starts at 412.09, which copies from 412. Column 411 is in no tile, and
+   each tile's 255 columns are stretched to 256 by `ImageResize()`. This
+   happens at every seam, in about half of the zooms (those whose width
+   rounds down), for every world: a road or coast that runs north to south
+   along a seam has a one-pixel gap, and all the tiles are a little
+   blurred. Because the image is already scaled to the zoom's size, the
+   tiles could be cut at whole-pixel offsets, with tile pixel `px` taken
+   from image column `px + 256 * x - lround(nw.x)`, and with no resize for
+   each tile. Test: `test_no_column_is_lost_at_a_seam` (`test/ZwiftTest.cpp:316`)
+   fails.
+2. **Bug: above native zoom + 3, a world's map is blank.** With a world's
+   source, `view_changed()` (`src/App/widget/ActivityMap.cpp:176-181`)
+   only loads the tile at the native zoom, and `draw_tiles()` draws it
+   through `cover()`, which looks at most three levels up
+   (`src/App/Map.cpp:414`). `max_zoom()` lets the user zoom to 18
+   (`MaxMapZoom`), so a world whose native zoom is 14 or less is plain
+   background, with the track over it, at the highest zooms.
+   `native_zoom()` makes 14 of Watopia's corners with a 2048-pixel image,
+   and can go down to 8. Watopia, the Makuri Islands and London (16) are
+   fine, but the spec only gives the sizes of those three images.
+   `view_changed()` could draw the native tile itself, scaled by
+   `1 << (zoom - native)`, or `cover()` could take how far up to look. Test:
+   `test_native_tile_covers_up_to_the_highest_zoom`
+   (`test/ZwiftTest.cpp:398`) fails.
+3. **Bug: while a world is cut, no OpenStreetMap tiles arrive, and nothing
+   else runs on the job thread.** The spec says the map shows
+   OpenStreetMap until the world is there. But `choose_source()` schedules
+   `PrepareZwiftWorld` (`ActivityMap.cpp:97`, through
+   `SweatTrails.cpp:961`) before the first `view_changed()` schedules
+   `DownloadTiles`, and there's one job thread (`AppBus::handler`,
+   `src/Lib/Widget/Widget.h:303`). So OSM tiles that aren't cached only come
+   in after the download and the cut: the map is grey and then changes to
+   the world. The same goes for tiles for another activity shown during
+   the cut, the overlay preview's tiles, and a Garmin or Wahoo download
+   the user starts. Each of those waits seconds, or longer on a slow
+   network. It's least visible for Watopia, whose OSM map is sea, but it
+   doesn't match the spec. A second thread, or cutting a zoom at a time
+   in its own jobs, would avoid it. Not tested: it needs the app's job
+   bus.
+4. **Suggestion: the 30-second curl timeout covers the whole image.**
+   `download()` sets `CURLOPT_TIMEOUT` to 30 s (`src/App/Map.cpp:122`),
+   which was chosen for 256-pixel tiles. An 8192×6144 PNG of many
+   megabytes on a slow connection can go over it. The world is then in
+   `zwift_failed` until the app restarts, and the next session tries the
+   whole download again and fails the same way. A longer timeout for
+   `download_file()` of a world, or `CURLOPT_LOW_SPEED_LIMIT` in place of
+   the total timeout, would fix it.
+5. **Suggestion: the cut needs about twice the memory the spec says.**
+   `LoadImage()` and then `ImageFormat()` to RGBA (`Zwift.cpp:256-262`)
+   hold the RGB and RGBA copies at once, if the PNG has no alpha channel.
+   The first `ImageResize()` (`Zwift.cpp:201`, from 8192×6144 to about
+   7240×5430 for Watopia) holds the original and the result. That's about
+   360 MB at its peak, not 200 MB. That's acceptable on a desktop, but the
+   spec's figure should say so.
+6. **Suggestion: tiles past a world's edge are looked up on every view
+   change.** For a world's source, a tile that isn't cached isn't put in
+   `failed` (`ActivityMap.cpp:183`), so each drag or wheel step runs
+   `fs::exists` again for every tile past the edge. Putting them in
+   `failed`, as the ancestor branch above it does, would stop that. The
+   same code means that a `world.json` whose tiles were deleted by hand
+   shows only the background, and never recovers. That's the design, but
+   a missing tile at a zoom where `world_tiles()` says there should be
+   one could also be taken as a reason to cut again.
+7. **Missing test (added, passes): an interrupted cut is done again.**
+   With tiles there but no `world.json`, `cut_world()` gives nothing, and
+   `prepare_zwift_world()` cuts again and writes it:
+   `test_interrupted_cut_is_done_again` (`test/ZwiftTest.cpp:383`).
+8. **Missing test (added, passes): world corners on tile edges.** A
+   south-east corner exactly on a tile edge gives no extra empty column
+   of tiles: `test_world_tiles_on_tile_edges` (`test/ZwiftTest.cpp:416`).
+9. **Missing test (added, passes): FIT's invalid manufacturer.** A
+   `file_id` with manufacturer 0xFFFF loads as no manufacturer:
+   `test_invalid_manufacturer` (`test/ActivityLoadTest.cpp:119`). Reading
+   `file_id.manufacturer` as `uint16` is right: with `enum_`, the reader
+   took the low byte of the union, which is 4 for Zwift's 260. Nothing
+   else uses `file_id.manufacturer`, and `fitexplore` prints fields
+   generically, so the change doesn't affect anything else.
+
+Checked and found fine: the job only reads `storage.tiles_dir` through
+`SweatTrails::the()`, as `job_download_tiles` does. `change_source()`
+takes a new `map_id`, so OSM tiles still arriving are dropped.
+`waiting_for_world` is reset when another activity is shown, and showing
+the ride again while its world is being cut waits for the same job.
+`world.json` is written last. Downloads go to a `.part` file. Only raylib's
+CPU image functions run on the job thread. The README credits Zwift and
+zwift-data.

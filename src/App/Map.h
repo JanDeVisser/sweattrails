@@ -157,8 +157,11 @@ struct TilePiece {
 
 using TileLoaded = std::function<bool(Tile const &)>;
 
+// How many levels up cover() looks for a loaded tile.
+constexpr u8 CoverLevels = 3;
+
 // What to draw for a tile that isn't loaded yet: the part of its nearest
-// loaded ancestor, up to three levels up, that covers it, as after zooming
+// loaded ancestor, up to CoverLevels levels up, that covers it, as after zooming
 // in; or else those of its four children that are loaded, as after zooming
 // out. Nothing means grey.
 std::vector<TilePiece> cover(Tile const &tile, TileLoaded const &loaded);

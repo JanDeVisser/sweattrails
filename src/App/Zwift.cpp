@@ -103,10 +103,10 @@ u8 native_zoom(ZwiftWorld const &world, float image_width)
 {
     auto const width_at_0 = world_pixel(world.south_east, 0).x - world_pixel(world.north_west, 0).x;
     if (width_at_0 <= 0 || image_width <= 0) {
-        return MinWorldZoom;
+        return MinNativeZoom;
     }
     auto const zoom = std::round(std::log2(image_width / width_at_0));
-    return static_cast<u8>(std::clamp(zoom, static_cast<double>(MinWorldZoom), static_cast<double>(MaxMapZoom)));
+    return static_cast<u8>(std::clamp(zoom, static_cast<double>(MinNativeZoom), static_cast<double>(MaxMapZoom)));
 }
 
 WorldArea world_area(ZwiftWorld const &world, u8 zoom)

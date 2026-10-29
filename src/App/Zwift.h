@@ -51,8 +51,13 @@ struct ZwiftWorld {
 // of one tile, up to its native zoom.
 constexpr u8 MinWorldZoom = 8;
 
+// Above its native zoom, the map scales up a world's tiles at it, with
+// cover(), which only looks so far up: a world is cut up to this zoom at
+// least, a small image scaled up, so that it shows at the highest zoom.
+constexpr u8 MinNativeZoom = MaxMapZoom - CoverLevels;
+
 // The zoom nearest the image's resolution, where an image pixel is about a
-// map pixel: 16 for Watopia's 8192 pixels.
+// map pixel: 16 for Watopia's 8192 pixels. At least MinNativeZoom.
 u8 native_zoom(ZwiftWorld const &world, float image_width);
 
 // Where a world lies on the map at a zoom, in whole map pixels: its image
