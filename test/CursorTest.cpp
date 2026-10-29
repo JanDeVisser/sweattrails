@@ -5,8 +5,7 @@
  *
  * Tests App::request_cursor(): a widget asks for a cursor in every frame it
  * wants it, and in other frames the app goes back to the default. The tests
- * only use modals, because without a modal App::process_input() also asks
- * raylib about the window, and there is none.
+ * use modals, which get the input instead of the widgets under them.
  */
 
 #include <memory>

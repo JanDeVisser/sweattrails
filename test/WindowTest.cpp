@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <format>
+#include <memory>
 #include <string>
 
 #include <Window.h>
@@ -74,6 +75,20 @@ void test_restored_window_sizes()
     }
 }
 
+// A modal has the input, such as the quit prompt, while the window is
+// un-maximized: the app still starts each frame, where it picks up the
+// resize.
+void test_frames_start_under_a_modal()
+{
+    Test::ScopedTestApp scoped;
+    auto               &app = *scoped.app;
+    app.push_modal(std::make_shared<Widget>(nullptr));
+    auto const before = app.frame_count;
+    app.process_input();
+    app.process_input();
+    CHECK_EQ(app.frame_count, before + 2);
+}
+
 // raylib gives a size of 0 for a monitor it can't find the video mode of.
 void test_restored_window_no_size()
 {
@@ -88,5 +103,6 @@ int main()
     test_restored_window();
     test_restored_window_sizes();
     test_restored_window_no_size();
+    test_frames_start_under_a_modal();
     return ST::Test::test_result();
 }

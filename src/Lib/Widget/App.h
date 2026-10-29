@@ -79,7 +79,7 @@ struct App : public Layout {
     void draw() override;
     void process_input() override;
     void on_resize() override;
-    void on_process_input() override;
+    void start_frame();
     void draw_floating(pWidget const &target, Draw const &draw);
     void set_fonts(std::string_view const &path);
     void handle_keyboard(pWidget const &focus);
