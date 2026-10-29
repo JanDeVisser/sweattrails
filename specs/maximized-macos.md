@@ -1,6 +1,6 @@
 # Starting maximized on macOS
 
-Status: In progress, on branch feature/maximized-macos
+Status: In review
 
 ## Goal
 
