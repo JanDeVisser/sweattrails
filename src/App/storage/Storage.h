@@ -29,6 +29,15 @@ namespace ST {
 
 namespace fs = std::filesystem;
 
+// An activity in the store, as activity_starts() finds it: its start time,
+// a Unix time, and its sidecar, next to its FIT file.
+struct StoredStart {
+    i64      start { 0 };
+    fs::path sidecar { };
+
+    bool operator==(StoredStart const &) const = default;
+};
+
 struct Storage {
     using Index = ST::Index;
     using Month = ST::Month;
@@ -88,13 +97,15 @@ struct Storage {
     // Whether the store has an activity that starts at `start_time`, a Unix
     // time: the inbox files activities by their start time.
     [[nodiscard]] bool has_activity(i64 start_time) const;
-    // The sidecar of the activity that starts at `start_time`, whether it's
-    // there or not.
+    // The sidecar of the activity that starts at `start_time`, as the inbox
+    // would file it now, whether it's there or not. An activity filed in
+    // another time zone may be in the month before or after: activity_starts()
+    // finds it where it is.
     [[nodiscard]] fs::path sidecar_of(i64 start_time) const;
-    // The start times of the activities from `from` to `to`, Unix times,
-    // earliest first. From the FIT files' names: none is read, and one
-    // that isn't named by its start time isn't there.
-    StorageResult<std::vector<i64>> activity_starts(i64 from, i64 to) const;
+    // The activities that start from `from` to `to`, Unix times, earliest
+    // first. From the FIT files' names: none is read, and one that isn't
+    // named by its start time isn't there.
+    StorageResult<std::vector<StoredStart>> activity_starts(i64 from, i64 to) const;
     // The start time of the store's oldest activity, as activity_starts()
     // sees them.
     StorageResult<std::optional<i64>> oldest_start() const;
@@ -102,7 +113,7 @@ struct Storage {
     Error<StorageError> move_with_sidecar(std::string_view const &file_name, fs::path const &dest_dir, std::string_view const &dest_stem) const;
 
 private:
-    StorageResult<std::vector<i64>> month_starts(Month const &month) const;
+    StorageResult<std::vector<StoredStart>> month_starts(Month const &month) const;
 };
 
 }

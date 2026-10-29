@@ -11,12 +11,13 @@
 
 namespace ST {
 
-std::vector<StravaMatch> match_strava(std::span<StravaActivity const> strava, std::span<i64 const> starts)
+std::vector<StravaMatch> match_strava(std::span<StravaActivity const> strava, std::span<StoredStart const> starts)
 {
     std::vector<StravaActivity> by_start { strava.begin(), strava.end() };
     std::ranges::sort(by_start, { }, &StravaActivity::start_time);
     std::vector<StravaMatch> ret;
-    for (auto const start : starts) {
+    for (auto const &stored : starts) {
+        auto const start = stored.start;
         // The nearest is the first that starts at or after `start`, or the
         // one before it.
         auto const after = std::ranges::lower_bound(by_start, start, { }, &StravaActivity::start_time);
@@ -28,7 +29,7 @@ std::vector<StravaMatch> match_strava(std::span<StravaActivity const> strava, st
             }
         }
         if (nearest != by_start.end() && std::abs(nearest->start_time - start) <= StravaMatchSeconds) {
-            ret.push_back(StravaMatch { .start = start, .strava = *nearest });
+            ret.push_back(StravaMatch { .stored = stored, .strava = *nearest });
         }
     }
     return ret;
@@ -37,7 +38,7 @@ std::vector<StravaMatch> match_strava(std::span<StravaActivity const> strava, st
 namespace {
 
 struct Described {
-    i64         start { 0 };
+    StoredStart stored { };
     StravaTitle title { };
 };
 
@@ -45,10 +46,10 @@ struct Described {
 // description stays only if the name does: a new name may come with a new
 // description. Returns what the sidecar has now, or nothing if it can't be
 // written.
-std::optional<StravaTitle> save_title(Storage const &storage, StravaMatch const &match, StravaUpdate &update)
+std::optional<StravaTitle> save_title(StravaMatch const &match, StravaUpdate &update)
 {
-    auto const sidecar = storage.sidecar_of(match.start);
-    auto const old = sidecar_titles(sidecar).strava;
+    auto const &sidecar = match.stored.sidecar;
+    auto const  old = sidecar_titles(sidecar).strava;
     if (old && old->id == match.strava.id && old->name == match.strava.name) {
         return old;
     }
@@ -61,7 +62,7 @@ std::optional<StravaTitle> save_title(Storage const &storage, StravaMatch const 
         return { };
     }
     ++update.titles;
-    update.changed.push_back(match.start);
+    update.changed.push_back(match.stored.start);
     return title;
 }
 
@@ -80,13 +81,13 @@ StravaResult<StravaUpdate> update_strava_titles(Strava &strava, Storage const &s
     StravaUpdate           update { };
     std::vector<Described> undescribed;
     for (auto const &match : match_strava(listed, *starts)) {
-        if (auto const title = save_title(storage, match, update); title && !title->description) {
-            undescribed.push_back(Described { .start = match.start, .title = *title });
+        if (auto const title = save_title(match, update); title && !title->description) {
+            undescribed.push_back(Described { .stored = match.stored, .title = *title });
         }
     }
 
     for (size_t ix = 0; ix < undescribed.size(); ++ix) {
-        auto &[start, title] = undescribed[ix];
+        auto &[stored, title] = undescribed[ix];
         if (progress) {
             progress(ix, undescribed.size());
         }
@@ -101,13 +102,12 @@ StravaResult<StravaUpdate> update_strava_titles(Strava &strava, Storage const &s
             break;
         }
         title.description = *description;
-        auto const sidecar = storage.sidecar_of(start);
-        if (auto const saved = save_sidecar_strava(sidecar, title); !saved) {
-            warning(Strava, "Could not save Strava's description in `{}`: {}", sidecar.string(), saved.error().to_string());
+        if (auto const saved = save_sidecar_strava(stored.sidecar, title); !saved) {
+            warning(Strava, "Could not save Strava's description in `{}`: {}", stored.sidecar.string(), saved.error().to_string());
             continue;
         }
         ++update.descriptions;
-        update.changed.push_back(start);
+        update.changed.push_back(stored.start);
     }
 
     std::ranges::sort(update.changed);

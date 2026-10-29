@@ -9,6 +9,8 @@
  */
 
 #include <algorithm>
+#include <cstdlib>
+#include <ctime>
 #include <string>
 #include <vector>
 
@@ -37,6 +39,27 @@ StravaActivity strava_at(u64 id, i64 start_time)
     return StravaActivity { .id = id, .start_time = start_time, .name = std::format("Activity {}", id) };
 }
 
+// Activities in the store, as activity_starts() finds them, by their start
+// times.
+std::vector<StoredStart> stored(std::vector<i64> const &starts)
+{
+    std::vector<StoredStart> ret;
+    for (auto const start : starts) {
+        ret.push_back(StoredStart { .start = start, .sidecar = std::format("{}.json", start) });
+    }
+    return ret;
+}
+
+// The start times of activities in the store.
+std::vector<i64> starts_of(std::vector<StoredStart> const &stored)
+{
+    std::vector<i64> ret;
+    for (auto const &s : stored) {
+        ret.push_back(s.start);
+    }
+    return ret;
+}
+
 std::vector<u64> matched_ids(std::vector<StravaMatch> const &matches)
 {
     std::vector<u64> ids;
@@ -50,12 +73,12 @@ std::vector<u64> matched_ids(std::vector<StravaMatch> const &matches)
 // within a minute, either way.
 void test_match_nearest_within_a_minute()
 {
-    std::vector const      strava { strava_at(1, 1000), strava_at(2, 1100), strava_at(3, 2060), strava_at(4, 2939) };
-    std::vector<i64> const starts { 1040, 1070, 2000, 3000, 5000 };
-    auto const             matches = match_strava(strava, starts);
+    std::vector const strava { strava_at(1, 1000), strava_at(2, 1100), strava_at(3, 2060), strava_at(4, 2939) };
+    auto const        starts = stored({ 1040, 1070, 2000, 3000, 5000 });
+    auto const        matches = match_strava(strava, starts);
     CHECK((matched_ids(matches) == std::vector<u64> { 1, 2, 3 }));
-    CHECK_EQ(matches[0].start, 1040);
-    CHECK_EQ(matches[2].start, 2000);
+    CHECK_EQ(matches[0].stored.start, 1040);
+    CHECK_EQ(matches[2].stored.start, 2000);
     CHECK(match_strava({ }, starts).empty());
     CHECK(match_strava(strava, { }).empty());
 }
@@ -63,8 +86,8 @@ void test_match_nearest_within_a_minute()
 // The same ride on two devices: both get its title.
 void test_two_devices_match_the_same_activity()
 {
-    std::vector const      strava { strava_at(7, 1000) };
-    std::vector<i64> const starts { 990, 1005 };
+    std::vector const strava { strava_at(7, 1000) };
+    auto const        starts = stored({ 990, 1005 });
     CHECK((matched_ids(match_strava(strava, starts)) == std::vector<u64> { 7, 7 }));
 }
 
@@ -72,8 +95,8 @@ void test_two_devices_match_the_same_activity()
 // in order.
 void test_match_in_any_order()
 {
-    std::vector const      strava { strava_at(2, 1040), strava_at(1, 960) };
-    std::vector<i64> const starts { 1000 };
+    std::vector const strava { strava_at(2, 1040), strava_at(1, 960) };
+    auto const        starts = stored({ 1000 });
     CHECK((matched_ids(match_strava(strava, starts)) == std::vector<u64> { 1 }));
 }
 
@@ -258,10 +281,78 @@ void test_activity_starts()
     auto const month = store.storage.sidecar_of(Ride).parent_path();
     MUST(write_file_by_name((month / "copied.fit").string(), std::string_view { "fit" }));
     MUST(write_file_by_name((month / "1793100000.json").string(), std::string_view { "{}" }));
-    CHECK((MUST_EVAL(store.storage.activity_starts(Ride, Swim)) == std::vector<i64> { Ride, Run, Swim }));
-    CHECK((MUST_EVAL(store.storage.activity_starts(Ride + 1, Swim - 1)) == std::vector<i64> { Run }));
+    CHECK((starts_of(MUST_EVAL(store.storage.activity_starts(Ride, Swim))) == std::vector<i64> { Ride, Run, Swim }));
+    CHECK((starts_of(MUST_EVAL(store.storage.activity_starts(Ride + 1, Swim - 1))) == std::vector<i64> { Run }));
     CHECK((MUST_EVAL(store.storage.activity_starts(0, Now)).size() == 4));
+    CHECK_EQ(MUST_EVAL(store.storage.activity_starts(Ride, Ride)).front().sidecar.string(), store.storage.sidecar_of(Ride).string());
     CHECK_EQ(MUST_EVAL(store.storage.oldest_start()).value_or(0), Ride - 40 * 86400);
+}
+
+// Added by the Reviewer: Strava's limit on the list itself is an error,
+// RateLimited with when it resets, and nothing is written.
+void test_list_rate_limited()
+{
+    StravaStore t;
+    t.fake.answer("/api/v3/athlete/activities", HttpResponse {
+                                                    .status = 429,
+                                                    .body = R"({"message":"Rate Limit Exceeded"})",
+                                                    .headers = { { "X-ReadRateLimit-Limit", "100,1000" }, { "X-ReadRateLimit-Usage", "101,300" } },
+                                                });
+    auto const update = update_strava_titles(t.strava, t.store.storage, After, Now);
+    CHECK(!update.has_value() && update.error().kind == StravaError::Kind::RateLimited);
+    CHECK(!update.has_value() && update.error().resets_at == Now - Now % 900 + 900);
+    CHECK(!t.saved(Ride).has_value());
+    CHECK(!fs::exists(t.store.storage.sidecar_of(Run)));
+}
+
+// Added by the Reviewer: the same ride on two devices gets the title and
+// the description on both.
+void test_two_devices_get_the_description()
+{
+    StravaStore t;
+    t.store.add_activity(Ride + 30);
+    t.list({ strava_activity(101, "2026-10-27T12:05:10Z", "Ride to Niagara") });
+    t.describe(101, R"("With Anna")");
+    t.describe(101, R"("With Anna")");
+    auto const update = t.update();
+    CHECK_EQ(update.titles, 2u);
+    CHECK((update.changed == std::vector<i64> { Ride, Ride + 30 }));
+    StravaTitle const described { .id = 101, .name = "Ride to Niagara", .description = "With Anna" };
+    CHECK(t.saved(Ride) == described);
+    CHECK(t.saved(Ride + 30) == described);
+}
+
+// Added by the Reviewer: the store files an activity in the month of its
+// start in the time zone it was imported in. Looked for from another time
+// zone, its sidecar is still the one next to its FIT file. 1790825400 is
+// 2026-09-30 23:30 in Toronto, and 2026-10-01 05:30 in Amsterdam.
+void test_activity_filed_in_another_time_zone()
+{
+    constexpr i64     MonthEnd = 1790825400;
+    auto const       *tz = std::getenv("TZ");
+    std::string const old_tz = tz ? tz : "";
+    setenv("TZ", "America/Toronto", 1);
+    tzset();
+    {
+        StravaStore t;
+        t.store.add_activity(MonthEnd);
+        auto const filed = t.store.storage.activity_dir / "2026/09" / std::format("{}.json", MonthEnd);
+        setenv("TZ", "Europe/Amsterdam", 1);
+        tzset();
+        t.list({ strava_activity(201, "2026-10-01T03:30:00Z", "Last ride of September") });
+        t.describe(201, R"("")");
+        auto const update = MUST_EVAL(update_strava_titles(t.strava, t.store.storage, MonthEnd - 86400, MonthEnd + 86400));
+        CHECK_EQ(update.titles, 1u);
+        CHECK(sidecar_titles(filed).strava.has_value());
+        // Not a sidecar of its own, in a month without its FIT file.
+        CHECK(!fs::exists(t.store.storage.activity_dir / "2026/10" / std::format("{}.json", MonthEnd)));
+    }
+    if (tz) {
+        setenv("TZ", old_tz.c_str(), 1);
+    } else {
+        unsetenv("TZ");
+    }
+    tzset();
 }
 
 }
@@ -278,5 +369,8 @@ int main()
     test_sidecar_that_isnt_an_object();
     test_not_logged_in();
     test_activity_starts();
+    test_list_rate_limited();
+    test_two_devices_get_the_description();
+    test_activity_filed_in_another_time_zone();
     return ST::Test::test_result();
 }

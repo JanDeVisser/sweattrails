@@ -548,6 +548,27 @@ void test_rename_back_to_the_services_name_by_typing_it()
 }
 }
 
+// Added by the Reviewer: a rename wins over Strava's name, and taking it
+// out brings Strava's back, also when Strava's came after the rename.
+void test_rename_over_stravas_title()
+{
+    ActivityInDir t { R"({"activityName": "Morning Ride", "strava": {"id": 17, "name": "Ride to Niagara"}})" };
+    CHECK(t.activity.rename("Niagara").has_value());
+    CHECK_EQ(t.activity.title, "Niagara");
+    CHECK(t.activity.rename("").has_value());
+    CHECK_EQ(t.activity.title, "Ride to Niagara");
+    CHECK(!sidecar_own_title(t.activity.sidecar).has_value());
+    CHECK(sidecar_titles(t.activity.sidecar).strava.has_value());
+
+    ActivityInDir later { R"({"activityName": "Morning Ride"})" };
+    CHECK(later.activity.rename("Niagara").has_value());
+    CHECK(save_sidecar_strava(later.activity.sidecar, StravaTitle { .id = 17, .name = "Ride to Niagara" }).has_value());
+    later.activity.read_names();
+    CHECK_EQ(later.activity.title, "Niagara");
+    CHECK(later.activity.rename("").has_value());
+    CHECK_EQ(later.activity.title, "Ride to Niagara");
+}
+
 int main()
 {
     test_manufacturer_is_loaded();
@@ -571,6 +592,7 @@ int main()
     test_title_from_a_strava_file();
     test_read_names_again();
     test_save_sidecar_strava();
+    test_rename_over_stravas_title();
     test_save_keeps_the_rest_of_the_sidecar();
     test_save_without_a_sidecar();
     test_save_refuses_a_sidecar_that_isnt_an_object();

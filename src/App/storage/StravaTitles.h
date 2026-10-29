@@ -24,15 +24,15 @@ namespace ST {
 constexpr i64 StravaMatchSeconds = 60;
 
 struct StravaMatch {
-    i64            start { 0 }; // The activity in the store
+    StoredStart    stored { }; // The activity in the store
     StravaActivity strava { };
 };
 
-// For each of `starts`, the start times of activities in the store, the
-// Strava activity nearest it, if one is within StravaMatchSeconds. Two
+// For each of `starts`, activities in the store, the Strava activity
+// nearest it, if one is within StravaMatchSeconds. Two
 // activities in the store can match the same Strava activity: the same ride
 // recorded on two devices.
-std::vector<StravaMatch> match_strava(std::span<StravaActivity const> strava, std::span<i64 const> starts);
+std::vector<StravaMatch> match_strava(std::span<StravaActivity const> strava, std::span<StoredStart const> starts);
 
 struct StravaUpdate {
     size_t             titles { 0 };       // Activities given a new name from Strava

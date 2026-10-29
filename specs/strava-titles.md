@@ -376,4 +376,65 @@ both clients keep their tokens the same way: `wahoo-tokens.json` and
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: the "…" that cuts notes short is drawn as "?".**
+   `clamp_lines()` (`src/Lib/Base/StringUtil.cpp:196`, `:206`) ends the
+   third line of notes with U+2026, but `App::set_fonts()`
+   (`src/Lib/Widget/App.cpp:51`) loads only code points 32 to 1023, so
+   raylib draws its fallback, "?". The same goes for the curly quotes,
+   dashes and emoji that Strava descriptions written on a phone are full
+   of. Fix: end with "...", or load U+2026 (and General Punctuation,
+   U+2000 to U+206F) with the fonts. Not testable without a window.
+2. **Bug: an activity filed in another time zone gets its Strava title in
+   a stray sidecar.** `Storage::sidecar_of()` (`src/App/storage/Storage.cpp:233`)
+   works out the month directory from the start time in today's local
+   time zone, but the inbox filed the FIT file in the month of the time
+   zone it was imported in. A ride at 23:30 on 30 September in Toronto,
+   matched from Amsterdam, gets `activity/2026/10/<start>.json` written
+   next to no FIT file (or fails to write, if that month has no
+   directory), is counted as a new title, and never shows it.
+   `activity_starts()` found the FIT file in `2026/09`: fix by having it
+   return each activity's directory (or its sidecar path) with its start,
+   and use that instead of `sidecar_of()`. Test:
+   `test_activity_filed_in_another_time_zone` in
+   `test/StravaTitlesTest.cpp`, which fails.
+3. **Bug: a description request that fails for any reason but the limit
+   is not reported.** `update_strava_titles()` (`src/App/storage/StravaTitles.cpp:99`)
+   only logs the error, and the message says "Strava: 40 new titles. 12
+   descriptions are left for next time." The spec's Errors section asks
+   for "a message with the error" when Strava can't be reached or a
+   request fails. Fix: keep the error in `StravaUpdate` (such as
+   `std::optional<std::string> error`) and add it to the Titled sentence.
+4. **Bug (minor): a list that fails on its second page keeps none of the
+   first page's titles.** `Strava::list_activities()`
+   (`src/App/storage/Strava.cpp:268`) returns the error and drops the
+   pages it has. For the history of more than 200 activities, a dropped
+   connection or a 429 on page 2 means no titles at all, where the spec
+   says titles fetched before the failure are kept. Fix: return the pages
+   so far with the error, or write titles page by page.
+5. **Suggestion: descriptions are fetched oldest first.** The history
+   run (`src/App/storage/StravaTitles.cpp:88`) fetches in store order, so
+   with 1,000 requests a day a long history spends days on old rides
+   before reaching the recent ones the user is looking at. Fetch newest
+   first.
+6. **Suggestion: the same Strava activity's description is fetched once
+   per store activity.** The same ride recorded on two devices spends two
+   requests on one description (`test_two_devices_get_the_description`
+   shows it works, with two requests). Fetch each Strava `id` once and
+   save it to every match.
+7. **Suggestion: a Strava client ID without a secret is silently "not
+   set up".** `strava_client()` (`src/App/storage/Download.cpp:101`) needs
+   both; a user who forgot the secret hears nothing from Ctrl+G. The
+   spec says a user without a `client_id` never hears of Strava, which
+   suggests one with an ID should be told the secret is missing.
+8. **Suggestion: a login offered by `st-strava-titles` only fetches the
+   last `strava.days`.** `job_strava_login()`
+   (`src/App/SweatTrails.cpp:387`) runs the 30-day download after the
+   login, so the history the user asked for (Ctrl+Shift+G) needs a second
+   Ctrl+Shift+G. Carry the request's `days` (or "history") into
+   `StravaLogin`.
+9. **Missing tests, added:** `test_list_rate_limited` and
+   `test_two_devices_get_the_description` in `test/StravaTitlesTest.cpp`
+   (pass), and `test_rename_over_stravas_title` in
+   `test/ActivityLoadTest.cpp` (passes: a rename wins over Strava's name,
+   and clearing it brings Strava's back, also when Strava's came after
+   the rename).
