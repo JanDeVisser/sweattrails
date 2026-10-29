@@ -1,6 +1,6 @@
 # Choosing an activity
 
-Status: In progress
+Status: In review
 
 ## Goal
 
@@ -149,7 +149,8 @@ struct ListBoxEntry {
   ```
 
   with `Month::plus(int months)` for the arithmetic across years.
-- **`Storage::activity_next_to(ActivityID const &, int step) const`**:
+- **`Storage::activity_next_to(ActivityID const &, int step)`**, not
+  `const`, as `Month::list()` takes the storage to load from:
   the activity before (`-1`) or after (`+1`) by start time. In the same
   month if there is one, else the last or the first of the nearest month
   before or after whose list isn't empty: a month whose files all fail
@@ -163,8 +164,15 @@ struct ListBoxEntry {
   `format_distance()` and `format_moving_time()` from the data panel,
   the distance empty without one.
 - `ActivitySelector` takes the months with activities, and moves with
-  `month_after()`, `month_before()` and `years_from()`. It opens at the
-  month of the activity on display, else the latest, and selects it.
+  `month_after()`, `month_before()` and `years_from()`, which
+  `destination(modifier, key)` picks between: a test can't press the
+  keys, as moving calls `refresh()`, which measures the prompt with a
+  font. It opens at the month of the activity on display, else the
+  latest, and selects it.
+- `format_distance()` and `format_moving_time()` are declared in
+  `widget/DataFields.h` for it, rather than kept inside the data panel.
+- The list box cuts a title by characters rather than bytes, so that a
+  title with an `é` at the cut doesn't become invalid UTF-8.
 - `cmd_list_month()` shows a message when there are no months with
   activities.
 - **`st-previous-activity` and `st-next-activity`**, bound to Left and
