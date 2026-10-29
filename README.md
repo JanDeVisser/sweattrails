@@ -80,9 +80,10 @@ laps, and Escape back to the whole activity.
 
 Ctrl+M lists the activities of the month of the one on display, oldest
 first, with each one's sport, day and time, title, distance and moving
-time. Typing searches the titles, and Enter shows the one selected. Left
-and Right go to the month before or after that has activities, and
-Shift+Left and Shift+Right a year back or on.
+time. Up and Down select one, typing searches the titles, Enter shows
+the one selected, and Escape closes the list. Left and Right go to the
+month before or after that has activities, and Shift+Left and
+Shift+Right a year back or on.
 
 ## Garmin Connect
 

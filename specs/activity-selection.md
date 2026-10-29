@@ -265,4 +265,5 @@ struct ListBoxEntry {
 3. Fixed: the columns are counted from the row's right end, so a row
    with fewer lines its last one up under the others' (`test_widths`).
 4. Fixed: the day is padded to two characters (`test_activity_entry`).
+5. Fixed: the README has Up and Down and Escape in the list too.
 6. The review's tests are committed, with fix 1.
