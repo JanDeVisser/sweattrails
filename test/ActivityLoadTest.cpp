@@ -115,6 +115,17 @@ void test_another_manufacturer()
     CHECK(t.activity.manufacturer == FIT::manufacturer::garmin);
 }
 
+// 0xFFFF is FIT's invalid uint16: the file doesn't say who made it.
+void test_invalid_manufacturer()
+{
+    FITBuilder fit;
+    add_file_id(fit, 0xFFFF);
+    add_session(fit, 3600, 345);
+    LoadedActivity t { fit.file() };
+    CHECK(t.loaded);
+    CHECK(!t.activity.manufacturer.has_value());
+}
+
 void test_without_a_file_id()
 {
     FITBuilder fit;
@@ -453,6 +464,7 @@ int main()
 {
     test_manufacturer_is_loaded();
     test_another_manufacturer();
+    test_invalid_manufacturer();
     test_without_a_file_id();
     test_session_total_ascent_is_loaded();
     test_session_without_total_ascent();

@@ -9,6 +9,7 @@
 #include <format>
 #include <print>
 #include <string>
+#include <vector>
 
 #include <IO.h>
 
@@ -306,6 +307,36 @@ void test_cut_world_with_a_bad_world_file()
     CHECK(!cut_world(small.dir.path, small.world).has_value());
 }
 
+// A cut that was interrupted, with tiles but no world.json, isn't taken for
+// a world's map, and is done again.
+void test_interrupted_cut_is_done_again()
+{
+    SmallWorld small;
+    MUST(prepare_zwift_world(small.dir.path, small.world));
+    auto const file = small.dir.path / "Small" / "world.json";
+    fs::remove(file);
+    CHECK(!cut_world(small.dir.path, small.world).has_value());
+    CHECK(prepare_zwift_world(small.dir.path, small.world).has_value());
+    CHECK(fs::exists(file));
+    CHECK(cut_world(small.dir.path, small.world).has_value());
+}
+
+// A world whose corners lie on tiles' edges touches only the tiles inside.
+void test_world_tiles_on_tile_edges()
+{
+    // At zoom 10, longitude 0 is x = 512 * 256, and each tile is 360/1024°.
+    auto const tile_lon = 360.0f / 1024.0f;
+    auto const world = ZwiftWorld {
+        .north_west = { .lat = 10.0f, .lon = 0.0f },
+        .south_east = { .lat = 9.5f, .lon = 2 * tile_lon },
+    };
+    auto const tiles = world_tiles(world, Vector2 { .x = 512, .y = 512 }, 10);
+    for (auto const &[tile, source, place] : tiles) {
+        CHECK(tile.x == 512 || tile.x == 513);
+        CHECK(place.width > 0.5f);
+    }
+}
+
 }
 
 int main()
@@ -324,5 +355,7 @@ int main()
     test_cut_a_world();
     test_cut_a_world_that_doesnt_decode();
     test_cut_world_with_a_bad_world_file();
+    test_interrupted_cut_is_done_again();
+    test_world_tiles_on_tile_edges();
     return ST::Test::test_result();
 }
