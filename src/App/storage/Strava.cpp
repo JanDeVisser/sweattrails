@@ -259,26 +259,35 @@ StravaResult<HttpResponse> Strava::get(std::string const &path)
     return std::move(*response);
 }
 
-StravaResult<std::vector<StravaActivity>> Strava::list_activities(i64 after, i64 before)
+StravaResult<StravaListing> Strava::list_activities(i64 after, i64 before)
 {
-    std::vector<StravaActivity> activities;
+    StravaListing ret;
+    // The first page's error is the list's; a later one's leaves what
+    // came before it.
+    auto const stop = [&ret](StravaError error) -> StravaResult<StravaListing> {
+        if (ret.activities.empty()) {
+            return std::unexpected(std::move(error));
+        }
+        ret.stopped = std::move(error);
+        return std::move(ret);
+    };
     for (size_t page = 1;; ++page) {
         auto const response = get(std::format("{}?after={}&before={}&page={}&per_page={}", ActivitiesPath, after, before, page, PageSize));
         if (!response) {
-            return std::unexpected(response.error());
+            return stop(response.error());
         }
         auto const json = JSONValue::deserialize(response->body);
         if (!json) {
-            return std::unexpected(failed(std::format("Strava's list of activities isn't JSON: {}", json.error().to_string())));
+            return stop(failed(std::format("Strava's list of activities isn't JSON: {}", json.error().to_string())));
         }
         auto const listed = parse_activities(*json);
         if (!listed) {
-            return std::unexpected(failed(std::format("Unexpected list of activities from Strava: {}", listed.error().to_string())));
+            return stop(failed(std::format("Unexpected list of activities from Strava: {}", listed.error().to_string())));
         }
-        activities.insert(activities.end(), listed->begin(), listed->end());
+        ret.activities.insert(ret.activities.end(), listed->begin(), listed->end());
         // A short page is the last: counted before entries were skipped.
         if (json->size() < PageSize) {
-            return activities;
+            return ret;
         }
     }
 }

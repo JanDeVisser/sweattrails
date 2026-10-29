@@ -82,6 +82,11 @@ struct StravaActivity {
 // time is skipped, with a warning.
 Decoded<std::vector<StravaActivity>> parse_activities(JSONValue const &page);
 
+struct StravaListing {
+    std::vector<StravaActivity> activities { };
+    std::optional<StravaError>  stopped { }; // Why the list stopped short, if it did
+};
+
 struct Strava {
     HttpFetch                  fetch;
     std::string                client_id { };
@@ -97,7 +102,9 @@ struct Strava {
     StravaResult<void> exchange_code(std::string_view code);
 
     // The activities that started between `after` and `before`, Unix times.
-    StravaResult<std::vector<StravaActivity>> list_activities(i64 after, i64 before);
+    // A page that fails after the first leaves the ones listed so far, with
+    // the error in `stopped`.
+    StravaResult<StravaListing> list_activities(i64 after, i64 before);
 
     // An activity's description: empty if it has none.
     StravaResult<std::string> description(u64 id);

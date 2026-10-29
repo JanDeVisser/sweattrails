@@ -80,10 +80,23 @@ StravaResult<StravaUpdate> update_strava_titles(Strava &strava, Storage const &s
 
     StravaUpdate           update { };
     std::vector<Described> undescribed;
-    for (auto const &match : match_strava(listed, *starts)) {
+    for (auto const &match : match_strava(listed.activities, *starts)) {
         if (auto const title = save_title(match, update); title && !title->description) {
             undescribed.push_back(Described { .stored = match.stored, .title = *title });
         }
+    }
+
+    // A list that stopped short keeps the titles it has, and the
+    // descriptions wait: what stopped it would stop them too.
+    if (listed.stopped) {
+        update.waiting = undescribed.size();
+        if (listed.stopped->kind == StravaError::Kind::RateLimited) {
+            update.resets_at = listed.stopped->resets_at;
+            update.error = "Strava's limit stopped its list short";
+        } else {
+            update.error = std::format("Strava's list stopped short: {}", listed.stopped->to_string());
+        }
+        undescribed.clear();
     }
 
     for (size_t ix = 0; ix < undescribed.size(); ++ix) {

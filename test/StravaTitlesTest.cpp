@@ -231,6 +231,26 @@ void test_descriptions_stop_at_the_limit()
     CHECK_EQ(t.saved(Run)->description.value_or("<none>"), "Intervals");
 }
 
+// A list that stops short on its second page keeps the first page's
+// titles, and leaves their descriptions for the next time.
+void test_list_stopped_short_keeps_its_titles()
+{
+    StravaStore              t;
+    std::vector<std::string> full { strava_activity(101, "2026-10-27T12:05:30Z", "Ride to Niagara") };
+    for (auto ix = 1u; ix < 200; ++ix) {
+        full.push_back(strava_activity(5000 + ix, "2026-09-01T12:00:00Z", std::format("Not in the store {}", ix)));
+    }
+    t.list(full);
+    t.fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 500, .body = "" });
+    auto const update = t.update();
+    CHECK_EQ(update.titles, 1u);
+    CHECK_EQ(update.descriptions, 0u);
+    CHECK_EQ(update.waiting, 1u);
+    CHECK(update.error.starts_with("Strava's list stopped short: Strava answered HTTP 500"));
+    CHECK_EQ(t.description_requests(), 0u);
+    CHECK_EQ(t.saved(Ride)->name, "Ride to Niagara");
+}
+
 // Another failure stops the descriptions too, without a time to wait for.
 void test_descriptions_stop_at_a_failure()
 {
@@ -366,6 +386,7 @@ int main()
     test_titles_and_descriptions();
     test_only_whats_new();
     test_descriptions_stop_at_the_limit();
+    test_list_stopped_short_keeps_its_titles();
     test_descriptions_stop_at_a_failure();
     test_sidecar_that_isnt_an_object();
     test_not_logged_in();

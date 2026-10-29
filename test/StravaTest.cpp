@@ -158,12 +158,39 @@ void test_list_activities()
     CHECK(fake.requests[0].url.contains("page=1") && fake.requests[0].url.contains("per_page=200"));
     CHECK(fake.requests[1].url.contains("page=2"));
     CHECK(has_header(fake.requests[0], "Authorization: Bearer access"));
-    CHECK_EQ(listed->size(), 201uz);
-    auto const &last = listed->back();
+    CHECK_EQ(listed->activities.size(), 201uz);
+    CHECK(!listed->stopped.has_value());
+    auto const &last = listed->activities.back();
     CHECK_EQ(last.id, 1u);
     CHECK_EQ(last.name, "Morning ride");
     // 2026-10-01T06:30:15Z.
     CHECK_EQ(last.start_time, 1790836215);
+}
+
+// A page that fails after the first keeps the pages before it, and says
+// why it stopped. On the first page, the failure is the list's.
+void test_list_stopped_short()
+{
+    FakeStrava               fake;
+    TempDir                  dir { "strava-list-short" };
+    auto                     strava = logged_in(fake, dir);
+    std::vector<std::string> full;
+    for (auto ix = 0u; ix < 200; ++ix) {
+        full.push_back(strava_activity(1000 + ix, "2026-10-20T12:00:00Z", std::format("Ride {}", ix)));
+    }
+    fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 200, .body = list_of(full) });
+    fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 500, .body = "" });
+    auto const listed = strava.list_activities(0, Now);
+    CHECK(listed.has_value());
+    if (!listed) {
+        return;
+    }
+    CHECK_EQ(listed->activities.size(), 200uz);
+    CHECK(listed->stopped.has_value() && listed->stopped->status == 500);
+
+    fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 500, .body = "" });
+    auto const first = strava.list_activities(0, Now);
+    CHECK(!first.has_value() && first.error().status == 500);
 }
 
 void test_description()
@@ -232,6 +259,7 @@ int main()
     test_refresh_saves_the_new_refresh_token();
     test_not_logged_in();
     test_list_activities();
+    test_list_stopped_short();
     test_description();
     test_rate_limited();
     test_rate_limit_reset();
