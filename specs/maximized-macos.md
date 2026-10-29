@@ -149,4 +149,51 @@ them, so on a Retina screen they're points, not pixels.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug** (not introduced here, but step 6 of Starting relies on it):
+   `App::on_process_input()` (`src/Lib/Widget/App.cpp:121`) only runs
+   from `Layout::process_input()`, and `App::process_input()`
+   (`src/Lib/Widget/App.cpp:172-182`) skips that while a modal is open.
+   `IsWindowResized()` is only true for one frame, so a resize that lands
+   while a modal is up is lost: click the close button (the quit prompt
+   opens), then double-click the title bar to un-maximize. The window
+   shrinks, but the viewport keeps the maximized size until the next
+   resize with no modal open, so the layout runs off the window. On
+   Linux, where the window manager maximizes later, this also happens if
+   a modal opens in the first frames. `monitor` isn't followed under a
+   modal either. Fix: do the resize and monitor check in
+   `App::process_input()` before the modal branch.
+2. **Suggestion**: `src/Lib/Widget/App.h:152-155` trusts
+   `GetMonitorWidth()`/`GetMonitorHeight()`, which return 0 (with a
+   warning) when glfw has no video mode for the monitor.
+   `restored_window()` then gives 0x0 (see
+   `test_restored_window_no_size`), and `SetWindowSize(0, 0)` makes the
+   restored window empty, so un-maximizing gives nothing to grab. Keeping
+   the 800x600 window when the size comes back as 0 would be safer.
+3. **Suggestion**: on Linux under Wayland, glfw can't set a window's
+   position, so `SetWindowPosition()` (`src/Lib/Widget/App.h:155`) logs a
+   GLFW error at warning level on every start, and `GetCurrentMonitor()`
+   can't tell where the window is, so the saved monitor isn't
+   meaningful. Linux is untried, as the README says, but the README
+   could mention X11 vs Wayland when someone tries it.
+4. **Missing test** (added to `test/WindowTest.cpp`): `restored_window()`
+   where what's left over is odd, so the offset is rounded down
+   (1003x1004, at the origin and at a negative position), on a Retina
+   MacBook's size in points (1512x982), on a monitor of 0x0, and a sweep
+   of sizes 1 to 8000 at three positions. The sweep checks that the
+   window is whole, exactly two thirds rounded down, on the monitor, and
+   centred to within one. All of them pass.
+
+Checked, and found right: the raylib calls are in the order the
+Architecture gives. raylib 6.2 hides the window for `FLAG_WINDOW_HIDDEN`,
+shows it in `ClearWindowState()`, and only maximizes a resizable one. The
+viewport is read after `MaximizeWindow()`, and a maximize that finishes
+later comes in through `IsWindowResized()` on the next frame (apart from
+note 1). `SetWindowSize()`/`SetWindowPosition()` and
+`GetMonitorWidth()`/`GetMonitorPosition()` are all glfw screen
+coordinates, which are points on macOS, so HiDPI doesn't skew the
+arithmetic. Falling back to monitor 0 is saved: `create()` sets
+`monitor`, `SweatTrails::on_start()` replaces it with
+`GetCurrentMonitor()` (the same monitor, as the window is on it now), and
+the first `Main::process_input()` writes it if it differs from the state
+file. The float arithmetic is exact for integer sizes, so whole
+multiples of three don't round down by one.
