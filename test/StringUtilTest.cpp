@@ -64,6 +64,30 @@ void test_wrap_words()
     CHECK_EQ(wrapped("a cycling-basic.overlay.json b", 50), "a|cycling-basic.overlay.json|b");
     CHECK_EQ(wrapped("  two  spaces ", 1000), "two spaces");
     CHECK_EQ(wrapped("", 100), "");
+    // A description from Strava, with paragraphs.
+    CHECK_EQ(wrapped("Windy.\r\n\nWith Anna and Bo", 100), "Windy.|With Anna|and Bo");
+}
+
+// A character is 10 wide, and so is "…".
+void test_clamp_lines()
+{
+    auto const measure = [](std::string_view text) {
+        auto const ellipses = static_cast<float>(text.ends_with("…") ? 1 : 0);
+        return 10.0f * (static_cast<float>(text.length()) - 2 * ellipses);
+    };
+    auto const clamped = [&](std::vector<std::string> lines, size_t max, float width) {
+        std::string ret;
+        for (auto const &line : clamp_lines(std::move(lines), max, width, measure)) {
+            ret += (ret.empty() ? "" : "|") + line;
+        }
+        return ret;
+    };
+    CHECK_EQ(clamped({ "one", "two" }, 3, 100), "one|two");
+    CHECK_EQ(clamped({ "one", "two", "three" }, 3, 100), "one|two|three");
+    CHECK_EQ(clamped({ "one", "two", "three", "four" }, 3, 100), "one|two|three…");
+    // Cut short to fit with the "…", and not after a space.
+    CHECK_EQ(clamped({ "one", "two", "with Anna", "four" }, 3, 60), "one|two|with…");
+    CHECK_EQ(clamped({ "one", "two" }, 0, 100), "");
 }
 }
 
@@ -73,5 +97,6 @@ int main()
     test_base64url_uses_the_url_safe_alphabet();
     test_strip();
     test_wrap_words();
+    test_clamp_lines();
     return ST::Test::test_result();
 }

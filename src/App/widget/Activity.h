@@ -22,6 +22,9 @@
 namespace ST {
 
 struct ActivityDataDisplay : public Widget {
+    // The most lines of notes drawn under the title.
+    static constexpr size_t NotesLines = 3;
+
     // A field that marks a record when it's clicked, where the last draw()
     // drew it, in screen coordinates.
     struct ClickableField {
@@ -43,8 +46,9 @@ struct ActivityDataDisplay : public Widget {
     void set_activity(std::shared_ptr<DisplayedActivity> const &activity);
 
 private:
-    void draw_fields(float y);
-    void draw_field(DataField const &field, float x, float value_x, float y, float height);
+    float draw_notes(float y);
+    void  draw_fields(float y);
+    void  draw_field(DataField const &field, float x, float value_x, float y, float height);
 };
 
 struct ActivityMap : public Widget {

@@ -329,9 +329,11 @@ both clients keep their tokens the same way: `wahoo-tokens.json` and
 
 ### Notes under the title (`widget/Activity.cpp`, `StringUtil`)
 
-- `clamp_lines(lines, max, measure, width)` next to `wrap_words()` in
+- `clamp_lines(lines, max, width, measure)` next to `wrap_words()` in
   `src/Lib/Base/StringUtil`: at most `max` lines, the last cut short with
-  "…" to fit the width. Pure, so a test can check it.
+  "…" to fit the width. Pure, so a test can check it. `wrap_words()`
+  starts a new line at each newline too, as Strava's descriptions have
+  paragraphs.
 - `ActivityDataDisplay::draw()` draws the notes under the title in the
   small font, three lines at most, and lays out what's below from where
   they end.
