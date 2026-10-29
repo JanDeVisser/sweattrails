@@ -203,8 +203,9 @@ void test_hidden()
     CHECK(at(10).empty());
 }
 
-// A map in a group asks for the tiles it would alone, while both the
-// group and the map show.
+// A map in a group asks for tiles only while both the group and the map
+// show. Not where the group puts it: a map's tiles depend on its size and
+// view, not its place on the screen, which test_group_box checks.
 void test_in_group()
 {
     Ride                r;

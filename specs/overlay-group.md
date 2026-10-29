@@ -328,3 +328,5 @@ Checked without findings:
    reach the children, as they reach every element; the README says so.
 3. Fixed: the date is at `121.6`, where `52%` of the frame put it.
 4. and 5. The review's tests are committed.
+6. Fixed: `test_in_group`'s comment says what it checks, and that
+   `test_group_box` checks the placement.
