@@ -1,6 +1,6 @@
 # Starting maximized on macOS
 
-Status: In review
+Status: Done
 
 ## Goal
 
