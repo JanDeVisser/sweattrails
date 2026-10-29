@@ -59,6 +59,10 @@ Decided:
   only while both show, and fading with both. A child's times are still
   seconds of the video, not of the group's window. A group's `visible`
   and `fade` aren't passed down in the cascade; they don't need to be.
+  Nor are the defaults' `visible` and `fade`, which are the group's: a
+  child would fade twice, and go before a group that's still there
+  (after the review). The defaults' box properties do reach a child, as
+  they reach every element.
   A hidden group's children aren't worked out, so a map in it asks for
   no tiles.
 - Children aren't clipped to the group's box: one that sticks out
@@ -156,8 +160,8 @@ struct GroupElement {
   and `children`, and checks the group's properties: those of every
   element, the box styles, the text styles, and `children`. Each
   child is decoded with `element(child, child_defaults, styles)`, where
-  `child_defaults` is `defaults` with the group's cascaded text
-  properties over them. That puts them under the child's styles, as
+  `child_defaults` is `defaults`, without `visible` and `fade`, with
+  the group's cascaded text properties over them. That puts them under the child's styles, as
   the spec has it, with no change to `cascaded()`. A child's error
   gets the child's place put before its number, and the layout's loop
   puts the group's before that.
@@ -318,4 +322,8 @@ Checked without findings:
    `draw()` keeps as it does the scale. Checked with a frame dump: a map
    that fills its group had its credit over its bottom edge, and now has
    it below, as a map alone does.
+2. Fixed: the defaults' `visible` and `fade` are the group's, and not
+   its children's too (`test_group_defaults_visible`, which pinned the
+   old behaviour, now checks this). The defaults' box properties still
+   reach the children, as they reach every element; the README says so.
 4. and 5. The review's tests are committed.

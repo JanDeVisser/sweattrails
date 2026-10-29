@@ -369,8 +369,8 @@ void test_group_codepoints()
     }
 }
 
-// A `visible` in the defaults is every element's, a group's children's
-// too: they show while both it and the group's do.
+// A `visible` or `fade` in the defaults is a group's, but not its
+// children's: they show while the group does.
 void test_group_defaults_visible()
 {
     auto const layout = decode(R"({ "defaults": { "visible": { "to": 10 } }, "elements": [
@@ -382,8 +382,19 @@ void test_group_defaults_visible()
     }
     auto const &group = std::get<GroupElement>(layout->elements[0]);
     CHECK(group.visible && !group.visible->to);
-    CHECK(!group.children.empty() && std::get<TextElement>(group.children[0]).visible
-        && std::get<TextElement>(group.children[0]).visible->to == 10.0);
+    // The defaults' window is the group's, not its children's as well,
+    // or they would fade twice, and go before a group that's still there.
+    CHECK(!group.children.empty() && !std::get<TextElement>(group.children[0]).visible);
+    // A child's own still counts.
+    auto const own = decode(R"({ "defaults": { "fade": 1 }, "elements": [
+        { "type": "group", "size": { "width": 10, "height": 10 },
+          "children": [ { "type": "text", "text": "a", "visible": { "from": 2 } } ] } ] })");
+    CHECK(own.has_value());
+    if (own && !own->elements.empty()) {
+        auto const &children = std::get<GroupElement>(own->elements[0]).children;
+        CHECK(std::get<GroupElement>(own->elements[0]).visible && std::get<GroupElement>(own->elements[0]).visible->fade == 1.0);
+        CHECK(!children.empty() && std::get<TextElement>(children[0]).visible && std::get<TextElement>(children[0]).visible->fade == 0.0);
+    }
 }
 
 void test_errors()

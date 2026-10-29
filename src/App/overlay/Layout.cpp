@@ -1094,7 +1094,12 @@ std::expected<GroupElement, LayoutError> group_element(JSONValue const &json, JS
             passed_down.set(name, *property);
         }
     }
-    auto const child_defaults = cascade(defaults, passed_down);
+    // The children show while the group does: the defaults' `visible` and
+    // `fade` are the group's, or the children would fade twice.
+    auto shown_by_group = defaults;
+    shown_by_group.erase("visible");
+    shown_by_group.erase("fade");
+    auto const child_defaults = cascade(std::move(shown_by_group), passed_down);
     auto       ix = 0uz;
     for (auto const &child : *children) {
         ++ix;

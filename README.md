@@ -272,7 +272,8 @@ placed in its box less its `padding`: their percentages, negative
 coordinates and anchors are about that box. Moving the group moves them,
 and while it shows they do, fading with it. It needs a `size`. Its
 `font`, `font_size`, `color` and `shadow` come down to its children,
-under their own styles; its panel stays its own. Groups can hold groups.
+under their own styles; its panel stays its own. The `defaults` are its
+children's too, apart from `visible` and `fade`, which are the group's. Groups can hold groups.
 An error in a child names it as `element 3.2`:
 
 ```json
