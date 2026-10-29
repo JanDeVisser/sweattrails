@@ -23,7 +23,6 @@
 #include <Expected.h>
 
 #include <storage/Activity.h>
-// #include <storage/Strava.h>
 #include <storage/Types.h>
 
 namespace ST {
