@@ -23,10 +23,9 @@ ActivityList::ListBoxEntry activity_entry(Activity const &activity)
     return ret;
 }
 
-ActivitySelector::ActivitySelector(Submit const &submit, std::vector<Month> months, Month const &month, Storage &storage)
+ActivitySelector::ActivitySelector(Submit const &submit, Month const &month, Storage &storage)
     : ListBox(std::format("{} {}", month_name(month.month), month.year))
     , submit_fnc(submit)
-    , months(std::move(months))
     , month(month)
     , storage(storage)
 {
@@ -53,19 +52,21 @@ void ActivitySelector::submit()
     submit_fnc(std::dynamic_pointer_cast<ActivitySelector>(self()), selected().payload);
 }
 
+// Only to months that list activities: one with only a broken FIT file
+// would show as an empty list. A month that can't be read is nowhere to go.
 std::optional<Month> ActivitySelector::destination(KeyboardModifier modifier, int key) const
 {
-    if (key != KEY_LEFT && key != KEY_RIGHT) {
+    if ((key != KEY_LEFT && key != KEY_RIGHT) || (modifier != KModNone && modifier != KModShift)) {
         return { };
     }
-    auto const later = key == KEY_RIGHT;
-    if (modifier == KModNone) {
-        return later ? month_after(months, month) : month_before(months, month);
+    auto const step = (key == KEY_RIGHT) ? 1 : -1;
+    auto const listed = (modifier == KModNone)
+        ? storage.listed_month(month, step, false)
+        : storage.listed_month(month.plus(12 * step), step, true);
+    if (!listed || !*listed) {
+        return { };
     }
-    if (modifier == KModShift) {
-        return years_from(months, month, later ? 1 : -1);
-    }
-    return { };
+    return (*listed)->id;
 }
 
 // refresh() fits the box to the new month's prompt, and starts at the top.

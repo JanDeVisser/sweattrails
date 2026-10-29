@@ -87,6 +87,8 @@ void test_plus()
     CHECK_EQ(month(2021, 1).plus(-1).dir_name(), "2020/12");
     CHECK_EQ(month(2021, 5).plus(-24).dir_name(), "2019/05");
     CHECK_EQ(month(2021, 5).plus(0).dir_name(), "2021/05");
+    CHECK_EQ(month(2021, 1).plus(-13).dir_name(), "2019/12");
+    CHECK_EQ(month(2021, 12).plus(13).dir_name(), "2023/01");
 }
 
 // Only months with an activity file, oldest first: not an empty one, but
@@ -118,18 +120,6 @@ void test_month_after_and_before()
     CHECK_EQ(show(month_after(std::vector<Month> { }, month(2021, 9))), "none");
 }
 
-// The same month a year on or back, or the nearest one past it.
-void test_years_from()
-{
-    std::vector const months { month(2021, 9), month(2021, 12), month(2022, 9), month(2023, 2) };
-    CHECK_EQ(show(years_from(months, month(2021, 9), 1)), "2022/09");
-    CHECK_EQ(show(years_from(months, month(2021, 12), 1)), "2023/02");
-    CHECK_EQ(show(years_from(months, month(2023, 2), -1)), "2021/12");
-    CHECK_EQ(show(years_from(months, month(2022, 9), -1)), "2021/09");
-    CHECK_EQ(show(years_from(months, month(2022, 9), 1)), "none");
-    CHECK_EQ(show(years_from(months, month(2021, 9), -1)), "none");
-}
-
 // In the month, then over an empty month and one that lists nothing, and
 // nothing at the ends.
 void test_activity_next_to()
@@ -145,6 +135,17 @@ void test_activity_next_to()
     CHECK_EQ(s.next_to("2023/02", "d", 1), "none");
 }
 
+// A month with only a Strava file counts as one with activities, but lists
+// none, so going from one activity to the next passes over it too.
+void test_activity_next_to_over_strava_month()
+{
+    Store s;
+    s.put("2022/06", "1654041600", "{}");
+    fs::rename(s.store.storage.activity_dir / "2022/06/1654041600.fit", s.store.storage.activity_dir / "2022/06/1654041600.strava");
+    CHECK_EQ(s.next_to("2021/12", "c", 1), "2023/02 d");
+    CHECK_EQ(s.next_to("2023/02", "d", -1), "2021/12 c");
+}
+
 }
 
 int main()
@@ -153,7 +154,7 @@ int main()
     test_plus();
     test_months_with_activities();
     test_month_after_and_before();
-    test_years_from();
     test_activity_next_to();
+    test_activity_next_to_over_strava_month();
     return Test::test_result();
 }

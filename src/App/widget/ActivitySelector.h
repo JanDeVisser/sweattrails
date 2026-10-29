@@ -29,12 +29,11 @@ ActivityList::ListBoxEntry activity_entry(Activity const &activity);
 // after with activities, Shift+Left and Shift+Right a year.
 struct ActivitySelector : public ActivityList {
     using Submit = std::function<void(std::shared_ptr<ActivitySelector> const &, ActivityID const &)>;
-    Submit             submit_fnc;
-    std::vector<Month> months; // With activities, oldest first
-    Month              month;
-    Storage           &storage;
+    Submit   submit_fnc;
+    Month    month;
+    Storage &storage;
 
-    ActivitySelector(Submit const &submit, std::vector<Month> months, Month const &month, Storage &storage);
+    ActivitySelector(Submit const &submit, Month const &month, Storage &storage);
     void populate();
     void submit() override;
     bool process_key(KeyboardModifier modifier, int key) override;

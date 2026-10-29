@@ -51,15 +51,6 @@ std::optional<Month> month_before(std::span<Month const> months, Month const &fr
     return (it != months.begin()) ? std::optional { *std::prev(it) } : std::nullopt;
 }
 
-std::optional<Month> years_from(std::span<Month const> months, Month const &from, int years)
-{
-    auto const target = from.plus(12 * years);
-    if (std::ranges::binary_search(months, target)) {
-        return target;
-    }
-    return (years > 0) ? month_after(months, target) : month_before(months, target);
-}
-
 std::optional<fs::path> Month::dir(Storage const &storage) const
 {
     auto            ret = storage.activity_dir / dir_name();

@@ -124,10 +124,6 @@ struct Month {
 std::optional<Month> month_after(std::span<Month const> months, Month const &from);
 std::optional<Month> month_before(std::span<Month const> months, Month const &from);
 
-// `from` moved by `years`, if it's in `months`, else the nearest month in
-// `months` past that, going the same way.
-std::optional<Month> years_from(std::span<Month const> months, Month const &from, int years);
-
 using Index = std::variant<RootIndex, YearIndex, Month>;
 
 enum class ActivityFile : u8 {

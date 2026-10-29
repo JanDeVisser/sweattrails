@@ -778,10 +778,19 @@ void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
         sweattrails->show_activity(*activity);
         selector->status = ModalStatus::Dismissed;
     };
-    // At the activity on display, or else at the latest month.
+    // At the activity on display, or else at the latest month that lists
+    // any.
     auto const &shown = sweattrails->last_activity;
-    auto const  month = std::ranges::binary_search(*months, shown.month) ? shown.month : months->back();
-    auto const &selector = Widget::make<ActivitySelector>(activity_selected, *months, month, sweattrails->storage);
+    auto        month = shown.month;
+    if (!std::ranges::binary_search(*months, shown.month)) {
+        auto const latest = sweattrails->storage.listed_month(months->back(), -1, true);
+        if (!latest || !*latest) {
+            message_box("There are no activities yet");
+            return;
+        }
+        month = (*latest)->id;
+    }
+    auto const &selector = Widget::make<ActivitySelector>(activity_selected, month, sweattrails->storage);
     selector->show();
     selector->select(shown);
 }

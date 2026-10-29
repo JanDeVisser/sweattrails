@@ -50,7 +50,7 @@ struct Fixture {
             [this](std::shared_ptr<ActivitySelector> const &, ActivityID const &id) {
                 submitted = id;
             },
-            std::vector<Month> { month }, month, storage);
+            month, storage);
         for (auto const &name : names) {
             selector->entries.emplace_back(name, ActivityID { month, name, FileTypes::one(ActivityFile::Fit) });
         }
@@ -170,10 +170,9 @@ void test_destinations()
     write("2021/09");
     write("2021/12");
     write("2023/02");
-    auto const months = MUST_EVAL(t.storage.months_with_activities());
     auto const at = [&](size_t year, int m) {
         return std::make_shared<ActivitySelector>(
-            [](std::shared_ptr<ActivitySelector> const &, ActivityID const &) { }, months, Month { year, static_cast<DateTime::Month>(m - 1) }, t.storage);
+            [](std::shared_ptr<ActivitySelector> const &, ActivityID const &) { }, Month { year, static_cast<DateTime::Month>(m - 1) }, t.storage);
     };
     auto const go = [](std::shared_ptr<ActivitySelector> const &s, KeyboardModifier modifier, int key) {
         auto const to = s->destination(modifier, key);
@@ -196,6 +195,74 @@ void test_destinations()
     CHECK_EQ(february->month.dir_name(), "2023/02");
 }
 
+// A store whose rides are written by name and start, `start` seconds after
+// TestFit's Start, as the inbox would have filed them.
+struct RideStore {
+    TempStore t { };
+
+    void ride(std::string_view dir, std::string_view name, u32 start) const
+    {
+        FITBuilder fit;
+        add_session(fit, 600, 10, NoSubSport, start);
+        put(dir, std::format("{}.fit", name), fit.file());
+    }
+
+    void put(std::string_view dir, std::string_view file, std::string_view contents) const
+    {
+        fs::create_directories(t.storage.activity_dir / dir);
+        MUST(write_file_by_name((t.storage.activity_dir / dir / file).string(), contents));
+    }
+
+    std::shared_ptr<ActivitySelector> at(size_t year, int m)
+    {
+        return std::make_shared<ActivitySelector>(
+            [](std::shared_ptr<ActivitySelector> const &, ActivityID const &) { }, Month { year, static_cast<DateTime::Month>(m - 1) }, t.storage);
+    }
+};
+
+// The rows are oldest first, not by name, and opening at the activity on
+// display selects it, as cmd_list_month() does with the ID that
+// show_activity() kept.
+void test_opens_at_activity()
+{
+    RideStore s;
+    s.ride("2021/09", "z", 0);
+    s.ride("2021/09", "m", 3600);
+    s.ride("2021/09", "a", 7200);
+    auto const selector = s.at(2021, 9);
+    CHECK_EQ(selector->entries.size(), 3uz);
+    std::vector<std::string> names;
+    for (auto const &e : selector->entries) {
+        names.push_back(e.payload.name);
+    }
+    CHECK_EQ(names, (std::vector<std::string> { "z", "m", "a" }));
+    selector->scroll.lines = 2;
+    auto const shown = MUST_EVAL(ActivityID(Month { 2021, DateTime::Month::September }, "a", FileTypes::one(ActivityFile::Fit)).load(s.t.storage, LoadingDepth::Deep));
+    CHECK(shown.has_value());
+    if (shown) {
+        selector->select(shown->id);
+    }
+    CHECK_EQ(selector->selection, 2);
+    CHECK(selector->scroll.top_line <= 2 && 2 < selector->scroll.top_line + selector->scroll.lines);
+}
+
+// Left and Right skip months that list no activities: one with only a
+// Strava file, which Month::has_activities() counts but Month::list()
+// doesn't, and one whose only FIT file doesn't load. Otherwise the list
+// stops on an empty month, which the spec says it doesn't.
+void test_destinations_skip_months_that_list_nothing()
+{
+    RideStore s;
+    s.ride("2021/09", "a", 0);
+    s.put("2021/10", "1633046400.strava", "{}");
+    s.put("2021/11", "broken.fit", "not a FIT file");
+    s.ride("2021/12", "c", 90 * 86400);
+    auto const september = s.at(2021, 9);
+    CHECK_EQ(september->destination(KModNone, KEY_RIGHT).value_or(Month { }).dir_name(), "2021/12");
+    auto const december = s.at(2021, 12);
+    CHECK_EQ(december->destination(KModNone, KEY_LEFT).value_or(Month { }).dir_name(), "2021/09");
+}
+
 }
 
 int main()
@@ -208,5 +275,7 @@ int main()
     test_activity_entry();
     test_search_matches_title_only();
     test_destinations();
+    test_opens_at_activity();
+    test_destinations_skip_months_that_list_nothing();
     return Test::test_result();
 }

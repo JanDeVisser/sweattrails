@@ -143,12 +143,17 @@ struct ListBoxEntry {
   // The nearest month in `months`, oldest first, after or before `from`.
   std::optional<Month> month_after(std::span<Month const> months, Month const &from);
   std::optional<Month> month_before(std::span<Month const> months, Month const &from);
-  // `from` moved by `years`, or the nearest month in `months` past that,
-  // going the same way.
-  std::optional<Month> years_from(std::span<Month const> months, Month const &from, int years);
   ```
 
   with `Month::plus(int months)` for the arithmetic across years.
+- **`Storage::listed_month(from, step, inclusive)`**, after the review:
+  the first month from `from`, going `step`, whose list isn't empty, and
+  its activities. A month directory with only a `.strava` file, or only
+  a FIT file that doesn't load, has an activity file but lists nothing,
+  and is passed over. The list's keys, its opening at the latest month,
+  and `activity_next_to()` all go through it. Shift+Left and
+  Shift+Right are `listed_month(month.plus(±12), ±1, true)`, which
+  replaced a `years_from()` on the months alone.
 - **`Storage::activity_next_to(ActivityID const &, int step)`**, not
   `const`, as `Month::list()` takes the storage to load from:
   the activity before (`-1`) or after (`+1`) by start time. In the same
@@ -163,9 +168,8 @@ struct ListBoxEntry {
   `"Tue 14  09:32"`, the title as the text, and the columns
   `format_distance()` and `format_moving_time()` from the data panel,
   the distance empty without one.
-- `ActivitySelector` takes the months with activities, and moves with
-  `month_after()`, `month_before()` and `years_from()`, which
-  `destination(modifier, key)` picks between: a test can't press the
+- `ActivitySelector` moves with `listed_month()`, which
+  `destination(modifier, key)` calls: a test can't press the
   keys, as moving calls `refresh()`, which measures the prompt with a
   font. It opens at the month of the activity on display, else the
   latest, and selects it.
@@ -200,4 +204,56 @@ struct ListBoxEntry {
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug.** Left and Right in Ctrl+M's list stop on months that list no
+   activities. `months_with_activities()` takes its months from
+   `Month::has_activities()`, which counts `.strava` and `.sweattrails`
+   files (`storage/Types.cpp:96-99`) and FIT files that don't load, while
+   `Month::list()` only lists `.fit` files that load. So with rides in
+   September and December and only a `.strava` file (as the old app
+   wrote them) in October, Right in September goes to October and shows
+   an empty list; the same for a November whose only FIT file is broken.
+   `cmd_list_month()` can also open on such a month, when it's
+   `months->back()`. `activity_next_to()` passes over these months; the
+   selector's `destination()` (`widget/ActivitySelector.cpp:56-69`)
+   doesn't. `test_destinations_skip_months_that_list_nothing` in
+   `ActivitySelectorTest` fails on both.
+2. **Bug.** `show_activity_next_to()` (`SweatTrails.cpp:486`) loads the
+   neighbour with `MUST_EVAL(... LoadingDepth::Deep)`, so a FIT file that
+   loads shallowly for the list but fails a deep load (bad records, or a
+   file removed in the meantime) ends the app on Left or Right. And if
+   `load()` returns no activity, nothing happens. Since the next press
+   finds the same neighbour, the user can't get past it. Errors from
+   `activity_next_to()` already get a message box; a failed load should
+   get one too. (Choosing in the list has the same `MUST_EVAL`, from
+   before this branch.)
+3. **Suggestion.** In `ListBox::draw_entries()` (`Modal.h:277-282`), an
+   entry with fewer columns than the widest entry has its columns drawn
+   in the rightmost slots, but stepped by the widths of the leftmost ones.
+   With rows `{ "1", "2" }` and `{ "9" }`, the "9" is drawn under the "2".
+   The members' comment says columns are "lined up across rows". The
+   selector always passes two columns, so this doesn't show in the app
+   yet, but other lists could hit it.
+4. **Suggestion.** The prefix doesn't pad the day
+   (`ActivitySelector.cpp:20`), so the times don't line up between
+   single- and two-digit days: `Sat 4  10:00` next to
+   `Tue 14  09:32`. `{:>2}` for the day would line them up.
+5. **Suggestion.** The README's "Choosing an activity" leaves out two of
+   the list's keys: Up and Down to select, and Escape to close. The spec
+   asks for "Ctrl+M and the list's keys".
+6. **Missing test (added).** "Opening selects the activity" from the test
+   plan wasn't tested. `test_opens_at_activity` in `ActivitySelectorTest`
+   checks two things against a real store: the rows are oldest first
+   rather than by name, and `select()` with the ID a deep load gives
+   selects the row and scrolls to it. It passes. `ActivityMonthsTest` also
+   gains `Month::plus()` over more than a year both ways, and
+   `activity_next_to()` past a month with only a `.strava` file. Both
+   pass.
+
+### Resolution
+
+1. Fixed: `Storage::listed_month()` finds the nearest month that lists
+   activities, for the list's keys, for opening at the latest month, and
+   for `activity_next_to()`. `test_destinations_skip_months_that_list_nothing`
+   failed before, and passes. `years_from()`, which only looked at the
+   months, went with it.
+6. The review's tests are committed, with fix 1.

@@ -123,8 +123,20 @@ Error<StorageError> Storage::rescan()
     return { };
 }
 
-// A month whose files all fail to load lists nothing, as Ctrl+M shows it,
-// and is passed over.
+StorageResult<std::optional<Activities>> Storage::listed_month(Month const &from, int step, bool inclusive)
+{
+    auto const months = TRY_EVAL(months_with_activities());
+    auto const next = [&months, step](Month const &m) { return (step > 0) ? month_after(months, m) : month_before(months, m); };
+    auto       month = (inclusive && std::ranges::binary_search(months, from)) ? std::optional { from } : next(from);
+    for (; month; month = next(*month)) {
+        auto listed = TRY_EVAL(month->list(*this));
+        if (!listed.activities.empty()) {
+            return std::optional { std::move(listed) };
+        }
+    }
+    return std::optional<Activities> { };
+}
+
 StorageResult<std::optional<ActivityID>> Storage::activity_next_to(ActivityID const &id, int step)
 {
     auto const  same_month = TRY_EVAL(id.month.list(*this));
@@ -136,19 +148,11 @@ StorageResult<std::optional<ActivityID>> Storage::activity_next_to(ActivityID co
             return std::optional { activities[static_cast<size_t>(ix)].id };
         }
     }
-    auto const months = TRY_EVAL(months_with_activities());
-    auto       month = id.month;
-    while (true) {
-        auto const next = (step > 0) ? month_after(months, month) : month_before(months, month);
-        if (!next) {
-            return std::optional<ActivityID> { };
-        }
-        auto const listed = TRY_EVAL(next->list(*this));
-        if (!listed.activities.empty()) {
-            return std::optional { (step > 0) ? listed.activities.front().id : listed.activities.back().id };
-        }
-        month = *next;
+    auto const listed = TRY_EVAL(listed_month(id.month, step, false));
+    if (!listed) {
+        return std::optional<ActivityID> { };
     }
+    return std::optional { (step > 0) ? listed->activities.front().id : listed->activities.back().id };
 }
 
 std::optional<Year> Storage::find_year(size_t year) const
