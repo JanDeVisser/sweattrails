@@ -143,8 +143,8 @@ void test_builtin_layout(std::string_view name, size_t elements)
     auto const shipped = [](std::string const &font) {
         return fs::exists(fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "fonts" / font);
     };
-    for (auto const &element : file.layout->elements) {
-        for (auto const &font : element_fonts(element)) {
+    for (auto const *element : all_elements(file.layout->elements)) {
+        for (auto const &font : element_fonts(*element)) {
             CHECK(shipped(font));
         }
     }
@@ -165,8 +165,8 @@ void test_dashboard_icons()
         return;
     }
     std::vector<std::string> icons;
-    for (auto const &element : file.layout->elements) {
-        if (auto const *image = std::get_if<ImageElement>(&element); image) {
+    for (auto const *element : all_elements(file.layout->elements)) {
+        if (auto const *image = std::get_if<ImageElement>(element); image) {
             icons.push_back(std::format("{} {} #{:02x}{:02x}{:02x}{:02x}", image->src, image->width.value_or(0),
                 image->tint.r, image->tint.g, image->tint.b, image->tint.a));
         }
@@ -224,8 +224,8 @@ void test_dashboard_map()
     CHECK_EQ(map.attribution.font_size, 14.0f);
 }
 
-// The ride's name and date for the video's first 5 seconds, on a panel,
-// fading over half a second; everything else always shows.
+// The ride's name and date for the video's first 5 seconds, in a group
+// with a panel, fading over half a second; everything else always shows.
 void test_dashboard_title_card()
 {
     LayoutFile file { fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays" / "cycling-dashboard.overlay.json" };
@@ -234,27 +234,52 @@ void test_dashboard_title_card()
         return;
     }
     std::vector<std::string> card;
-    for (auto const &element : file.layout->elements) {
-        auto const *text = std::get_if<TextElement>(&element);
-        auto const  visible = std::visit([](auto const &e) { return e.visible; }, element);
+    for (auto const *element : all_elements(file.layout->elements)) {
+        auto const visible = std::visit([](auto const &e) { return e.visible; }, *element);
         if (!visible) {
             continue;
         }
         CHECK_EQ(visible->from, 0.0);
         CHECK_EQ(visible->to.value_or(0), 5.0);
         CHECK_EQ(visible->fade, 0.5);
-        std::string shown;
-        if (text != nullptr) {
-            for (auto const &part : text->text.parts) {
+        auto const *group = std::get_if<GroupElement>(element);
+        if (group == nullptr) {
+            card.push_back("not a group");
+            continue;
+        }
+        card.push_back(group->panel.background ? "panel" : "no panel");
+        for (auto const &child : group->children) {
+            std::string shown;
+            for (auto const &part : std::get<TextElement>(child).text.parts) {
                 if (auto const *field = std::get_if<Placeholder>(&part)) {
                     shown += std::format("{{{}}}", OverlayField_name(field->field));
                 }
             }
-            shown += text->panel.background ? "panel" : "";
+            card.push_back(shown);
         }
-        card.push_back(shown);
     }
     CHECK_EQ(card, (std::vector<std::string> { "panel", "{title}", "{date}" }));
+}
+
+// The dashboard's three panels are groups, each with what's in it, and no
+// empty texts draw panels any more.
+void test_dashboard_groups()
+{
+    LayoutFile file { fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays" / "cycling-dashboard.overlay.json" };
+    CHECK(file.reload_if_changed());
+    if (!file.layout) {
+        return;
+    }
+    std::vector<std::string> groups;
+    for (auto const *element : all_elements(file.layout->elements)) {
+        if (auto const *group = std::get_if<GroupElement>(element)) {
+            groups.push_back(std::format("{} {}", group->number, group->children.size()));
+        }
+        if (auto const *text = std::get_if<TextElement>(element)) {
+            CHECK(!text->text.parts.empty());
+        }
+    }
+    CHECK_EQ(groups, (std::vector<std::string> { "1 3", "5 9", "10 2" }));
 }
 
 // A file that isn't there yet: an error, once, until it's made.
@@ -435,9 +460,10 @@ int main()
     test_chosen_layout();
     test_builtin_layout("cycling-basic", 11);
     test_builtin_layout("running-basic", 9);
-    test_builtin_layout("cycling-dashboard", 24);
+    test_builtin_layout("cycling-dashboard", 10);
     test_dashboard_map();
     test_dashboard_title_card();
+    test_dashboard_groups();
     test_dashboard_icons();
     test_find_image();
     test_layout_images();

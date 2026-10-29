@@ -251,7 +251,7 @@ defaults rather than merging with it. The app has white icons to tint in
 
 ```json
 { "type": "image", "src": "icons/heart.png", "tint": "#f94144",
-  "at": { "x": 330, "y": -152, "anchor": "bottom-left" }, "size": { "width": 24 } }
+  "at": { "x": 40, "y": -152, "anchor": "bottom-left" }, "size": { "width": 24 } }
 ```
 
 Any element can show for part of the video only, with `visible`: `from`
@@ -266,6 +266,22 @@ has a title card for its first 5 seconds; an outro could be:
 
 The preview measures these times from the start of the graph's
 selection, or of the whole activity, as a render's range starts.
+
+A `group` is a panel with elements in it, its `children`, which are
+placed in its box less its `padding`: their percentages, negative
+coordinates and anchors are about that box. Moving the group moves them,
+and while it shows they do, fading with it. It needs a `size`. Its
+`font`, `font_size`, `color` and `shadow` come down to its children,
+under their own styles; its panel stays its own. Groups can hold groups.
+An error in a child names it as `element 3.2`:
+
+```json
+{ "type": "group", "background": "#00000060", "radius": 16, "font_size": 40,
+  "at": { "x": 40, "y": 40 }, "size": { "width": 320, "height": 120 },
+  "children": [
+    { "type": "text", "text": "{distance:.1f} {distance.unit}", "at": { "x": 24, "y": 16 } },
+    { "type": "text", "text": "{elapsed}", "at": { "x": 24, "y": -16, "anchor": "bottom-left" } } ] }
+```
 
 Ctrl+E renders the overlay to a ProRes 4444 movie with alpha, which Final
 Cut and other editors import, for the part of the activity selected in the
