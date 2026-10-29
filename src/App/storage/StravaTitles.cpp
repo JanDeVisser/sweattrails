@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <map>
 
 #include <storage/StravaTitles.h>
 
@@ -103,12 +104,15 @@ StravaResult<StravaUpdate> update_strava_titles(Strava &strava, Storage const &s
         undescribed.clear();
     }
 
+    // By Strava ID: the same ride on two devices takes one request.
+    std::map<u64, std::string> fetched;
     for (size_t ix = 0; ix < undescribed.size(); ++ix) {
         auto &[stored, title] = undescribed[ix];
         if (progress) {
             progress(ix, undescribed.size());
         }
-        auto const description = strava.description(title.id);
+        auto const known = fetched.find(title.id);
+        auto const description = (known != fetched.end()) ? StravaResult<std::string> { known->second } : strava.description(title.id);
         if (!description) {
             update.waiting = undescribed.size() - ix;
             if (description.error().kind == StravaError::Kind::RateLimited) {
@@ -118,6 +122,7 @@ StravaResult<StravaUpdate> update_strava_titles(Strava &strava, Storage const &s
             }
             break;
         }
+        fetched[title.id] = *description;
         title.description = *description;
         if (auto const saved = save_sidecar_strava(stored.sidecar, title); !saved) {
             warning(Strava, "Could not save Strava's description in `{}`: {}", stored.sidecar.string(), saved.error().to_string());

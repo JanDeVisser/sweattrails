@@ -352,9 +352,11 @@ void test_two_devices_get_the_description()
     t.store.add_activity(Ride + 30);
     t.list({ strava_activity(101, "2026-10-27T12:05:10Z", "Ride to Niagara") });
     t.describe(101, R"("With Anna")");
-    t.describe(101, R"("With Anna")");
     auto const update = t.update();
     CHECK_EQ(update.titles, 2u);
+    CHECK_EQ(update.descriptions, 2u);
+    // One request for both.
+    CHECK_EQ(t.description_requests(), 1u);
     CHECK((update.changed == std::vector<i64> { Ride, Ride + 30 }));
     StravaTitle const described { .id = 101, .name = "Ride to Niagara", .description = "With Anna" };
     CHECK(t.saved(Ride) == described);
