@@ -548,7 +548,7 @@ constexpr static TypeMetaData file_id_meta {
     .num_fields = 7,
     .fields = {
         { .name = "type", .num = 0, .optional = false, .base_type = FITBaseType::enum_, .fld_offset = offsetof(file_id, type) },
-        { .name = "manufacturer", .num = 1, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(file_id, manufacturer) },
+        { .name = "manufacturer", .num = 1, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(file_id, manufacturer) },
         { .name = "product", .num = 2, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(file_id, product) },
         { .name = "serial number", .num = 3, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(file_id, serial_number) },
         { .name = "time created", .num = 4, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(file_id, time_created) },

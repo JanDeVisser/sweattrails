@@ -95,6 +95,35 @@ void test_session_without_total_ascent()
     CHECK(!t.activity.segment.total_ascent.has_value());
 }
 
+void test_manufacturer_is_loaded()
+{
+    FITBuilder fit;
+    add_file_id(fit, 260);
+    add_session(fit, 3600, 345);
+    LoadedActivity t { fit.file() };
+    CHECK(t.loaded);
+    CHECK(t.activity.manufacturer == FIT::manufacturer::zwift);
+}
+
+void test_another_manufacturer()
+{
+    FITBuilder fit;
+    add_file_id(fit, 1); // Garmin
+    add_session(fit, 3600, 345);
+    LoadedActivity t { fit.file() };
+    CHECK(t.loaded);
+    CHECK(t.activity.manufacturer == FIT::manufacturer::garmin);
+}
+
+void test_without_a_file_id()
+{
+    FITBuilder fit;
+    add_session(fit, 3600, 345);
+    LoadedActivity t { fit.file() };
+    CHECK(t.loaded);
+    CHECK(!t.activity.manufacturer.has_value());
+}
+
 void test_session_sub_sport_is_loaded()
 {
     FITBuilder fit;
@@ -422,6 +451,9 @@ void test_rename_back_to_the_services_name_by_typing_it()
 
 int main()
 {
+    test_manufacturer_is_loaded();
+    test_another_manufacturer();
+    test_without_a_file_id();
     test_session_total_ascent_is_loaded();
     test_session_without_total_ascent();
     test_session_sub_sport_is_loaded();

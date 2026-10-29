@@ -382,6 +382,7 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
         }
         number = f->number.value_or(0);
         serial = f->serial_number.value_or(0);
+        manufacturer = f->manufacturer;
     } break;
     case mesg_num::activity: {
         auto a = make_from_rec<ST::activity>(rec);

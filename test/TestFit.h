@@ -91,6 +91,22 @@ struct FITBuilder {
 // it.
 inline constexpr u8 NoSubSport = 0xFF;
 
+// The file_id message of an activity file, made by `manufacturer`, such as
+// 260 for Zwift.
+inline void add_file_id(FITBuilder &fit, u16 manufacturer)
+{
+    fit.definition(4, 0,
+        {
+            { .num = 0, .size = 1, .base_type = Enum },
+            { .num = 1, .size = 2, .base_type = Uint16 },
+            { .num = 4, .size = 4, .base_type = Uint32 },
+        });
+    fit.message(4);
+    fit.byte(4); // An activity
+    fit.u16_le(manufacturer);
+    fit.u32_le(Start); // Created
+}
+
 // A ride of `count` seconds, with its total ascent; 0xFFFF is FIT's
 // invalid value, as a device without a climb writes it. It starts `start`
 // seconds after Start.
