@@ -326,4 +326,5 @@ Checked without findings:
    its children's too (`test_group_defaults_visible`, which pinned the
    old behaviour, now checks this). The defaults' box properties still
    reach the children, as they reach every element; the README says so.
+3. Fixed: the date is at `121.6`, where `52%` of the frame put it.
 4. and 5. The review's tests are committed.

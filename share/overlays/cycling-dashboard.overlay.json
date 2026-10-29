@@ -119,7 +119,7 @@
             { "type": "text", "text": "{title}", "font_size": 48,
               "at": { "x": "50%", "y": "50%", "anchor": "bottom" } },
             { "type": "text", "text": "{date}", "style": "label", "font_size": 28,
-              "at": { "x": "50%", "y": 122, "anchor": "top" } }
+              "at": { "x": "50%", "y": 121.6, "anchor": "top" } }
           ] }
     ]
 }
