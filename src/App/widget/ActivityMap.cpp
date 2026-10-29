@@ -5,7 +5,8 @@
  *
  * The activity's map: OpenStreetMap tiles with the track over them, which
  * the user can zoom and pan. MapNavigator in Map.h keeps the view; this
- * draws it, and loads and downloads the tiles it needs.
+ * draws it, and loads and downloads the tiles it needs. A ride in Zwift
+ * gets the tiles cut from its world's map instead (specs/zwift-maps.md).
  */
 
 #include <cmath>
@@ -54,6 +55,7 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
     if (!this->activity) {
         return;
     }
+    choose_source();
     auto const &box = this->activity->activity.segment.box;
     if (!box || !navigator.start(*box, viewport.width, viewport.height)) {
         policy = SizePolicy::Hide;
@@ -74,6 +76,48 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
     // The layout gives the map its size for this activity next, which may
     // be another one: only then load and download the tiles.
     view_pending = true;
+}
+
+// OpenStreetMap, unless it's a ride in Zwift whose world is cut into tiles.
+// Until a world is, it's OpenStreetMap, and the job cuts it.
+void ActivityMap::choose_source()
+{
+    auto const the = SweatTrails::the();
+    source = MapSource { .dir = the->storage.tiles_dir };
+    waiting_for_world.clear();
+    auto const *world = zwift_world(the->zwift_worlds, activity->activity);
+    if (world == nullptr) {
+        return;
+    }
+    if (auto const map = cut_world(the->zwift_cache(), *world); map) {
+        source = world_source(*map);
+        return;
+    }
+    waiting_for_world = world->cache_name();
+    the->prepare_zwift_world(*world);
+}
+
+void ActivityMap::world_ready(ZwiftWorldReady const &ready)
+{
+    if (waiting_for_world.empty() || ready.cache_name != waiting_for_world || !ready.map) {
+        return;
+    }
+    waiting_for_world.clear();
+    change_source(world_source(*ready.map));
+}
+
+// The tiles of the source before are dropped, and so are the ones still
+// downloading for it.
+void ActivityMap::change_source(MapSource new_source)
+{
+    stop_download();
+    unload_tiles();
+    failed.clear();
+    map_id = next_tile_owner();
+    source = std::move(new_source);
+    if (has_map) {
+        view_changed();
+    }
 }
 
 // The layout gives the map another size: it shows the whole route again,
@@ -123,15 +167,20 @@ void ActivityMap::show_whole_route()
 void ActivityMap::view_changed()
 {
     view_pending = false;
+    // A world's tiles aren't downloaded: one that isn't there is past its
+    // edge, and above its native zoom, the tile at it is scaled up.
     auto const cached_or_failed = [this](Tile const &tile) {
         if (loaded(tile) != nullptr || failed.contains(tile)) {
             return true;
         }
-        if (auto png = tile.get_cached_tile(SweatTrails::the()->storage.tiles_dir); png) {
-            load_tile(tile, *png);
+        if (!source.downloads && tile.zoom > source.max_zoom) {
+            auto const native = tile.ancestor(source.max_zoom);
+            if (loaded(native) == nullptr && !failed.contains(native) && !load_cached(native)) {
+                failed.insert(native);
+            }
             return true;
         }
-        return false;
+        return load_cached(tile) || !source.downloads;
     };
     auto next = next_download(navigator.view, cached_or_failed, download ? &download->tiles : nullptr);
     unload_least_recently_drawn();
@@ -180,6 +229,15 @@ void ActivityMap::tiles_done(MapTilesDone const &done)
         SweatTrails::the()->set_status(std::format("Couldn't download {} map {}", count, (count == 1) ? "tile" : "tiles"));
         reporting_failures = true;
     }
+}
+
+bool ActivityMap::load_cached(Tile const &tile)
+{
+    auto const png = tile.get_cached_tile(source.dir);
+    if (png) {
+        load_tile(tile, *png);
+    }
+    return png.has_value();
 }
 
 ActivityMap::LoadedTile const *ActivityMap::loaded(Tile const &tile) const
@@ -252,8 +310,9 @@ void ActivityMap::draw()
     EndScissorMode();
 }
 
-// A tile that isn't loaded is grey, with what there is of the tiles above
-// or below it over it, scaled: the view before a zoom, until it arrives.
+// A tile that isn't loaded is grey, or a world's sea, with what there is of
+// the tiles above or below it over it, scaled: the view before a zoom,
+// until it arrives.
 void ActivityMap::draw_tiles()
 {
     auto const full = Rectangle { .x = 0, .y = 0, .width = 256, .height = 256 };
@@ -264,7 +323,7 @@ void ActivityMap::draw_tiles()
             DrawTexturePro(it->second.texture, full, destination, Vector2 { }, 0.0f, WHITE);
             continue;
         }
-        DrawRectangleRec(destination, LIGHTGRAY);
+        DrawRectangleRec(destination, source.background);
         auto const pieces = cover(tile, [this](Tile const &t) { return loaded(t) != nullptr; });
         for (auto const &[source, source_area, part] : pieces) {
             auto &placeholder = tiles.at(source);
@@ -321,14 +380,15 @@ void ActivityMap::draw_track() const
     }
 }
 
-// OSM's license asks for it on the map.
+// OSM's license asks for it on the map, and the Zwift worlds' images are
+// Zwift's.
 void ActivityMap::draw_attribution() const
 {
-    auto const size = App::measure_text(OsmAttribution, FontSize::Small);
+    auto const size = App::measure_text(source.attribution, FontSize::Small);
     auto const x = viewport.width - size.x - 6;
     auto const y = viewport.height - size.y - 4;
     draw_rectangle_no_normalize(x - 4, y - 2, size.x + 8, size.y + 4, Fade(BLACK, 0.5f));
-    render_text(x, y, OsmAttribution, FontSize::Small, RAYWHITE);
+    render_text(x, y, source.attribution, FontSize::Small, RAYWHITE);
 }
 
 // Drops the tiles still waiting to be downloaded, and the status line

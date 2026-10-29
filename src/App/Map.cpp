@@ -198,6 +198,15 @@ std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) con
     return get_cached_tile(storage.tiles_dir);
 }
 
+Tile Tile::ancestor(u8 up_to) const
+{
+    if (up_to >= zoom) {
+        return *this;
+    }
+    auto const levels = zoom - up_to;
+    return Tile { .x = x >> levels, .y = y >> levels, .zoom = up_to };
+}
+
 std::string Tile::to_string() const
 {
     return std::format("zoom {}/x: {} y: {}/box: `{}`", zoom, x, y, box());

@@ -86,6 +86,20 @@ std::optional<WorldMap> cut_world(fs::path const &cache, ZwiftWorld const &world
 // job thread: it downloads, and takes some seconds.
 std::expected<WorldMap, LibCError> prepare_zwift_world(fs::path const &cache, ZwiftWorld const &world);
 
+// Zwift's images are Zwift's.
+constexpr char const ZwiftAttribution[] = "Map © Zwift";
+
+// The activity map's source for a world's tiles.
+MapSource world_source(WorldMap const &map);
+
+// Sent to the UI thread when prepare_zwift_world() is done with a world:
+// its map, or else why not.
+struct ZwiftWorldReady {
+    std::string             cache_name { };
+    std::optional<WorldMap> map { };
+    std::string             error { };
+};
+
 // The worlds in `file`. A world without its four fields is left out, with
 // a warning.
 std::expected<std::vector<ZwiftWorld>, LibCError> read_zwift_worlds(fs::path const &file);

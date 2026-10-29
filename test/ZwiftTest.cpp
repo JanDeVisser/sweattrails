@@ -246,6 +246,13 @@ void test_cut_a_world()
     CHECK(same(map->background, BLUE));
     CHECK_EQ(map->dir.string(), (small.dir.path / "Small").string());
 
+    auto const source = world_source(*map);
+    CHECK_EQ(source.dir.string(), map->dir.string());
+    CHECK_EQ(std::string { source.attribution }, "Map © Zwift");
+    CHECK(!source.downloads);
+    CHECK_EQ(source.max_zoom, 9);
+    CHECK(same(source.background, BLUE));
+
     auto const again = cut_world(small.dir.path, small.world);
     CHECK(again.has_value());
     CHECK_EQ(again.transform([](WorldMap const &m) { return m.native_zoom; }).value_or(0), 9);

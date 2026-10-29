@@ -842,10 +842,22 @@ void test_next_download()
     next = next_download(view, all, nullptr);
     CHECK(next.has_value() && next->empty());
 }
+// Above a Zwift world's native zoom, the map scales up the tile at it.
+void test_ancestor()
+{
+    Tile const tile { .x = 63147, .y = 34905, .zoom = 18 };
+    CHECK_EQ(tile.ancestor(16), (Tile { .x = 15786, .y = 8726, .zoom = 16 }));
+    CHECK_EQ(tile.ancestor(17), (Tile { .x = 31573, .y = 17452, .zoom = 17 }));
+    CHECK_EQ(tile.ancestor(18), tile);
+    CHECK_EQ(tile.ancestor(19), tile);
+    CHECK_EQ(tile.ancestor(16).box().contains(tile.box()), true);
+}
+
 }
 
 int main()
 {
+    test_ancestor();
     test_all_tiles_arrive();
     test_failed_tiles_are_counted_and_not_sent();
     test_nothing_is_fetched_when_cancelled();

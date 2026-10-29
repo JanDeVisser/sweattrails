@@ -213,6 +213,17 @@ std::expected<WorldMap, LibCError> cut_tiles(fs::path const &dir, ZwiftWorld con
 
 }
 
+MapSource world_source(WorldMap const &map)
+{
+    return MapSource {
+        .dir = map.dir,
+        .attribution = ZwiftAttribution,
+        .downloads = false,
+        .max_zoom = map.native_zoom,
+        .background = map.background,
+    };
+}
+
 std::optional<WorldMap> cut_world(fs::path const &cache, ZwiftWorld const &world)
 {
     auto const      dir = cache / world.cache_name();

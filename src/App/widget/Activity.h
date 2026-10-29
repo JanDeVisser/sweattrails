@@ -13,6 +13,7 @@
 #include <Widget.h>
 
 #include <Map.h>
+#include <Zwift.h>
 #include <storage/Activity.h>
 #include <widget/DataFields.h>
 #include <widget/DisplayedActivity.h>
@@ -59,6 +60,8 @@ struct ActivityMap : public Widget {
 
     std::shared_ptr<DisplayedActivity> activity;
     MapNavigator                       navigator { };
+    MapSource                          source { };
+    std::string                        waiting_for_world { }; // The cache name of the Zwift world being cut for it
     bool                               has_map { false };
     bool                               view_pending { false }; // The tiles aren't loaded for the view yet
     std::vector<WorldPoint>            track { };              // At zoom 0; NaN without a position
@@ -77,11 +80,17 @@ struct ActivityMap : public Widget {
     void set_activity(std::shared_ptr<DisplayedActivity> const &activity);
     void add_tile(MapTile const &tile);
     void tiles_done(MapTilesDone const &done);
+    // A Zwift world was cut into tiles: if it's the activity's, the map
+    // changes to it.
+    void world_ready(ZwiftWorldReady const &ready);
     void zoom_by(int steps);
     void show_whole_route();
 
 private:
+    void                            choose_source();
+    void                            change_source(MapSource new_source);
     void                            view_changed();
+    [[nodiscard]] bool              load_cached(Tile const &tile);
     [[nodiscard]] LoadedTile const *loaded(Tile const &tile) const;
     void                            load_tile(Tile const &tile, std::string const &png);
     void                            unload_tiles();

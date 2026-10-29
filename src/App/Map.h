@@ -58,6 +58,8 @@ struct Tile {
     // the storage's tiles_dir, or a Zwift world's.
     [[nodiscard]] std::expected<std::string, LibCError> get_cached_tile(fs::path const &cache) const;
     [[nodiscard]] std::string                           to_string() const;
+    // The tile at `up_to`, a zoom no higher than this one's, that holds it.
+    [[nodiscard]] Tile ancestor(u8 up_to) const;
 
     // The cached tile, or else downloads it. Only call this on the job
     // thread: downloads are slow, and use a curl handle that isn't shared
@@ -84,6 +86,16 @@ constexpr u8 MaxFitZoom = 16;
 
 // The map zooms out this many levels past the whole route, for context.
 constexpr u8 ZoomOutPastFit = 2;
+
+// Where the activity map's tiles come from: OpenStreetMap, or a Zwift
+// world's map, cut into tiles. See specs/zwift-maps.md.
+struct MapSource {
+    fs::path    dir { };                        // The tiles' cache
+    char const *attribution { OsmAttribution }; // The licence's credit
+    bool        downloads { true };             // A world's tiles are all there, or past its edge
+    u8          max_zoom { MaxMapZoom };        // Above it, the tile at it is scaled up
+    Color       background { LIGHTGRAY };       // Where there's no tile
+};
 
 // A point's place on the map: its Web Mercator position in pixels, from 0
 // to 256 << zoom. Doubles, since at zoom 18 that's up to 67 million, which a
