@@ -86,6 +86,10 @@ StravaResult<StravaUpdate> update_strava_titles(Strava &strava, Storage const &s
         }
     }
 
+    // The newest first: those are the ones the user looks at, and with
+    // Strava's limits a long history's descriptions take days.
+    std::ranges::sort(undescribed, std::ranges::greater { }, [](Described const &d) { return d.stored.start; });
+
     // A list that stopped short keeps the titles it has, and the
     // descriptions wait: what stopped it would stop them too.
     if (listed.stopped) {

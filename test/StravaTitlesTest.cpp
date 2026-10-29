@@ -100,6 +100,19 @@ void test_match_in_any_order()
     CHECK((matched_ids(match_strava(strava, starts)) == std::vector<u64> { 1 }));
 }
 
+// Whether the descriptions were asked for newest first: the Strava IDs in
+// the tests go up with the start times.
+bool fake_asked_newest_first(FakeStrava const &fake)
+{
+    std::vector<std::string> asked;
+    for (auto const &request : fake.requests) {
+        if (request.url.contains("/api/v3/activities/")) {
+            asked.push_back(request.url.substr(request.url.rfind('/') + 1));
+        }
+    }
+    return asked == std::vector<std::string> { "103", "102", "102", "101" };
+}
+
 struct StravaStore {
     TempStore  store { };
     TempDir    dir { "strava-titles" };
@@ -199,13 +212,14 @@ void test_only_whats_new()
 
 // At Strava's limit, the titles are all there, the descriptions that came
 // are kept, and the rest wait for the next time, which fetches only those.
+// The newest come first: those are the ones the user looks at.
 void test_descriptions_stop_at_the_limit()
 {
     StravaStore t;
     auto const  activities = std::vector { strava_activity(101, "2026-10-27T12:05:30Z", "Ride to Niagara"),
         strava_activity(102, "2026-10-28T12:04:50Z", "Tempo run"), strava_activity(103, "2026-10-29T07:05:00Z", "Swim") };
     t.list(activities);
-    t.describe(101, R"("With Anna")");
+    t.describe(103, R"("")");
     t.fake.answer("/api/v3/activities/102", HttpResponse {
                                                 .status = 429,
                                                 .body = R"({"message":"Rate Limit Exceeded"})",
@@ -219,16 +233,20 @@ void test_descriptions_stop_at_the_limit()
     CHECK((limited.changed == std::vector<i64> { Ride, Run, Swim }));
     CHECK(!t.saved(Run)->description.has_value());
 
+    CHECK(t.saved(Swim)->description.has_value());
+    CHECK(!t.saved(Ride)->description.has_value());
+
     t.list(activities);
     t.describe(102, R"("Intervals")");
-    t.describe(103, R"("")");
+    t.describe(101, R"("With Anna")");
     auto const rest = t.update();
     CHECK_EQ(rest.titles, 0u);
     CHECK_EQ(rest.descriptions, 2u);
     CHECK_EQ(rest.waiting, 0u);
-    CHECK((rest.changed == std::vector<i64> { Run, Swim }));
+    CHECK((rest.changed == std::vector<i64> { Ride, Run }));
     CHECK_EQ(t.description_requests(), 4u);
     CHECK_EQ(t.saved(Run)->description.value_or("<none>"), "Intervals");
+    CHECK(fake_asked_newest_first(t.fake));
 }
 
 // A list that stops short on its second page keeps the first page's
@@ -256,13 +274,13 @@ void test_descriptions_stop_at_a_failure()
 {
     StravaStore t;
     t.list({ strava_activity(101, "2026-10-27T12:05:30Z", "Ride to Niagara"), strava_activity(102, "2026-10-28T12:04:50Z", "Tempo run") });
-    t.fake.answer("/api/v3/activities/101", HttpResponse { .status = 500, .body = "" });
+    t.fake.answer("/api/v3/activities/102", HttpResponse { .status = 500, .body = "" });
     auto const update = t.update();
     CHECK_EQ(update.titles, 2u);
     CHECK_EQ(update.descriptions, 0u);
     CHECK_EQ(update.waiting, 2u);
     CHECK(!update.resets_at.has_value());
-    CHECK_EQ(update.error, "Strava answered HTTP 500 for `/api/v3/activities/101`");
+    CHECK_EQ(update.error, "Strava answered HTTP 500 for `/api/v3/activities/102`");
     CHECK_EQ(t.description_requests(), 1u);
 }
 
