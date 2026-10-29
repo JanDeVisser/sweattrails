@@ -103,7 +103,7 @@ static size_t write_cb(char *ptr, size_t size, size_t nmemb, void *stream)
     }
 }
 
-std::expected<void, std::variant<CURLcode, LibCError>> download(std::string url, fs::path dest)
+std::expected<void, std::variant<CURLcode, LibCError>> download(std::string url, fs::path dest, DownloadLimit limit)
 {
     static CURL *curl = nullptr;
 
@@ -118,8 +118,18 @@ std::expected<void, std::variant<CURLcode, LibCError>> download(std::string url,
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_CA_CACHE_TIMEOUT, 604800L);
-    // A connection that hangs would keep an overlay render waiting.
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+    // A connection that hangs would keep an overlay render waiting. The
+    // handle is kept between downloads, so each sets all of these.
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
+    if (limit == DownloadLimit::Total) {
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 0L);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 0L);
+    } else {
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
+    }
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, UserAgent);
@@ -155,13 +165,13 @@ std::expected<void, std::variant<CURLcode, LibCError>> download(std::string url,
 // So it's downloaded to another name, and only renamed when it's complete:
 // the UI thread may read the cache during the download, and the app may
 // quit in the middle of one.
-std::expected<void, LibCError> download_file(std::string const &url, fs::path const &file)
+std::expected<void, LibCError> download_file(std::string const &url, fs::path const &file, DownloadLimit limit)
 {
     TRY(ensure_directory(file.parent_path()));
     auto part_file = file;
     part_file += ".part";
 
-    auto const exit_code = download(url, part_file);
+    auto const exit_code = download(url, part_file, limit);
     if (!exit_code.has_value()) {
         std::error_code ec { };
         fs::remove(part_file, ec);

@@ -252,7 +252,7 @@ std::expected<WorldMap, LibCError> prepare_zwift_world(fs::path const &cache, Zw
     auto const      image_file = cache / std::format("{}.png", world.cache_name());
     std::error_code ec { };
     if (!fs::exists(image_file, ec)) {
-        TRY(download_file(world.image, image_file));
+        TRY(download_file(world.image, image_file, DownloadLimit::Stall));
         info(ST, "Downloaded {}'s map, {}", world.name, world.image);
     }
     auto image = LoadImage(image_file.c_str());

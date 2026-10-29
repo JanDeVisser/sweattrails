@@ -69,10 +69,18 @@ struct Tile {
     auto operator<=>(Tile const &) const = default;
 };
 
+// How long a download may take: a tile 30 seconds, and a large file, such
+// as a Zwift world's image, as long as it keeps coming, at 1 KB/s or more
+// over 30 seconds.
+enum class DownloadLimit {
+    Total,
+    Stall,
+};
+
 // Downloads `url` to `file`, making its directory. A file there is always
 // complete: it's downloaded to another name first. Only call this on the
 // job thread, as Tile::get_tile().
-std::expected<void, LibCError> download_file(std::string const &url, fs::path const &file);
+std::expected<void, LibCError> download_file(std::string const &url, fs::path const &file, DownloadLimit limit = DownloadLimit::Total);
 
 // OSM's licence asks for this wherever its tiles are shown.
 constexpr char const OsmAttribution[] = "© OpenStreetMap contributors";
