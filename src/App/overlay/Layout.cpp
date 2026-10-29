@@ -51,14 +51,6 @@ constexpr Names MapProperties { "view", "zoom", "clip", "track", "marker", "tile
 
 constexpr Names ImageProperties { "src", "tint" };
 
-constexpr Names LaterTypes { "group" };
-
-// The properties of later slices' elements, from the design. Defaults and
-// styles may have them, for those elements.
-constexpr Names LaterProperties {
-    "children", // group
-};
-
 constexpr Names LayoutProperties { "version", "design_size", "units", "defaults", "styles", "elements" };
 
 using Error = std::unexpected<LayoutError>;
@@ -1053,20 +1045,74 @@ std::expected<std::optional<Visibility>, LayoutError> visibility(JSONValue const
     return std::optional { ret };
 }
 
-std::expected<std::optional<OverlayElement>, LayoutError> typed_element(JSONValue const &json, JSONValue const &defaults, JSONValue const &styles);
+std::expected<OverlayElement, LayoutError> typed_element(JSONValue const &json, JSONValue const &defaults, JSONValue const &styles);
 
 // The element, and when it shows, which every type has.
-std::expected<std::optional<OverlayElement>, LayoutError> element(JSONValue const &json, JSONValue const &defaults, JSONValue const &styles)
+std::expected<OverlayElement, LayoutError> element(JSONValue const &json, JSONValue const &defaults, JSONValue const &styles)
 {
-    auto ret = TRY_EVAL(typed_element(json, defaults, styles));
-    if (ret) {
-        auto const visible = TRY_EVAL(visibility(TRY_EVAL(cascaded(json, defaults, styles))));
-        std::visit([&visible](auto &e) { e.visible = visible; }, *ret);
+    auto       ret = TRY_EVAL(typed_element(json, defaults, styles));
+    auto const visible = TRY_EVAL(visibility(TRY_EVAL(cascaded(json, defaults, styles))));
+    std::visit([&visible](auto &e) { e.visible = visible; }, ret);
+    return ret;
+}
+
+// An error in the element `ix` of a list, from 1: in a group's child, the
+// group's number comes before the child's.
+LayoutError within(LayoutError err, size_t ix)
+{
+    err.element = err.element ? std::format("{}.{}", ix, *err.element) : std::to_string(ix);
+    return err;
+}
+
+// The element's number, and its children's after it, if it's a group.
+void set_number(OverlayElement &element, ElementNumber const &number)
+{
+    std::visit([&number](auto &e) { e.number = number; }, element);
+    if (auto *group = std::get_if<GroupElement>(&element)) {
+        auto ix = 0uz;
+        for (auto &child : group->children) {
+            set_number(child, std::format("{}.{}", number, ++ix));
+        }
+    }
+}
+
+// The group's text properties come down to its children as their
+// defaults, over the layout's: under the children's styles, which are more
+// particular. Its box properties don't, or each child would draw the panel.
+std::expected<GroupElement, LayoutError> group_element(JSONValue const &json, JSONValue const &defaults, JSONValue const &styles)
+{
+    auto const   cascaded_group = TRY_EVAL(cascaded(json, defaults, styles));
+    GroupElement ret { .at = TRY_EVAL(sized_placement(cascaded_group, "group")), .panel = TRY_EVAL(panel(cascaded_group)) };
+    TRY(text_style(cascaded_group));
+    auto const children = json.get("children");
+    if (!children || !children->is_array()) {
+        return error("a group needs \"children\", a list of elements");
+    }
+    auto passed_down = JSONValue::object();
+    for (auto const name : TextStyleProperties) {
+        if (auto const property = cascaded_group.get(std::string { name }); property) {
+            passed_down.set(name, *property);
+        }
+    }
+    // The children show while the group does: the defaults' `visible` and
+    // `fade` are the group's, or the children would fade twice.
+    auto shown_by_group = defaults;
+    shown_by_group.erase("visible");
+    shown_by_group.erase("fade");
+    auto const child_defaults = cascade(std::move(shown_by_group), passed_down);
+    auto       ix = 0uz;
+    for (auto const &child : *children) {
+        ++ix;
+        auto decoded = element(child, child_defaults, styles);
+        if (!decoded) {
+            return std::unexpected(within(decoded.error(), ix));
+        }
+        ret.children.push_back(std::move(*decoded));
     }
     return ret;
 }
 
-std::expected<std::optional<OverlayElement>, LayoutError> typed_element(JSONValue const &json, JSONValue const &defaults, JSONValue const &styles)
+std::expected<OverlayElement, LayoutError> typed_element(JSONValue const &json, JSONValue const &defaults, JSONValue const &styles)
 {
     if (!json.is_object()) {
         return error("it isn't an object");
@@ -1076,45 +1122,46 @@ std::expected<std::optional<OverlayElement>, LayoutError> typed_element(JSONValu
         return error("it has no \"type\"");
     }
     auto const name = TRY_EVAL(string(*type, "type"));
-    if (contains(LaterTypes, name)) {
-        return std::optional<OverlayElement> { };
-    }
     // A typo is in the element's own properties: those it takes from the
     // defaults and its styles were checked with them, and may be for
     // elements of another type, such as a text's align.
     if (name == "text") {
         TRY(check_properties(json, "a text", { ElementProperties, TextStyleProperties, BoxStyleProperties, TextProperties }));
-        return std::optional<OverlayElement> { TRY_EVAL(text_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
+        return OverlayElement { TRY_EVAL(text_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
     }
     if (name == "value") {
         TRY(check_properties(json, "a value", { ElementProperties, TextStyleProperties, BoxStyleProperties, ValueProperties }));
-        return std::optional<OverlayElement> { TRY_EVAL(value_element(TRY_EVAL(cascaded(json, defaults, styles)), json)) };
+        return OverlayElement { TRY_EVAL(value_element(TRY_EVAL(cascaded(json, defaults, styles)), json)) };
     }
     // A gauge's and a graph's color is what they draw in, by default.
     if (name == "gauge") {
         TRY(check_properties(json, "a gauge", { ElementProperties, { "color" }, BoxStyleProperties, GaugeProperties }));
-        return std::optional<OverlayElement> { TRY_EVAL(gauge_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
+        return OverlayElement { TRY_EVAL(gauge_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
     }
     if (name == "map") {
         TRY(check_properties(json, "a map", { ElementProperties, { "color" }, BoxStyleProperties, MapProperties }));
         if (auto const m = json.get("marker"); m && m->is_object() && m->get("drop_line")) {
             return error("\"drop_line\" isn't a property of a map's marker");
         }
-        return std::optional<OverlayElement> { TRY_EVAL(map_element(TRY_EVAL(cascaded(json, defaults, styles)), styles)) };
+        return OverlayElement { TRY_EVAL(map_element(TRY_EVAL(cascaded(json, defaults, styles)), styles)) };
     }
     if (name == "profile") {
         TRY(check_properties(json, "a profile", { ElementProperties, TextStyleProperties, BoxStyleProperties, ProfileProperties }));
-        return std::optional<OverlayElement> { TRY_EVAL(profile_element(TRY_EVAL(cascaded(json, defaults, styles)), styles)) };
+        return OverlayElement { TRY_EVAL(profile_element(TRY_EVAL(cascaded(json, defaults, styles)), styles)) };
     }
     if (name == "image") {
         TRY(check_properties(json, "an image", { ElementProperties, BoxStyleProperties, ImageProperties }));
         // One side of a size is the other in the picture's aspect ratio,
         // which merging it with a size under it would undo.
-        return std::optional<OverlayElement> { TRY_EVAL(image_element(TRY_EVAL(cascaded(json, defaults, styles, { "size" })))) };
+        return OverlayElement { TRY_EVAL(image_element(TRY_EVAL(cascaded(json, defaults, styles, { "size" })))) };
     }
     if (name == "graph") {
         TRY(check_properties(json, "a graph", { ElementProperties, { "color" }, BoxStyleProperties, GraphProperties }));
-        return std::optional<OverlayElement> { TRY_EVAL(graph_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
+        return OverlayElement { TRY_EVAL(graph_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
+    }
+    if (name == "group") {
+        TRY(check_properties(json, "a group", { ElementProperties, TextStyleProperties, BoxStyleProperties, { "children" } }));
+        return OverlayElement { TRY_EVAL(group_element(json, defaults, styles)) };
     }
     return error(std::format("\"type\": `{}` isn't an element type", name));
 }
@@ -1198,7 +1245,7 @@ std::expected<OverlayLayout, LayoutError> decode_layout(JSONValue const &json)
     }
     // What defaults and styles may hold: any element's properties but its
     // type and style.
-    auto const style_properties = { TextStyleProperties, BoxStyleProperties, TextProperties, ValueProperties, GaugeProperties, GraphProperties, ProfileProperties, MapProperties, ImageProperties, LaterProperties,
+    auto const style_properties = { TextStyleProperties, BoxStyleProperties, TextProperties, ValueProperties, GaugeProperties, GraphProperties, ProfileProperties, MapProperties, ImageProperties,
         Names { "at", "size", "visible", "fade", "when", "smooth", "interpolate" } };
     TRY(check_properties(defaults, "the defaults", style_properties));
     for (auto it = styles.obj_begin(); it != styles.obj_end(); ++it) {
@@ -1216,16 +1263,10 @@ std::expected<OverlayLayout, LayoutError> decode_layout(JSONValue const &json)
         ++ix;
         auto decoded = element(e, defaults, styles);
         if (!decoded) {
-            auto err = decoded.error();
-            err.element = ix;
-            return std::unexpected(err);
+            return std::unexpected(within(decoded.error(), ix));
         }
-        if (*decoded) {
-            std::visit([ix](auto &el) { el.number = ix; }, **decoded);
-            ret.elements.push_back(std::move(**decoded));
-        } else {
-            ++ret.skipped;
-        }
+        set_number(*decoded, std::to_string(ix));
+        ret.elements.push_back(std::move(*decoded));
     }
     return ret;
 }
@@ -1273,7 +1314,19 @@ std::vector<std::string> element_fonts(OverlayElement const &element)
     return { };
 }
 
-size_t element_number(OverlayElement const &element)
+std::vector<OverlayElement const *> all_elements(std::vector<OverlayElement> const &elements)
+{
+    std::vector<OverlayElement const *> ret;
+    for (auto const &element : elements) {
+        ret.push_back(&element);
+        if (auto const *group = std::get_if<GroupElement>(&element)) {
+            std::ranges::copy(all_elements(group->children), std::back_inserter(ret));
+        }
+    }
+    return ret;
+}
+
+ElementNumber element_number(OverlayElement const &element)
 {
     return std::visit([](auto const &e) { return e.number; }, element);
 }
@@ -1349,8 +1402,8 @@ std::set<int> layout_codepoints(OverlayLayout const &layout)
             }
         }
     };
-    for (auto const &element : layout.elements) {
-        if (auto const *text = std::get_if<TextElement>(&element)) {
+    for (auto const *element : all_elements(layout.elements)) {
+        if (auto const *text = std::get_if<TextElement>(element)) {
             for (auto const &part : text->text.parts) {
                 if (auto const *literal = std::get_if<std::string>(&part)) {
                     add(*literal);
@@ -1358,18 +1411,18 @@ std::set<int> layout_codepoints(OverlayLayout const &layout)
             }
             // Fields of later slices show as missing.
             add("--");
-        } else if (auto const *value = std::get_if<ValueElement>(&element)) {
+        } else if (auto const *value = std::get_if<ValueElement>(element)) {
             add(value->missing);
             if (value->unit) {
                 add(value->unit->name);
             }
-        } else if (auto const *profile = std::get_if<ProfileElement>(&element); profile && profile->marker_label) {
+        } else if (auto const *profile = std::get_if<ProfileElement>(element); profile && profile->marker_label) {
             for (auto const &part : profile->marker_label->text.parts) {
                 if (auto const *literal = std::get_if<std::string>(&part)) {
                     add(*literal);
                 }
             }
-        } else if (auto const *map = std::get_if<MapElement>(&element); map && map->tiles) {
+        } else if (auto const *map = std::get_if<MapElement>(element); map && map->tiles) {
             add(OsmAttribution);
         }
     }

@@ -65,6 +65,14 @@ ImageBox image_box(ImageElement const &image, Vector2 picture, Vector2 canvas, f
     };
 }
 
+GroupBox group_box(GroupElement const &group, Rectangle area, float scale)
+{
+    auto const size = group.at.size.value_or(Vector2 { });
+    auto const box = place(group.at, Vector2 { .x = size.x * scale, .y = size.y * scale }, Vector2 { .x = area.width, .y = area.height }, scale);
+    auto const panel = Rectangle { .x = area.x + box.x, .y = area.y + box.y, .width = box.width, .height = box.height };
+    return GroupBox { .panel = panel, .content = content_box(panel, group.panel.padding * scale) };
+}
+
 std::optional<Bounds> shown_bounds(OverlaySource const &source, OverlayField field, FieldUnit const &unit,
     std::optional<double> min, std::optional<double> max)
 {

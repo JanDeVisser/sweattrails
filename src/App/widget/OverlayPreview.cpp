@@ -110,7 +110,6 @@ void OverlayPreview::draw()
         draw_message(area, *renderer.error());
         return;
     }
-    auto const &layout = *file->layout;
     // Renamed since: the preview shows the new title.
     if (activity && source && source->title != activity->activity.title) {
         source.emplace(activity->activity);
@@ -123,12 +122,6 @@ void OverlayPreview::draw()
         tiles.request(renderer.tiles_needed(values, area, time));
         renderer.draw(values, area, time);
         EndScissorMode();
-    }
-    if (layout.skipped > 0) {
-        auto const note = std::format("{} {} can't be shown yet", layout.skipped, (layout.skipped == 1) ? "element" : "elements");
-        DrawTextEx(*App::the()->font(FontSize::Small), note.c_str(),
-            Vector2 { .x = area.x + 6, .y = area.y + area.height - App::the()->cell(FontSize::Small).y - 4 },
-            static_cast<float>(App::the()->font_sizes[static_cast<size_t>(FontSize::Small)]), 2, GRAY);
     }
 }
 

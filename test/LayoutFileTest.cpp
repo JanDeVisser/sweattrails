@@ -140,12 +140,11 @@ void test_builtin_layout(std::string_view name, size_t elements)
         return;
     }
     CHECK_EQ(file.layout->elements.size(), elements);
-    CHECK_EQ(file.layout->skipped, 0uz);
     auto const shipped = [](std::string const &font) {
         return fs::exists(fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "fonts" / font);
     };
-    for (auto const &element : file.layout->elements) {
-        for (auto const &font : element_fonts(element)) {
+    for (auto const *element : all_elements(file.layout->elements)) {
+        for (auto const &font : element_fonts(*element)) {
             CHECK(shipped(font));
         }
     }
@@ -166,8 +165,8 @@ void test_dashboard_icons()
         return;
     }
     std::vector<std::string> icons;
-    for (auto const &element : file.layout->elements) {
-        if (auto const *image = std::get_if<ImageElement>(&element); image) {
+    for (auto const *element : all_elements(file.layout->elements)) {
+        if (auto const *image = std::get_if<ImageElement>(element); image) {
             icons.push_back(std::format("{} {} #{:02x}{:02x}{:02x}{:02x}", image->src, image->width.value_or(0),
                 image->tint.r, image->tint.g, image->tint.b, image->tint.a));
         }
@@ -225,8 +224,8 @@ void test_dashboard_map()
     CHECK_EQ(map.attribution.font_size, 14.0f);
 }
 
-// The ride's name and date for the video's first 5 seconds, on a panel,
-// fading over half a second; everything else always shows.
+// The ride's name and date for the video's first 5 seconds, in a group
+// with a panel, fading over half a second; everything else always shows.
 void test_dashboard_title_card()
 {
     LayoutFile file { fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays" / "cycling-dashboard.overlay.json" };
@@ -235,27 +234,52 @@ void test_dashboard_title_card()
         return;
     }
     std::vector<std::string> card;
-    for (auto const &element : file.layout->elements) {
-        auto const *text = std::get_if<TextElement>(&element);
-        auto const  visible = std::visit([](auto const &e) { return e.visible; }, element);
+    for (auto const *element : all_elements(file.layout->elements)) {
+        auto const visible = std::visit([](auto const &e) { return e.visible; }, *element);
         if (!visible) {
             continue;
         }
         CHECK_EQ(visible->from, 0.0);
         CHECK_EQ(visible->to.value_or(0), 5.0);
         CHECK_EQ(visible->fade, 0.5);
-        std::string shown;
-        if (text != nullptr) {
-            for (auto const &part : text->text.parts) {
+        auto const *group = std::get_if<GroupElement>(element);
+        if (group == nullptr) {
+            card.push_back("not a group");
+            continue;
+        }
+        card.push_back(group->panel.background ? "panel" : "no panel");
+        for (auto const &child : group->children) {
+            std::string shown;
+            for (auto const &part : std::get<TextElement>(child).text.parts) {
                 if (auto const *field = std::get_if<Placeholder>(&part)) {
                     shown += std::format("{{{}}}", OverlayField_name(field->field));
                 }
             }
-            shown += text->panel.background ? "panel" : "";
+            card.push_back(shown);
         }
-        card.push_back(shown);
     }
     CHECK_EQ(card, (std::vector<std::string> { "panel", "{title}", "{date}" }));
+}
+
+// The dashboard's three panels are groups, each with what's in it, and no
+// empty texts draw panels any more.
+void test_dashboard_groups()
+{
+    LayoutFile file { fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays" / "cycling-dashboard.overlay.json" };
+    CHECK(file.reload_if_changed());
+    if (!file.layout) {
+        return;
+    }
+    std::vector<std::string> groups;
+    for (auto const *element : all_elements(file.layout->elements)) {
+        if (auto const *group = std::get_if<GroupElement>(element)) {
+            groups.push_back(std::format("{} {}", group->number, group->children.size()));
+        }
+        if (auto const *text = std::get_if<TextElement>(element)) {
+            CHECK(!text->text.parts.empty());
+        }
+    }
+    CHECK_EQ(groups, (std::vector<std::string> { "1 3", "5 9", "10 2" }));
 }
 
 // A file that isn't there yet: an error, once, until it's made.
@@ -280,7 +304,7 @@ void test_error_names_file_element_and_property()
     put(path, R"({ "elements": [
         // A comment, as layouts have them.
         { "type": "text", "text": "a" },
-        { "type": "group" },
+        { "type": "group", "size": { "width": 100, "height": 100 }, "children": [] },
         { "type": "value", "field": "speed", "colour": "#ffffff" }
     ] })");
     LayoutFile file { path };
@@ -313,14 +337,14 @@ OverlayLayout decoded(std::string_view json)
     return MUST_EVAL(decode_layout(MUST_EVAL(JSONValue::deserialize(json))));
 }
 
-// The fonts are looked up once each, and a missing one names the element
-// that uses it, counting the elements of later slices that were skipped.
+// The fonts are looked up once each, also those of a group's children,
+// and a missing one names the element that uses it.
 void test_layout_fonts()
 {
     auto const               layout = decoded(R"({ "elements": [
-        { "type": "group" },
         { "type": "text", "text": "a", "font": "A.ttf" },
-        { "type": "value", "field": "speed", "font": "A.ttf", "unit_style": { "font": "B.ttf" } }
+        { "type": "group", "size": { "width": 100, "height": 100 }, "children": [
+            { "type": "value", "field": "speed", "font": "A.ttf", "unit_style": { "font": "B.ttf" } } ] }
     ] })");
     std::vector<std::string> asked;
     auto const               find_all = [&asked](std::string_view name) -> std::optional<fs::path> {
@@ -344,12 +368,12 @@ void test_layout_fonts()
     auto const missing = layout_fonts(layout, only_a);
     CHECK(!missing.has_value());
     if (!missing) {
-        CHECK_EQ(missing.error().to_string(), "element 3: the font `B.ttf` isn't in any of the font directories");
+        CHECK_EQ(missing.error().to_string(), "element 2.1: the font `B.ttf` isn't in any of the font directories");
     }
     auto const none = layout_fonts(layout, [](std::string_view) -> std::optional<fs::path> { return { }; });
     CHECK(!none.has_value());
     if (!none) {
-        CHECK_EQ(none.error().to_string(), "element 2: the font `A.ttf` isn't in any of the font directories");
+        CHECK_EQ(none.error().to_string(), "element 1: the font `A.ttf` isn't in any of the font directories");
     }
 }
 }
@@ -398,6 +422,30 @@ void test_layout_images()
     CHECK(found && found->at("a.png") == fs::path { "/layouts/a.png" });
 }
 
+// A picture only a group's child shows is looked for, and one that isn't
+// there is named by the child's number.
+void test_layout_images_in_groups()
+{
+    auto const               layout = decoded(R"({ "elements": [
+        { "type": "text", "text": "a" },
+        { "type": "group", "size": { "width": 100, "height": 100 }, "children": [
+            { "type": "image", "src": "icons/heart.png" },
+            { "type": "group", "size": { "width": 10, "height": 10 }, "children": [ { "type": "image", "src": "logo.png" } ] } ] }
+    ] })");
+    std::vector<std::string> asked;
+    auto const               find = [&asked](std::string_view src, fs::path const &dir) -> std::optional<fs::path> {
+        asked.push_back(std::string { src });
+        return (src == "logo.png") ? std::nullopt : std::optional { dir / src };
+    };
+    auto const images = layout_images(layout, "/layouts", find);
+    CHECK(!images.has_value());
+    if (!images) {
+        CHECK_EQ(images.error().to_string(),
+            "element 2.2.1: the picture `logo.png` isn't there: it's looked for next to the layout, and with the built-in layouts");
+    }
+    CHECK_EQ(asked, (std::vector<std::string> { "icons/heart.png", "logo.png" }));
+}
+
 // A path up from the layout's folder is next to the layout too; an
 // absolute one isn't looked for anywhere else.
 void test_find_image_paths()
@@ -436,12 +484,14 @@ int main()
     test_chosen_layout();
     test_builtin_layout("cycling-basic", 11);
     test_builtin_layout("running-basic", 9);
-    test_builtin_layout("cycling-dashboard", 24);
+    test_builtin_layout("cycling-dashboard", 10);
     test_dashboard_map();
     test_dashboard_title_card();
+    test_dashboard_groups();
     test_dashboard_icons();
     test_find_image();
     test_layout_images();
+    test_layout_images_in_groups();
     test_layout_fonts();
     test_missing_file();
     test_error_names_file_element_and_property();

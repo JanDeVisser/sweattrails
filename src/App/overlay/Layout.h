@@ -26,6 +26,10 @@
 
 namespace ST {
 
+// An element's place in the layout's elements, from 1: "3", or "3.2" for
+// the second child of the third element, a group.
+using ElementNumber = std::string;
+
 enum class Anchor {
     TopLeft,
     Top,
@@ -106,8 +110,8 @@ struct Panel {
 };
 
 struct TextElement {
-    size_t                    number { 0 }; // Its place in the layout's elements, from 1
-    std::optional<Visibility> visible { };  // None: always
+    ElementNumber             number { };  // Its place in the layout's elements
+    std::optional<Visibility> visible { }; // None: always
     Placement                 at { };
     Panel                     panel { };
     TextStyle                 style { };
@@ -122,8 +126,8 @@ struct Threshold {
 };
 
 struct ValueElement {
-    size_t                    number { 0 }; // Its place in the layout's elements, from 1
-    std::optional<Visibility> visible { };  // None: always
+    ElementNumber             number { };  // Its place in the layout's elements
+    std::optional<Visibility> visible { }; // None: always
     Placement                 at { };
     Panel                     panel { };
     TextStyle                 style { };
@@ -144,9 +148,9 @@ enum class GaugeShape {
 };
 
 struct GaugeElement {
-    size_t                    number { 0 }; // Its place in the layout's elements, from 1
-    std::optional<Visibility> visible { };  // None: always
-    Placement                 at { };       // With a size: there's no text to measure
+    ElementNumber             number { };  // Its place in the layout's elements
+    std::optional<Visibility> visible { }; // None: always
+    Placement                 at { };      // With a size: there's no text to measure
     Panel                     panel { };
     OverlayField              field { OverlayField::speed };
     std::optional<FieldUnit>  unit { }; // The layout's units if none
@@ -170,9 +174,9 @@ struct Cursor {
 };
 
 struct GraphElement {
-    size_t                    number { 0 }; // Its place in the layout's elements, from 1
-    std::optional<Visibility> visible { };  // None: always
-    Placement                 at { };       // With a size
+    ElementNumber             number { };  // Its place in the layout's elements
+    std::optional<Visibility> visible { }; // None: always
+    Placement                 at { };      // With a size
     Panel                     panel { };
     OverlayField              field { OverlayField::speed };
     std::optional<FieldUnit>  unit { };
@@ -209,9 +213,9 @@ struct ProfileLabel {
 };
 
 struct ProfileElement {
-    size_t                      number { 0 }; // Its place in the layout's elements, from 1
-    std::optional<Visibility>   visible { };  // None: always
-    Placement                   at { };       // With a size
+    ElementNumber               number { };  // Its place in the layout's elements
+    std::optional<Visibility>   visible { }; // None: always
+    Placement                   at { };      // With a size
     Panel                       panel { };
     TextStyle                   style { }; // What its labels' styles are over
     ProfileExtent               extent { ProfileExtent::All };
@@ -263,10 +267,10 @@ struct MapTileLayer {
 };
 
 struct MapElement {
-    size_t                      number { 0 }; // Its place in the layout's elements, from 1
-    std::optional<Visibility>   visible { };  // None: always
-    Placement                   at { };       // With a size
-    Panel                       panel { };    // In the clip's shape
+    ElementNumber               number { };  // Its place in the layout's elements
+    std::optional<Visibility>   visible { }; // None: always
+    Placement                   at { };      // With a size
+    Panel                       panel { };   // In the clip's shape
     MapMode                     mode { MapMode::Fit };
     int                         zoom { 15 }; // OSM's level, for Follow
     ClipKind                    clip { ClipKind::Rect };
@@ -279,9 +283,9 @@ struct MapElement {
 // A picture: a PNG or a JPEG, found next to the layout or with the
 // built-in ones, never stretched.
 struct ImageElement {
-    size_t                    number { 0 }; // Its place in the layout's elements, from 1
-    std::optional<Visibility> visible { };  // None: always
-    Placement                 at { };       // Without a size: that's width and height
+    ElementNumber             number { };  // Its place in the layout's elements
+    std::optional<Visibility> visible { }; // None: always
+    Placement                 at { };      // Without a size: that's width and height
     Panel                     panel { };
     std::string               src { };    // As the layout says it
     std::optional<float>      width { };  // In design pixels; else the picture's, or
@@ -289,19 +293,31 @@ struct ImageElement {
     Color                     tint { WHITE };
 };
 
-using OverlayElement = std::variant<TextElement, ValueElement, GaugeElement, GraphElement, ProfileElement, MapElement, ImageElement>;
+struct GroupElement;
+
+using OverlayElement = std::variant<TextElement, ValueElement, GaugeElement, GraphElement, ProfileElement, MapElement, ImageElement, GroupElement>;
+
+// A panel, with its children placed in its box less its padding, drawn
+// over it, and shown while it shows. Its text properties came down to the
+// children in the cascade.
+struct GroupElement {
+    ElementNumber               number { };
+    std::optional<Visibility>   visible { }; // None: always
+    Placement                   at { };      // Always with a size
+    Panel                       panel { };
+    std::vector<OverlayElement> children { };
+};
 
 struct OverlayLayout {
     Vector2                     design_size { .x = 1920, .y = 1080 };
     Units                       units { Units::Metric };
     std::vector<OverlayElement> elements { };
-    size_t                      skipped { 0 }; // Elements of later slices
 };
 
 // What's wrong with a layout: the element, counted from 1, if it's in one.
 struct LayoutError {
-    std::optional<size_t> element { };
-    std::string           message { };
+    std::optional<ElementNumber> element { };
+    std::string                  message { };
 
     [[nodiscard]] std::string to_string() const;
 };
@@ -342,9 +358,11 @@ Color threshold_color(std::vector<Threshold> const &thresholds, std::optional<do
 // for a gauge or a graph.
 std::vector<std::string> element_fonts(OverlayElement const &element);
 
-// The element's place in the layout's elements, from 1, counting those
-// that were skipped.
-size_t element_number(OverlayElement const &element);
+ElementNumber element_number(OverlayElement const &element);
+
+// Every element, with each group's children after it, and theirs: for
+// what needs all of them, but not where they are.
+std::vector<OverlayElement const *> all_elements(std::vector<OverlayElement> const &elements);
 
 // The characters the layout draws besides ASCII, such as `·`, for loading
 // the fonts with.

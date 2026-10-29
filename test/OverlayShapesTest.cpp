@@ -434,8 +434,31 @@ void test_image_box()
     CHECK_EQ(box(image(100.0f, 100.0f, bottom_right, 10)), "780 280 200 200 | 800 420 160 40");
 }
 
+// The group's panel in an area that isn't at 0, at a scale of 2, and the
+// box inside its padding.
+void test_group_box()
+{
+    Rectangle const area { 100, 50, 1000, 500 };
+    auto const      group = [](Placement at, float padding) {
+        at.size = Vector2 { 200, 100 };
+        return GroupElement { .at = at, .panel = Panel { .padding = padding } };
+    };
+    auto const box = [&area](GroupElement const &g) {
+        auto const b = group_box(g, area, 2);
+        return std::format("{} | {}", show(b.panel), show(b.content));
+    };
+    CHECK_EQ(box(group(Placement { .x = { .value = 10 }, .y = { .value = 20 } }, 0)), "120 90 400 200 | 120 90 400 200");
+    CHECK_EQ(box(group(Placement { .x = { .value = 10 }, .y = { .value = 20 } }, 10)), "120 90 400 200 | 140 110 360 160");
+    // From the area's bottom right, and by percentages of it.
+    CHECK_EQ(box(group(Placement { .x = { .value = -10 }, .y = { .value = -10 }, .anchor = Anchor::BottomRight }, 0)),
+        "680 330 400 200 | 680 330 400 200");
+    CHECK_EQ(box(group(Placement { .x = { .value = 50, .percent = true }, .y = { .value = 50, .percent = true }, .anchor = Anchor::Center }, 0)),
+        "400 200 400 200 | 400 200 400 200");
+}
+
 int main()
 {
+    test_group_box();
     test_image_box();
     test_image_size();
     test_fit_picture();

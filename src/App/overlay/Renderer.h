@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -67,12 +68,17 @@ private:
     OverlayTiles                                *m_tiles { nullptr };
     float                                        m_detail { 1 };
     float                                        m_scale { 0 };
+    Rectangle                                    m_canvas { };      // What draw() draws in, also in a group
     float                                        m_alpha { 1 };     // Of the element being drawn, as it fades
     std::map<std::string, std::filesystem::path> m_font_paths { };  // By the layout's name for them
     std::map<std::string, std::filesystem::path> m_image_paths { }; // By their src
     std::map<std::string, Image>                 m_decoded { };     // By their src, until made a texture
     std::map<std::string, Texture2D>             m_pictures { };    // Made when first drawn, by their src
 
+    // The element, the area it's placed in, and its alpha times its groups'.
+    using ShownVisitor = std::function<void(OverlayElement const &element, Rectangle const &area, float alpha)>;
+    void                     visit_shown(std::vector<OverlayElement> const &elements, Rectangle const &area, VideoTime time, float alpha, float scale,
+        ShownVisitor const &visit) const;
     void                     draw_element(OverlayElement const &element, FieldValues const &values, Rectangle const &area);
     void                     draw(TextElement const &text, FieldValues const &values, Rectangle const &area);
     void                     draw(ValueElement const &value, FieldValues const &values, Rectangle const &area);
@@ -81,14 +87,15 @@ private:
     void                     draw(ProfileElement const &profile, FieldValues const &values, Rectangle const &area);
     void                     draw(MapElement const &map, FieldValues const &values, Rectangle const &area);
     void                     draw(ImageElement const &image, FieldValues const &values, Rectangle const &area);
+    void                     draw(GroupElement const &group, FieldValues const &values, Rectangle const &area);
     Rectangle                screen_box(Placement const &at, Vector2 size, Rectangle const &area) const;
     Rectangle                draw_panel(Panel const &panel, Rectangle const &box) const;
     void                     draw_background(Panel const &panel, ClipShape const &shape) const;
     void                     draw_border(Panel const &panel, ClipShape const &shape) const;
     void                     draw_tiles(MapElement const &map, MapTransform const &transform, ClipShape const &clip);
-    void                     draw_attribution(MapElement const &map, Rectangle const &panel, Rectangle const &area);
+    void                     draw_attribution(MapElement const &map, Rectangle const &panel);
     void                     draw_trace(std::vector<Vector2> const &points, Trace const &trace, float bottom) const;
-    std::optional<Font>      font(TextStyle const &style, size_t element);
+    std::optional<Font>      font(TextStyle const &style, ElementNumber const &element);
     bool                     decode_pictures(OverlayLayout const &layout);
     std::optional<Texture2D> picture(ImageElement const &image);
     void                     unload_pictures();

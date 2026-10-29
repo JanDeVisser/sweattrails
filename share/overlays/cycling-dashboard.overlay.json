@@ -21,16 +21,18 @@
         "title_card": { "visible": { "to": 5 }, "fade": 0.5 }
     },
     "elements": [
-        // The distance and the times in the top left, in a panel: a text
-        // without text, as big as the panel.
-        { "type": "text", "text": "", "style": "panel",
-          "at": { "x": 40, "y": 40 }, "size": { "width": 320, "height": 170 } },
-        { "type": "text", "text": "{distance:.1f} {distance.unit}", "style": "line",
-          "at": { "x": 64, "y": 56 } },
-        { "type": "text", "text": "{elapsed}", "style": "line",
-          "at": { "x": 64, "y": 106 } },
-        { "type": "text", "text": "{time_of_day:hms}", "style": "label",
-          "at": { "x": 64, "y": 162 } },
+        // The distance and the times in the top left, in a panel. A
+        // group's children are placed in its box.
+        { "type": "group", "style": "panel",
+          "at": { "x": 40, "y": 40 }, "size": { "width": 320, "height": 170 },
+          "children": [
+            { "type": "text", "text": "{distance:.1f} {distance.unit}", "style": "line",
+              "at": { "x": 24, "y": 16 } },
+            { "type": "text", "text": "{elapsed}", "style": "line",
+              "at": { "x": 24, "y": 66 } },
+            { "type": "text", "text": "{time_of_day:hms}", "style": "label",
+              "at": { "x": 24, "y": 122 } }
+          ] },
 
         // The elevation of the whole ride across the top, with where the
         // rider is. "extent": "lap" shows the lap instead, for a ride split
@@ -67,28 +69,31 @@
           "at": { "x": 40, "y": -230, "anchor": "bottom-left" },
           "size": { "width": 760, "height": 140 } },
 
-        // Speed, heart rate and cadence in the bottom left, in a panel.
-        { "type": "text", "text": "", "style": "panel",
-          "at": { "x": 40, "y": -40, "anchor": "bottom-left" }, "size": { "width": 760, "height": 170 } },
-        // Each label with an icon before it, in the color of what it's for.
-        { "type": "image", "src": "icons/speedometer.png", "tint": "#ffffffcc",
-          "at": { "x": 70, "y": -152, "anchor": "bottom-left" }, "size": { "width": 24 } },
-        { "type": "text", "text": "SPEED", "style": "label",
-          "at": { "x": 102, "y": -150, "anchor": "bottom-left" } },
-        { "type": "value", "field": "speed", "style": "unit",
-          "at": { "x": 70, "y": -60, "anchor": "bottom-left" } },
-        { "type": "image", "src": "icons/heart.png", "tint": "#f94144",
-          "at": { "x": 330, "y": -152, "anchor": "bottom-left" }, "size": { "width": 24 } },
-        { "type": "text", "text": "HEART RATE", "style": "label",
-          "at": { "x": 362, "y": -150, "anchor": "bottom-left" } },
-        { "type": "value", "field": "heart_rate", "style": "unit",
-          "at": { "x": 330, "y": -60, "anchor": "bottom-left" } },
-        { "type": "image", "src": "icons/cadence.png", "tint": "#ffffffcc",
-          "at": { "x": 570, "y": -152, "anchor": "bottom-left" }, "size": { "width": 24 } },
-        { "type": "text", "text": "CADENCE", "style": "label",
-          "at": { "x": 602, "y": -150, "anchor": "bottom-left" } },
-        { "type": "value", "field": "cadence", "style": "unit",
-          "at": { "x": 570, "y": -60, "anchor": "bottom-left" } },
+        // Speed, heart rate and cadence in the bottom left, in a panel,
+        // from its bottom: a negative y is from the bottom of the group.
+        // Each label has an icon before it, in the color of what it's for.
+        { "type": "group", "style": "panel",
+          "at": { "x": 40, "y": -40, "anchor": "bottom-left" }, "size": { "width": 760, "height": 170 },
+          "children": [
+            { "type": "image", "src": "icons/speedometer.png", "tint": "#ffffffcc",
+              "at": { "x": 30, "y": -112, "anchor": "bottom-left" }, "size": { "width": 24 } },
+            { "type": "text", "text": "SPEED", "style": "label",
+              "at": { "x": 62, "y": -110, "anchor": "bottom-left" } },
+            { "type": "value", "field": "speed", "style": "unit",
+              "at": { "x": 30, "y": -20, "anchor": "bottom-left" } },
+            { "type": "image", "src": "icons/heart.png", "tint": "#f94144",
+              "at": { "x": 290, "y": -112, "anchor": "bottom-left" }, "size": { "width": 24 } },
+            { "type": "text", "text": "HEART RATE", "style": "label",
+              "at": { "x": 322, "y": -110, "anchor": "bottom-left" } },
+            { "type": "value", "field": "heart_rate", "style": "unit",
+              "at": { "x": 290, "y": -20, "anchor": "bottom-left" } },
+            { "type": "image", "src": "icons/cadence.png", "tint": "#ffffffcc",
+              "at": { "x": 530, "y": -112, "anchor": "bottom-left" }, "size": { "width": 24 } },
+            { "type": "text", "text": "CADENCE", "style": "label",
+              "at": { "x": 562, "y": -110, "anchor": "bottom-left" } },
+            { "type": "value", "field": "cadence", "style": "unit",
+              "at": { "x": 530, "y": -20, "anchor": "bottom-left" } }
+          ] },
 
         // Power as an arc in the bottom right, turning from blue to red as
         // it goes up, with the number in its middle.
@@ -106,12 +111,15 @@
           "at": { "x": -144, "y": -92, "anchor": "center" } },
 
         // The ride's name and date in the middle, at the start of the
-        // video, with room for a title of some 50 characters.
-        { "type": "text", "text": "", "style": ["title_card", "panel"],
-          "at": { "x": "50%", "y": "50%", "anchor": "center" }, "size": { "width": 1400, "height": 200 } },
-        { "type": "text", "text": "{title}", "style": "title_card", "font_size": 48,
-          "at": { "x": "50%", "y": "50%", "anchor": "bottom" } },
-        { "type": "text", "text": "{date}", "style": ["title_card", "label"], "font_size": 28,
-          "at": { "x": "50%", "y": "52%", "anchor": "top" } }
+        // video, with room for a title of some 50 characters. The group
+        // shows and fades, and its children with it.
+        { "type": "group", "style": ["title_card", "panel"],
+          "at": { "x": "50%", "y": "50%", "anchor": "center" }, "size": { "width": 1400, "height": 200 },
+          "children": [
+            { "type": "text", "text": "{title}", "font_size": 48,
+              "at": { "x": "50%", "y": "50%", "anchor": "bottom" } },
+            { "type": "text", "text": "{date}", "style": "label", "font_size": 28,
+              "at": { "x": "50%", "y": 121.6, "anchor": "top" } }
+          ] }
     ]
 }
