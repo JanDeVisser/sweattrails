@@ -1,6 +1,6 @@
 # Zwift maps
 
-Status: In progress, on branch feature/zwift-maps
+Status: In review
 
 ## Goal
 
@@ -168,30 +168,37 @@ and `number`.
   `world_pixel()`, and the image is stretched between them: over a
   world 0.1° high, Web Mercator and a plain linear mapping differ by far
   less than a pixel. Pure arithmetic, so a test can check it.
-- **The world's zoom levels**: from 8, where a world is a part of one
-  tile, up to its **native zoom**, the first where an image pixel is no
-  larger than a map pixel (16 for Watopia). Watopia is about 600 tiles
-  at 16, 800 in all, some 20 MB on disk.
+- **The world's zoom levels**: from 8 (`MinWorldZoom`), where a world is
+  a part of one tile, up to its **native zoom**, `native_zoom()`, the
+  zoom nearest the image's resolution (16 for Watopia, where an image
+  pixel is 0.88 of a map pixel). Cut from Zwift's image, Watopia is 905
+  tiles, 21 MB, in 4.4 seconds with the download.
 - **`prepare_zwift_world(storage, world)`**, on the job thread:
-  1. Downloads the image to `tiles/zwift/<cache name>.png.part` with
-     `download()` from `Map.cpp`, and renames it to `.png` when it's
-     complete, as tiles are.
+  1. Downloads the image to `tiles/zwift/<cache name>.png` with
+     `download_file()`, which `Tile::get_tile()` now uses too: to a
+     `.part` file first, renamed when it's complete. An image that's
+     there isn't downloaded again; one that doesn't decode is removed.
   2. Decodes it with raylib's `LoadImageFromMemory()`, which only uses
      the CPU, so it's safe on the job thread. 200 MB in memory for a
      moment, for Watopia.
-  3. For each zoom, writes each tile from `world_tiles()` to
-     `tiles/zwift/<cache name>/<zoom>/<x>/<y>.png`: the image's part,
-     scaled to its place with `ImageResize()`, on the image's background
-     where the tile goes past the image's edge.
+  3. From the native zoom down, scales the whole image to the zoom's
+     size, half the one before, and writes each tile from
+     `world_tiles()` to `tiles/zwift/<cache name>/<zoom>/<x>/<y>.png`:
+     the image's part, on the background where the tile goes past the
+     image's edge. That's quicker than scaling each tile from the
+     8192-pixel original.
   4. Last, writes `tiles/zwift/<cache name>/world.json` with the native
      zoom and the background color, the image's top left pixel (the
      sea). That file is what says the tiles are all there: a cut that
      was interrupted, by quitting, is done again next time.
 - A new job, **`JobType::PrepareZwiftWorld`**, runs it, and a new
-  notification, **`ZwiftWorldReady { cache_name, error }`**, says it's
-  done. A failure is logged with `warning()`, and the map stays on
-  OpenStreetMap. A world that failed isn't tried again until the app
-  restarts.
+  notification, **`ZwiftWorldReady { cache_name, map, error }`**, says
+  it's done. `SweatTrails::prepare_zwift_world()` schedules it, unless
+  the world is in `zwift_preparing` or `zwift_failed`. A failure is
+  logged with `warning()`, and the map stays on OpenStreetMap. A world
+  that failed isn't tried again until the app restarts.
+- `cut_world()` reads `world.json`, and gives nothing without it, or
+  with a zoom or a color it can't use.
 
 ### The map's source (`Map.h`, `ActivityMap`)
 
@@ -199,12 +206,14 @@ and `number`.
 // Where the activity map's tiles come from.
 struct MapSource {
     fs::path    dir;           // The tiles' cache: tiles_dir, or a world's
-    char const *attribution;   // OsmAttribution or "Map © Zwift"
+    char const *attribution;   // OsmAttribution or ZwiftAttribution
     bool        downloads;     // OSM's are downloaded; a world's are all there
     u8          max_zoom;      // MaxMapZoom, or the world's native zoom
     Color       background;    // LIGHTGRAY, or the world's sea
 };
 ```
+
+`world_source(WorldMap)` in `Zwift.h` makes a world's.
 
 - `Tile::get_cached_tile()` takes the directory instead of the
   storage, so it reads either cache.
@@ -217,8 +226,12 @@ struct MapSource {
 - With a world's source, `view_changed()` doesn't download: a tile
   that isn't cached is past the world's edge, and is drawn in the
   background color. Above the native zoom, it loads the native tile
-  that holds the one wanted, so that `cover()` draws it scaled up, as it
-  draws a placeholder now.
+  that holds the one wanted, `Tile::ancestor()`, so that `cover()`
+  draws it scaled up, as it draws a placeholder now.
+- `ActivityMap::world_ready()` changes the source with
+  `change_source()`: it drops the downloads and tiles of the one before,
+  and takes a new `map_id`, so that tiles still arriving for
+  OpenStreetMap are dropped.
 - `draw_attribution()` draws the source's attribution.
 
 ### Settings and files
