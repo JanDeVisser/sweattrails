@@ -84,9 +84,9 @@ bool has_authorization(HttpRequest const &request)
     return std::ranges::any_of(request.headers, [](std::string const &header) { return header.starts_with("Authorization:"); });
 }
 
-WahooTokens fresh_tokens()
+OAuthTokens fresh_tokens()
 {
-    return WahooTokens {
+    return OAuthTokens {
         .access_token = "access",
         .refresh_token = "refresh",
         .expires_at = Now + 7200,
@@ -95,7 +95,7 @@ WahooTokens fresh_tokens()
 }
 
 // A Wahoo client logged in with `tokens`, which it saves in `dir`.
-Wahoo logged_in(FakeWahoo &fake, TempDir const &dir, std::optional<WahooTokens> tokens = fresh_tokens())
+Wahoo logged_in(FakeWahoo &fake, TempDir const &dir, std::optional<OAuthTokens> tokens = fresh_tokens())
 {
     return Wahoo {
         .fetch = fake.fetch(),
@@ -169,7 +169,7 @@ void test_tokens_file()
         CHECK_EQ(tokens->access_token, "access");
         CHECK_EQ(tokens->refresh_token, "refresh");
         CHECK_EQ(tokens->expires_at, Now + 7200);
-        CHECK_EQ(tokens->code_verifier, "verifier");
+        CHECK_EQ(tokens->code_verifier.value_or(""), "verifier");
     }
 
     MUST(write_file_by_name(file.string(), std::string_view { "{ not json" }));
@@ -245,7 +245,7 @@ void test_exchange_code()
         CHECK_EQ(saved->access_token, "new-access");
         CHECK_EQ(saved->refresh_token, "new-refresh");
         CHECK_EQ(saved->expires_at, Now + 7200);
-        CHECK_EQ(saved->code_verifier, "the-verifier");
+        CHECK_EQ(saved->code_verifier.value_or(""), "the-verifier");
     }
     CHECK(wahoo.tokens.has_value() && wahoo.tokens->access_token == "new-access");
 }
@@ -343,7 +343,7 @@ void test_refreshed_tokens_are_saved_before_they_are_used()
     tokens.expires_at = Now + 30;
     auto wahoo = logged_in(fake, dir, tokens);
     fake.answer("/oauth/token", { .status = 200, .body = token_response("access-2", "refresh-2") });
-    std::optional<WahooTokens> saved_at_use { };
+    std::optional<OAuthTokens> saved_at_use { };
     wahoo.fetch = [&fake, &saved_at_use, file = wahoo.tokens_file, fetch = fake.fetch()](HttpRequest const &request) {
         if (request.url.contains("/v1/workouts")) {
             saved_at_use = read_tokens(file);
