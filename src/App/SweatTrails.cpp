@@ -693,7 +693,7 @@ void start_render(pSweatTrails const &sweattrails, RenderJob job)
         std::move(job),
         [](std::string_view name) { return SweatTrails::the()->find_font(name); },
         SweatTrails::image_finder(),
-        [](Tile const &tile) { return tile.get_cached_tile(SweatTrails::the()->storage); },
+        [](Tile const &tile) { return tile.get_cached_tile(SweatTrails::the()->storage.tiles_dir); },
         [](pTileDownload const &download) { SweatTrails::the()->schedule<JobType::DownloadTiles>(download); });
     if (!render) {
         sweattrails->set_status(std::format("Couldn't render the overlay: {}", render.error()));

@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <expected>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -35,6 +36,8 @@
 
 namespace ST {
 
+namespace fs = std::filesystem;
+
 struct Storage;
 
 struct Tile {
@@ -44,14 +47,16 @@ struct Tile {
 
     static Tile for_coordinates(Coordinates const &pos, u8 zoom);
 
-    [[nodiscard]] Box                                   box() const;
-    [[nodiscard]] Coordinates                           coordinates() const;
-    [[nodiscard]] float                                 north() const { return box().north(); }
-    [[nodiscard]] float                                 south() const { return box().south(); }
-    [[nodiscard]] float                                 east() const { return box().east(); }
-    [[nodiscard]] float                                 west() const { return box().west(); }
-    [[nodiscard]] bool                                  contains(Coordinates const &) const;
-    [[nodiscard]] std::expected<std::string, LibCError> get_cached_tile(Storage const &storage) const;
+    [[nodiscard]] Box         box() const;
+    [[nodiscard]] Coordinates coordinates() const;
+    [[nodiscard]] float       north() const { return box().north(); }
+    [[nodiscard]] float       south() const { return box().south(); }
+    [[nodiscard]] float       east() const { return box().east(); }
+    [[nodiscard]] float       west() const { return box().west(); }
+    [[nodiscard]] bool        contains(Coordinates const &) const;
+    // The tile from a cache of tiles in `<zoom>/<x>/<y>.png`: OpenStreetMap's,
+    // the storage's tiles_dir, or a Zwift world's.
+    [[nodiscard]] std::expected<std::string, LibCError> get_cached_tile(fs::path const &cache) const;
     [[nodiscard]] std::string                           to_string() const;
 
     // The cached tile, or else downloads it. Only call this on the job

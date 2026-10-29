@@ -83,9 +83,9 @@ Box Tile::box() const
 // TODO: This uses std::filesystem calls that throw, which end the app on
 // e.g. an unreadable directory. Use the error_code overloads, as the job
 // thread code in Storage does.
-std::expected<std::string, LibCError> Tile::get_cached_tile(Storage const &storage) const
+std::expected<std::string, LibCError> Tile::get_cached_tile(fs::path const &cache) const
 {
-    auto const file_name = (storage.tiles_dir / std::format("{}/{}/{}.png", zoom, x, y)).string();
+    auto const file_name = (cache / std::format("{}/{}/{}.png", zoom, x, y)).string();
     if (!fs::exists(file_name)) {
         return std::unexpected(LibCError { ENOENT });
     }
@@ -153,7 +153,7 @@ std::expected<void, std::variant<CURLcode, LibCError>> download(std::string url,
 
 std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) const
 {
-    if (auto cached = get_cached_tile(storage); cached) {
+    if (auto cached = get_cached_tile(storage.tiles_dir); cached) {
         return cached;
     }
     auto const url = std::format("https://tile.openstreetmap.org/{}/{}/{}.png", zoom, x, y);
@@ -191,7 +191,7 @@ std::expected<std::string, LibCError> Tile::get_tile(Storage const &storage) con
         return std::unexpected(LibCError { "Could not cache tile `{}`: {}", url, message });
     }
     trace(Map, "fetched tile {}", url);
-    return get_cached_tile(storage);
+    return get_cached_tile(storage.tiles_dir);
 }
 
 std::string Tile::to_string() const

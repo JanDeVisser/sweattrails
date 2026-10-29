@@ -220,12 +220,12 @@ void test_cached_tile()
     Tile const missing { .x = 4578, .y = 5980, .zoom = 14 };
     cache.put(cached, "cached png");
 
-    auto const hit = cached.get_cached_tile(cache.storage);
+    auto const hit = cached.get_cached_tile(cache.storage.tiles_dir);
     CHECK(hit.has_value());
     if (hit) {
         CHECK_EQ(*hit, "cached png");
     }
-    CHECK(!missing.get_cached_tile(cache.storage).has_value());
+    CHECK(!missing.get_cached_tile(cache.storage.tiles_dir).has_value());
 }
 
 // The job fetches with get_tile(). A tile that a cancelled download

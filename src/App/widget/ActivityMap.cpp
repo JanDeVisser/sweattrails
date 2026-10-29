@@ -127,7 +127,7 @@ void ActivityMap::view_changed()
         if (loaded(tile) != nullptr || failed.contains(tile)) {
             return true;
         }
-        if (auto png = tile.get_cached_tile(SweatTrails::the()->storage); png) {
+        if (auto png = tile.get_cached_tile(SweatTrails::the()->storage.tiles_dir); png) {
             load_tile(tile, *png);
             return true;
         }
