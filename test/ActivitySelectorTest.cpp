@@ -139,6 +139,10 @@ void test_activity_entry()
     // Indoors, without a distance: none.
     auto const zwift = activity_entry(activity(storage, "Zwift", 0, 0, 41, 7));
     CHECK_EQ(zwift.columns, (std::vector<std::string> { "", "41:07" }));
+    // A day under 10 is padded, so that the times line up.
+    auto early = activity(storage, "Early", 1000, 0, 5, 0);
+    early.segment.start_time.day_of_month = 4;
+    CHECK_EQ(activity_entry(early).prefix, "Tue  4  09:05");
 }
 
 // Typing matches the title, not the day, time, distance or duration.
