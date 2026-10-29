@@ -27,7 +27,7 @@ OverlayPreview::OverlayPreview(pWidget const &parent)
     , tiles(
           [](Tile const &tile) { return tile.get_cached_tile(SweatTrails::the()->storage); },
           [](pTileDownload const &download) { SweatTrails::the()->schedule<JobType::DownloadTiles>(download); })
-    , renderer([](std::string_view name) { return SweatTrails::the()->find_font(name); })
+    , renderer([](std::string_view name) { return SweatTrails::the()->find_font(name); }, SweatTrails::image_finder())
 {
     renderer.set_tiles(&tiles, 1);
     policy = SizePolicy::Hide;
@@ -71,7 +71,7 @@ void OverlayPreview::layout_loaded()
 {
     renderer.clear();
     if (file && file->layout) {
-        renderer.set_layout(*file->layout, file->path.filename().string());
+        renderer.set_layout(*file->layout, file->path);
     }
 }
 

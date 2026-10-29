@@ -343,10 +343,103 @@ void test_grade_graph()
     CHECK_EQ(show(graph_columns(source, grade, unit_of(OverlayField::grade), 50, 4)), "10 10 10 10");
 }
 
+// The picture's own size, a side and the other in its aspect ratio, or
+// both as given.
+void test_image_size()
+{
+    auto const    show_size = [](Vector2 v) { return std::format("{} {}", v.x, v.y); };
+    Vector2 const logo { 400, 100 };
+    CHECK_EQ(show_size(image_size(logo, { }, { })), "400 100");
+    CHECK_EQ(show_size(image_size(logo, 200.0f, { })), "200 50");
+    CHECK_EQ(show_size(image_size(logo, { }, 50.0f)), "200 50");
+    CHECK_EQ(show_size(image_size(logo, 30.0f, 30.0f)), "30 30");
+    // A picture of nothing has no aspect ratio.
+    CHECK_EQ(show_size(image_size(Vector2 { }, 20.0f, { })), "20 0");
+}
+
+// As big as fits, unstretched, where the anchor is.
+void test_fit_picture()
+{
+    Rectangle const square { 10, 20, 100, 100 };
+    Vector2 const   wide { 400, 100 };
+    Vector2 const   tall { 50, 200 };
+    CHECK_EQ(show(fit_picture(square, wide, Anchor::TopLeft)), "10 20 100 25");
+    CHECK_EQ(show(fit_picture(square, wide, Anchor::Center)), "10 57.5 100 25");
+    CHECK_EQ(show(fit_picture(square, wide, Anchor::BottomRight)), "10 95 100 25");
+    CHECK_EQ(show(fit_picture(square, tall, Anchor::TopLeft)), "10 20 25 100");
+    CHECK_EQ(show(fit_picture(square, tall, Anchor::Right)), "85 20 25 100");
+    // Bigger than the picture: scaled up, still unstretched.
+    CHECK_EQ(show(fit_picture(Rectangle { 0, 0, 800, 100 }, wide, Anchor::Center)), "200 0 400 100");
+    CHECK_EQ(show(fit_picture(square, Vector2 { }, Anchor::Center)), "10 20 0 0");
+}
+
+// A wide picture in a tall box, and a tall one in a wide box, at each
+// anchor; and a box the padding left nothing of.
+void test_fit_picture_anchors()
+{
+    Rectangle const tall_box { 0, 0, 40, 100 };
+    Vector2 const   wide { 80, 40 };
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::TopLeft)), "0 0 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::Top)), "0 0 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::TopRight)), "0 0 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::Left)), "0 40 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::Center)), "0 40 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::Right)), "0 40 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::BottomLeft)), "0 80 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::Bottom)), "0 80 40 20");
+    CHECK_EQ(show(fit_picture(tall_box, wide, Anchor::BottomRight)), "0 80 40 20");
+
+    Rectangle const wide_box { 0, 0, 100, 40 };
+    Vector2 const   tall { 40, 80 };
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::TopLeft)), "0 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::Top)), "40 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::TopRight)), "80 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::Left)), "0 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::Center)), "40 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::Right)), "80 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::BottomLeft)), "0 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::Bottom)), "40 0 20 40");
+    CHECK_EQ(show(fit_picture(wide_box, tall, Anchor::BottomRight)), "80 0 20 40");
+
+    // A box of 32 by 24 with a padding of 16: content_box() leaves no
+    // room, and nothing is drawn, rather than a picture turned over.
+    auto const content = content_box(Rectangle { 0, 0, 32, 24 }, 16);
+    auto const shown = fit_picture(content, Vector2 { 96, 96 }, Anchor::Center);
+    CHECK(shown.width == 0 && shown.height == 0);
+}
+
+}
+
+// The panel and the picture in it, at a scale of 2, in a canvas of 1000
+// by 500: one side, both sides, and neither.
+void test_image_box()
+{
+    Vector2 const logo { 400, 100 };
+    auto const    image = [](std::optional<float> width, std::optional<float> height, Placement at, float padding) {
+        return ImageElement { .at = at, .panel = Panel { .padding = padding }, .width = width, .height = height };
+    };
+    auto const top_left = Placement { .x = { .value = 10 }, .y = { .value = 20 } };
+    auto const box = [&logo](ImageElement const &i) {
+        auto const b = image_box(i, logo, Vector2 { 1000, 500 }, 2);
+        return std::format("{} | {}", show(b.panel), show(b.picture));
+    };
+    // A side: the content is 200 by 50, and 20 px of padding around it.
+    CHECK_EQ(box(image(200.0f, { }, top_left, 10)), "20 40 440 140 | 40 60 400 100");
+    // Both: that's the panel, and the picture fits inside the padding.
+    CHECK_EQ(box(image(100.0f, 100.0f, Placement { }, 10)), "0 0 200 200 | 20 20 160 40");
+    // Neither: the picture's own size, from the bottom right.
+    auto const bottom_right = Placement { .x = { .value = -10 }, .y = { .value = -10 }, .anchor = Anchor::BottomRight };
+    CHECK_EQ(box(image({ }, { }, bottom_right, 0)), "180 280 800 200 | 180 280 800 200");
+    // Both, with the anchor: the picture sits at the box's bottom right.
+    CHECK_EQ(box(image(100.0f, 100.0f, bottom_right, 10)), "780 280 200 200 | 800 420 160 40");
 }
 
 int main()
 {
+    test_image_box();
+    test_image_size();
+    test_fit_picture();
+    test_fit_picture_anchors();
     test_content_box();
     test_box_size();
     test_shown_bounds();

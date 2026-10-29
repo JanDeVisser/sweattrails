@@ -29,19 +29,19 @@ constexpr int Supersampling = 2;
 
 }
 
-OverlayRender::OverlayRender(RenderJob job, FontFinder find, TileFetcher cached, TileScheduler schedule)
+OverlayRender::OverlayRender(RenderJob job, FontFinder find, ImageFinder find_image, TileFetcher cached, TileScheduler schedule)
     : m_job(std::move(job))
     , m_source(m_job.activity->activity)
     , m_tiles(std::move(cached), std::move(schedule))
-    , m_renderer(std::move(find))
+    , m_renderer(std::move(find), std::move(find_image))
 {
     m_frames = frame_count(m_job.range, m_job.settings.fps);
     m_renderer.set_tiles(&m_tiles, Supersampling);
 }
 
-std::expected<std::unique_ptr<OverlayRender>, std::string> OverlayRender::start(RenderJob job, FontFinder find, TileFetcher cached, TileScheduler schedule)
+std::expected<std::unique_ptr<OverlayRender>, std::string> OverlayRender::start(RenderJob job, FontFinder find, ImageFinder find_image, TileFetcher cached, TileScheduler schedule)
 {
-    std::unique_ptr<OverlayRender> render { new OverlayRender(std::move(job), std::move(find), std::move(cached), std::move(schedule)) };
+    std::unique_ptr<OverlayRender> render { new OverlayRender(std::move(job), std::move(find), std::move(find_image), std::move(cached), std::move(schedule)) };
     auto const                    &job_ = render->m_job;
     render->m_renderer.set_layout(job_.layout, job_.layout_file);
     if (render->m_renderer.error()) {

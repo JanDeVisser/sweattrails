@@ -84,7 +84,7 @@ void test_without_ffmpeg()
     without_crashing("test_without_ffmpeg", []() {
         Test::TempDir dir { "render-start-ffmpeg" };
         auto const    found = [](std::string_view) { return std::optional<fs::path> { "/nowhere/font.ttf" }; };
-        auto const    render = OverlayRender::start(job(dir.path / "out.mov", "/nowhere/ffmpeg"), found, no_tiles, no_downloads);
+        auto const    render = OverlayRender::start(job(dir.path / "out.mov", "/nowhere/ffmpeg"), found, ImageFinder { }, no_tiles, no_downloads);
         CHECK(!render.has_value());
         if (!render) {
             CHECK(render.error().starts_with("Can't start ffmpeg"));
@@ -97,7 +97,7 @@ void test_without_a_font()
     without_crashing("test_without_a_font", []() {
         Test::TempDir dir { "render-start-font" };
         auto const    missing = [](std::string_view) { return std::optional<fs::path> { }; };
-        auto const    render = OverlayRender::start(job(dir.path / "out.mov", "/bin/sh"), missing, no_tiles, no_downloads);
+        auto const    render = OverlayRender::start(job(dir.path / "out.mov", "/bin/sh"), missing, ImageFinder { }, no_tiles, no_downloads);
         CHECK(!render.has_value());
         if (!render) {
             CHECK(render.error().starts_with("cycling-basic.overlay.json: "));

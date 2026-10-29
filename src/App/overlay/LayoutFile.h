@@ -49,6 +49,20 @@ using FontFinder = std::function<std::optional<fs::path>(std::string_view name)>
 // element that uses it.
 std::expected<std::map<std::string, fs::path>, LayoutError> layout_fonts(OverlayLayout const &layout, FontFinder const &find);
 
+// Where a layout's picture is: `src` as the layout says it, and the
+// folder the layout is in.
+using ImageFinder = std::function<std::optional<fs::path>(std::string_view src, fs::path const &layout_dir)>;
+
+// An absolute `src` as it is; else next to the layout, or in the built-in
+// layouts' folder, as `exists` says. None if neither has it.
+std::optional<fs::path> find_image(std::string_view src, fs::path const &layout_dir, fs::path const &builtin_dir,
+    std::function<bool(fs::path const &)> const &exists);
+
+// The picture files of the layout's images, by their `src`, as `find`
+// finds them. One it doesn't find is an error, with the first element
+// that shows it.
+std::expected<std::map<std::string, fs::path>, LayoutError> layout_images(OverlayLayout const &layout, fs::path const &layout_dir, ImageFinder const &find);
+
 struct LayoutEntry {
     std::string name { };
     fs::path    path { };

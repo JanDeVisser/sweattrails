@@ -149,6 +149,30 @@ void test_builtin_layout(std::string_view name, size_t elements)
             CHECK(shipped(font));
         }
     }
+    // And its pictures, as the app finds them.
+    auto const builtin = fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays";
+    auto const images = layout_images(*file.layout, builtin, [&builtin](std::string_view src, fs::path const &dir) {
+        return find_image(src, dir, builtin, [](fs::path const &p) { return fs::is_regular_file(p); });
+    });
+    CHECK_EQ(images ? std::string { "ok" } : images.error().to_string(), "ok");
+}
+
+// An icon before each of the dashboard's labels, tinted.
+void test_dashboard_icons()
+{
+    LayoutFile file { fs::path { SWEATTRAILS_SOURCE_DIR } / "share" / "overlays" / "cycling-dashboard.overlay.json" };
+    CHECK(file.reload_if_changed());
+    if (!file.layout) {
+        return;
+    }
+    std::vector<std::string> icons;
+    for (auto const &element : file.layout->elements) {
+        if (auto const *image = std::get_if<ImageElement>(&element); image) {
+            icons.push_back(std::format("{} {} #{:02x}{:02x}{:02x}{:02x}", image->src, image->width.value_or(0),
+                image->tint.r, image->tint.g, image->tint.b, image->tint.a));
+        }
+    }
+    CHECK_EQ(icons, (std::vector<std::string> { "icons/speedometer.png 24 #ffffffcc", "icons/heart.png 24 #f94144ff", "icons/cadence.png 24 #ffffffcc", "icons/bolt.png 24 #f9c74fff" }));
 }
 
 // The dashboard's map, as the spec's Version 1 scope has it: a circle,
@@ -256,7 +280,7 @@ void test_error_names_file_element_and_property()
     put(path, R"({ "elements": [
         // A comment, as layouts have them.
         { "type": "text", "text": "a" },
-        { "type": "image" },
+        { "type": "group" },
         { "type": "value", "field": "speed", "colour": "#ffffff" }
     ] })");
     LayoutFile file { path };
@@ -294,7 +318,7 @@ OverlayLayout decoded(std::string_view json)
 void test_layout_fonts()
 {
     auto const               layout = decoded(R"({ "elements": [
-        { "type": "image" },
+        { "type": "group" },
         { "type": "text", "text": "a", "font": "A.ttf" },
         { "type": "value", "field": "speed", "font": "A.ttf", "unit_style": { "font": "B.ttf" } }
     ] })");
@@ -330,17 +354,94 @@ void test_layout_fonts()
 }
 }
 
+// A picture next to the layout comes first, then a built-in one; an
+// absolute path is what it says.
+void test_find_image()
+{
+    std::set<fs::path> const files { "/mine/logo.png", "/builtin/icons/heart.png", "/builtin/logo.png", "/elsewhere/me.jpg" };
+    auto const               exists = [&files](fs::path const &p) { return files.contains(p); };
+    auto const               find = [&exists](std::string_view src) {
+        auto const found = find_image(src, "/mine", "/builtin", exists);
+        return found ? found->string() : std::string { "none" };
+    };
+    CHECK_EQ(find("logo.png"), "/mine/logo.png");
+    CHECK_EQ(find("icons/heart.png"), "/builtin/icons/heart.png");
+    CHECK_EQ(find("/elsewhere/me.jpg"), "/elsewhere/me.jpg");
+    CHECK_EQ(find("/mine/me.jpg"), "none");
+    CHECK_EQ(find("icons/bolt.png"), "none");
+}
+
+// Each picture is looked for once, and a missing one names the element
+// that shows it.
+void test_layout_images()
+{
+    auto const               layout = decoded(R"({ "elements": [
+        { "type": "text", "text": "a" },
+        { "type": "image", "src": "icons/heart.png" },
+        { "type": "image", "src": "icons/heart.png" },
+        { "type": "image", "src": "logo.png" }
+    ] })");
+    std::vector<std::string> asked;
+    auto const               find = [&asked](std::string_view src, fs::path const &dir) -> std::optional<fs::path> {
+        asked.push_back(std::format("{} in {}", src, dir.string()));
+        return (src == "logo.png") ? std::nullopt : std::optional { dir / src };
+    };
+    auto const images = layout_images(layout, "/layouts", find);
+    CHECK(!images.has_value());
+    if (!images) {
+        CHECK_EQ(images.error().to_string(),
+            "element 4: the picture `logo.png` isn't there: it's looked for next to the layout, and with the built-in layouts");
+    }
+    CHECK_EQ(asked, (std::vector<std::string> { "icons/heart.png in /layouts", "logo.png in /layouts" }));
+
+    auto const found = layout_images(decoded(R"({ "elements": [ { "type": "image", "src": "a.png" } ] })"), "/layouts", find);
+    CHECK(found && found->at("a.png") == fs::path { "/layouts/a.png" });
+}
+
+// A path up from the layout's folder is next to the layout too; an
+// absolute one isn't looked for anywhere else.
+void test_find_image_paths()
+{
+    std::set<fs::path> const files { "/mine/../shared/logo.png", "/builtin/logo.png" };
+    auto const               exists = [&files](fs::path const &p) { return files.contains(p); };
+    auto const               find = [&exists](std::string_view src) {
+        auto const found = find_image(src, "/mine", "/builtin", exists);
+        return found ? found->string() : std::string { "none" };
+    };
+    CHECK_EQ(find("../shared/logo.png"), "/mine/../shared/logo.png");
+    CHECK_EQ(find("/logo.png"), "none");
+    CHECK_EQ(find(""), "none");
+}
+
+// Without a finder, as a render's test has, a picture isn't there; a
+// layout without pictures doesn't need one.
+void test_layout_images_without_finder()
+{
+    auto const without = layout_images(decoded(R"({ "elements": [ { "type": "text", "text": "a" } ] })"), "/layouts", ImageFinder { });
+    CHECK(without && without->empty());
+    auto const with = layout_images(decoded(R"({ "elements": [ { "type": "image", "src": "a.png" } ] })"), "/layouts", ImageFinder { });
+    CHECK(!with.has_value());
+    if (!with) {
+        CHECK(with.error().to_string().starts_with("element 1: the picture `a.png` isn't there"));
+    }
+}
+
 int main()
 {
+    test_find_image_paths();
+    test_layout_images_without_finder();
     test_load_and_reload();
     test_errors_and_recovering();
     test_overlay_layouts();
     test_chosen_layout();
     test_builtin_layout("cycling-basic", 11);
     test_builtin_layout("running-basic", 9);
-    test_builtin_layout("cycling-dashboard", 20);
+    test_builtin_layout("cycling-dashboard", 24);
     test_dashboard_map();
     test_dashboard_title_card();
+    test_dashboard_icons();
+    test_find_image();
+    test_layout_images();
     test_layout_fonts();
     test_missing_file();
     test_error_names_file_element_and_property();

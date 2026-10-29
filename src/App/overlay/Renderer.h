@@ -27,11 +27,16 @@
 namespace ST {
 
 struct OverlayRenderer {
-    explicit OverlayRenderer(FontFinder find);
+    explicit OverlayRenderer(FontFinder find, ImageFinder find_image = { });
+    ~OverlayRenderer(); // Unloads the pictures
+    OverlayRenderer(OverlayRenderer const &) = delete;
+    OverlayRenderer &operator=(OverlayRenderer const &) = delete;
 
-    // The layout to draw, from the file called `file_name`, which starts the
-    // errors. Finds its fonts: one that isn't there is the error.
-    void set_layout(OverlayLayout const &layout, std::string_view file_name);
+    // The layout to draw, from `file`, whose name starts the errors, and
+    // next to which its pictures are looked for first. Finds its fonts and
+    // its pictures, and decodes the pictures: one that isn't there, or
+    // doesn't decode, is the error.
+    void set_layout(OverlayLayout const &layout, fs::path const &file);
     void clear();
 
     [[nodiscard]] OverlayLayout const *layout() const { return m_layout ? &*m_layout : nullptr; }
@@ -53,6 +58,7 @@ struct OverlayRenderer {
 
 private:
     FontFinder                                   m_find;
+    ImageFinder                                  m_find_image;
     std::optional<OverlayLayout>                 m_layout { };
     std::string                                  m_file_name { };
     std::optional<std::string>                   m_error { };
@@ -61,26 +67,33 @@ private:
     OverlayTiles                                *m_tiles { nullptr };
     float                                        m_detail { 1 };
     float                                        m_scale { 0 };
-    float                                        m_alpha { 1 };    // Of the element being drawn, as it fades
-    std::map<std::string, std::filesystem::path> m_font_paths { }; // By the layout's name for them
+    float                                        m_alpha { 1 };     // Of the element being drawn, as it fades
+    std::map<std::string, std::filesystem::path> m_font_paths { };  // By the layout's name for them
+    std::map<std::string, std::filesystem::path> m_image_paths { }; // By their src
+    std::map<std::string, Image>                 m_decoded { };     // By their src, until made a texture
+    std::map<std::string, Texture2D>             m_pictures { };    // Made when first drawn, by their src
 
-    void                draw_element(OverlayElement const &element, FieldValues const &values, Rectangle const &area);
-    void                draw(TextElement const &text, FieldValues const &values, Rectangle const &area);
-    void                draw(ValueElement const &value, FieldValues const &values, Rectangle const &area);
-    void                draw(GaugeElement const &gauge, FieldValues const &values, Rectangle const &area);
-    void                draw(GraphElement const &graph, FieldValues const &values, Rectangle const &area);
-    void                draw(ProfileElement const &profile, FieldValues const &values, Rectangle const &area);
-    void                draw(MapElement const &map, FieldValues const &values, Rectangle const &area);
-    Rectangle           screen_box(Placement const &at, Vector2 size, Rectangle const &area) const;
-    Rectangle           draw_panel(Panel const &panel, Rectangle const &box) const;
-    void                draw_background(Panel const &panel, ClipShape const &shape) const;
-    void                draw_border(Panel const &panel, ClipShape const &shape) const;
-    void                draw_tiles(MapElement const &map, MapTransform const &transform, ClipShape const &clip);
-    void                draw_attribution(MapElement const &map, Rectangle const &panel, Rectangle const &area);
-    void                draw_trace(std::vector<Vector2> const &points, Trace const &trace, float bottom) const;
-    std::optional<Font> font(TextStyle const &style, size_t element);
-    [[nodiscard]] Color faded(Color color) const;
-    void                draw_text(Font const &font, std::string_view text, Vector2 at, TextStyle const &style) const;
+    void                     draw_element(OverlayElement const &element, FieldValues const &values, Rectangle const &area);
+    void                     draw(TextElement const &text, FieldValues const &values, Rectangle const &area);
+    void                     draw(ValueElement const &value, FieldValues const &values, Rectangle const &area);
+    void                     draw(GaugeElement const &gauge, FieldValues const &values, Rectangle const &area);
+    void                     draw(GraphElement const &graph, FieldValues const &values, Rectangle const &area);
+    void                     draw(ProfileElement const &profile, FieldValues const &values, Rectangle const &area);
+    void                     draw(MapElement const &map, FieldValues const &values, Rectangle const &area);
+    void                     draw(ImageElement const &image, FieldValues const &values, Rectangle const &area);
+    Rectangle                screen_box(Placement const &at, Vector2 size, Rectangle const &area) const;
+    Rectangle                draw_panel(Panel const &panel, Rectangle const &box) const;
+    void                     draw_background(Panel const &panel, ClipShape const &shape) const;
+    void                     draw_border(Panel const &panel, ClipShape const &shape) const;
+    void                     draw_tiles(MapElement const &map, MapTransform const &transform, ClipShape const &clip);
+    void                     draw_attribution(MapElement const &map, Rectangle const &panel, Rectangle const &area);
+    void                     draw_trace(std::vector<Vector2> const &points, Trace const &trace, float bottom) const;
+    std::optional<Font>      font(TextStyle const &style, size_t element);
+    bool                     decode_pictures(OverlayLayout const &layout);
+    std::optional<Texture2D> picture(ImageElement const &image);
+    void                     unload_pictures();
+    [[nodiscard]] Color      faded(Color color) const;
+    void                     draw_text(Font const &font, std::string_view text, Vector2 at, TextStyle const &style) const;
 };
 
 }

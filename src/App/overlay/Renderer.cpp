@@ -8,6 +8,7 @@
 #include <format>
 
 #include <overlay/ElevationProfile.h>
+#include <overlay/Picture.h>
 #include <overlay/Renderer.h>
 #include <overlay/Shapes.h>
 #include <overlay/TrackMap.h>
@@ -52,33 +53,84 @@ MapFrame map_frame(MapElement const &map, FieldValues const &values, Rectangle c
 
 }
 
-OverlayRenderer::OverlayRenderer(FontFinder find)
+OverlayRenderer::OverlayRenderer(FontFinder find, ImageFinder find_image)
     : m_find(std::move(find))
+    , m_find_image(std::move(find_image))
 {
 }
 
 // Finds the layout's fonts once, rather than on every frame. A font that
 // isn't in any of the font directories is an error, as a mistake in the
 // file is.
-void OverlayRenderer::set_layout(OverlayLayout const &layout, std::string_view file_name)
+void OverlayRenderer::set_layout(OverlayLayout const &layout, fs::path const &file)
 {
     clear();
     m_layout = layout;
-    m_file_name = file_name;
+    m_file_name = file.filename().string();
     auto paths = layout_fonts(layout, m_find);
     if (!paths) {
         m_error = std::format("{}: {}", m_file_name, paths.error().to_string());
         return;
     }
     m_font_paths = std::move(*paths);
+    auto images = layout_images(layout, file.parent_path(), m_find_image);
+    if (!images) {
+        m_error = std::format("{}: {}", m_file_name, images.error().to_string());
+        return;
+    }
+    m_image_paths = std::move(*images);
+    if (!decode_pictures(layout)) {
+        return;
+    }
     m_fonts.set_codepoints(layout_codepoints(layout));
+}
+
+// Here rather than when first drawn, so that a picture that doesn't
+// decode keeps a render from starting, also one that shows only later in
+// the video. Decoding needs no GL context; making a texture does.
+bool OverlayRenderer::decode_pictures(OverlayLayout const &layout)
+{
+    for (auto const &element : layout.elements) {
+        auto const *image = std::get_if<ImageElement>(&element);
+        if (image == nullptr || m_decoded.contains(image->src)) {
+            continue;
+        }
+        auto const &path = m_image_paths.at(image->src);
+        auto        decoded = decode_picture(path);
+        if (!decoded) {
+            m_error = std::format("{}: element {}: the picture `{}` can't be loaded from `{}`",
+                m_file_name, image->number, image->src, path.string());
+            return false;
+        }
+        m_decoded[image->src] = *decoded;
+    }
+    return true;
+}
+
+OverlayRenderer::~OverlayRenderer()
+{
+    unload_pictures();
+}
+
+void OverlayRenderer::unload_pictures()
+{
+    for (auto const &[src, texture] : m_pictures) {
+        UnloadTexture(texture);
+    }
+    m_pictures.clear();
+    for (auto const &[src, image] : m_decoded) {
+        UnloadImage(image);
+    }
+    m_decoded.clear();
 }
 
 void OverlayRenderer::clear()
 {
+    unload_pictures();
     m_layout.reset();
     m_error.reset();
     m_font_paths.clear();
+    m_image_paths.clear();
     m_fonts.clear();
     m_scale = 0;
 }
@@ -482,6 +534,50 @@ void OverlayRenderer::draw_attribution(MapElement const &map, Rectangle const &p
     auto const measured = MeasureTextEx(*f, OsmAttribution, static_cast<float>(f->baseSize), 0);
     auto const box = attribution_box(panel, map.clip, measured, AttributionGap * m_scale, area);
     draw_text(*f, OsmAttribution, Vector2 { .x = box.x, .y = box.y }, map.attribution);
+}
+
+// Made a texture the first time it's drawn, as there's no GL context to
+// make it in before, in tests. One the GPU won't take, as one too big for
+// it, is an error from the next frame on, as a font is.
+std::optional<Texture2D> OverlayRenderer::picture(ImageElement const &image)
+{
+    if (auto const it = m_pictures.find(image.src); it != m_pictures.end()) {
+        return it->second;
+    }
+    auto const decoded = m_decoded.find(image.src);
+    if (decoded == m_decoded.end()) {
+        return { };
+    }
+    auto texture = LoadTextureFromImage(decoded->second);
+    UnloadImage(decoded->second);
+    m_decoded.erase(decoded);
+    if (texture.id == 0) {
+        if (!m_error) {
+            m_error = std::format("{}: element {}: the picture `{}` can't be made a texture",
+                m_file_name, image.number, image.src);
+        }
+        return { };
+    }
+    // Smooth also much smaller than its file, as an icon is.
+    GenTextureMipmaps(&texture);
+    SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
+    m_pictures[image.src] = texture;
+    return texture;
+}
+
+// The picture fits inside the panel's padding without stretching: see
+// image_box().
+void OverlayRenderer::draw(ImageElement const &image, FieldValues const &, Rectangle const &area)
+{
+    auto const texture = picture(image);
+    if (!texture) {
+        return;
+    }
+    auto const own = Vector2 { .x = static_cast<float>(texture->width), .y = static_cast<float>(texture->height) };
+    auto const box = image_box(image, own, Vector2 { .x = area.width, .y = area.height }, m_scale);
+    auto const on_screen = [&area](Rectangle r) { return Rectangle { .x = area.x + r.x, .y = area.y + r.y, .width = r.width, .height = r.height }; };
+    draw_panel(image.panel, on_screen(box.panel));
+    DrawTexturePro(*texture, Rectangle { .x = 0, .y = 0, .width = own.x, .height = own.y }, on_screen(box.picture), Vector2 { }, 0, faded(image.tint));
 }
 
 }

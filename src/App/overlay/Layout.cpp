@@ -7,9 +7,11 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <filesystem>
 #include <format>
 #include <map>
 
+#include <StringUtil.h>
 #include <Utf8.h>
 
 #include <Colors.h>
@@ -47,13 +49,13 @@ constexpr Names ProfileProperties { "extent", "smooth", "min", "max", "min_span"
 // `rotate` is deferred: taken, and not done yet.
 constexpr Names MapProperties { "view", "zoom", "clip", "track", "marker", "tiles", "attribution", "rotate" };
 
-constexpr Names LaterTypes { "image", "group" };
+constexpr Names ImageProperties { "src", "tint" };
+
+constexpr Names LaterTypes { "group" };
 
 // The properties of later slices' elements, from the design. Defaults and
 // styles may have them, for those elements.
 constexpr Names LaterProperties {
-    "src",
-    "tint",     // image
     "children", // group
 };
 
@@ -689,7 +691,7 @@ std::expected<std::optional<Marker>, LayoutError> marker(JSONValue const &json, 
     return ret;
 }
 
-std::expected<JSONValue, LayoutError> cascaded(JSONValue const &element, JSONValue const &defaults, JSONValue const &styles);
+std::expected<JSONValue, LayoutError> cascaded(JSONValue const &element, JSONValue const &defaults, JSONValue const &styles, Names whole = { });
 
 // A label's style: its own properties over its named style, over the
 // profile's.
@@ -898,9 +900,18 @@ std::expected<MapElement, LayoutError> map_element(JSONValue const &json, JSONVa
 }
 
 // The element's properties after the cascade: the defaults, its styles in
-// order, and its own.
-std::expected<JSONValue, LayoutError> cascaded(JSONValue const &element, JSONValue const &defaults, JSONValue const &styles)
+// order, and its own. The objects in `whole` replace those under them
+// rather than merge with them.
+std::expected<JSONValue, LayoutError> cascaded(JSONValue const &element, JSONValue const &defaults, JSONValue const &styles, Names whole)
 {
+    auto const cascade = [whole](JSONValue base, JSONValue const &over) {
+        for (auto const name : whole) {
+            if (over.get(std::string { name })) {
+                base.erase(std::string { name });
+            }
+        }
+        return ST::cascade(std::move(base), over);
+    };
     auto ret = defaults;
     if (auto const style = element.get("style"); style) {
         std::vector<std::string> names;
@@ -956,6 +967,46 @@ float fraction_y(Anchor a)
     default:
         return 0.0f;
     }
+}
+
+std::expected<ImageElement, LayoutError> image_element(JSONValue const &json)
+{
+    // Its size may have only one side, which placement() doesn't take.
+    auto unsized = json;
+    unsized.erase("size");
+    ImageElement ret { .at = TRY_EVAL(placement(unsized)), .panel = TRY_EVAL(panel(json)) };
+    auto const   src = json.get("src");
+    if (!src) {
+        return error("an image needs a \"src\"");
+    }
+    ret.src = TRY_EVAL(string(*src, "src"));
+    // The raylib we build with reads no JPEG, and SVG isn't drawn.
+    if (to_lower(std::filesystem::path { ret.src }.extension().string()) != ".png") {
+        return error(std::format("the picture `{}` isn't a PNG: only PNG pictures are supported", ret.src));
+    }
+    if (auto const tint = json.get("tint"); tint) {
+        ret.tint = TRY_EVAL(color(*tint, "tint"));
+    }
+    if (auto const size = json.get("size"); size) {
+        if (!size->is_object()) {
+            return error("\"size\" isn't an object with a width, a height, or both");
+        }
+        TRY(check_properties(*size, "\"size\"", { { "width", "height" } }));
+        auto const side = [&size](char const *name) -> std::expected<std::optional<float>, LayoutError> {
+            auto const s = size->get(name);
+            if (!s) {
+                return std::optional<float> { };
+            }
+            auto const n = TRY_EVAL(number(*s, std::format("size.{}", name)));
+            if (n <= 0) {
+                return error(std::format("\"size.{}\" isn't more than 0", name));
+            }
+            return std::optional { static_cast<float>(n) };
+        };
+        ret.width = TRY_EVAL(side("width"));
+        ret.height = TRY_EVAL(side("height"));
+    }
+    return ret;
 }
 
 // None without `visible` or `fade`: the element always shows.
@@ -1055,6 +1106,12 @@ std::expected<std::optional<OverlayElement>, LayoutError> typed_element(JSONValu
         TRY(check_properties(json, "a profile", { ElementProperties, TextStyleProperties, BoxStyleProperties, ProfileProperties }));
         return std::optional<OverlayElement> { TRY_EVAL(profile_element(TRY_EVAL(cascaded(json, defaults, styles)), styles)) };
     }
+    if (name == "image") {
+        TRY(check_properties(json, "an image", { ElementProperties, BoxStyleProperties, ImageProperties }));
+        // One side of a size is the other in the picture's aspect ratio,
+        // which merging it with a size under it would undo.
+        return std::optional<OverlayElement> { TRY_EVAL(image_element(TRY_EVAL(cascaded(json, defaults, styles, { "size" })))) };
+    }
     if (name == "graph") {
         TRY(check_properties(json, "a graph", { ElementProperties, { "color" }, BoxStyleProperties, GraphProperties }));
         return std::optional<OverlayElement> { TRY_EVAL(graph_element(TRY_EVAL(cascaded(json, defaults, styles)))) };
@@ -1141,7 +1198,7 @@ std::expected<OverlayLayout, LayoutError> decode_layout(JSONValue const &json)
     }
     // What defaults and styles may hold: any element's properties but its
     // type and style.
-    auto const style_properties = { TextStyleProperties, BoxStyleProperties, TextProperties, ValueProperties, GaugeProperties, GraphProperties, ProfileProperties, MapProperties, LaterProperties,
+    auto const style_properties = { TextStyleProperties, BoxStyleProperties, TextProperties, ValueProperties, GaugeProperties, GraphProperties, ProfileProperties, MapProperties, ImageProperties, LaterProperties,
         Names { "at", "size", "visible", "fade", "when", "smooth", "interpolate" } };
     TRY(check_properties(defaults, "the defaults", style_properties));
     for (auto it = styles.obj_begin(); it != styles.obj_end(); ++it) {

@@ -276,7 +276,20 @@ struct MapElement {
     TextStyle                   attribution { }; // Of the tiles, which always have it
 };
 
-using OverlayElement = std::variant<TextElement, ValueElement, GaugeElement, GraphElement, ProfileElement, MapElement>;
+// A picture: a PNG or a JPEG, found next to the layout or with the
+// built-in ones, never stretched.
+struct ImageElement {
+    size_t                    number { 0 }; // Its place in the layout's elements, from 1
+    std::optional<Visibility> visible { };  // None: always
+    Placement                 at { };       // Without a size: that's width and height
+    Panel                     panel { };
+    std::string               src { };    // As the layout says it
+    std::optional<float>      width { };  // In design pixels; else the picture's, or
+    std::optional<float>      height { }; // in its aspect ratio
+    Color                     tint { WHITE };
+};
+
+using OverlayElement = std::variant<TextElement, ValueElement, GaugeElement, GraphElement, ProfileElement, MapElement, ImageElement>;
 
 struct OverlayLayout {
     Vector2                     design_size { .x = 1920, .y = 1080 };

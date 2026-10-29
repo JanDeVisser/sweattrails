@@ -28,7 +28,7 @@ namespace ST {
 struct RenderJob {
     std::shared_ptr<DisplayedActivity> activity;
     OverlayLayout                      layout;
-    std::string                        layout_file; // For the errors
+    fs::path                           layout_file; // For the errors, and the pictures next to it
     RenderSettings                     settings;
     RenderRange                        range;
     fs::path                           output;
@@ -39,7 +39,7 @@ struct OverlayRender {
     // Starts ffmpeg; an error if it, or the layout's fonts, can't be had.
     // The maps' tiles come from the cache, or are downloaded on the job
     // thread with `schedule`.
-    static std::expected<std::unique_ptr<OverlayRender>, std::string> start(RenderJob job, FontFinder find, TileFetcher cached, TileScheduler schedule);
+    static std::expected<std::unique_ptr<OverlayRender>, std::string> start(RenderJob job, FontFinder find, ImageFinder find_image, TileFetcher cached, TileScheduler schedule);
 
     OverlayRender(OverlayRender const &) = delete;
     OverlayRender &operator=(OverlayRender const &) = delete;
@@ -62,7 +62,7 @@ struct OverlayRender {
     [[nodiscard]] std::optional<std::expected<void, std::string>> const &result() const { return m_result; }
 
 private:
-    OverlayRender(RenderJob job, FontFinder find, TileFetcher cached, TileScheduler schedule);
+    OverlayRender(RenderJob job, FontFinder find, ImageFinder find_image, TileFetcher cached, TileScheduler schedule);
     [[nodiscard]] Rectangle large_area() const;
     void                    render_frame(FieldValues const &values, VideoTime time);
 
