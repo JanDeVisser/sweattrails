@@ -1,6 +1,6 @@
 # Choosing an activity
 
-Status: In review
+Status: Done
 
 ## Goal
 
@@ -267,3 +267,8 @@ struct ListBoxEntry {
 4. Fixed: the day is padded to two characters (`test_activity_entry`).
 5. Fixed: the README has Up and Down and Escape in the list too.
 6. The review's tests are committed, with fix 1.
+
+### Hand test
+
+Jan saw some odd behaviour when trying it by hand, which may be his
+keyboard. Set to Done for now; to revisit if it turns out to be the app.
