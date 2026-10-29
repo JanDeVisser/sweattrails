@@ -137,9 +137,9 @@ void test_native_zoom()
     CHECK_EQ(native_zoom(worlds.front(), 1e9f), MaxMapZoom);
 }
 
-bool near(double a, double b)
+bool whole(float f)
 {
-    return std::abs(a - b) < 0.01;
+    return std::floor(f) == f;
 }
 
 void test_world_tiles()
@@ -147,49 +147,56 @@ void test_world_tiles()
     auto const  worlds = MUST_EVAL(read_zwift_worlds(ShippedWorlds));
     auto const &watopia = worlds.front();
     for (auto zoom = MinWorldZoom; zoom <= 16; ++zoom) {
-        auto const tiles = world_tiles(watopia, WatopiaImage, zoom);
-        CHECK(!tiles.empty());
+        auto const area = world_area(watopia, zoom);
         auto const nw = world_pixel(watopia.north_west, zoom);
         auto const se = world_pixel(watopia.south_east, zoom);
-        // The tiles from the one holding the north-west corner to the one
-        // holding the south-east corner.
-        CHECK_EQ(tiles.front().tile, Tile::for_coordinates(watopia.north_west, zoom));
-        CHECK_EQ(tiles.back().tile, Tile::for_coordinates(watopia.south_east, zoom));
+        // The world's place on the map, to the nearest pixel.
+        CHECK(std::abs(static_cast<double>(area.left) - nw.x) <= 0.5);
+        CHECK(std::abs(static_cast<double>(area.width) - (se.x - nw.x)) <= 1.0);
+        CHECK(std::abs(static_cast<double>(area.height) - (se.y - nw.y)) <= 1.0);
+
+        auto const tiles = world_tiles(watopia, zoom);
+        CHECK(!tiles.empty());
+        if (tiles.empty()) {
+            continue;
+        }
+        // From the tile with the world's top left pixel to the one with its
+        // bottom right pixel.
+        CHECK_EQ(tiles.front().tile, (Tile { .x = static_cast<u32>(area.left / 256), .y = static_cast<u32>(area.top / 256), .zoom = zoom }));
+        CHECK_EQ(tiles.back().tile, (Tile { .x = static_cast<u32>((area.left + area.width - 1) / 256), .y = static_cast<u32>((area.top + area.height - 1) / 256), .zoom = zoom }));
         auto const columns = tiles.back().tile.x - tiles.front().tile.x + 1;
         auto const rows = tiles.back().tile.y - tiles.front().tile.y + 1;
         CHECK_EQ(tiles.size(), static_cast<size_t>(columns * rows));
 
-        double image_area = 0;
-        double map_area = 0;
+        i64 pixels = 0;
         for (auto const &[tile, source, place] : tiles) {
             CHECK(tile.zoom == zoom);
-            CHECK(place.x >= 0 && place.y >= 0 && place.x + place.width <= 256.001f && place.y + place.height <= 256.001f);
-            CHECK(source.x >= -0.001f && source.y >= -0.001f);
-            CHECK(source.x + source.width <= WatopiaImage.x + 0.01f && source.y + source.height <= WatopiaImage.y + 0.01f);
-            // The image is stretched evenly.
-            CHECK(near(source.width / place.width, WatopiaImage.x / (se.x - nw.x)));
-            CHECK(near(source.height / place.height, WatopiaImage.y / (se.y - nw.y)));
-            image_area += static_cast<double>(source.width) * source.height;
-            map_area += static_cast<double>(place.width) * place.height;
+            CHECK(whole(source.x) && whole(source.y) && whole(place.x) && whole(place.y) && whole(place.width) && whole(place.height));
+            // One image pixel to a map pixel.
+            CHECK(source.width == place.width && source.height == place.height);
+            CHECK(place.width > 0 && place.height > 0);
+            CHECK(place.x >= 0 && place.y >= 0 && place.x + place.width <= 256 && place.y + place.height <= 256);
+            CHECK(source.x >= 0 && source.y >= 0 && source.x + source.width <= area.width && source.y + source.height <= area.height);
+            // Where it is in the tile is where it is in the world.
+            CHECK_EQ(static_cast<i64>(tile.x) * 256 + static_cast<i64>(place.x), area.left + static_cast<i64>(source.x));
+            CHECK_EQ(static_cast<i64>(tile.y) * 256 + static_cast<i64>(place.y), area.top + static_cast<i64>(source.y));
+            pixels += static_cast<i64>(source.width) * static_cast<i64>(source.height);
         }
-        // Each pixel of the image is in one tile, to a float's precision.
-        auto const whole_image = static_cast<double>(WatopiaImage.x) * WatopiaImage.y;
-        auto const whole_map = (se.x - nw.x) * (se.y - nw.y);
-        CHECK(std::abs(image_area - whole_image) < whole_image * 1e-6);
-        CHECK(std::abs(map_area - whole_map) < whole_map * 1e-6);
+        // Each pixel of the image is in one tile.
+        CHECK_EQ(pixels, static_cast<i64>(area.width) * area.height);
     }
 }
 
 void test_world_tiles_at_16()
 {
     auto const worlds = MUST_EVAL(read_zwift_worlds(ShippedWorlds));
-    auto const tiles = world_tiles(worlds.front(), WatopiaImage, 16);
+    auto const tiles = world_tiles(worlds.front(), 16);
     // The first tile shows the image's top left corner, in its bottom right.
     auto const &first = tiles.front();
     CHECK_EQ(first.source.x, 0.0f);
     CHECK_EQ(first.source.y, 0.0f);
     CHECK(first.place.x > 0 && first.place.y > 0);
-    CHECK(near(first.place.x + first.place.width, 256));
+    CHECK_EQ(first.place.x + first.place.width, 256.0f);
     // One in the middle shows a whole tile of the image.
     auto const  columns = tiles.back().tile.x - first.tile.x + 1;
     auto const  rows = tiles.back().tile.y - first.tile.y + 1;
@@ -204,7 +211,7 @@ void test_world_tiles_at_16()
 void test_world_tiles_of_nothing()
 {
     auto const flat = ZwiftWorld { .north_west = { .lat = 1, .lon = 2 }, .south_east = { .lat = 1, .lon = 3 } };
-    CHECK(world_tiles(flat, WatopiaImage, 10).empty());
+    CHECK(world_tiles(flat, 10).empty());
 }
 
 // Watopia's corners, with an image of 64x48 already in the cache, so that
@@ -259,7 +266,7 @@ void test_cut_a_world()
     CHECK_EQ(again.transform([](WorldMap const &m) { return m.native_zoom; }).value_or(0), 9);
 
     for (auto zoom = MinWorldZoom; zoom <= 9; ++zoom) {
-        for (auto const &[tile, source, place] : world_tiles(small.world, Vector2 { .x = 64, .y = 48 }, zoom)) {
+        for (auto const &[tile, source, place] : world_tiles(small.world, zoom)) {
             auto const png = tile.get_cached_tile(map->dir);
             CHECK(png.has_value());
             if (!png) {
@@ -307,6 +314,63 @@ void test_cut_world_with_a_bad_world_file()
     CHECK(!cut_world(small.dir.path, small.world).has_value());
 }
 
+// Each of a world image's pixel columns ends up in one tile, where it lies
+// on the map: none is dropped, or doubled, at a seam between two tiles. The
+// image is as large as the world is at zoom 15, its native zoom, so that
+// the cut doesn't scale it, and each column has its own color.
+void test_no_column_is_lost_at_a_seam()
+{
+    Test::TempDir dir { "zwift-seams" };
+    ZwiftWorld    world {
+        .name = "Seams",
+        .image = "https://example.invalid/maps/Seams.png",
+        .north_west = { .lat = -11.62597f, .lon = 166.87747f },
+        .south_east = { .lat = -11.74087f, .lon = 167.03255f },
+    };
+    u8 const   zoom = 15;
+    auto const area = world_area(world, zoom);
+    CHECK_EQ(native_zoom(world, static_cast<float>(area.width)), zoom);
+    auto const column_color = [](int column) {
+        return Color { .r = static_cast<unsigned char>(column % 256), .g = static_cast<unsigned char>(column / 256), .b = 0, .a = 255 };
+    };
+    auto image = GenImageColor(area.width, area.height, WHITE);
+    for (auto column = 0; column < area.width; ++column) {
+        ImageDrawRectangle(&image, column, 0, 1, area.height, column_color(column));
+    }
+    CHECK(ExportImage(image, (dir.path / "Seams.png").c_str()));
+    UnloadImage(image);
+
+    auto const map = prepare_zwift_world(dir.path, world);
+    CHECK(map.has_value());
+    if (!map) {
+        return;
+    }
+    // A row of the image in the middle of the world, across all its tiles.
+    auto const y = area.top + area.height / 2;
+    auto const row = static_cast<u32>(y / 256);
+    auto       lost = 0;
+    for (auto tile_x = static_cast<u32>(area.left / 256); static_cast<i64>(tile_x) * 256 < area.left + area.width; ++tile_x) {
+        auto const png = Tile { .x = tile_x, .y = row, .zoom = zoom }.get_cached_tile(map->dir);
+        CHECK(png.has_value());
+        if (!png) {
+            continue;
+        }
+        auto tile = LoadImageFromMemory(".png", reinterpret_cast<unsigned char const *>(png->data()), static_cast<int>(png->size()));
+        for (auto px = 0; px < 256; ++px) {
+            auto const column = static_cast<i64>(tile_x) * 256 + px - area.left;
+            if (column < 0 || column >= area.width) {
+                continue;
+            }
+            auto const want = column_color(static_cast<int>(column));
+            if (!same(GetImageColor(tile, px, static_cast<int>(y % 256)), want)) {
+                ++lost;
+            }
+        }
+        UnloadImage(tile);
+    }
+    CHECK_EQ(lost, 0);
+}
+
 // A cut that was interrupted, with tiles but no world.json, isn't taken for
 // a world's map, and is done again.
 void test_interrupted_cut_is_done_again()
@@ -330,7 +394,7 @@ void test_world_tiles_on_tile_edges()
         .north_west = { .lat = 10.0f, .lon = 0.0f },
         .south_east = { .lat = 9.5f, .lon = 2 * tile_lon },
     };
-    auto const tiles = world_tiles(world, Vector2 { .x = 512, .y = 512 }, 10);
+    auto const tiles = world_tiles(world, 10);
     for (auto const &[tile, source, place] : tiles) {
         CHECK(tile.x == 512 || tile.x == 513);
         CHECK(place.width > 0.5f);
@@ -355,6 +419,7 @@ int main()
     test_cut_a_world();
     test_cut_a_world_that_doesnt_decode();
     test_cut_world_with_a_bad_world_file();
+    test_no_column_is_lost_at_a_seam();
     test_interrupted_cut_is_done_again();
     test_world_tiles_on_tile_edges();
     return ST::Test::test_result();

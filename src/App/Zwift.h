@@ -55,18 +55,31 @@ constexpr u8 MinWorldZoom = 8;
 // map pixel: 16 for Watopia's 8192 pixels.
 u8 native_zoom(ZwiftWorld const &world, float image_width);
 
-// A tile of a world's map: the part of the image it shows, and where that
-// goes in the tile. Only an edge tile shows the image in part of it.
-struct WorldTile {
-    Tile      tile { };
-    Rectangle source { }; // In the image's pixels
-    Rectangle place { };  // In the tile's 256 pixels
+// Where a world lies on the map at a zoom, in whole map pixels: its image
+// is scaled to this size to be cut into that zoom's tiles, one image pixel
+// to a map pixel. Over a world 0.1° high, stretching the image between its
+// corners is the same as Web Mercator to well under a pixel.
+struct WorldArea {
+    i64 left { 0 };
+    i64 top { 0 };
+    int width { 0 };
+    int height { 0 };
 };
 
-// The tiles at `zoom` that the world's image touches. The image is
-// stretched between its corners' places on the map: over a world 0.1° high,
-// that's the same as Web Mercator to well under a pixel.
-std::vector<WorldTile> world_tiles(ZwiftWorld const &world, Vector2 image_size, u8 zoom);
+WorldArea world_area(ZwiftWorld const &world, u8 zoom);
+
+// A tile of a world's map: the part of the image, scaled to the zoom, it
+// shows, and where that goes in the tile, in whole pixels, so that each of
+// the image's pixels is in one tile. Only an edge tile shows the image in
+// part of it.
+struct WorldTile {
+    Tile      tile { };
+    Rectangle source { }; // In the scaled image's pixels
+    Rectangle place { };  // In the tile's 256 pixels, as large as `source`
+};
+
+// The tiles at `zoom` that the world's area touches.
+std::vector<WorldTile> world_tiles(ZwiftWorld const &world, u8 zoom);
 
 // A world cut into tiles, in its cache: `<cache>/<cache name>/`, with its
 // tiles in `<zoom>/<x>/<y>.png` as OpenStreetMap's are.

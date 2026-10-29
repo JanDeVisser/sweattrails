@@ -109,41 +109,50 @@ u8 native_zoom(ZwiftWorld const &world, float image_width)
     return static_cast<u8>(std::clamp(zoom, static_cast<double>(MinWorldZoom), static_cast<double>(MaxMapZoom)));
 }
 
-std::vector<WorldTile> world_tiles(ZwiftWorld const &world, Vector2 image_size, u8 zoom)
+WorldArea world_area(ZwiftWorld const &world, u8 zoom)
 {
     auto const nw = world_pixel(world.north_west, zoom);
     auto const se = world_pixel(world.south_east, zoom);
-    if (se.x <= nw.x || se.y <= nw.y) {
+    auto const left = std::llround(nw.x);
+    auto const top = std::llround(nw.y);
+    return WorldArea {
+        .left = left,
+        .top = top,
+        .width = static_cast<int>(std::max(0ll, std::llround(se.x) - left)),
+        .height = static_cast<int>(std::max(0ll, std::llround(se.y) - top)),
+    };
+}
+
+std::vector<WorldTile> world_tiles(ZwiftWorld const &world, u8 zoom)
+{
+    auto const area = world_area(world, zoom);
+    if (area.width <= 0 || area.height <= 0) {
         return { };
     }
-    auto const scale_x = image_size.x / (se.x - nw.x);
-    auto const scale_y = image_size.y / (se.y - nw.y);
-    auto const first_x = static_cast<u32>(nw.x / TileSize);
-    auto const first_y = static_cast<u32>(nw.y / TileSize);
-    auto const last_x = static_cast<u32>(std::ceil(se.x / TileSize)) - 1;
-    auto const last_y = static_cast<u32>(std::ceil(se.y / TileSize)) - 1;
-
+    auto const             size = static_cast<i64>(TileSize);
+    auto const             right = area.left + area.width;
+    auto const             bottom = area.top + area.height;
     std::vector<WorldTile> tiles;
-    for (auto y = first_y; y <= last_y; ++y) {
-        for (auto x = first_x; x <= last_x; ++x) {
-            // The part of the tile the image covers, in world pixels.
-            auto const left = std::max(nw.x, static_cast<double>(x) * TileSize);
-            auto const top = std::max(nw.y, static_cast<double>(y) * TileSize);
-            auto const right = std::min(se.x, static_cast<double>(x + 1) * TileSize);
-            auto const bottom = std::min(se.y, static_cast<double>(y + 1) * TileSize);
+    for (auto y = area.top / size; y * size < bottom; ++y) {
+        for (auto x = area.left / size; x * size < right; ++x) {
+            // The part of the tile the world covers, in map pixels.
+            auto const from_x = std::max(area.left, x * size);
+            auto const from_y = std::max(area.top, y * size);
+            auto const width = static_cast<float>(std::min(right, (x + 1) * size) - from_x);
+            auto const height = static_cast<float>(std::min(bottom, (y + 1) * size) - from_y);
             tiles.push_back(WorldTile {
-                .tile = Tile { .x = x, .y = y, .zoom = zoom },
+                .tile = Tile { .x = static_cast<u32>(x), .y = static_cast<u32>(y), .zoom = zoom },
                 .source = Rectangle {
-                    .x = static_cast<float>((left - nw.x) * scale_x),
-                    .y = static_cast<float>((top - nw.y) * scale_y),
-                    .width = static_cast<float>((right - left) * scale_x),
-                    .height = static_cast<float>((bottom - top) * scale_y),
+                    .x = static_cast<float>(from_x - area.left),
+                    .y = static_cast<float>(from_y - area.top),
+                    .width = width,
+                    .height = height,
                 },
                 .place = Rectangle {
-                    .x = static_cast<float>(left - static_cast<double>(x) * TileSize),
-                    .y = static_cast<float>(top - static_cast<double>(y) * TileSize),
-                    .width = static_cast<float>(right - left),
-                    .height = static_cast<float>(bottom - top),
+                    .x = static_cast<float>(from_x - x * size),
+                    .y = static_cast<float>(from_y - y * size),
+                    .width = width,
+                    .height = height,
                 },
             });
         }
@@ -160,20 +169,12 @@ std::string color_text(Color color)
     return std::format("#{:02x}{:02x}{:02x}{:02x}", color.r, color.g, color.b, color.a);
 }
 
-// The part of the image the tile shows, scaled to its place, on the
-// background.
+// The part of the image the tile shows, on the background.
 std::expected<void, LibCError> write_tile(fs::path const &dir, WorldTile const &world_tile, Image const &image, Color background)
 {
     auto const &[tile, source, place] = world_tile;
-    auto const width = static_cast<int>(std::lround(place.width));
-    auto const height = static_cast<int>(std::lround(place.height));
-    auto       out = GenImageColor(static_cast<int>(TileSize), static_cast<int>(TileSize), background);
-    if (width > 0 && height > 0 && source.width >= 1 && source.height >= 1) {
-        auto part = ImageFromImage(image, source);
-        ImageResize(&part, width, height);
-        ImageDrawImage(&out, part, static_cast<int>(std::lround(place.x)), static_cast<int>(std::lround(place.y)), WHITE);
-        UnloadImage(part);
-    }
+    auto out = GenImageColor(static_cast<int>(TileSize), static_cast<int>(TileSize), background);
+    ImageDrawImageRec(&out, image, source, Vector2 { .x = place.x, .y = place.y }, WHITE);
     auto const tile_dir = ensure_directory(dir / std::format("{}/{}", tile.zoom, tile.x));
     auto const file = tile_dir ? (*tile_dir / std::format("{}.png", tile.y)) : fs::path { };
     auto const written = tile_dir && ExportImage(out, file.c_str());
@@ -196,11 +197,12 @@ std::expected<WorldMap, LibCError> cut_tiles(fs::path const &dir, ZwiftWorld con
     };
     for (auto zoom = static_cast<int>(map.native_zoom); zoom >= MinWorldZoom; --zoom) {
         auto const z = static_cast<u8>(zoom);
-        auto const nw = world_pixel(world.north_west, z);
-        auto const se = world_pixel(world.south_east, z);
-        ImageResize(&image, std::max(1, static_cast<int>(std::lround(se.x - nw.x))), std::max(1, static_cast<int>(std::lround(se.y - nw.y))));
-        auto const size = Vector2 { .x = static_cast<float>(image.width), .y = static_cast<float>(image.height) };
-        for (auto const &tile : world_tiles(world, size, z)) {
+        auto const area = world_area(world, z);
+        if (area.width <= 0 || area.height <= 0) {
+            break;
+        }
+        ImageResize(&image, area.width, area.height);
+        for (auto const &tile : world_tiles(world, z)) {
             TRY(write_tile(dir, tile, image, map.background));
         }
     }
