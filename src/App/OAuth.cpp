@@ -570,4 +570,21 @@ std::expected<void, LibCError> open_browser(std::string const &url)
     return { };
 }
 
+std::expected<std::string, std::string> login_code(std::expected<QueryParameters, RedirectError> const &redirect, std::string_view service)
+{
+    if (!redirect) {
+        return std::unexpected(redirect.error().kind == RedirectError::Kind::TimedOut
+                ? std::format("The {} login timed out. Try again from SweatTrails when you're ready to log in.", service)
+                : redirect.error().to_string());
+    }
+    // access_denied when the user doesn't allow SweatTrails access.
+    if (redirect->contains("error")) {
+        return std::unexpected(std::format("The {} login didn't go through: {}", service, redirect->at("error")));
+    }
+    if (!redirect->contains("code") || redirect->at("code").empty()) {
+        return std::unexpected(std::format("The {} login came back without a code. Try again.", service));
+    }
+    return redirect->at("code");
+}
+
 }

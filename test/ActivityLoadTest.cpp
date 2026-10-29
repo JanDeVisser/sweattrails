@@ -459,6 +459,22 @@ void test_title_from_a_strava_file()
     CHECK_EQ(broken.activity.title, "Tempo intervals");
 }
 
+// Strava's name saved after the activity was loaded shows when its names
+// are read again, and goes when it does.
+void test_read_names_again()
+{
+    ActivityInDir t { R"({"activityName": "Morning Ride"})" };
+    CHECK(save_sidecar_strava(t.activity.sidecar, StravaTitle { .id = 17, .name = "Ride to Niagara", .description = "With Anna" }).has_value());
+    t.activity.read_names();
+    CHECK_EQ(t.activity.title, "Ride to Niagara");
+    CHECK_EQ(t.activity.original_title, "Ride to Niagara");
+    CHECK_EQ(t.activity.notes, "With Anna");
+    MUST(write_file_by_name(t.activity.sidecar.string(), std::string_view { "{}" }));
+    t.activity.read_names();
+    CHECK_EQ(t.activity.title, "Tempo intervals");
+    CHECK_EQ(t.activity.notes, "");
+}
+
 // Saving Strava's name keeps the user's and the service's, and replaces
 // what Strava had before.
 void test_save_sidecar_strava()
@@ -553,6 +569,7 @@ int main()
     test_strava_title_from_the_sidecar();
     test_strava_in_the_sidecar_that_isnt_valid();
     test_title_from_a_strava_file();
+    test_read_names_again();
     test_save_sidecar_strava();
     test_save_keeps_the_rest_of_the_sidecar();
     test_save_without_a_sidecar();

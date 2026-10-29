@@ -23,6 +23,7 @@
 #include <storage/Download.h>
 #include <storage/Garmin.h>
 #include <storage/Storage.h>
+#include <storage/Strava.h>
 #include <storage/Types.h>
 #include <storage/Wahoo.h>
 #include <widget/Activity.h>
@@ -74,6 +75,20 @@ struct WahooLogin {
     int         days { WahooDefaultDays }; // For the download after the login
 };
 
+// What the Strava login brought back from the browser.
+struct StravaLogin {
+    StravaClient client { };
+    std::string  code { };
+    int          days { StravaDefaultDays }; // For the titles after the login
+};
+
+// The st-strava-titles task: the titles of the last `days`, or, without,
+// of the store's whole history.
+struct StravaTitlesRequest {
+    std::optional<int>          days { };
+    std::optional<StravaClient> client { };
+};
+
 #define JOBTYPE(S)                        \
     S(FindCurrentFolder, std::monostate)  \
     S(FindNewestActivity, std::monostate) \
@@ -81,6 +96,8 @@ struct WahooLogin {
     S(DownloadTiles, pTileDownload)       \
     S(Download, DownloadRequest)          \
     S(WahooLogin, WahooLogin)             \
+    S(StravaTitles, StravaTitlesRequest)  \
+    S(StravaLogin, StravaLogin)           \
     S(PrepareZwiftWorld, ZwiftWorld)
 
 enum class JobType {
@@ -107,28 +124,35 @@ struct ImportingFile {
 
 // Sent by a download before each activity.
 struct Downloading {
-    std::string source { }; // "Garmin Connect", "Wahoo"
+    std::string source { }; // "Garmin Connect", "Wahoo", "Strava"
     size_t      index { 0 };
     size_t      count { 0 };
 };
 
-// Sent when the Wahoo login is over, however it ended, with what to tell
-// the user, if anything.
-struct WahooLoginEnded {
+// Sent when a login is over, however it ended, with what to tell the
+// user, if anything.
+struct LoginEnded {
     std::string message { };
     bool        downloading { false }; // The login worked, and a download follows
 };
 
-#define NOTIFICATIONTYPE(S)             \
-    S(Message, std::string)             \
-    S(ActivityList, Activities)         \
-    S(Activity, Activity)               \
-    S(ImportingFile, ImportingFile)     \
-    S(MapTile, MapTile)                 \
-    S(MapTilesDone, MapTilesDone)       \
-    S(Downloading, Downloading)         \
-    S(DownloadDone, DownloadReport)     \
-    S(WahooLoginEnded, WahooLoginEnded) \
+// Sent when Strava has changed the names or notes of activities, by their
+// start times.
+struct TitlesChanged {
+    std::vector<i64> starts { };
+};
+
+#define NOTIFICATIONTYPE(S)         \
+    S(Message, std::string)         \
+    S(ActivityList, Activities)     \
+    S(Activity, Activity)           \
+    S(ImportingFile, ImportingFile) \
+    S(MapTile, MapTile)             \
+    S(MapTilesDone, MapTilesDone)   \
+    S(Downloading, Downloading)     \
+    S(DownloadDone, DownloadReport) \
+    S(LoginEnded, LoginEnded)       \
+    S(TitlesChanged, TitlesChanged) \
     S(ZwiftWorldReady, ZwiftWorldReady)
 
 enum class NotificationType {
@@ -152,6 +176,8 @@ struct SweatTrails : public Main<Job, Notification> {
     static void job_download_tiles(Job::Payload const &data);
     static void job_download(Job::Payload const &data);
     static void job_wahoo_login(Job::Payload const &data);
+    static void job_strava_titles(Job::Payload const &data);
+    static void job_strava_login(Job::Payload const &data);
     static void job_prepare_zwift_world(Job::Payload const &data);
 
     // The payload variant starts with a std::monostate, so a job type's
@@ -168,6 +194,8 @@ struct SweatTrails : public Main<Job, Notification> {
                 job_download_tiles,
                 job_download,
                 job_wahoo_login,
+                job_strava_titles,
+                job_strava_login,
                 job_prepare_zwift_world,
             });
     }
@@ -186,7 +214,8 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_map_tiles_done(Notification::Payload const &data);
     static void notif_downloading(Notification::Payload const &data);
     static void notif_download_done(Notification::Payload const &data);
-    static void notif_wahoo_login_ended(Notification::Payload const &data);
+    static void notif_login_ended(Notification::Payload const &data);
+    static void notif_titles_changed(Notification::Payload const &data);
     static void notif_zwift_world_ready(Notification::Payload const &data);
 
     template<NotificationType Type>
@@ -203,7 +232,8 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_map_tiles_done,
                 notif_downloading,
                 notif_download_done,
-                notif_wahoo_login_ended,
+                notif_login_ended,
+                notif_titles_changed,
                 notif_zwift_world_ready,
             });
     }
@@ -227,11 +257,12 @@ struct SweatTrails : public Main<Job, Notification> {
     // Between a download task and the end of its job. Only used on the UI
     // thread.
     bool downloading { false };
-    // From the st-wahoo-login task until the login is over. Only used on
-    // the UI thread.
-    bool wahoo_logging_in { false };
-    // Waits for the browser to come back from the Wahoo login.
-    std::jthread wahoo_login { };
+    // The service whose login waits for the browser, "Wahoo" or "Strava",
+    // from its login task until the login is over: one at a time, as they
+    // share the port. Only used on the UI thread.
+    std::string logging_in { };
+    // Waits for the browser to come back from the login.
+    std::jthread login { };
     // The overlay's render to video, while it runs. Only used on the UI
     // thread, where it draws.
     std::unique_ptr<OverlayRender> overlay_render { nullptr };

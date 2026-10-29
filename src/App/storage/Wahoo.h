@@ -66,10 +66,6 @@ using WahooResult = std::expected<T, WahooError>;
 // `wahoo-tokens.json` in SweatTrails' config folder.
 fs::path wahoo_tokens_file(fs::path const &config_dir);
 
-// The code the browser brought back from the login, or what to tell the
-// user if it didn't bring one.
-std::expected<std::string, std::string> login_code(std::expected<QueryParameters, RedirectError> const &redirect);
-
 // A workout in Wahoo's list.
 struct WahooWorkout {
     u64         id { 0 };

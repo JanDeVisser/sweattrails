@@ -131,4 +131,8 @@ std::expected<int, LibCError> run_and_wait(std::vector<std::string> const &comma
 // Opens `url` in the user's browser.
 std::expected<void, LibCError> open_browser(std::string const &url);
 
+// The code the browser brought back from `service`'s login, such as
+// "Wahoo", or what to tell the user if it didn't bring one.
+std::expected<std::string, std::string> login_code(std::expected<QueryParameters, RedirectError> const &redirect, std::string_view service);
+
 }

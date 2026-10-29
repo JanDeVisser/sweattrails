@@ -188,15 +188,17 @@ void test_tokens_folder_is_made()
 
 void test_login_code()
 {
-    CHECK_EQ(login_code(QueryParameters { { "code", "abc" }, { "state", "s" } }).value_or(""), "abc");
-    auto const denied = login_code(QueryParameters { { "error", "access_denied" }, { "state", "s" } });
+    CHECK_EQ(login_code(QueryParameters { { "code", "abc" }, { "state", "s" } }, "Wahoo").value_or(""), "abc");
+    auto const denied = login_code(QueryParameters { { "error", "access_denied" }, { "state", "s" } }, "Wahoo");
     CHECK(!denied.has_value() && denied.error() == "The Wahoo login didn't go through: access_denied");
-    CHECK(!login_code(QueryParameters { { "state", "s" } }).has_value());
-    CHECK(!login_code(QueryParameters { { "code", "" } }).has_value());
-    auto const timed_out = login_code(std::unexpected(RedirectError { .kind = RedirectError::Kind::TimedOut, .message = "The login timed out" }));
+    CHECK(!login_code(QueryParameters { { "state", "s" } }, "Wahoo").has_value());
+    CHECK(!login_code(QueryParameters { { "code", "" } }, "Wahoo").has_value());
+    auto const timed_out = login_code(std::unexpected(RedirectError { .kind = RedirectError::Kind::TimedOut, .message = "The login timed out" }), "Wahoo");
     CHECK(!timed_out.has_value() && timed_out.error().starts_with("The Wahoo login timed out."));
-    auto const failed = login_code(std::unexpected(RedirectError { .kind = RedirectError::Kind::Failed, .message = "The login failed: oops" }));
+    auto const failed = login_code(std::unexpected(RedirectError { .kind = RedirectError::Kind::Failed, .message = "The login failed: oops" }), "Wahoo");
     CHECK(!failed.has_value() && failed.error() == "The login failed: oops");
+    auto const strava = login_code(QueryParameters { { "error", "access_denied" } }, "Strava");
+    CHECK(!strava.has_value() && strava.error() == "The Strava login didn't go through: access_denied");
 }
 
 void test_authorize_url()

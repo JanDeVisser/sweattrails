@@ -169,31 +169,40 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
         if (!TRY_EVAL(load_fit_file_by_name(dir / std::format("{}.fit", id.name)))) {
             return false;
         }
-        // After the FIT file, so that each name wins over the ones before:
-        // the workout's, the service's, the old app's `.strava` file's,
-        // Strava's in the sidecar, and the user's. See
-        // specs/strava-titles.md.
+        fit_title = title;
         sidecar = dir / std::format("{}.json", id.name);
-        auto const names = sidecar_titles(sidecar);
-        auto const old_strava = read_strava_file(dir / std::format("{}.strava", id.name));
-        auto const take = [this](std::optional<std::string> const &name) {
-            if (name && !name->empty()) {
-                title = *name;
-            }
-        };
-        take(names.service);
-        take(old_strava.name);
-        take(names.strava.transform([](StravaTitle const &strava) { return strava.name; }));
-        original_title = title;
-        take(names.own);
-        if (names.strava && names.strava->description) {
-            notes = *names.strava->description;
-        } else {
-            notes = old_strava.description.value_or("");
-        }
+        read_names();
     }
     TRY(analyze());
     return true;
+}
+
+void Activity::read_names()
+{
+    if (sidecar.empty()) {
+        return;
+    }
+    // Each name wins over the ones before: the FIT file's, the service's,
+    // the old app's `.strava` file's, Strava's in the sidecar, and the
+    // user's. See specs/strava-titles.md.
+    auto const names = sidecar_titles(sidecar);
+    auto const old_strava = read_strava_file(fs::path { sidecar }.replace_extension(".strava"));
+    title = fit_title;
+    auto const take = [this](std::optional<std::string> const &name) {
+        if (name && !name->empty()) {
+            title = *name;
+        }
+    };
+    take(names.service);
+    take(old_strava.name);
+    take(names.strava.transform([](StravaTitle const &strava) { return strava.name; }));
+    original_title = title;
+    take(names.own);
+    if (names.strava && names.strava->description) {
+        notes = *names.strava->description;
+    } else {
+        notes = old_strava.description.value_or("");
+    }
 }
 
 namespace {

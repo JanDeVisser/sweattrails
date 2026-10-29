@@ -176,6 +176,7 @@ struct Activity {
     std::optional<FIT::manufacturer> manufacturer { };
     std::string                      title { };
     std::string                      original_title { }; // Without the name the user gave it
+    std::string                      fit_title { };      // The FIT file's: the workout's, or the start time
     std::string                      notes { };
     Segment                          segment { };
     std::vector<record>              records { };
@@ -214,6 +215,10 @@ struct Activity {
     // Loads `file`, whatever its name, rather than `<id.name>.fit`.
     StorageResult<bool> load_from_file(fs::path const &file);
     StorageResult<bool> load_from_slice(std::string_view const &buffer);
+
+    // Reads the names and the notes from the sidecar again, as when the
+    // activity was loaded, after something else changed them.
+    void read_names();
 
     // Gives the activity the user's name, trimmed, and saves it in the
     // sidecar. An empty name goes back to the original title.
