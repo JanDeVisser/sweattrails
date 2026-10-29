@@ -73,7 +73,9 @@ which only the install step fills: run it after changing anything in
 macOS, and `build/sweattrails` elsewhere.
 
 The app starts in a maximized window on the monitor it was last on.
-That has been tried on macOS, not yet on Linux.
+That has been tried on macOS, not yet on Linux. Under Wayland, an app
+can't place its own window, so it may not start on the last monitor, and
+glfw warns about that when it starts; X11 doesn't have this problem.
 
 ## Choosing an activity
 
