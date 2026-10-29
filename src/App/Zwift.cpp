@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <format>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -14,6 +16,8 @@
 #include <IO.h>
 #include <JSON.h>
 #include <Logging.h>
+
+#include <Colors.h>
 
 #include <Zwift.h>
 #include <storage/Activity.h>
@@ -145,6 +149,110 @@ std::vector<WorldTile> world_tiles(ZwiftWorld const &world, Vector2 image_size, 
         }
     }
     return tiles;
+}
+
+namespace {
+
+constexpr char const WorldFile[] = "world.json";
+
+std::string color_text(Color color)
+{
+    return std::format("#{:02x}{:02x}{:02x}{:02x}", color.r, color.g, color.b, color.a);
+}
+
+// The part of the image the tile shows, scaled to its place, on the
+// background.
+std::expected<void, LibCError> write_tile(fs::path const &dir, WorldTile const &world_tile, Image const &image, Color background)
+{
+    auto const &[tile, source, place] = world_tile;
+    auto const width = static_cast<int>(std::lround(place.width));
+    auto const height = static_cast<int>(std::lround(place.height));
+    auto       out = GenImageColor(static_cast<int>(TileSize), static_cast<int>(TileSize), background);
+    if (width > 0 && height > 0 && source.width >= 1 && source.height >= 1) {
+        auto part = ImageFromImage(image, source);
+        ImageResize(&part, width, height);
+        ImageDrawImage(&out, part, static_cast<int>(std::lround(place.x)), static_cast<int>(std::lround(place.y)), WHITE);
+        UnloadImage(part);
+    }
+    auto const tile_dir = ensure_directory(dir / std::format("{}/{}", tile.zoom, tile.x));
+    auto const file = tile_dir ? (*tile_dir / std::format("{}.png", tile.y)) : fs::path { };
+    auto const written = tile_dir && ExportImage(out, file.c_str());
+    UnloadImage(out);
+    if (!written) {
+        return std::unexpected(LibCError { "Could not write tile {} of `{}`", tile.to_string(), dir.string() });
+    }
+    return { };
+}
+
+// From the native zoom down, each zoom's tiles are cut from the image
+// scaled to that zoom, which is half the one before: scaling the whole
+// image once a zoom is quicker than scaling each tile from the original.
+std::expected<WorldMap, LibCError> cut_tiles(fs::path const &dir, ZwiftWorld const &world, Image &image)
+{
+    WorldMap map {
+        .dir = dir,
+        .native_zoom = native_zoom(world, static_cast<float>(image.width)),
+        .background = GetImageColor(image, 0, 0),
+    };
+    for (auto zoom = static_cast<int>(map.native_zoom); zoom >= MinWorldZoom; --zoom) {
+        auto const z = static_cast<u8>(zoom);
+        auto const nw = world_pixel(world.north_west, z);
+        auto const se = world_pixel(world.south_east, z);
+        ImageResize(&image, std::max(1, static_cast<int>(std::lround(se.x - nw.x))), std::max(1, static_cast<int>(std::lround(se.y - nw.y))));
+        auto const size = Vector2 { .x = static_cast<float>(image.width), .y = static_cast<float>(image.height) };
+        for (auto const &tile : world_tiles(world, size, z)) {
+            TRY(write_tile(dir, tile, image, map.background));
+        }
+    }
+    auto json = JSONValue::object();
+    json.set("native_zoom", JSONValue { static_cast<int>(map.native_zoom) });
+    json.set("background", JSONValue { color_text(map.background) });
+    TRY(write_file_by_name((dir / WorldFile).string(), json.serialize()));
+    return map;
+}
+
+}
+
+std::optional<WorldMap> cut_world(fs::path const &cache, ZwiftWorld const &world)
+{
+    auto const      dir = cache / world.cache_name();
+    std::error_code ec { };
+    if (!fs::exists(dir / WorldFile, ec)) {
+        return { };
+    }
+    auto const contents = read_file_by_name((dir / WorldFile).string());
+    auto const json = contents ? JSONValue::deserialize(*contents) : std::unexpected(JSONError { JSONError::Code::MissingValue, "" });
+    if (!json) {
+        return { };
+    }
+    auto const zoom = json->try_get<int>("native_zoom");
+    auto const background = json->try_get<std::string>("background");
+    auto const color = background ? parse_color(*background) : std::nullopt;
+    if (!zoom || *zoom < MinWorldZoom || *zoom > MaxMapZoom || !color) {
+        return { };
+    }
+    return WorldMap { .dir = dir, .native_zoom = static_cast<u8>(*zoom), .background = *color };
+}
+
+std::expected<WorldMap, LibCError> prepare_zwift_world(fs::path const &cache, ZwiftWorld const &world)
+{
+    auto const      image_file = cache / std::format("{}.png", world.cache_name());
+    std::error_code ec { };
+    if (!fs::exists(image_file, ec)) {
+        TRY(download_file(world.image, image_file));
+        info(ST, "Downloaded {}'s map, {}", world.name, world.image);
+    }
+    auto image = LoadImage(image_file.c_str());
+    if (image.data == nullptr) {
+        // Not kept: it may be an error page, or cut short.
+        fs::remove(image_file, ec);
+        return std::unexpected(LibCError { "Could not decode {}'s map, `{}`", world.name, world.image });
+    }
+    ImageFormat(&image, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    auto const dir = cache / world.cache_name();
+    auto       map = cut_tiles(dir, world, image);
+    UnloadImage(image);
+    return map;
 }
 
 ZwiftWorld const *zwift_world(std::span<ZwiftWorld const> worlds, Activity const &activity)

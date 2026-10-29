@@ -11,6 +11,7 @@
 
 #include <expected>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -66,6 +67,24 @@ struct WorldTile {
 // stretched between its corners' places on the map: over a world 0.1° high,
 // that's the same as Web Mercator to well under a pixel.
 std::vector<WorldTile> world_tiles(ZwiftWorld const &world, Vector2 image_size, u8 zoom);
+
+// A world cut into tiles, in its cache: `<cache>/<cache name>/`, with its
+// tiles in `<zoom>/<x>/<y>.png` as OpenStreetMap's are.
+struct WorldMap {
+    fs::path dir { };
+    u8       native_zoom { 0 };
+    Color    background { }; // The image's top left pixel: the sea
+};
+
+// The world's map in `cache`, if its tiles have all been cut: its
+// `world.json`, written last, says so.
+std::optional<WorldMap> cut_world(fs::path const &cache, ZwiftWorld const &world);
+
+// Downloads the world's image to `<cache>/<cache name>.png`, unless it's
+// there, and cuts it into tiles from MinWorldZoom to its native zoom, on
+// the background where a tile goes past the image. Only call this on the
+// job thread: it downloads, and takes some seconds.
+std::expected<WorldMap, LibCError> prepare_zwift_world(fs::path const &cache, ZwiftWorld const &world);
 
 // The worlds in `file`. A world without its four fields is left out, with
 // a warning.

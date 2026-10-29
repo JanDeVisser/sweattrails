@@ -7,6 +7,7 @@
 #include <cmath>
 #include <filesystem>
 #include <format>
+#include <print>
 #include <string>
 
 #include <IO.h>
@@ -205,10 +206,105 @@ void test_world_tiles_of_nothing()
     CHECK(world_tiles(flat, WatopiaImage, 10).empty());
 }
 
+// Watopia's corners, with an image of 64x48 already in the cache, so that
+// nothing is downloaded: red, but for its top left pixel, the sea.
+struct SmallWorld {
+    Test::TempDir dir { "zwift-cut" };
+    ZwiftWorld    world {
+        .name = "Small",
+        .image = "https://example.invalid/maps/Small.png",
+        .north_west = { .lat = -11.62597f, .lon = 166.87747f },
+        .south_east = { .lat = -11.74087f, .lon = 167.03255f },
+    };
+
+    SmallWorld()
+    {
+        auto image = GenImageColor(64, 48, RED);
+        ImageDrawPixel(&image, 0, 0, BLUE);
+        CHECK(ExportImage(image, (dir.path / "Small.png").c_str()));
+        UnloadImage(image);
+    }
+};
+
+bool same(Color a, Color b)
+{
+    return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+void test_cut_a_world()
+{
+    SmallWorld small;
+    CHECK(!cut_world(small.dir.path, small.world).has_value());
+    auto const map = prepare_zwift_world(small.dir.path, small.world);
+    CHECK(map.has_value());
+    if (!map) {
+        std::println(stderr, "{}", map.error().to_string());
+        return;
+    }
+    // 64 pixels over Watopia's 0.155° is about zoom 9.
+    CHECK_EQ(map->native_zoom, 9);
+    CHECK(same(map->background, BLUE));
+    CHECK_EQ(map->dir.string(), (small.dir.path / "Small").string());
+
+    auto const again = cut_world(small.dir.path, small.world);
+    CHECK(again.has_value());
+    CHECK_EQ(again.transform([](WorldMap const &m) { return m.native_zoom; }).value_or(0), 9);
+
+    for (auto zoom = MinWorldZoom; zoom <= 9; ++zoom) {
+        for (auto const &[tile, source, place] : world_tiles(small.world, Vector2 { .x = 64, .y = 48 }, zoom)) {
+            auto const png = tile.get_cached_tile(map->dir);
+            CHECK(png.has_value());
+            if (!png) {
+                continue;
+            }
+            auto image = LoadImageFromMemory(".png", reinterpret_cast<unsigned char const *>(png->data()), static_cast<int>(png->size()));
+            CHECK_EQ(image.width, 256);
+            CHECK_EQ(image.height, 256);
+            // The world's top left corner is inside its first tile: left of
+            // and above it is the sea, and in the middle of the image's part,
+            // the image.
+            if (place.x >= 1 && place.y >= 1) {
+                CHECK(same(GetImageColor(image, 0, 0), BLUE));
+            }
+            auto const mid_x = static_cast<int>(place.x + place.width / 2);
+            auto const mid_y = static_cast<int>(place.y + place.height / 2);
+            if (place.width >= 4 && place.height >= 4) {
+                CHECK(same(GetImageColor(image, mid_x, mid_y), RED));
+            }
+            UnloadImage(image);
+        }
+    }
+}
+
+void test_cut_a_world_that_doesnt_decode()
+{
+    SmallWorld small;
+    MUST(write_file_by_name((small.dir.path / "Small.png").string(), std::string_view { "<html>Not found</html>" }));
+    CHECK(!prepare_zwift_world(small.dir.path, small.world).has_value());
+    // It's not kept, so that the next try downloads it again.
+    CHECK(!fs::exists(small.dir.path / "Small.png"));
+    CHECK(!cut_world(small.dir.path, small.world).has_value());
+}
+
+void test_cut_world_with_a_bad_world_file()
+{
+    SmallWorld small;
+    MUST(prepare_zwift_world(small.dir.path, small.world));
+    auto const file = (small.dir.path / "Small" / "world.json").string();
+    MUST(write_file_by_name(file, std::string_view { R"({ "native_zoom": 30, "background": "#0000ffff" })" }));
+    CHECK(!cut_world(small.dir.path, small.world).has_value());
+    MUST(write_file_by_name(file, std::string_view { R"({ "native_zoom": 9, "background": "blue" })" }));
+    CHECK(!cut_world(small.dir.path, small.world).has_value());
+    MUST(write_file_by_name(file, std::string_view { "{" }));
+    CHECK(!cut_world(small.dir.path, small.world).has_value());
+}
+
 }
 
 int main()
 {
+    // raylib logs each image it saves and loads.
+    SetTraceLogLevel(LOG_WARNING);
     test_shipped_worlds();
     test_worlds_left_out();
     test_worlds_that_arent_json();
@@ -218,5 +314,8 @@ int main()
     test_world_tiles();
     test_world_tiles_at_16();
     test_world_tiles_of_nothing();
+    test_cut_a_world();
+    test_cut_a_world_that_doesnt_decode();
+    test_cut_world_with_a_bad_world_file();
     return ST::Test::test_result();
 }
