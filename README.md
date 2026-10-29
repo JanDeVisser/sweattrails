@@ -72,6 +72,9 @@ which only the install step fills: run it after changing anything in
 `share`, such as an icon. The app is then `build/sweattrails.app` on
 macOS, and `build/sweattrails` elsewhere.
 
+The app starts in a maximized window on the monitor it was last on.
+That has been tried on macOS, not yet on Linux.
+
 ## Choosing an activity
 
 SweatTrails starts with the newest activity. Left and Right show the one

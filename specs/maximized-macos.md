@@ -144,7 +144,8 @@ them, so on a Retina screen they're points, not pixels.
   centred; with two monitors, it starts on the last one, and on the main
   one when that's unplugged. What the window looks like can't be tested
   without a window system.
-- Linux and Windows aren't tried; the README says so.
+- Linux isn't tried; the README says so. Windows isn't supported at all
+  (see the README), so there's nothing to try there.
 
 ## Review notes
 
