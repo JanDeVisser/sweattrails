@@ -806,7 +806,9 @@ void cmd_mark_lap(pSweatTrails const &sweattrails, JSONValue const &)
     if (!activity) {
         return;
     }
-    if (!activity->segment || activity->lap) {
+    // A finished drag of MinRangeSeconds or more: not a lap, nor a range
+    // still being dragged.
+    if (!activity->segment || !activity->range_stats) {
         message_box("Drag across the graph to select a range first: Ctrl+L makes it a lap.");
         return;
     }
