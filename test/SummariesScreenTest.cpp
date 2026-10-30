@@ -7,6 +7,7 @@
  * heading, the bars and the table's rows, and the keys' effects.
  */
 
+#include <chrono>
 #include <ctime>
 #include <memory>
 
@@ -17,6 +18,9 @@
 using namespace ST;
 
 namespace {
+
+// What the screen takes as today, in its tests.
+constexpr auto Today = std::chrono::year { 2026 } / std::chrono::June / 15;
 
 i64 local_noon(int year, unsigned month, unsigned day)
 {
@@ -51,8 +55,10 @@ ActivitySummary run(int year, unsigned month, unsigned day)
 std::shared_ptr<SummariesScreen> make_screen()
 {
     auto screen = Widget::make<SummariesScreen>(nullptr);
+    // A size to lay out the bars or the lines in, as the app's has.
+    screen->viewport = Rect<float> { 0, 0, 1000, 800 };
     screen->set_summaries({ run(2021, 3, 1), ride(2023, 3, 6), ride(2023, 3, 8), ride(2025, 1, 6), ride(2025, 3, 3) });
-    screen->open(VolumeSport::Cycling, 2026);
+    screen->open(VolumeSport::Cycling, Today);
     return screen;
 }
 
@@ -298,7 +304,7 @@ void test_empty_store()
     Test::ScopedTestApp app;
     auto                screen = Widget::make<SummariesScreen>(nullptr);
     screen->set_summaries({ });
-    screen->open(VolumeSport::Running, 2026);
+    screen->open(VolumeSport::Running, Today);
     CHECK_EQ(screen->view.first_year, 2026);
     CHECK_EQ(screen->chart->bars.size(), 52uz);
     CHECK_EQ(screen->table->rows.size(), 53uz);
@@ -325,12 +331,217 @@ void test_summaries_before_open()
     Test::ScopedTestApp app;
     auto                screen = Widget::make<SummariesScreen>(nullptr);
     screen->set_summaries({ ride(2023, 3, 6) });
-    screen->open(VolumeSport::Cycling, 2026);
+    screen->open(VolumeSport::Cycling, Today);
     CHECK_EQ(screen->view.year, 2026);
     CHECK_EQ(screen->view.first_year, 2023);
     screen->set_summaries({ ride(2023, 3, 6), ride(2026, 3, 2) });
     CHECK_EQ(screen->view.year, 2026);
     CHECK_EQ(screen->table->rows.back()[3], "1");
+}
+
+std::chrono::year_month_day date(int year, unsigned month, unsigned day)
+{
+    return std::chrono::year { year } / std::chrono::month { month } / std::chrono::day { day };
+}
+
+void test_year_to_date_heading()
+{
+    SummaryView view { .sport = VolumeSport::Cycling, .metric = Metric::Time, .year = 2025, .lines = true };
+    CHECK_EQ(volume_heading(view), "Cycling · time to date · 2025");
+    view.lines = false;
+    view.month = 3;
+    CHECK_EQ(volume_heading(view), "Cycling · time by week · March 2025");
+}
+
+// The difference is signed, and there's no total yet after today.
+void test_year_to_date_rows()
+{
+    std::vector<YearToDateRow> const rows {
+        { .month = std::chrono::January, .year = 30000.0, .before = 40000.0 },
+        { .month = std::chrono::February, .year = 150000.0, .before = 100000.0 },
+        { .month = std::chrono::March, .before = 100000.0 },
+    };
+    auto const table = year_to_date_rows(rows, Metric::Distance);
+    CHECK((table[0] == TableRow { "January", "30.0 km", "40.0 km", "-10.0 km" }));
+    CHECK((table[1] == TableRow { "February", "150.0 km", "100.0 km", "+50.0 km" }));
+    CHECK((table[2] == TableRow { "March", "", "100.0 km", "" }));
+    auto const time = year_to_date_rows({ { .month = std::chrono::January, .year = 3600.0, .before = 6300.0 } }, Metric::Time);
+    CHECK((time[0] == TableRow { "January", "1:00", "1:45", "-0:45" }));
+    auto const columns = year_to_date_columns(2026);
+    CHECK_EQ(columns[1].header, "2026");
+    CHECK_EQ(columns[2].header, "2025");
+}
+
+// G shows the lines, with the table of months, and back.
+void test_lines()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->step_year(-1); // 2025
+    screen->toggle_lines();
+    CHECK(screen->view.lines);
+    CHECK(screen->chart->policy == SizePolicy::Hide);
+    CHECK(screen->lines->policy == SizePolicy::Stretch);
+    CHECK_EQ(screen->heading->text, "Cycling · distance to date · 2025");
+    CHECK_EQ(screen->table->rows.size(), 12uz);
+    CHECK_EQ(screen->table->rows[2][1], "84.7 km");
+    CHECK_EQ(screen->table->rows[2][2], "0.0 km");
+    // 2025 and 2024, and no 2023 line: the first rides are in 2023.
+    CHECK_EQ(screen->lines->series.size(), 3uz);
+    CHECK(screen->lines->series[0].bold);
+    CHECK_EQ(screen->lines->series[0].values.size(), 365uz);
+    CHECK_EQ(screen->lines->series[0].values.back(), 84.69);
+    CHECK_EQ(screen->lines->ticks.size(), 12uz);
+    CHECK_EQ(screen->lines->ticks[2].x, 59.0); // 1 March
+    screen->step_year(-1);
+    CHECK_EQ(screen->lines->series.size(), 2uz); // 2024, 2023
+    screen->step_year(-1);
+    CHECK_EQ(screen->lines->series.size(), 1uz); // 2023 alone
+    screen->toggle_lines();
+    CHECK(!screen->view.lines);
+    CHECK(screen->chart->policy == SizePolicy::Stretch);
+    CHECK_EQ(screen->chart->bars.size(), 52uz);
+}
+
+// This year's line stops at today.
+void test_line_stops_at_today()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->toggle_lines();
+    CHECK_EQ(screen->lines->series[0].values.size(), 166uz); // To 15 June
+    // As wide as 2024's line, two years back, a leap year.
+    CHECK_EQ(screen->lines->x_count, 366uz);
+    CHECK_EQ(screen->table->rows[5][1], ""); // June isn't over
+    CHECK_EQ(screen->table->rows[4][1], "0.0 km");
+}
+
+// W, M or Y in the lines go back to the bars by that period.
+void test_period_leaves_the_lines()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->toggle_lines();
+    screen->set_period(Period::Month);
+    CHECK(!screen->view.lines);
+    CHECK_EQ(screen->chart->bars.size(), 12uz);
+}
+
+// From the years to 2023's months, to March's weeks, to a week's first
+// ride; and back up, with what was drilled into selected.
+void test_drill_down_and_up()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    std::optional<i64>  listed { };
+    screen->on_week = [&listed](ActivitySummary const &summary) { listed = summary.start; };
+    screen->set_period(Period::Year);
+    screen->table->select(0); // 2023
+    screen->drill();
+    CHECK(screen->view.period == Period::Month);
+    CHECK_EQ(screen->view.year, 2023);
+    CHECK_EQ(screen->trail.size(), 1uz);
+    screen->drill(2); // March, by its bar
+    CHECK(screen->view.period == Period::Week);
+    CHECK(screen->view.month == 3u);
+    CHECK_EQ(screen->chart->bars.size(), 4uz); // Mondays 6, 13, 20, 27 March
+    CHECK_EQ(screen->heading->text, "Cycling · distance by week · March 2023");
+    screen->drill(1); // No rides
+    CHECK(!listed);
+    screen->drill(0); // Two rides: the first
+    CHECK(listed == local_noon(2023, 3, 6));
+
+    CHECK(screen->up());
+    CHECK(screen->view.period == Period::Month);
+    CHECK(!screen->view.month);
+    CHECK(screen->table->selection == 2uz); // March
+    CHECK(screen->up());
+    CHECK(screen->view.period == Period::Year);
+    CHECK(screen->table->selection == 0uz); // 2023
+    CHECK(!screen->up());
+}
+
+// Starting from the weeks: a week drills to its ride; a month from the
+// months view to its weeks, and back up to the months.
+void test_drill_from_weeks_and_months()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    std::optional<i64>  listed { };
+    screen->on_week = [&listed](ActivitySummary const &summary) { listed = summary.start; };
+    screen->step_year(-1); // 2025
+    screen->drill(0);      // Monday 6 January
+    CHECK(listed == local_noon(2025, 1, 6));
+    CHECK(screen->trail.empty());
+    screen->set_period(Period::Month);
+    screen->drill(0);
+    CHECK(screen->view.month == 1u);
+    CHECK(screen->up());
+    CHECK(screen->view.period == Period::Month);
+    CHECK(!screen->up());
+}
+
+// The total row, the lines and no selection have nothing to drill into.
+void test_nothing_to_drill()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->set_period(Period::Year);
+    screen->drill();
+    CHECK(screen->trail.empty());
+    screen->table->select(screen->table->rows.size() - 1);
+    screen->drill();
+    CHECK(screen->trail.empty());
+    screen->toggle_lines();
+    screen->table->select(0);
+    screen->drill();
+    CHECK(screen->trail.empty());
+}
+
+// W, M, Y and G start afresh: nothing to go back up to.
+void test_period_clears_the_trail()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->set_period(Period::Year);
+    screen->drill(0);
+    screen->drill(2);
+    CHECK_EQ(screen->trail.size(), 2uz);
+    screen->set_period(Period::Week);
+    CHECK(screen->trail.empty());
+    CHECK(!screen->view.month);
+    CHECK_EQ(screen->chart->bars.size(), 52uz); // 2023's weeks
+    screen->set_period(Period::Year);
+    screen->drill(0);
+    screen->toggle_lines();
+    CHECK(screen->trail.empty());
+}
+
+// In a month's weeks, Left and Right go a month, across New Year, and
+// stop at the years there are.
+void test_step_by_month()
+{
+    SummaryView view { .period = Period::Week, .year = 2025, .month = 1u, .first_year = 2025, .last_year = 2026 };
+    CHECK(view.step_year(-1) == false);
+    CHECK(view.month == 1u);
+    view.year = 2025;
+    view.month = 12u;
+    CHECK(view.step_year(1));
+    CHECK_EQ(view.year, 2026);
+    CHECK(view.month == 1u);
+    CHECK(view.step_year(-1));
+    CHECK_EQ(view.year, 2025);
+    CHECK(view.month == 12u);
+    view.year = 2026;
+    CHECK(!view.step_year(12));
+}
+
+// The lines go by year also from the years view.
+void test_lines_step_by_year()
+{
+    SummaryView view { .period = Period::Year, .year = 2026, .lines = true, .first_year = 2020, .last_year = 2026 };
+    CHECK(view.step_year(-1));
+    CHECK_EQ(view.year, 2025);
 }
 
 }
@@ -354,5 +565,16 @@ int main()
     test_hover_doesnt_undo_the_keys();
     test_empty_store();
     test_summaries_before_open();
+    test_year_to_date_heading();
+    test_year_to_date_rows();
+    test_lines();
+    test_line_stops_at_today();
+    test_period_leaves_the_lines();
+    test_drill_down_and_up();
+    test_drill_from_weeks_and_months();
+    test_nothing_to_drill();
+    test_period_clears_the_trail();
+    test_step_by_month();
+    test_lines_step_by_year();
     return Test::test_result();
 }

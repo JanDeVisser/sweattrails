@@ -139,7 +139,10 @@ None.
 - The chart and the lines are both in the screen; the one not shown is
   `Hide`, as the overlay preview and the map are.
 - The year-to-date rows: Month, the year, the year before, and the
-  difference, signed: "+120.0 km", "−0:45".
+  difference, signed: "+120.0 km", "-0:45", with an ASCII minus, which
+  every font has.
+- In the lines, the x axis is as wide as the longest line: a leap year
+  two years back has 366 days.
 - The heading of a month's weeks: "Cycling · distance by week · March
   2025"; of the lines: "Cycling · distance to date · 2025".
 

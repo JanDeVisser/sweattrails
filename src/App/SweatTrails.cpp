@@ -915,8 +915,9 @@ void cmd_summaries(pSweatTrails const &sweattrails, JSONValue const &)
     if (auto const &activity = sweattrails->activity_display->activity; activity) {
         sport = volume_sport(activity->activity.sport, activity->activity.sub_sport).value_or(VolumeSport::Running);
     }
-    auto const today = DateTime::from_timestamp(static_cast<i32>(std::time(nullptr)));
-    sweattrails->summaries_screen->open(sport, today.year);
+    auto const now = DateTime::from_timestamp(static_cast<i32>(std::time(nullptr)));
+    auto const today = std::chrono::year { now.year } / std::chrono::month { static_cast<unsigned>(now.month) + 1 } / std::chrono::day { now.day_of_month };
+    sweattrails->summaries_screen->open(sport, today);
     sweattrails->show_summaries(true);
 }
 
