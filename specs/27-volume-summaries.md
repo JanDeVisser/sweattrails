@@ -1,6 +1,6 @@
 # Volume summaries
 
-Status: Ready
+Status: In progress
 
 <!--
 Status is one of:
@@ -152,11 +152,150 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### The summary file (`storage/Summaries.h`, `Summaries.cpp`)
+
+- **`ActivitySummary`**: what the totals need of an activity, and what
+  tells whether its FIT file changed: `file` (relative to the activity
+  directory, `2025/03/1741000000.fit`), `size` and `modified` (the FIT
+  file's), `start` (a Unix time), `sport` and `sub_sport` (optional:
+  none for a file that can't be read, which is kept so that it isn't
+  read again each time), `distance` (m), `moving` (s) and `ascent` (m).
+  Every sport is kept, not only running and cycling, so that the
+  deferred sports cost no new build.
+- **`summaries.json`** in the data directory:
+
+  ```json
+  { "version": 1,
+    "activities": [
+      { "file": "2025/03/1741000000.fit", "size": 183402,
+        "modified": 1741012345, "start": 1741000000,
+        "sport": "cycling", "sub_sport": "virtual_activity",
+        "distance": 42310.5, "moving": 5530, "ascent": 412 } ] }
+  ```
+
+  `read_summaries(path)` and `write_summaries(path, summaries)`, written
+  to a temporary file and renamed, so that a crash leaves the old file.
+  A file that can't be read, or of another version, is no file: it's
+  built again.
+- **`SummaryWork plan_update(summaries, files)`**, pure: given the
+  summaries and the FIT files there are now (`file`, `size`,
+  `modified`), the summaries to keep and the files to read: new ones,
+  and ones whose size or time changed. Ones whose file is gone drop out.
+- **The job, `UpdateSummaries`**: lists the FIT files (from
+  `activity_starts()`, by name, and their size and time), plans the
+  update, and reads the files to read `SummaryChunk` (50) at a time,
+  shallowly, as a month's list does. After each chunk it writes the
+  file, sends `SummariesUpdated { summaries, read, to_read }` with
+  `notify_latest()`, and schedules itself for the next chunk. So the
+  first build, some 1,800 files, doesn't hold up a download or the
+  inbox for minutes: they run between its chunks.
+- It's scheduled at the start, after the newest activity is shown, and
+  after the inbox and a download have filed anything. Reading a FIT file
+  removed by hand is noticed at the next start.
+- On the UI thread, `SweatTrails::summaries` holds the latest, and the
+  status line says "Reading activities for the totals: 340 of 1,802"
+  while there are files to read, and nothing when it's done.
+
+### The totals (`storage/Volume.h`, `Volume.cpp`), pure
+
+- **`VolumeSport { Running, Cycling }`** and
+  **`std::optional<VolumeSport> volume_sport(sport, sub_sport)`**:
+  running, or a treadmill or indoor run under another sport, is
+  Running; cycling, or an indoor, spin or virtual ride under another
+  sport (such as fitness equipment, as older Garmins record a spin
+  bike), is Cycling; the rest is nothing.
+- **`Period { Week, Month, Year }`** and **`Metric { Distance, Time,
+  Count, Ascent }`**, X-macro enums.
+- **`PeriodTotal`**: `first_day` and `last_day` (dates), `distance`,
+  `moving`, `count`, `ascent`.
+- **`std::vector<PeriodTotal> volume_totals(summaries, sport, period,
+  year)`**: the year's weeks (those whose Monday is in it), its 12
+  months, or, for `Year`, every year from the sport's first activity to
+  `year`, each with its activities' totals, the empty ones too. An
+  activity's day is its start in the computer's time zone,
+  `DateTime::from_timestamp()`, as the store files it and the month list
+  shows it (the spec's "local time it was recorded in" is that, for an
+  activity recorded at home).
+- **`std::pair<int, int> volume_years(summaries, sport, today)`**: the
+  years Left and Right go between: the sport's first activity's year to
+  this year.
+- Dates use `std::chrono::year_month_day` and `weekday` for the
+  Mondays, which libc++ has (it's only `zoned_time` it hasn't).
+
+### The bar chart (`src/Lib/Widget/BarChart.h`, `BarChart.cpp`)
+
+A widget of its own, as it knows nothing of activities:
+
+- `bars`: a `label` (may be empty) and a `value` each;
+  `format_value(double) -> string` for the scale; `highlight`, an
+  optional index; `on_hover(optional<size_t>)` and `on_click(size_t)`.
+- `ChartScale nice_scale(double max, int ticks)`, pure: a top and a step
+  of 1, 2 or 5 times a power of ten, so that the scale reads 0, 50, 100,
+  150 km and not 0, 47.3, 94.6.
+- `bar_at(x)`, pure geometry, for the hover and the click. Labels that
+  would overlap the one before are left out: the weeks label only the
+  first week of each month, with the month's name, and the chart drops
+  more if it's narrow.
+
+### The screen (`widget/Summaries.h`, `Summaries.cpp`)
+
+- **`SummaryView`**, pure: `sport`, `metric`, `period`, `year`, and the
+  years it may go between; `set_period()`, `set_sport()`, `set_metric()`,
+  `step_year(±1)`, which keep `year` in its range.
+- **`SummariesScreen : Layout`**: a heading ("Cycling · distance by
+  week · 2025"), a line of the keys, the `BarChart`, and a `Table`
+  (Lib/Widget's, as for the laps) of the periods and a total row:
+  Week ("Mon 3 Mar"), Month ("March") or Year, Distance, Time, Rides or
+  Runs, Ascent. `set_summaries()` and the view's changes rebuild the
+  bars and the rows from `volume_totals()`.
+- The bar's value is the metric in the unit shown: km, hours, a count,
+  m. The table's distance uses `format_distance()`; its time is hours
+  and minutes ("312:10"), as `format_moving_time()`'s seconds mean
+  little in a year's total.
+- Hovering over a bar selects its row in the table, which scrolls to
+  it; selecting a row (Up, Down, a click) highlights its bar.
+- `ActivityDisplay` and `SummariesScreen` are both in the app's
+  `WidgetStack`; Ctrl+T puts one or the other in front. Choosing an
+  activity elsewhere, from the month list (Ctrl+M) or a download, shows
+  the activity screen again.
+
+### Keys (`src/Lib/Widget/Widget.h`, `SweatTrails.cpp`)
+
+- Left, Right, Up, Down and Esc are bound now to the activity screen's
+  tasks, and the first binding of a key wins. **`Task::when(predicate)`**,
+  new in `AppBus`: a task whose predicate is false is passed over, and
+  the next binding of the key gets it. The summaries' tasks
+  (`st-summaries-*`) are `when` the summaries are showing; the activity
+  screen's (the laps, the activities, Esc, the map's zoom, renaming,
+  laps, the overlay keys) `when` they aren't, so that they don't act on
+  an activity that isn't on the screen. Ctrl+M, Ctrl+G, Ctrl+Q and
+  Ctrl+T work on both.
+- `st-summaries` (Ctrl+T) opens and closes the screen; the others take
+  their choice as an argument where they can (`st-summaries-period`
+  with `"week"`, …), so that W, M and Y are one task.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `SummariesTest`: `read_summaries()` and `write_summaries()` round
+  trip, a missing, broken or other-version file is none; `plan_update()`
+  keeps, rereads a changed size or time, reads a new file, and drops a
+  gone one; an unreadable file's entry stays without a sport.
+- `VolumeTest`: `volume_sport()` for running, treadmill, cycling,
+  virtual, spin under fitness equipment, and walking (none);
+  `volume_totals()` by week (2024 has 53 Mondays, 2025 52), a week
+  across New Year, by month,
+  by year from the first activity, empty periods, an activity without
+  distance; `volume_years()`.
+- `BarChartTest`: `nice_scale()` for 0, 1, 47, 100, 3,120; `bar_at()`
+  at the edges and between bars; labels that overlap are dropped.
+- `SummariesScreenTest` (`TestApp`, no window): `SummaryView`'s keys
+  keep the year in range; the rows and the total row for a few
+  activities; hovering a bar selects the row.
+- `AppBus`: `when()` passes a key to the next binding, and a task
+  without one works as before.
+- The job is tried by hand, on a copy of a store, not Jan's: the first
+  build's progress, a second start reading nothing, a new FIT file
+  read. The drawing of the chart and the screen by hand.
 
 ## Review notes
 
