@@ -303,6 +303,7 @@ int main()
     test_split_by_time();
     test_split_over_a_gap();
     test_split_refused();
+    test_split_refused_at_one_more_than_max_laps();
     test_mark();
     test_mark_at_the_ends();
     test_mark_snaps();

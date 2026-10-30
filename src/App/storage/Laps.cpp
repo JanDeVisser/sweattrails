@@ -75,7 +75,8 @@ std::expected<std::vector<i64>, std::string> split_starts(Activity const &activi
         return *rec.distance - *with_distance->distance;
     };
     auto const total = (split.kind == Split::Kind::Time) ? from_start(records.back()).value_or(0) : from_start(*last_distance).value_or(0);
-    if (total / split.every > static_cast<float32>(MaxLaps)) {
+    // A split at each multiple, and the lap before the first.
+    if (std::floor(total / split.every) + 1 > static_cast<float32>(MaxLaps)) {
         return std::unexpected(std::format("That would make more than {} laps: split by more.", MaxLaps));
     }
     std::vector<i64> starts;
