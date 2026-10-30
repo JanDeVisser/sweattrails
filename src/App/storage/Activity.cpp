@@ -17,6 +17,7 @@
 
 #include <fit/FIT.h>
 #include <storage/Activity.h>
+#include <storage/Laps.h>
 #include <storage/Storage.h>
 
 namespace ST {
@@ -203,7 +204,33 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
         read_names();
     }
     TRY(analyze());
+    // After analyze(): the laps' stats come from the records as recorded.
+    if (!sidecar.empty()) {
+        user_lap_starts = sidecar_laps(sidecar);
+        if (user_lap_starts) {
+            laps = laps_at(*this, *user_lap_starts);
+        }
+    }
     return true;
+}
+
+std::vector<i64> Activity::lap_starts() const
+{
+    return user_lap_starts ? *user_lap_starts : device_lap_starts(*this);
+}
+
+std::expected<void, LibCError> Activity::set_lap_starts(std::optional<std::vector<i64>> starts)
+{
+    if (sidecar.empty()) {
+        return std::unexpected(LibCError { "`{}`'s laps can't be changed: it wasn't loaded from the store", id.name });
+    }
+    if (starts) {
+        std::ranges::sort(*starts);
+    }
+    TRY(save_sidecar_laps(sidecar, starts));
+    laps = starts ? laps_at(*this, *starts) : device_laps;
+    user_lap_starts = std::move(starts);
+    return { };
 }
 
 void Activity::read_names()
@@ -241,6 +268,9 @@ constexpr char const OwnTitleKey[] = "title";
 
 // And for what Strava has for it.
 constexpr char const StravaKey[] = "strava";
+
+// And for the laps the user made.
+constexpr char const LapsKey[] = "laps";
 
 std::optional<JSONValue> read_sidecar(fs::path const &sidecar)
 {
@@ -341,6 +371,36 @@ StravaFileNames read_strava_file(fs::path const &file)
 std::optional<std::string> sidecar_title(fs::path const &sidecar)
 {
     return sidecar_titles(sidecar).service;
+}
+
+std::optional<std::vector<i64>> sidecar_laps(fs::path const &sidecar)
+{
+    auto const json = read_sidecar(sidecar);
+    if (!json || !json->is_object() || !json->get(LapsKey)) {
+        return { };
+    }
+    auto starts = json->try_get_array<i64>(LapsKey);
+    if (!starts) {
+        warning(Storage, "Ignoring `{}`'s laps, which aren't a list of times: {}", sidecar.string(), starts.error().to_string());
+        return { };
+    }
+    std::ranges::sort(*starts);
+    return std::move(*starts);
+}
+
+std::expected<void, LibCError> save_sidecar_laps(fs::path const &sidecar, std::optional<std::vector<i64>> const &starts)
+{
+    return update_sidecar(sidecar, [&starts](JSONValue &json) {
+        if (!starts) {
+            json.erase(LapsKey);
+            return;
+        }
+        auto list = JSONValue::array();
+        for (auto const start : *starts) {
+            list.append(JSONValue { start });
+        }
+        json.set(LapsKey, list);
+    });
 }
 
 std::optional<std::string> sidecar_own_title(fs::path const &sidecar)
