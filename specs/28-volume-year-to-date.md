@@ -1,6 +1,6 @@
 # Volume summaries: year to date, and drilling down
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -87,15 +87,22 @@ None.
 - **W, M and Y in the lines** switch back to the bars, by that period:
   choosing a period is choosing bars. G goes back to the lines.
 - **Left and Right in a month's weeks** go a month back or forward,
-  across New Year too, as the weeks of one month are what's shown.
-  Elsewhere they go a year, as now.
+  across New Year too, as the weeks of one month are what's shown, from
+  the month of the sport's first activity to this one
+  (`volume_months()`). Elsewhere they go a year, as now.
 - **A click on a table row** selects it, as now; Enter drills. Only a
   click on a bar drills, as the spec says: a click in the table is how
   the user selects a row to read.
 - **The year-to-date table** leaves the months after this one empty in
-  the current year: there's no total so far yet.
+  the current year: there's no total so far yet. This month has the
+  total up to today, against the year before's at the same date (the
+  28th of February for the 29th), and says so: "June to the 15th".
 - **Years before the sport's first activity** get no line, and aren't
-  in the legend: a flat line at zero would read as a year off.
+  in the legend: a flat line at zero would read as a year off. In the
+  table, the year before is empty for the sport's first year.
+- **Going back up** keeps the year on display, which Left, Right, R and
+  C may have changed since drilling in, and selects its month.
+- **A line of one value**, this year's on New Year's Day, is a dot.
 
 ### The totals (`storage/Volume.*`), pure
 
@@ -107,7 +114,8 @@ None.
   `until` (today) if it's in the year, else the whole year. Days are
   the computer's, as for the weeks.
 - **`YearToDateRow`**: a month, the total so far at its end in the year
-  and in the year before (optional: none after today), and
+  and in the year before (optional: none after today), and `until`,
+  today's day for this month, whose totals go to today; and
   **`std::vector<YearToDateRow> year_to_date_months(…)`** from the
   daily totals.
 
@@ -240,3 +248,22 @@ which pass. In `test/VolumeTest.cpp`,
 `test_year_to_date_months_after_a_leap_year` and
 `test_year_to_date_on_new_years_day`, which pass. All other tests pass
 (`ctest -E oauth`); only `summaries_screen_test` fails.
+
+### Resolution
+
+1. Fixed: this month has the total up to today, against the year
+   before's at the same date, the 28th of February for the 29th, in a
+   row named "June to the 15th". `test_year_to_date_month_so_far` was
+   added.
+2. and 3. Fixed: going up keeps the year on display, which R and C keep
+   in the sport's years, and selects the month on display.
+4. Fixed: a line of one value is drawn as a dot; checked by reading, as
+   drawing needs a window.
+5. Fixed: in a month's weeks, Left and Right stop at the month of the
+   sport's first activity and at this month (`volume_months()`).
+   `test_step_by_month_stops_at_the_activities` was added.
+6. Fixed: in the sport's first year, the year before's column and the
+   difference are empty. `test_no_year_before_the_first` was added.
+7. Fixed: the comment says what the test checks.
+
+The Reviewer's tests are kept, and all pass.
