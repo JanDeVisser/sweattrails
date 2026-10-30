@@ -1,6 +1,6 @@
 # Stats for a range dragged in the graph
 
-Status: In review
+Status: Done
 
 ## Goal
 
