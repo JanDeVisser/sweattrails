@@ -174,7 +174,9 @@ bool SummaryView::step_year(int step)
 {
     if (month) {
         auto const next = chrono::year_month { chrono::year { year }, chrono::month { *month } } + chrono::months { step };
-        if (next.year() < chrono::year { first_year } || next.year() > chrono::year { last_year }) {
+        auto const first = first_month.ok() ? first_month : chrono::year { first_year } / chrono::January;
+        auto const last = last_month.ok() ? last_month : chrono::year { last_year } / chrono::December;
+        if (next < first || next > last) {
             return false;
         }
         year = static_cast<int>(next.year());
@@ -320,14 +322,14 @@ void SummariesScreen::open(VolumeSport sport, chrono::year_month_day today_date)
     today = today_date;
     trail.clear();
     view = SummaryView { .sport = sport, .year = static_cast<int>(today.year()) };
-    view.set_years(volume_years(summaries, sport, view.year));
+    set_span();
     refresh();
 }
 
 void SummariesScreen::set_summaries(ActivitySummaries new_summaries)
 {
     summaries = std::move(new_summaries);
-    view.set_years(volume_years(summaries, view.sport, static_cast<int>(today.year())));
+    set_span();
     refresh_in_place();
 }
 
@@ -343,7 +345,7 @@ void SummariesScreen::set_period(Period period)
 void SummariesScreen::set_sport(VolumeSport sport)
 {
     view.sport = sport;
-    view.set_years(volume_years(summaries, sport, static_cast<int>(today.year())));
+    set_span();
     refresh();
 }
 
@@ -429,6 +431,12 @@ bool SummariesScreen::up()
     refresh();
     select_period(drilled_into);
     return true;
+}
+
+void SummariesScreen::set_span()
+{
+    view.set_years(volume_years(summaries, view.sport, static_cast<int>(today.year())));
+    std::tie(view.first_month, view.last_month) = volume_months(summaries, view.sport, today);
 }
 
 void SummariesScreen::select_period(chrono::year_month_day first_day)

@@ -236,6 +236,18 @@ std::vector<PeriodTotal> volume_totals(ActivitySummaries const &summaries, Volum
     return std::move(periods.totals);
 }
 
+std::pair<chrono::year_month, chrono::year_month> volume_months(ActivitySummaries const &summaries, VolumeSport sport, chrono::year_month_day today)
+{
+    auto const this_month = today.year() / today.month();
+    for (auto const &summary : summaries) {
+        if (volume_sport(summary.sport, summary.sub_sport) == sport) {
+            auto const first = start_day(summary);
+            return { std::min(first.year() / first.month(), this_month), this_month };
+        }
+    }
+    return { this_month, this_month };
+}
+
 std::pair<int, int> volume_years(ActivitySummaries const &summaries, VolumeSport sport, int this_year)
 {
     // The summaries are in order of their start.

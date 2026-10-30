@@ -710,6 +710,25 @@ void test_metric_in_the_lines()
     CHECK(screen->table->selection == 2uz);
 }
 
+// In a month's weeks, Right stops at this month, and Left at the sport's
+// first activity's: the rides start in March 2023.
+void test_step_by_month_stops_at_the_activities()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->set_period(Period::Month);
+    screen->drill(5); // June 2026, this month
+    CHECK(screen->view.month == 6u);
+    screen->step_year(1);
+    CHECK(screen->view.month == 6u);
+    CHECK_EQ(screen->view.year, 2026);
+    for (auto ix = 0; ix < 60; ++ix) {
+        screen->step_year(-1);
+    }
+    CHECK_EQ(screen->view.year, 2023);
+    CHECK(screen->view.month == 3u);
+}
+
 }
 
 int main()
@@ -751,5 +770,6 @@ int main()
     test_year_to_date_this_month();
     test_up_after_changing_sport();
     test_up_after_stepping_months();
+    test_step_by_month_stops_at_the_activities();
     return Test::test_result();
 }

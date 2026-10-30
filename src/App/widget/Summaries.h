@@ -39,6 +39,11 @@ struct SummaryView {
     int                     first_year { 0 };
     int                     last_year { 0 };
 
+    // The months a month's weeks go between, if they're set: else the
+    // years' Januaries and Decembers.
+    std::chrono::year_month first_month { };
+    std::chrono::year_month last_month { };
+
     // The years there are totals of; `year` stays between them.
     void set_years(std::pair<int, int> years);
     // A year back or forward, or a month in a month's weeks, if there's
@@ -111,6 +116,8 @@ private:
     void refresh_in_place();
     void refresh_lines();
     void select_period(std::chrono::year_month_day first_day);
+    // The years and months the view can go between, for its sport.
+    void set_span();
 };
 
 }

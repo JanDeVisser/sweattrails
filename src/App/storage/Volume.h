@@ -96,6 +96,10 @@ struct PeriodTotal {
 // `this_year`, or just `this_year` without activities.
 [[nodiscard]] std::pair<int, int> volume_years(ActivitySummaries const &summaries, VolumeSport sport, int this_year);
 
+// The months there are totals of: from the sport's first activity's month
+// to today's, or just today's without activities.
+[[nodiscard]] std::pair<std::chrono::year_month, std::chrono::year_month> volume_months(ActivitySummaries const &summaries, VolumeSport sport, std::chrono::year_month_day today);
+
 // The sport's total so far of the metric, in metres, seconds or a count,
 // at the end of each day of the year, from January 1st: up to and
 // including `until`, today, if it's in the year, the whole year if it's
