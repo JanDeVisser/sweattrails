@@ -372,6 +372,19 @@ void test_range_with_time_going_back()
     CHECK(!d.range_stats.has_value() || d.range_stats->elapsed.elapsed < 3600u);
 }
 
+// The lap a record is in, as a marked range's lap is selected by its first
+// record.
+void test_lap_of()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    CHECK(d.lap_of(0) == 0uz);
+    CHECK(d.lap_of(9) == 0uz);
+    CHECK(d.lap_of(10) == 1uz);
+    CHECK(d.lap_of(99) == 2uz);
+    CHECK(!d.lap_of(100).has_value());
+}
+
 int main()
 {
     test_current_record();
@@ -390,6 +403,7 @@ int main()
     test_next_over_an_empty_lap();
     test_empty_lap_in_the_strip();
     test_select_lap_replaces_a_dragged_range();
+    test_lap_of();
     test_lap_spans();
     test_lap_at();
     test_selection();

@@ -142,12 +142,17 @@ struct ActivityDisplay : public Layout {
     std::shared_ptr<ActivityGraph>       graph;
 
     explicit ActivityDisplay(pWidget const &parent);
-    void               set_activity(Activity const &activity);
-    void               clear_activity();
+    void set_activity(Activity const &activity);
+    void clear_activity();
+    // The activity's laps changed: the table shows them again.
+    void               laps_changed();
     [[nodiscard]] bool previewing() const;
     void               show_preview(bool on);
     void               initialize() override;
     void               on_draw() override;
+
+private:
+    void show_laps();
 };
 
 }

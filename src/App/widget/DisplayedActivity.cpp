@@ -92,6 +92,16 @@ bool DisplayedActivity::has_laps() const
     return activity.laps.size() > 1;
 }
 
+std::optional<size_t> DisplayedActivity::lap_of(size_t t) const
+{
+    for (size_t ix = 0; ix < activity.laps.size(); ++ix) {
+        if (t >= activity.laps[ix].first_record && t < activity.laps[ix].end_record) {
+            return ix;
+        }
+    }
+    return { };
+}
+
 void DisplayedActivity::select_lap(size_t ix)
 {
     if (ix >= activity.laps.size()) {

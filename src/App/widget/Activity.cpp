@@ -496,19 +496,30 @@ ActivityDisplay::ActivityDisplay(pWidget const &parent)
 void ActivityDisplay::set_activity(Activity const &activity)
 {
     this->activity = std::make_shared<DisplayedActivity>(activity);
-    if (this->activity->has_laps()) {
-        auto [columns, rows] = lap_table(this->activity->activity);
+    show_laps();
+    data_display->set_activity(this->activity);
+    map->set_activity(this->activity);
+    preview->set_activity(this->activity);
+    graph->set_activity(this->activity);
+    resize();
+}
+
+void ActivityDisplay::laps_changed()
+{
+    show_laps();
+    resize();
+}
+
+void ActivityDisplay::show_laps()
+{
+    if (activity && activity->has_laps()) {
+        auto [columns, rows] = lap_table(activity->activity);
         laps->set_rows(std::move(columns), std::move(rows));
         laps->policy = SizePolicy::Characters;
     } else {
         laps->set_rows({ }, { });
         laps->policy = SizePolicy::Hide;
     }
-    data_display->set_activity(this->activity);
-    map->set_activity(this->activity);
-    preview->set_activity(this->activity);
-    graph->set_activity(this->activity);
-    resize();
 }
 
 void ActivityDisplay::clear_activity()
