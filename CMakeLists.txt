@@ -216,6 +216,7 @@ add_executable(
         src/App/widget/SportIcon.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
+        src/App/storage/Summaries.cpp
         src/App/storage/Download.cpp
         src/App/storage/Garmin.cpp
         src/App/storage/Storage.cpp
@@ -665,6 +666,22 @@ sweattrails_test(
 )
 target_include_directories(laps_test PRIVATE src/App)
 target_link_libraries(laps_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        summaries_test
+        test/SummariesTest.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Summaries.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(summaries_test PRIVATE src/App)
+target_link_libraries(summaries_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         activity_load_test

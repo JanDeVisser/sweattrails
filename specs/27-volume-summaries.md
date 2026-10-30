@@ -169,10 +169,12 @@ None.
     "activities": [
       { "file": "2025/03/1741000000.fit", "size": 183402,
         "modified": 1741012345, "start": 1741000000,
-        "sport": "cycling", "sub_sport": "virtual_activity",
+        "sport": 2, "sub_sport": 58,
         "distance": 42310.5, "moving": 5530, "ascent": 412 } ] }
   ```
 
+  The sport and sub-sport are FIT's numbers for them (cycling, virtual
+  activity), as there's nothing to read FIT's names back with.
   `read_summaries(path)` and `write_summaries(path, summaries)`, written
   to a temporary file and renamed, so that a crash leaves the old file.
   A file that can't be read, or of another version, is no file: it's
