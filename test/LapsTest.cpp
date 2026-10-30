@@ -152,8 +152,9 @@ void test_laps_at()
     }
     CHECK_EQ(laps[1].first_record, 100uz);
     CHECK_EQ(laps[1].end_record, 300uz);
-    CHECK_EQ(laps[1].segment.distance, 995.0f);
-    CHECK_EQ(laps[1].segment.elapsed.elapsed, 199u);
+    // Up to the next lap's first record.
+    CHECK_EQ(laps[1].segment.distance, 1000.0f);
+    CHECK_EQ(laps[1].segment.elapsed.elapsed, 200u);
     // No starts: one lap, the whole activity.
     auto const one = laps_at(t.activity, { });
     CHECK(one.size() == 1 && one[0].first_record == 0 && one[0].end_record == 600);
@@ -188,6 +189,96 @@ void test_device_lap_starts()
     CHECK((device_lap_starts(t.activity) == std::vector<i64> { Start + 100 }));
 }
 
+// The reviewer's tests.
+
+// "More than MaxLaps laps" is refused: 1,000 splits make 1,001 laps.
+void test_split_refused_at_one_more_than_max_laps()
+{
+    TestActivity t { 1001 };
+    auto const   starts = split_starts(t.activity, Split { .kind = Split::Kind::Time, .every = 1 });
+    CHECK(!starts.has_value());
+    // 999 splits, 1,000 laps: allowed.
+    TestActivity just { 1000 };
+    CHECK(split_starts(just.activity, Split { .kind = Split::Kind::Time, .every = 1 }).has_value());
+}
+
+// A device often records a few records before it has a distance, such as
+// before a GPS fix: the activity still has distance to split by.
+void test_split_by_distance_without_distance_at_the_start()
+{
+    TestActivity t;
+    for (size_t ix = 0; ix < 3; ++ix) {
+        t.activity.recorded[ix].distance.reset();
+    }
+    auto const starts = split_starts(t.activity, Split { .kind = Split::Kind::Distance, .every = 1000 });
+    CHECK(starts.has_value());
+    CHECK_EQ(starts.value_or(std::vector<i64> { }).size(), 2uz);
+}
+
+// Split every 1 km, the laps are 1 km, 200 s: a lap runs up to the next
+// one's first record, so the laps add up to the activity, as the device's
+// do.
+void test_split_laps_add_up()
+{
+    TestActivity t;
+    auto const   starts = split_starts(t.activity, Split { .kind = Split::Kind::Distance, .every = 1000 });
+    auto const   laps = laps_at(t.activity, starts.value_or(std::vector<i64> { }));
+    CHECK_EQ(laps.size(), 3uz);
+    if (laps.size() != 3) {
+        return;
+    }
+    CHECK_EQ(laps[0].segment.distance, 1000.0f);
+    CHECK_EQ(laps[0].segment.elapsed.elapsed, 200u);
+    auto const total = laps[0].segment.distance + laps[1].segment.distance + laps[2].segment.distance;
+    CHECK_EQ(total, 2995.0f);
+}
+
+// A range from the activity's start, with a lap starting 3 s in, mustn't
+// snap to it: that leaves the 3 s lap snapping is there to prevent.
+void test_mark_from_the_start_doesnt_snap_away()
+{
+    TestActivity t;
+    auto const   laps = laps_at(t.activity, mark_starts(t.activity, { Start + 3 }, 0, 99));
+    CHECK_EQ(laps.size(), 2uz);
+    if (!laps.empty()) {
+        CHECK_EQ(laps[0].end_record, 100uz);
+    }
+}
+
+// A range's start that snaps forward to a lap's start: the marked lap
+// starts after the range's first record, which is in the lap before it.
+// Pins what cmd_mark_lap() has to select: the lap at the marked start,
+// not the lap of the range's first record.
+void test_mark_snaps_forward()
+{
+    TestActivity t;
+    auto const   starts = mark_starts(t.activity, { Start + 104 }, 100, 199);
+    CHECK((starts == std::vector<i64> { Start + 104, Start + 200 }));
+    auto const laps = laps_at(t.activity, starts);
+    CHECK_EQ(laps.size(), 3uz);
+    if (laps.size() == 3) {
+        CHECK_EQ(laps[0].end_record, 104uz);
+        CHECK_EQ(laps[1].first_record, 104uz);
+        CHECK_EQ(laps[1].end_record, 200uz);
+    }
+}
+
+// A range over the whole activity is one lap.
+void test_mark_whole_activity()
+{
+    TestActivity t;
+    CHECK_EQ(laps_at(t.activity, mark_starts(t.activity, { Start + 100, Start + 300 }, 0, 599)).size(), 1uz);
+}
+
+// No records: no starts, and nothing to split.
+void test_without_records()
+{
+    TestActivity t { 0 };
+    CHECK(split_starts(t.activity, Split { .kind = Split::Kind::Time, .every = 60 }).value_or(std::vector<i64> { 1 }).empty());
+    CHECK((mark_starts(t.activity, { Start }, 0, 0) == std::vector<i64> { Start }));
+    CHECK(device_lap_starts(t.activity).empty());
+}
+
 }
 
 int main()
@@ -203,5 +294,9 @@ int main()
     test_laps_at();
     test_laps_at_passes_over_empty_laps();
     test_device_lap_starts();
+    test_split_laps_add_up();
+    test_mark_snaps_forward();
+    test_mark_whole_activity();
+    test_without_records();
     return ST::Test::test_result();
 }

@@ -707,7 +707,7 @@ void test_laps_from_the_sidecar()
     if (t.activity.laps.size() == 3) {
         CHECK_EQ(t.activity.laps[1].first_record, 10uz);
         CHECK_EQ(t.activity.laps[1].end_record, 30uz);
-        CHECK_EQ(t.activity.laps[1].segment.elapsed.elapsed, 19u);
+        CHECK_EQ(t.activity.laps[1].segment.elapsed.elapsed, 20u);
     }
     CHECK_EQ(t.activity.device_laps.size(), 2uz);
     CHECK((t.activity.lap_starts() == std::vector<i64> { two_laps_time(10), two_laps_time(30) }));
@@ -768,6 +768,39 @@ void test_set_lap_starts_that_fails()
     LoadedActivity loose { two_laps() };
     CHECK(!loose.activity.set_lap_starts(std::vector<i64> { two_laps_time(10) }).has_value());
     CHECK_EQ(loose.activity.laps.size(), 2uz);
+}
+
+// The reviewer's: laps out of order in the sidecar, and one before the
+// activity, which makes no lap, still give the laps in order; and
+// lap_starts() is the user's then.
+void test_laps_out_of_order_in_the_sidecar()
+{
+    ActivityInDir t { std::format(R"({{"laps": [{}, {}, {}]}})", two_laps_time(30), two_laps_time(0) - 100, two_laps_time(10)), "", two_laps() };
+    CHECK(t.loaded);
+    CHECK_EQ(t.activity.laps.size(), 3uz);
+    if (t.activity.laps.size() == 3) {
+        CHECK_EQ(t.activity.laps[0].first_record, 0uz);
+        CHECK_EQ(t.activity.laps[1].first_record, 10uz);
+        CHECK_EQ(t.activity.laps[2].first_record, 30uz);
+        CHECK_EQ(t.activity.laps[2].end_record, 40uz);
+    }
+    CHECK((t.activity.lap_starts() == std::vector<i64> { two_laps_time(0) - 100, two_laps_time(10), two_laps_time(30) }));
+}
+
+// The reviewer's: going back to the device's laps keeps the rest of the
+// sidecar, here Strava's, and the sidecar with it.
+void test_device_laps_keep_strava()
+{
+    ActivityInDir t { std::format(R"({{"laps": [{}], "strava": {{"id": 12, "name": "Ride"}}}})", two_laps_time(10)), "", two_laps() };
+    CHECK_EQ(t.activity.laps.size(), 2uz);
+    CHECK(t.activity.set_lap_starts(std::nullopt).has_value());
+    CHECK(fs::exists(t.activity.sidecar));
+    auto const json = JSONValue::deserialize(read_json(t.activity.sidecar));
+    CHECK(json.has_value() && json->get("strava").has_value() && !json->get("laps").has_value());
+    CHECK_EQ(t.activity.laps.size(), 2uz);
+    if (t.activity.laps.size() == 2) {
+        CHECK_EQ(t.activity.laps[1].first_record, 20uz);
+    }
 }
 
 // An activity that wasn't loaded from a directory has nowhere to save its
@@ -875,6 +908,8 @@ int main()
     test_bad_laps_in_the_sidecar();
     test_set_lap_starts();
     test_set_lap_starts_that_fails();
+    test_laps_out_of_order_in_the_sidecar();
+    test_device_laps_keep_strava();
     test_save_sidecar_strava();
     test_rename_over_stravas_title();
     test_save_keeps_the_rest_of_the_sidecar();

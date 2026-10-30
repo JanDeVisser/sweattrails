@@ -139,7 +139,10 @@ std::vector<Lap> laps_at(Activity const &activity, std::vector<i64> const &start
     for (size_t ix = 0; ix < firsts.size(); ++ix) {
         auto const end = (ix + 1 < firsts.size()) ? firsts[ix + 1] : records.size();
         Lap        lap { .first_record = firsts[ix], .end_record = end };
-        if (auto segment = range_segment(activity, firsts[ix], end - 1); segment) {
+        // Up to the next lap's first record, as a device's lap runs up to
+        // the next one's start: the laps add up to the activity.
+        auto const last = (end < records.size()) ? end : end - 1;
+        if (auto segment = range_segment(activity, firsts[ix], last); segment) {
             lap.segment = std::move(*segment);
         }
         laps.push_back(std::move(lap));

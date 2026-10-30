@@ -44,7 +44,10 @@ intervals can be compared side by side.
   device didn't lap starts from one lap, the whole activity.
 - Each lap's stats come from its records, with `range_segment()`, as a
   dragged range's do: its distance and times from the records, not from
-  a lap message, which a lap made afterwards doesn't have.
+  a lap message, which a lap made afterwards doesn't have. A lap runs up
+  to the next lap's first record, as a device's lap runs up to the next
+  one's start, so that the laps add up to the activity: a marked lap
+  shows one record's step more than the range did.
 
 ### Splits
 
@@ -188,4 +191,82 @@ None.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: a split's laps don't add up to the split or to the activity.**
+   `laps_at()` (`src/App/storage/Laps.cpp:142`) takes each lap's stats
+   with `range_segment(first, end - 1)`, so the stretch from a lap's last
+   record to the next lap's first record is in neither lap. Split every
+   "1 km" at 5 m a second, each lap shows 995 m and 3:19, not 1,000 m and
+   3:20, and the laps add up to 2,985 m of the activity's 2,995 m. A
+   pause that falls on a boundary goes missing from both laps' elapsed
+   time. The device's laps, from their lap messages, add up. Fix: stats
+   up to the next lap's first record, `range_segment(first, end)` for all
+   but the last lap. That makes a marked lap's stats differ slightly from
+   the dragged range's, which the spec says they match: Jan's call.
+   Test: `LapsTest` `test_split_laps_add_up` (fails).
+2. **Bug: a distance split is refused if the first or the last record has
+   no distance.** `split_starts()` (`Laps.cpp:65`) measures from
+   `records.front().distance` and checks only `records.back()`. Devices
+   often record a few records before they have a fix: such an activity
+   gets "This activity has no distance to split by", though it shows a
+   distance. Fix: measure from the first record that has a distance, and
+   refuse only if no record has one. Test:
+   `test_split_by_distance_without_distance_at_the_start` (fails).
+3. **Bug: a mark whose start snaps forward selects the wrong lap.**
+   `cmd_mark_lap()` (`src/App/SweatTrails.cpp:818`) selects
+   `lap_of(first)`, the lap the range's first record is in. When the
+   start snaps forward to a start up to 5 s later, that record is in the
+   lap *before* the new one. With laps starting at t+104 and a range over
+   records 100..199, the laps are 0..104, 104..200, 200..: Ctrl+L
+   selects lap 1, the 104 records before the range. Fix: select the lap
+   whose first record is the one at or after the marked start (the
+   spec's `lap_starting_at()`). For example, `mark_starts()` could also
+   return the marked lap's start. Test: `test_mark_snaps_forward`
+   (passes). It pins the laps this case makes; the selection is in the
+   app and can't be tested.
+4. **Bug: snapping at the activity's start makes the short lap it's there
+   to prevent.** `mark_starts()` (`Laps.cpp:97-105`) also snaps a range
+   that starts at record 0: with a lap starting 3 s in, a range over
+   records 0..99 gives a first lap of 3 s, and the marked lap starts at
+   3 s. In the same way, a range that ends 1 to 5 s before the end leaves
+   a last lap of a few seconds, because the end isn't something to snap
+   to. Fix: take the activity's first record and its end as snap targets
+   that win. While at it, snap to the *nearest* start within 5 s rather
+   than to the first one in the list: with starts at t+95 and t+101, a
+   range from t+100 snaps to t+95. Test:
+   `test_mark_from_the_start_doesnt_snap_away` (fails).
+5. **Bug: `MaxLaps` is off by one.** `split_starts()` (`Laps.cpp:74`)
+   refuses only when `total / every > 1000`. A split that comes to
+   exactly 1,000 makes 1,000 starts, which is 1,001 laps, where the spec
+   says more than 1,000 laps is refused. Fix: count the laps,
+   `floor(total / every) + 1 > MaxLaps`. Test:
+   `test_split_refused_at_one_more_than_max_laps` (fails).
+6. **Bug (minor): Ctrl+L during a drag marks the unfinished range.**
+   `cmd_mark_lap()` (`SweatTrails.cpp:809`) checks `segment`, which is
+   set while the mouse button is still down. Press Ctrl+L with the button
+   held and you get a lap of whatever is dragged so far, even a single
+   record, or less than `MinRangeSeconds`, which `end_segment()` would
+   have cleared. Fix: require `range_stats`, which only a finished drag
+   of 10 s or more has. Can't be tested without the app's command.
+7. **Suggestion: only read the laps on a deep load.** `load_from_dir()`
+   (`src/App/storage/Activity.cpp:209`) reads and parses the sidecar a
+   second time for every activity, including the shallow load of every
+   activity in a month's list. Those have no records, and get no laps
+   from them. Guard it with `depth == LoadingDepth::Deep`.
+8. **Suggestion: lap changes during an overlay render.** The render steps
+   on the same `DisplayedActivity`, so Ctrl+L, Ctrl+Shift+L or Ctrl+Alt+L
+   during a render changes the lap field and the profile's lap lines
+   halfway through the video. `OverlaySource` copies the title for this
+   reason. Either refuse to change laps while rendering (status line), or
+   snapshot the laps in the source.
+9. **Suggestion: naming.** The spec's Architecture names
+   `lap_starting_at(record)`, the code `DisplayedActivity::lap_of(t)`.
+   `overlay/Fields.cpp` already has a `lap_of(activity, record)`, 1-based,
+   as a double. Bring the spec in line with the code, and consider one
+   shared function on `Activity`.
+
+The Reviewer added tests, uncommitted: in `test/LapsTest.cpp`, the five
+named above and `test_mark_whole_activity` and `test_without_records`,
+which pass. In `test/ActivityLoadTest.cpp`,
+`test_laps_out_of_order_in_the_sidecar` and `test_device_laps_keep_strava`,
+which pass. `laps_test` fails on findings 1, 2, 4 and 5. The rest of the
+suite passes, leaving out `oauth_test`.

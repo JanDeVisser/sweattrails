@@ -54,7 +54,8 @@ std::expected<std::vector<i64>, std::string> split_starts(Activity const &activi
 std::vector<i64> mark_starts(Activity const &activity, std::vector<i64> const &starts, size_t first, size_t last);
 
 // The laps that `starts` make, from the activity's first record to its
-// last, with their stats from range_segment(). A start that would make an
+// last, with their stats from range_segment(), each up to the next lap's
+// first record, so that they add up to the activity. A start that would make an
 // empty lap, at or before the first record, after the last, or on the same
 // record as another, is passed over.
 std::vector<Lap> laps_at(Activity const &activity, std::vector<i64> const &starts);
