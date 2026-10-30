@@ -57,20 +57,24 @@ std::expected<std::vector<i64>, std::string> split_starts(Activity const &activi
     if (records.empty()) {
         return std::vector<i64> { };
     }
+    // A device can record a while before it has a distance, such as
+    // before a GPS fix: the distance is from the first record with one.
+    auto const with_distance = std::ranges::find_if(records, [](record const &rec) { return rec.distance.has_value(); });
+    auto const last_distance = std::ranges::find_if(records.rbegin(), records.rend(), [](record const &rec) { return rec.distance.has_value(); });
+    if (split.kind == Split::Kind::Distance && with_distance == records.end()) {
+        return std::unexpected(std::string { "This activity has no distance to split by: split it by time, such as \"10 min\"." });
+    }
     // How far each record is from the start, in the split's unit.
-    auto const from_start = [&records, &split](record const &rec) -> std::optional<float32> {
+    auto const from_start = [&records, &split, &with_distance](record const &rec) -> std::optional<float32> {
         if (split.kind == Split::Kind::Time) {
             return static_cast<float32>(time_of(rec) - time_of(records.front()));
         }
-        if (!rec.distance || !records.front().distance) {
+        if (!rec.distance) {
             return { };
         }
-        return *rec.distance - *records.front().distance;
+        return *rec.distance - *with_distance->distance;
     };
-    if (split.kind == Split::Kind::Distance && !from_start(records.back())) {
-        return std::unexpected(std::string { "This activity has no distance to split by: split it by time, such as \"10 min\"." });
-    }
-    auto const total = from_start(records.back()).value_or(0);
+    auto const total = (split.kind == Split::Kind::Time) ? from_start(records.back()).value_or(0) : from_start(*last_distance).value_or(0);
     if (total / split.every > static_cast<float32>(MaxLaps)) {
         return std::unexpected(std::format("That would make more than {} laps: split by more.", MaxLaps));
     }

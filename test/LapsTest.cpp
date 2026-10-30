@@ -295,6 +295,7 @@ int main()
     test_laps_at_passes_over_empty_laps();
     test_device_lap_starts();
     test_split_laps_add_up();
+    test_split_by_distance_without_distance_at_the_start();
     test_mark_snaps_forward();
     test_mark_whole_activity();
     test_without_records();
