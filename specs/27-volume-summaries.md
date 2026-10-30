@@ -1,6 +1,6 @@
 # Volume summaries
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -109,8 +109,11 @@ They're tasks, as every action is.
 ### The bar chart
 
 - A bar per period, its height the period's total of the number shown,
-  with the periods along the bottom (weeks numbered, months and years
-  named) and a scale up the side.
+  with the periods along the bottom and a scale up the side. Months and
+  years are named; of the weeks, the first of each month is labelled
+  with the month's name. The table names each week by its Monday,
+  "Mon 3 Mar": a week's number says less than its date, and counting
+  the weeks that start in the year doesn't give ISO's numbers.
 
 ### The summary file
 
@@ -183,29 +186,39 @@ None.
   summaries and the FIT files there are now (`file`, `size`,
   `modified`), the summaries to keep and the files to read: new ones,
   and ones whose size or time changed. Ones whose file is gone drop out.
-- **The job, `UpdateSummaries`**: lists the FIT files (from
-  `activity_starts()`, by name, and their size and time), plans the
-  update, and reads the files to read `SummaryChunk` (50) at a time,
-  shallowly, as a month's list does. After each chunk it writes the
-  file, sends `SummariesUpdated { summaries, read, to_read }` with
-  `notify_latest()`, and schedules itself for the next chunk. So the
-  first build, some 1,800 files, doesn't hold up a download or the
-  inbox for minutes: they run between its chunks.
+- **`SummaryChunkDone update_summaries(storage, chunk)`**: one chunk of
+  an update. It lists the FIT files (from `activity_starts()`, by name,
+  and their size and time), plans the update, reads the next `chunk`
+  files to read, shallowly, as a month's list does, and writes the
+  file. It returns all the summaries, how many files it read and how
+  many are left, and, if the file couldn't be listed or written, why:
+  "Couldn't save the totals: …". Each chunk plans afresh, so that what
+  the inbox files between chunks is read too.
+- **The job, `UpdateSummaries`**: calls `update_summaries()` with
+  `SummaryChunk` (50), sends `SummariesUpdated { summaries, done,
+  total, error }` with `notify_latest()`, and schedules itself for the
+  next chunk unless it's done or failed. So the first build, some 1,800
+  files, doesn't hold up a download or the inbox for minutes: they run
+  between its chunks. An `updating_summaries` flag keeps it to one at a
+  time.
 - It's scheduled at the start, after the newest activity is shown, and
   after the inbox and a download have filed anything. Reading a FIT file
   removed by hand is noticed at the next start.
 - On the UI thread, `SweatTrails::summaries` holds the latest, and the
-  status line says "Reading activities for the totals: 340 of 1,802"
-  while there are files to read, and nothing when it's done.
+  status line says "Reading activities for the totals: 340 of 1802"
+  while there are files to read, the error if there is one, and nothing
+  when it's done.
 
 ### The totals (`storage/Volume.h`, `Volume.cpp`), pure
 
 - **`VolumeSport { Running, Cycling }`** and
   **`std::optional<VolumeSport> volume_sport(sport, sub_sport)`**:
   running, or a treadmill or indoor run under another sport, is
-  Running; cycling, or an indoor, spin or virtual ride under another
-  sport (such as fitness equipment, as older Garmins record a spin
-  bike), is Cycling; the rest is nothing.
+  Running; cycling, or an indoor or spin ride under another sport (such
+  as fitness equipment, as older Garmins record a spin bike), is
+  Cycling; the rest is nothing. A virtual activity counts by its sport:
+  Zwift records a ride as cycling, and a virtual run under fitness
+  equipment isn't a ride.
 - **`Period { Week, Month, Year }`** and **`Metric { Distance, Time,
   Count, Ascent }`**, X-macro enums.
 - **`PeriodTotal`**: `first_day` and `last_day` (dates), `distance`,
@@ -375,3 +388,27 @@ Tests the Reviewer added, uncommitted:
 `nice_scale()` was also tried, outside the tests, on 600,000 distances,
 hours and counts: the top was never under the largest value and never a
 step too high.
+
+### Resolution
+
+1. Fixed: new summaries, and another metric, leave the table scrolled
+   where it was, and the selection on its period, or on the total.
+   `test_new_summaries_keep_the_selected_year` was added for the years
+   view.
+2. Fixed: the chart remembers the bar under the mouse across new bars,
+   and reports a hover only when the mouse goes to another bar.
+3. Fixed in the spec: the first week of each month is labelled with the
+   month's name, and the table names weeks by their Monday.
+4. Fixed: a chunk that can't list the store or write the file says why,
+   and the status line shows it. In one commit with 5, as the error is
+   part of what the moved function returns.
+5. Fixed: a chunk is `update_summaries()` in `storage/Summaries`, tested
+   in chunks, with a ride filed between chunks, and with a file that
+   can't be written. The Reviewer's `test_second_start_reads_nothing`
+   runs it.
+6. Fixed in the spec: a virtual activity counts by its sport, as the
+   code does.
+7. Fixed in the spec: the count is a plain number, as the app shows
+   numbers elsewhere.
+
+The Reviewer's tests are kept, and all pass.
