@@ -845,9 +845,70 @@ void test_lap_table_empty_cells()
 }
 }
 
+// 120 records a second apart, 5 m apart, from 12 km into the ride, with
+// the highest heart rate at record 70.
+struct RangeActivity {
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+
+    explicit RangeActivity(bool with_distance = true)
+    {
+        activity.sport = sport::Cycling;
+        for (u32 ix = 0; ix < 120; ++ix) {
+            record rec { .timestamp = DateTime { .timestamp = 1'000'000 + ix }, .heart_rate = static_cast<u8>((ix == 70) ? 180 : 140) };
+            if (with_distance) {
+                rec.distance = 12'000.0f + 5.0f * static_cast<float32>(ix);
+                rec.speed = 5.0f;
+            }
+            activity.records.push_back(rec);
+        }
+        activity.recorded = activity.records;
+    }
+};
+
+// A range says where it is by distance, or by time without one.
+void test_range_summary()
+{
+    RangeActivity t;
+    auto const    range = range_segment(t.activity, 20, 100);
+    CHECK(range.has_value());
+    if (!range) {
+        return;
+    }
+    CHECK_EQ(range_summary(t.activity, 20, 100, *range), "12.1–12.5 km · 400 m · 01:20");
+    RangeActivity indoors { false };
+    auto const    still = range_segment(indoors.activity, 20, 100);
+    CHECK(still.has_value());
+    if (still) {
+        CHECK_EQ(range_summary(indoors.activity, 20, 100, *still), "0:00:20–0:01:40 · 01:20");
+    }
+}
+
+// A range's fields mark records of the activity, not of the range.
+void test_range_fields_mark_the_activitys_records()
+{
+    RangeActivity t;
+    auto const    range = range_segment(t.activity, 50, 100);
+    CHECK(range.has_value());
+    if (!range) {
+        return;
+    }
+    std::optional<size_t> max_hr;
+    for (auto const &line : data_fields(t.activity, *range, 50)) {
+        for (auto const &field : { line.left, line.right }) {
+            if (field && field->label == "Max HR") {
+                max_hr = field->mark_at;
+            }
+        }
+    }
+    CHECK_EQ(max_hr.value_or(0), 70uz);
+}
+
 int main()
 {
     test_range_max_at_is_the_index_passed();
+    test_range_summary();
+    test_range_fields_mark_the_activitys_records();
     test_range_ties_go_to_the_first_record();
     test_smoothed_range_max_at();
     test_analyze_max_at_is_a_record_index();

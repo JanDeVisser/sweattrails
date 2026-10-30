@@ -1,6 +1,6 @@
 # Stats for a range dragged in the graph
 
-Status: In progress, on branch feature/range-stats
+Status: In review
 
 ## Goal
 

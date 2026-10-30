@@ -81,7 +81,10 @@ glfw warns about that when it starts; X11 doesn't have this problem.
 
 SweatTrails starts with the newest activity. Left and Right show the one
 before or after it, also in another month. Up and Down go through its
-laps, and Escape back to the whole activity.
+laps, and Escape back to the whole activity. Dragging across the graph,
+either way, selects part of the activity, such as a climb: when you let
+go, the data panel shows that part's stats, as it does a lap's. A drag
+of less than 10 seconds selects nothing.
 
 Ctrl+M lists the activities of the month of the one on display, oldest
 first, with each one's sport, day and time, title, distance and moving
