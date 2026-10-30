@@ -150,6 +150,8 @@ add_library(
         STATIC
         src/Lib/Widget/App.h
         src/Lib/Widget/App.cpp
+        src/Lib/Widget/BarChart.h
+        src/Lib/Widget/BarChart.cpp
         src/Lib/Widget/ClipShader.h
         src/Lib/Widget/ClipShader.cpp
         src/Lib/Widget/Colors.h
@@ -311,6 +313,7 @@ endfunction()
 sweattrails_test(listbox_test test/ListBoxTest.cpp)
 sweattrails_test(scroll_test test/ScrollTest.cpp)
 sweattrails_test(table_test test/TableTest.cpp)
+sweattrails_test(bar_chart_test test/BarChartTest.cpp)
 sweattrails_test(text_line_test test/TextLineTest.cpp)
 sweattrails_test(colors_test test/ColorsTest.cpp)
 sweattrails_test(window_test test/WindowTest.cpp)
