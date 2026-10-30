@@ -71,6 +71,11 @@ void LineChart::draw()
             auto const to = Vector2 { viewport.x + x_at(static_cast<double>(ix)), viewport.y + y_at(line.values[ix], s) };
             DrawLineEx(from, to, width, line.color);
         }
+        // A line of one value, such as this year's on New Year's Day, has
+        // no segment to draw: a dot shows where it is.
+        if (line.values.size() == 1) {
+            DrawCircleV(Vector2 { viewport.x + x_at(0), viewport.y + y_at(line.values[0], s) }, width, line.color);
+        }
     }
     draw_legend();
 }
