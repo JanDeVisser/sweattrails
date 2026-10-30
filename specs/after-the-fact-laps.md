@@ -131,17 +131,26 @@ None.
   or an error saying what it takes. At least 0 km or 0 min, not 0.
 - **`split_starts(activity, split)`**: the times of the records where
   each split starts, after the first: the first record whose distance
-  from the start, or whose time since it, reaches the next multiple. An
-  error for a distance split without distance, and for one that would
-  make more than `MaxLaps` (1,000) laps, such as "0.001 km".
+  from the start, or whose time since it, reaches the next multiple.
+  Distance is measured from the first record that has one, as devices
+  often record a few before they have a fix. An error for a distance
+  split without distance, and for one that would make more than
+  `MaxLaps` (1,000) laps, such as "0.001 km".
 - **`mark_starts(activity, starts, first, last)`**: `starts` with the
   range of records `first..last` made a lap: a start at `first`'s time,
   one at the time of the record after `last` (none if `last` is the last
-  record), each moved to a start within `MarkSnapSeconds` (5) of it, and
-  the starts in between removed.
+  record), and the starts in between removed. Each is moved to the
+  nearest start within `MarkSnapSeconds` (5) of it; the activity's own
+  start and end win, so that a range dragged from the start, or to just
+  before the end, leaves no lap of a few seconds.
+- **`mark_start(activity, starts, first)`**: where the marked lap
+  starts, after snapping, which can be before `first`; and
+  **`record_at(activity, time)`**: the first record at or after a time.
+  The app selects the marked lap with them.
 - **`laps_at(activity, starts)`**: the `Lap`s the starts make: each from
   the first record at or after its start to the next lap's first record,
-  with `range_segment()`'s stats. Starts at or before the first record,
+  with `range_segment()`'s stats up to and including that record, so
+  that the laps add up to the activity. Starts at or before the first record,
   after the last, or on the same record as another, are passed over: no
   lap is empty.
 - **`device_lap_starts(activity)`**: the device's laps' starts, after
@@ -158,9 +167,10 @@ None.
   sidecar, and only then sets `laps` to `laps_at()`, or back to
   `device_laps` for nothing. An activity without a sidecar path can't,
   as for a rename.
-- The sidecar: `read_sidecar_laps()` and `save_sidecar_laps()`, the key
+- The sidecar: `sidecar_laps()` and `save_sidecar_laps()`, the key
   `"laps"`, through `update_sidecar()`. `load_from_dir()` reads them
-  after `analyze()`, which the laps' stats need; starts that aren't
+  after `analyze()`, which the laps' stats need, and only on a deep
+  load, as a month's list has no records; starts that aren't
   numbers are passed over, with a warning, and leave the device's laps.
 
 ### The app (`SweatTrails.cpp`, `widget/`)
@@ -168,9 +178,12 @@ None.
 - Tasks `st-mark-lap` (Ctrl+L), `st-split-laps` (Ctrl+Shift+L, an
   `input_box` as for a rename) and `st-device-laps` (Ctrl+Alt+L), on the
   activity on display, as the lap keys are, with what goes wrong on the
-  status line.
-- `DisplayedActivity::lap_starting_at(record)`, to select the lap a mark
-  made; a split and going back select the whole activity.
+  status line. Ctrl+L takes a finished drag only (`range_stats`). None
+  of them changes the laps while a video renders, as the render reads
+  them from the same activity.
+- `DisplayedActivity::lap_of(record)`, the lap a record is in, to select
+  the lap a mark made, the one with the record at `mark_start()`; a
+  split and going back select the whole activity.
 - `ActivityDisplay::laps_changed()`: the table's rows, its policy and the
   strip from the activity's laps again, as `set_activity()` sets them.
 
@@ -185,7 +198,7 @@ None.
   loading, `[]` is one lap, bad ones leave the device's;
   `set_lap_starts()` saves and goes back, keeping the rest of the
   sidecar, and a sidecar that can't be written leaves the laps.
-- `DisplayedActivityTest`: `lap_starting_at()`.
+- `DisplayedActivityTest`: `lap_of()`.
 - By hand: the three keys, the table and strip after each, and the laps
   after reopening the activity.
 
