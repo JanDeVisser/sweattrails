@@ -1,6 +1,6 @@
 # After-the-fact laps
 
-Status: In review
+Status: Done
 
 ## Goal
 
@@ -283,3 +283,30 @@ which pass. In `test/ActivityLoadTest.cpp`,
 `test_laps_out_of_order_in_the_sidecar` and `test_device_laps_keep_strava`,
 which pass. `laps_test` fails on findings 1, 2, 4 and 5. The rest of the
 suite passes, leaving out `oauth_test`.
+
+### Resolution
+
+1. Fixed: a lap's stats run up to and including the next lap's first
+   record, so a split's laps add up to the split and to the activity. A
+   marked lap's stats can differ from the dragged range's by that one
+   record, which the Feature section now says.
+2. Fixed: a distance split measures from the first record that has a
+   distance, and is refused only if no record has one.
+3. Fixed: `mark_start()` says where the marked lap starts after
+   snapping, and Ctrl+L selects the lap with the record at that start.
+4. Fixed: the activity's start and end win as snap targets, and a mark
+   snaps to the nearest start within 5 s, not the first in the list.
+5. Fixed: a split is refused when it would make more than `MaxLaps`
+   laps, counting the last.
+6. Fixed: Ctrl+L takes a finished drag only, one with `range_stats`.
+7. Fixed: `load_from_dir()` reads the laps on a deep load only.
+8. Fixed: the lap keys change nothing while a video renders, and say so
+   on the status line. Snapshotting the laps in the overlay's source
+   would let them change, but the video would then not show the laps the
+   screen does.
+9. Fixed: the Architecture names `lap_of()`, `mark_start()` and
+   `record_at()`. `overlay/Fields.cpp`'s `lap_of()` is kept apart: it's
+   the lap field's value, 1-based and a double, for the records the
+   render steps through, where the app's is an index to select.
+
+The Reviewer's tests are kept, and all pass.
