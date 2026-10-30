@@ -82,6 +82,7 @@ struct SummariesScreen : public Layout {
 
 private:
     void refresh();
+    void refresh_in_place();
 };
 
 }

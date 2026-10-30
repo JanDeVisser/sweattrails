@@ -245,6 +245,25 @@ void test_new_summaries_keep_the_scroll()
     CHECK_EQ(screen->table->scroll.top_line, 20);
 }
 
+// The years view gains a year before the first one shown: the selection
+// stays on the year it was on, not on the row it was in.
+void test_new_summaries_keep_the_selected_year()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->set_period(Period::Year);
+    screen->table->select(2); // 2025
+    auto earlier = screen->summaries;
+    earlier.insert(earlier.begin(), ride(2020, 5, 1));
+    screen->set_summaries(earlier);
+    CHECK_EQ(screen->table->rows[0][0], "2020");
+    CHECK(screen->table->selection == 5uz);
+    // And the total stays the total.
+    screen->step_row(10);
+    screen->set_summaries(screen->summaries);
+    CHECK(screen->table->selection == screen->table->rows.size() - 1);
+}
+
 // The mouse rests on a bar, which selects its row; Down then selects the
 // next one. Neither new summaries nor another metric should put the
 // selection back on the bar under the mouse, which didn't move.
@@ -330,6 +349,8 @@ int main()
     test_step_row();
     test_hover_selects_the_row();
     test_new_summaries();
+    test_new_summaries_keep_the_scroll();
+    test_new_summaries_keep_the_selected_year();
     test_empty_store();
     test_summaries_before_open();
     return Test::test_result();

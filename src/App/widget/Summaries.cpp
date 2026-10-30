@@ -227,9 +227,7 @@ void SummariesScreen::set_summaries(ActivitySummaries new_summaries)
 {
     summaries = std::move(new_summaries);
     view.set_years(volume_years(summaries, view.sport, this_year));
-    auto const selection = table->selection;
-    refresh();
-    table->select(selection);
+    refresh_in_place();
 }
 
 void SummariesScreen::set_period(Period period)
@@ -248,9 +246,7 @@ void SummariesScreen::set_sport(VolumeSport sport)
 void SummariesScreen::set_metric(Metric metric)
 {
     view.metric = metric;
-    auto const selection = table->selection;
-    refresh();
-    table->select(selection);
+    refresh_in_place();
 }
 
 void SummariesScreen::step_year(int step)
@@ -272,6 +268,31 @@ void SummariesScreen::step_row(int step)
     }
     auto const row = static_cast<long>(*table->selection) + step;
     table->select(static_cast<size_t>(std::clamp(row, 0L, static_cast<long>(last))));
+}
+
+// The same periods with new numbers, as after each of the job's chunks:
+// the table stays where the user scrolled it, and the selection on its
+// period, also if the years view gained a year before it.
+void SummariesScreen::refresh_in_place()
+{
+    auto const                            top_line = table->scroll.top_line;
+    std::optional<chrono::year_month_day> selected_period { };
+    auto const                            total_selected = table->selection && *table->selection >= totals.size();
+    if (table->selection && !total_selected) {
+        selected_period = totals[*table->selection].first_day;
+    }
+    refresh();
+    table->scroll.top_line = top_line;
+    table->scroll.clamp();
+    if (total_selected) {
+        table->select(table->rows.size() - 1);
+        return;
+    }
+    if (selected_period) {
+        if (auto const period = std::ranges::find(totals, *selected_period, &PeriodTotal::first_day); period != totals.end()) {
+            table->select(static_cast<size_t>(period - totals.begin()));
+        }
+    }
 }
 
 void SummariesScreen::refresh()
