@@ -18,6 +18,10 @@
 
 namespace ST {
 
+// A range dragged in the graph that's shorter than this, such as a plain
+// click, isn't a selection: it's cleared when the drag ends.
+constexpr u32 MinRangeSeconds = 10;
+
 struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity> {
     struct RecordRange {
         size_t min;
@@ -28,14 +32,27 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     std::optional<size_t>      mark { };
     std::optional<RecordRange> segment;
     std::optional<size_t>      lap { }; // The selected lap, whose records `segment` is
+    // A dragged range's stats, for the data panel, once the drag has ended.
+    std::optional<Segment> range_stats { };
+    // Where a drag in the graph started, while it goes on.
+    std::optional<size_t> anchor { };
 
     explicit DisplayedActivity(Activity const &activity);
     void clear_segment();
+    // A drag in the graph starts at record `t`: it ends a lap's selection,
+    // and the range runs from `t` to wherever set_segment() takes it.
+    void start_segment(size_t t);
     // The segment's first and last record, for an overlay's range.
     [[nodiscard]] std::optional<std::pair<size_t, size_t>> selection() const;
     void                                                   clear_mark();
     void                                                   set_mark(size_t t);
-    void                                                   set_segment(size_t t);
+    // The drag is at record `t`: the range runs from where it started to
+    // `t`, on either side. Nothing if no drag is going on: Esc, selecting
+    // a lap or another activity end it.
+    void set_segment(size_t t);
+    // The drag is over: a range under MinRangeSeconds is cleared, and a
+    // longer one gets its stats.
+    void end_segment();
 
     // The record the overlay preview shows: the marked one, or else where a
     // drag in the graph is, the end of the range it's selecting, or else

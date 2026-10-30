@@ -20,6 +20,15 @@ void DisplayedActivity::clear_segment()
 {
     segment.reset();
     lap.reset();
+    range_stats.reset();
+    anchor.reset();
+}
+
+void DisplayedActivity::start_segment(size_t t)
+{
+    clear_segment();
+    anchor = t;
+    set_segment(t);
 }
 
 std::optional<std::pair<size_t, size_t>> DisplayedActivity::selection() const
@@ -42,16 +51,28 @@ void DisplayedActivity::set_mark(size_t t)
 
 void DisplayedActivity::set_segment(size_t t)
 {
-    if (segment) {
-        if (t < segment->min) {
-            segment->min = t;
-            segment->max = t;
-        } else {
-            segment->max = t;
-        }
-    } else {
-        segment = RecordRange { .min = t, .max = t };
+    // Esc, a lap, or another activity during the drag ended it.
+    if (!anchor) {
+        return;
     }
+    segment = RecordRange { .min = std::min(*anchor, t), .max = std::max(*anchor, t) };
+}
+
+void DisplayedActivity::end_segment()
+{
+    anchor.reset();
+    if (!segment || lap) {
+        return;
+    }
+    auto const &records = activity.records;
+    // Signed: a watch can set its clock back, and the last record can be
+    // earlier than the first.
+    auto const seconds = [&records](size_t ix) { return static_cast<i64>(records[ix].timestamp.timestamp); };
+    if (segment->max >= records.size() || seconds(segment->max) - seconds(segment->min) < MinRangeSeconds) {
+        segment.reset();
+        return;
+    }
+    range_stats = range_segment(activity, segment->min, segment->max);
 }
 
 size_t DisplayedActivity::current_record() const
@@ -59,8 +80,9 @@ size_t DisplayedActivity::current_record() const
     if (mark) {
         return *mark;
     }
+    // Where the drag is: the range's left end when it went left.
     if (segment) {
-        return segment->max;
+        return (anchor && segment->min < *anchor) ? segment->min : segment->max;
     }
     return 0;
 }
@@ -77,6 +99,8 @@ void DisplayedActivity::select_lap(size_t ix)
     }
     auto const &l = activity.laps[ix];
     lap = ix;
+    range_stats.reset();
+    anchor.reset();
     // A lap without records, which a watch can log, has no range to show.
     if (l.end_record > l.first_record && l.end_record <= activity.records.size()) {
         segment = RecordRange { .min = l.first_record, .max = l.end_record - 1 };

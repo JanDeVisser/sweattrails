@@ -241,6 +241,26 @@ std::string lap_summary(Activity const &activity, size_t lap)
     return std::format("Lap {} of {} · {}", lap + 1, activity.laps.size(), segment_summary(activity.laps[lap].segment));
 }
 
+std::string range_summary(Activity const &activity, size_t first, size_t last, Segment const &segment)
+{
+    auto const &records = activity.records;
+    if (first > last || last >= records.size()) {
+        return segment_summary(segment);
+    }
+    auto const &from = records[first];
+    auto const &to = records[last];
+    // By whether the records have distance, not whether the range went
+    // anywhere: a range at a stop says where it is in km, as the others do.
+    if (from.distance && to.distance) {
+        return std::format("{:.1f}–{:.1f} km · {}", *from.distance / 1000.0f, *to.distance / 1000.0f, segment_summary(segment));
+    }
+    auto const since_start = [&records](record const &rec) {
+        Duration const since { rec.timestamp.timestamp - records.front().timestamp.timestamp };
+        return std::format("{}:{:02}:{:02}", since.elapsed / Duration::SECONDS_PER_HOUR, since.minutes, since.seconds);
+    };
+    return std::format("{}–{} · {}", since_start(from), since_start(to), segment_summary(segment));
+}
+
 std::vector<DataLine> data_fields(Activity const &activity, Segment const &segment, size_t first_record)
 {
     std::vector<DataLine> lines;

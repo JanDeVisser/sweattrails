@@ -66,7 +66,16 @@ void ActivityDataDisplay::draw()
     auto const title_size = render_text(116, title_y, activity->activity.title, FontSize::Large, RAYWHITE);
     title_area = Rectangle { .x = viewport.x + 116, .y = viewport.y + title_y, .width = title_size.x, .height = title_size.y };
     auto const summary_y = draw_notes(title_y + line_height);
-    auto const summary = activity->lap ? lap_summary(activity->activity, *activity->lap) : activity_summary(activity->activity);
+    auto const summary = [this] {
+        auto const &a = activity->activity;
+        if (activity->lap) {
+            return lap_summary(a, *activity->lap);
+        }
+        if (activity->range_stats && activity->segment) {
+            return range_summary(a, activity->segment->min, activity->segment->max, *activity->range_stats);
+        }
+        return activity_summary(a);
+    }();
     render_text(116, summary_y, summary, FontSize::Large, RAYWHITE);
 
     // The fields start below the icon, which is 96 high, or below the
@@ -101,12 +110,18 @@ float ActivityDataDisplay::draw_notes(float y)
 void ActivityDataDisplay::draw_fields(float y)
 {
     auto const &a = activity->activity;
-    auto const  lines = activity->lap
-        ? data_fields(a, a.laps[*activity->lap].segment, a.laps[*activity->lap].first_record)
-        : data_fields(a);
-    auto const  gap = App::the()->char_size(FontSize::Medium).x;
-    auto const  line_height = 6.0f * App::measure_text("Mg", FontSize::Medium).y / 5.0f;
-    auto const  label_width = [](DataField const &field) {
+    auto const  lines = [this, &a] {
+        if (activity->lap) {
+            return data_fields(a, a.laps[*activity->lap].segment, a.laps[*activity->lap].first_record);
+        }
+        if (activity->range_stats && activity->segment) {
+            return data_fields(a, *activity->range_stats, activity->segment->min);
+        }
+        return data_fields(a);
+    }();
+    auto const gap = App::the()->char_size(FontSize::Medium).x;
+    auto const line_height = 6.0f * App::measure_text("Mg", FontSize::Medium).y / 5.0f;
+    auto const label_width = [](DataField const &field) {
         return App::measure_text(label_text(field).c_str(), FontSize::Medium).x;
     };
 
@@ -350,6 +365,7 @@ void ActivityGraph::process_input()
             activity->set_segment(record_at());
         } else {
             dragging = false;
+            activity->end_segment();
         }
         return;
     }
@@ -372,10 +388,9 @@ void ActivityGraph::process_input()
         return;
     }
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        activity->clear_segment();
         activity->clear_mark();
         dragging = true;
-        activity->set_segment(record_at());
+        activity->start_segment(record_at());
     } else if (IsMouseButtonUp(MOUSE_BUTTON_LEFT)) {
         activity->set_mark(record_at());
     }

@@ -179,7 +179,8 @@ struct Activity {
     std::string                      fit_title { };      // The FIT file's: the workout's, or the start time
     std::string                      notes { };
     Segment                          segment { };
-    std::vector<record>              records { };
+    std::vector<record>              records { };  // Smoothed, for the graph
+    std::vector<record>              recorded { }; // As recorded, for a range's stats
     std::vector<Lap>                 laps { };
 
     // Local time minus UTC in seconds, from the FIT activity message. Empty
@@ -230,6 +231,21 @@ private:
     StorageResult<bool> load_fit_file(FITFile &fit_file);
     StorageResult<bool> load_fit_file_by_name(fs::path const &file);
 };
+
+// A range counts as moving between two records at most this many seconds
+// apart: a longer gap is a pause, which records nothing.
+constexpr u32 RangeMovingGap = 10;
+
+// And, where a record has a speed, at least this speed, in m/s: below it,
+// the record stands still.
+constexpr float32 RangeMovingSpeed = 0.5f;
+
+// The stats of `activity.recorded[first..last]`, as a lap's would be. A
+// lap's distance and times come from the FIT file; a range's come from its
+// records: the distance from the first's to the last's, the elapsed time
+// between them, and the moving time leaving out pauses and stops, close to
+// the device's timer but not the same. Empty for a range out of bounds.
+std::optional<Segment> range_segment(Activity const &activity, size_t first, size_t last);
 
 struct Activities {
     Storage              *storage { nullptr };

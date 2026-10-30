@@ -45,6 +45,13 @@ std::string activity_summary(Activity const &activity);
 // and its summary, e.g. "Lap 3 of 8 · 1.00 km · 4:52".
 std::string lap_summary(Activity const &activity, size_t lap);
 
+// The line under the title while a range dragged in the graph is selected,
+// from record `first` to `last`, with `segment` its stats: where it is, by
+// distance from the start, and its summary, e.g. "12.4–18.9 km · 6.50 km ·
+// 14:21". Without distance, where it is by time from the first record,
+// e.g. "0:42:10–1:05:33 · 23:23".
+std::string range_summary(Activity const &activity, size_t first, size_t last, Segment const &segment);
+
 // The lines of the activity's data panel, in two columns. Fields without
 // data in the activity are left out, and so are lines without fields.
 std::vector<DataLine> data_fields(Activity const &activity);

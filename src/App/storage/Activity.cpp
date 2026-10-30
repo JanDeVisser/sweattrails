@@ -153,6 +153,35 @@ void Segment::analyze(std::span<record> records, bool smooth)
     }
 }
 
+std::optional<Segment> range_segment(Activity const &activity, size_t first, size_t last)
+{
+    if (first > last || last >= activity.recorded.size()) {
+        return { };
+    }
+    // analyze() takes the records it can smooth; this one doesn't.
+    std::vector<record> records { activity.recorded.begin() + static_cast<std::ptrdiff_t>(first), activity.recorded.begin() + static_cast<std::ptrdiff_t>(last) + 1 };
+    auto const         &from = records.front();
+    auto const         &to = records.back();
+    Segment             ret { .start_time = from.timestamp, .end_time = to.timestamp };
+    // Not below 0, if the watch set its clock back during the range.
+    ret.elapsed = Duration { static_cast<u32>(std::max<i64>(0, static_cast<i64>(to.timestamp.timestamp) - static_cast<i64>(from.timestamp.timestamp))) };
+    if (from.distance && to.distance) {
+        ret.distance = std::max(0.0f, *to.distance - *from.distance);
+    }
+    u32 moving { 0 };
+    for (size_t ix = 1; ix < records.size(); ++ix) {
+        auto const gap = static_cast<i64>(records[ix].timestamp.timestamp) - static_cast<i64>(records[ix - 1].timestamp.timestamp);
+        auto const speed = records[ix].speed;
+        if (gap > 0 && gap <= RangeMovingGap && (!speed || *speed >= RangeMovingSpeed)) {
+            moving += static_cast<u32>(gap);
+        }
+    }
+    // Before analyze(): TSS is over the moving time.
+    ret.moving = Duration { moving };
+    ret.analyze(records, false);
+    return ret;
+}
+
 StorageResult<bool> Activity::load(LoadingDepth the_depth)
 {
     trace(Storage, "Loading activity {}", id.name);
@@ -441,7 +470,8 @@ Error<StorageError> Activity::analyze()
         lap.segment.analyze(std::span { begin, end }, false);
     }
     // Last: it smooths the records, and the laps should see them as
-    // recorded, as the activity does.
+    // recorded, as the activity does. So should a range, later.
+    recorded = records;
     segment.analyze(records, true);
     return { };
 }
