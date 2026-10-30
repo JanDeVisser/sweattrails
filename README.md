@@ -86,6 +86,13 @@ either way, selects part of the activity, such as a climb: when you let
 go, the data panel shows that part's stats, as it does a lap's. A drag
 of less than 10 seconds selects nothing.
 
+You can give an activity laps afterwards, in place of the device's.
+Ctrl+Shift+L splits it every distance or time, such as "1 km" or "10
+min". Ctrl+L makes the range dragged in the graph a lap, splitting the
+lap it was in. Ctrl+Alt+L (Ctrl+Option on a Mac) goes back to the
+device's laps. The laps are kept in the activity's `.json` file next to
+its FIT file, which isn't changed.
+
 Ctrl+M lists the activities of the month of the one on display, oldest
 first, with each one's sport, day and time, title, distance and moving
 time. Up and Down select one, typing searches the titles, Enter shows

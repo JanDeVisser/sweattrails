@@ -119,6 +119,15 @@ std::expected<void, LibCError> update_sidecar(fs::path const &sidecar, std::func
 // update_sidecar().
 std::expected<void, LibCError> save_sidecar_strava(fs::path const &sidecar, StravaTitle const &strava);
 
+// The laps the user made, under SweatTrails' key `"laps"` in the sidecar:
+// the Unix times the laps after the first start. Nothing for the device's
+// laps, and an empty list for one lap. See specs/after-the-fact-laps.md.
+std::optional<std::vector<i64>> sidecar_laps(fs::path const &sidecar);
+
+// Saves the user's laps in the sidecar, with update_sidecar(), or removes
+// them for nothing.
+std::expected<void, LibCError> save_sidecar_laps(fs::path const &sidecar, std::optional<std::vector<i64>> const &starts);
+
 // Saves the user's name for the activity in its sidecar, with
 // update_sidecar(), or removes it for an empty `title`.
 std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::string_view title);
@@ -182,6 +191,10 @@ struct Activity {
     std::vector<record>              records { };  // Smoothed, for the graph
     std::vector<record>              recorded { }; // As recorded, for a range's stats
     std::vector<Lap>                 laps { };
+    std::vector<Lap>                 device_laps { }; // The FIT file's, which the user's laps replace
+    // The starts of the laps the user made, after the first: nothing for
+    // the device's laps.
+    std::optional<std::vector<i64>> user_lap_starts { };
 
     // Local time minus UTC in seconds, from the FIT activity message. Empty
     // if the file doesn't record the local time.
@@ -216,6 +229,14 @@ struct Activity {
     // Loads `file`, whatever its name, rather than `<id.name>.fit`.
     StorageResult<bool> load_from_file(fs::path const &file);
     StorageResult<bool> load_from_slice(std::string_view const &buffer);
+
+    // The starts of the laps after the first: the user's, or the device's.
+    [[nodiscard]] std::vector<i64> lap_starts() const;
+
+    // Gives the activity the laps `starts` make, the user's, or the
+    // device's laps again for nothing, and saves them in the sidecar
+    // first: if they can't be saved, the laps stay as they were.
+    std::expected<void, LibCError> set_lap_starts(std::optional<std::vector<i64>> starts);
 
     // Reads the names and the notes from the sidecar again, as when the
     // activity was loaded, after something else changed them.

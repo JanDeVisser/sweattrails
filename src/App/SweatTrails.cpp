@@ -32,6 +32,7 @@
 #include <overlay/Render.h>
 #include <storage/Activity.h>
 #include <storage/Garmin.h>
+#include <storage/Laps.h>
 #include <storage/Storage.h>
 #include <storage/Strava.h>
 #include <storage/StravaTitles.h>
@@ -784,6 +785,92 @@ void cmd_rename_activity(pSweatTrails const &sweattrails, JSONValue const &)
     input_box(sweattrails, "Name", save, activity->activity.title);
 }
 
+// The activity on display gets the laps `starts` make, the device's for
+// nothing, and the table shows them. What goes wrong goes on the status
+// line, as for a rename.
+bool set_laps(pSweatTrails const &sweattrails, DisplayedActivity &displayed, std::optional<std::vector<i64>> starts)
+{
+    if (auto const set = displayed.activity.set_lap_starts(std::move(starts)); !set) {
+        sweattrails->set_status(std::format("Couldn't save the laps: {}", set.error().to_string()));
+        return false;
+    }
+    displayed.whole_activity();
+    sweattrails->activity_display->laps_changed();
+    return true;
+}
+
+// The activity whose laps the lap keys change, if there is one. Not while
+// rendering: the render reads the laps from the same activity, and the
+// video's lap lines would change halfway through.
+std::shared_ptr<DisplayedActivity> activity_for_lap_keys(pSweatTrails const &sweattrails)
+{
+    if (sweattrails->overlay_render) {
+        sweattrails->set_status("The laps can't change while a video is rendering");
+        return nullptr;
+    }
+    return activity_for_keys(sweattrails);
+}
+
+// Makes the range dragged in the graph a lap, and selects it.
+void cmd_mark_lap(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    auto activity = activity_for_lap_keys(sweattrails);
+    if (!activity) {
+        return;
+    }
+    // A finished drag of MinRangeSeconds or more: not a lap, nor a range
+    // still being dragged.
+    if (!activity->segment || !activity->range_stats) {
+        message_box("Drag across the graph to select a range first: Ctrl+L makes it a lap.");
+        return;
+    }
+    auto const &a = activity->activity;
+    auto const  first = activity->segment->min;
+    // Where the marked lap starts, which snapping can move to a record
+    // that's in the lap before the range's first.
+    auto const start = mark_start(a, a.lap_starts(), first);
+    if (!set_laps(sweattrails, *activity, mark_starts(a, a.lap_starts(), first, activity->segment->max))) {
+        return;
+    }
+    if (auto const lap = activity->lap_of(record_at(activity->activity, start)); lap && activity->has_laps()) {
+        activity->select_lap(*lap);
+    }
+}
+
+// Asks how to split the activity into laps, such as every "1 km", and
+// splits it.
+void cmd_split_laps(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    auto activity = activity_for_lap_keys(sweattrails);
+    if (!activity) {
+        return;
+    }
+    auto split = [activity](pSweatTrails const &st, std::string const &text) {
+        auto const every = parse_split(text);
+        if (!every) {
+            message_box(every.error());
+            return;
+        }
+        auto const starts = split_starts(activity->activity, *every);
+        if (!starts) {
+            message_box(starts.error());
+            return;
+        }
+        set_laps(st, *activity, *starts);
+    };
+    input_box(sweattrails, "Split every", split, (activity->activity.segment.distance > 0) ? "1 km" : "10 min");
+}
+
+// Goes back to the laps the device recorded.
+void cmd_device_laps(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    auto activity = activity_for_lap_keys(sweattrails);
+    if (!activity || !activity->activity.user_lap_starts) {
+        return;
+    }
+    set_laps(sweattrails, *activity, std::nullopt);
+}
+
 // The layout the preview shows before the user picks one.
 constexpr char const DefaultOverlayLayout[] = "cycling-basic";
 
@@ -1242,6 +1329,12 @@ void SweatTrails::initialize()
 #else
     auto const command = KModControl;
 #endif
+    bus.add_task<SweatTrails>("st-mark-lap", self(), cmd_mark_lap)
+        .bind(KeyCombo { KEY_L, KModControl });
+    bus.add_task<SweatTrails>("st-split-laps", self(), cmd_split_laps)
+        .bind(KeyCombo { KEY_L, KModControl | KModShift });
+    bus.add_task<SweatTrails>("st-device-laps", self(), cmd_device_laps)
+        .bind(KeyCombo { KEY_L, KModControl | KModAlt });
     bus.add_task<SweatTrails>("st-rename-activity", self(), cmd_rename_activity)
         .bind(KeyCombo { KEY_F2, KModNone })
         .bind(KeyCombo { KEY_R, command | KModShift });

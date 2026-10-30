@@ -438,13 +438,16 @@ struct ActivityInDir {
     Activity activity { storage, ActivityID::dummy(ActivityFile::Fit) };
     bool     loaded { false };
 
-    explicit ActivityInDir(std::string_view sidecar, std::string_view strava_file = "")
+    explicit ActivityInDir(std::string_view sidecar, std::string_view strava_file = "", std::string fit_file = "")
     {
         fs::create_directories(dir);
-        FITBuilder fit;
-        add_workout(fit, "Tempo intervals");
-        add_session(fit, 3600, 345);
-        MUST(write_file_by_name((dir / "dummy.fit").string(), fit.file()));
+        if (fit_file.empty()) {
+            FITBuilder fit;
+            add_workout(fit, "Tempo intervals");
+            add_session(fit, 3600, 345);
+            fit_file = fit.file();
+        }
+        MUST(write_file_by_name((dir / "dummy.fit").string(), fit_file));
         if (!sidecar.empty()) {
             MUST(write_file_by_name((dir / "dummy.json").string(), sidecar));
         }
@@ -686,6 +689,120 @@ void test_save_sidecar_strava()
     CHECK_EQ(read_json(array.dir / "dummy.json"), "[1, 2]");
 }
 
+// The time of record `ix` of the two-lap activity, as the sidecar has it.
+i64 two_laps_time(u32 ix)
+{
+    return static_cast<i64>(Start) + DateTime::FIT_TIMESTAMP_OFFSET + ix;
+}
+
+// The sidecar's laps replace the device's: two laps become three. An
+// empty list is one lap.
+void test_laps_from_the_sidecar()
+{
+    ActivityInDir t { std::format(R"({{"activityName": "Intervals", "laps": [{}, {}]}})", two_laps_time(10), two_laps_time(30)), "", two_laps() };
+    CHECK(t.loaded);
+    CHECK_EQ(t.activity.records.size(), 40uz);
+    CHECK_EQ(t.activity.recorded.front().timestamp.timestamp, static_cast<u32>(two_laps_time(0)));
+    CHECK_EQ(t.activity.laps.size(), 3uz);
+    if (t.activity.laps.size() == 3) {
+        CHECK_EQ(t.activity.laps[1].first_record, 10uz);
+        CHECK_EQ(t.activity.laps[1].end_record, 30uz);
+        CHECK_EQ(t.activity.laps[1].segment.elapsed.elapsed, 20u);
+    }
+    CHECK_EQ(t.activity.device_laps.size(), 2uz);
+    CHECK((t.activity.lap_starts() == std::vector<i64> { two_laps_time(10), two_laps_time(30) }));
+    ActivityInDir one { R"({"laps": []})", "", two_laps() };
+    CHECK_EQ(one.activity.laps.size(), 1uz);
+    CHECK(one.activity.user_lap_starts.has_value());
+}
+
+// Laps that aren't a list of times leave the device's.
+void test_bad_laps_in_the_sidecar()
+{
+    for (auto const *sidecar : { R"({"laps": "1 km"})", R"({"laps": ["a"]})", R"({"laps": {}})", R"({"title": "Intervals"})" }) {
+        ActivityInDir t { sidecar, "", two_laps() };
+        CHECK(t.loaded);
+        CHECK_EQ(t.activity.laps.size(), 2uz);
+        CHECK(!t.activity.user_lap_starts.has_value());
+        CHECK((t.activity.lap_starts() == std::vector<i64> { two_laps_time(20) }));
+    }
+}
+
+// Setting laps saves them, keeping the rest of the sidecar, and a reload
+// has them; going back to the device's removes them, and the sidecar if
+// nothing else is in it.
+void test_set_lap_starts()
+{
+    ActivityInDir t { R"({"activityName": "Intervals"})", "", two_laps() };
+    CHECK(t.activity.set_lap_starts(std::vector<i64> { two_laps_time(30), two_laps_time(5) }).has_value());
+    CHECK_EQ(t.activity.laps.size(), 3uz);
+    CHECK_EQ(sidecar_title(t.activity.sidecar).value_or(""), "Intervals");
+    CHECK((sidecar_laps(t.activity.sidecar).value_or(std::vector<i64> { }) == std::vector<i64> { two_laps_time(5), two_laps_time(30) }));
+    Activity again { t.storage, ActivityID::dummy(ActivityFile::Fit) };
+    again.depth = LoadingDepth::Deep;
+    CHECK(again.load_from_dir(t.dir).value_or(false));
+    CHECK_EQ(again.laps.size(), 3uz);
+
+    CHECK(t.activity.set_lap_starts(std::nullopt).has_value());
+    CHECK_EQ(t.activity.laps.size(), 2uz);
+    CHECK_EQ(t.activity.laps[1].first_record, 20uz);
+    CHECK(!sidecar_laps(t.activity.sidecar).has_value());
+    CHECK_EQ(sidecar_title(t.activity.sidecar).value_or(""), "Intervals");
+
+    ActivityInDir bare { "", "", two_laps() };
+    CHECK(bare.activity.set_lap_starts(std::vector<i64> { }).has_value());
+    CHECK(fs::exists(bare.activity.sidecar));
+    CHECK_EQ(bare.activity.laps.size(), 1uz);
+    CHECK(bare.activity.set_lap_starts(std::nullopt).has_value());
+    CHECK(!fs::exists(bare.activity.sidecar));
+}
+
+// A sidecar that can't be written, and an activity without one, leave the
+// laps as they were.
+void test_set_lap_starts_that_fails()
+{
+    ActivityInDir t { "[1, 2]", "", two_laps() };
+    CHECK(!t.activity.set_lap_starts(std::vector<i64> { two_laps_time(10) }).has_value());
+    CHECK_EQ(t.activity.laps.size(), 2uz);
+    CHECK(!t.activity.user_lap_starts.has_value());
+    LoadedActivity loose { two_laps() };
+    CHECK(!loose.activity.set_lap_starts(std::vector<i64> { two_laps_time(10) }).has_value());
+    CHECK_EQ(loose.activity.laps.size(), 2uz);
+}
+
+// The reviewer's: laps out of order in the sidecar, and one before the
+// activity, which makes no lap, still give the laps in order; and
+// lap_starts() is the user's then.
+void test_laps_out_of_order_in_the_sidecar()
+{
+    ActivityInDir t { std::format(R"({{"laps": [{}, {}, {}]}})", two_laps_time(30), two_laps_time(0) - 100, two_laps_time(10)), "", two_laps() };
+    CHECK(t.loaded);
+    CHECK_EQ(t.activity.laps.size(), 3uz);
+    if (t.activity.laps.size() == 3) {
+        CHECK_EQ(t.activity.laps[0].first_record, 0uz);
+        CHECK_EQ(t.activity.laps[1].first_record, 10uz);
+        CHECK_EQ(t.activity.laps[2].first_record, 30uz);
+        CHECK_EQ(t.activity.laps[2].end_record, 40uz);
+    }
+    CHECK((t.activity.lap_starts() == std::vector<i64> { two_laps_time(0) - 100, two_laps_time(10), two_laps_time(30) }));
+}
+
+// The reviewer's: going back to the device's laps keeps the rest of the
+// sidecar, here Strava's, and the sidecar with it.
+void test_device_laps_keep_strava()
+{
+    ActivityInDir t { std::format(R"({{"laps": [{}], "strava": {{"id": 12, "name": "Ride"}}}})", two_laps_time(10)), "", two_laps() };
+    CHECK_EQ(t.activity.laps.size(), 2uz);
+    CHECK(t.activity.set_lap_starts(std::nullopt).has_value());
+    CHECK(fs::exists(t.activity.sidecar));
+    auto const json = JSONValue::deserialize(read_json(t.activity.sidecar));
+    CHECK(json.has_value() && json->get("strava").has_value() && !json->get("laps").has_value());
+    CHECK_EQ(t.activity.laps.size(), 2uz);
+    if (t.activity.laps.size() == 2) {
+        CHECK_EQ(t.activity.laps[1].first_record, 20uz);
+    }
+}
+
 // An activity that wasn't loaded from a directory has nowhere to save its
 // name, and keeps the one it has.
 void test_rename_without_a_sidecar_path()
@@ -787,6 +904,12 @@ int main()
     test_strava_in_the_sidecar_that_isnt_valid();
     test_title_from_a_strava_file();
     test_read_names_again();
+    test_laps_from_the_sidecar();
+    test_bad_laps_in_the_sidecar();
+    test_set_lap_starts();
+    test_set_lap_starts_that_fails();
+    test_laps_out_of_order_in_the_sidecar();
+    test_device_laps_keep_strava();
     test_save_sidecar_strava();
     test_rename_over_stravas_title();
     test_save_keeps_the_rest_of_the_sidecar();
