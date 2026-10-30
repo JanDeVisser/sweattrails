@@ -100,6 +100,26 @@ the one selected, and Escape closes the list. Left and Right go to the
 month before or after that has activities, and Shift+Left and
 Shift+Right a year back or on.
 
+## Totals
+
+Ctrl+T shows how far and how long you've run or ridden, per week, month
+or year: a bar chart, and a table of each period's distance, moving
+time, number of activities and ascent under it. It opens on this year,
+by week, and on running or cycling as the activity on display is.
+Treadmill runs and indoor and Zwift rides count; other sports don't.
+
+On that screen, W, M and Y show weeks, months or years; R and C running
+or cycling; and D, T, N and A put distance, time, the number of
+activities or ascent in the chart. Left and Right go a year back or on,
+and Up and Down through the table. Ctrl+T or Escape goes back to the
+activity.
+
+A week starts on Monday, and belongs to the year its Monday is in. The
+totals come from `summaries.json` in the data directory, which the app
+builds in the background the first time, reading every activity, and
+keeps up to date after that. The status line says how far it is.
+Removing the file only means it's built again.
+
 ## Zwift
 
 A ride in Zwift shows on the map of its Zwift world rather than on
