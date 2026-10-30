@@ -386,7 +386,7 @@ void test_lines()
     CHECK_EQ(screen->table->rows.size(), 12uz);
     CHECK_EQ(screen->table->rows[2][1], "84.7 km");
     CHECK_EQ(screen->table->rows[2][2], "0.0 km");
-    // 2025 and 2024, and no 2023 line: the first rides are in 2023.
+    // 2025, 2024 and 2023, the year of the first rides.
     CHECK_EQ(screen->lines->series.size(), 3uz);
     CHECK(screen->lines->series[0].bold);
     CHECK_EQ(screen->lines->series[0].values.size(), 365uz);
