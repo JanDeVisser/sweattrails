@@ -249,7 +249,9 @@ std::string range_summary(Activity const &activity, size_t first, size_t last, S
     }
     auto const &from = records[first];
     auto const &to = records[last];
-    if (segment.distance > 0 && from.distance && to.distance) {
+    // By whether the records have distance, not whether the range went
+    // anywhere: a range at a stop says where it is in km, as the others do.
+    if (from.distance && to.distance) {
         return std::format("{:.1f}–{:.1f} km · {}", *from.distance / 1000.0f, *to.distance / 1000.0f, segment_summary(segment));
     }
     auto const since_start = [&records](record const &rec) {

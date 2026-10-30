@@ -876,6 +876,16 @@ void test_range_summary()
         return;
     }
     CHECK_EQ(range_summary(t.activity, 20, 100, *range), "12.1–12.5 km · 400 m · 01:20");
+    // At a stop, in a ride with distance: still where it is in km.
+    for (auto ix = 30uz; ix <= 50; ++ix) {
+        t.activity.records[ix].distance = 12'160.0f;
+        t.activity.recorded[ix].distance = 12'160.0f;
+    }
+    auto const stop = range_segment(t.activity, 35, 50);
+    CHECK(stop.has_value());
+    if (stop) {
+        CHECK(range_summary(t.activity, 35, 50, *stop).starts_with("12.2–12.2 km · "));
+    }
     RangeActivity indoors { false };
     auto const    still = range_segment(indoors.activity, 20, 100);
     CHECK(still.has_value());
