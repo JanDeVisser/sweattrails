@@ -26,6 +26,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <IO.h>
+#include <JSON.h>
 #include <Logging.h>
 #include <StringUtil.h>
 
@@ -298,6 +300,63 @@ std::optional<QueryParameters> answer(Connection &connection, std::string_view p
 
 }
 
+Decoded<OAuthTokens> OAuthTokens::decode(JSONValue const &json)
+{
+    if (!json.is_object()) {
+        return std::unexpected(JSONError { JSONError::Code::TypeMismatch, "the tokens aren't an object" });
+    }
+    return OAuthTokens {
+        .access_token = TRY_EVAL(json.try_get<std::string>("access_token")),
+        .refresh_token = TRY_EVAL(json.try_get<std::string>("refresh_token")),
+        .expires_at = TRY_EVAL(json.try_get<i64>("expires_at")),
+        .code_verifier = json.try_get<std::string>("code_verifier").transform([](std::string v) { return std::optional { std::move(v) }; }).value_or(std::nullopt),
+    };
+}
+
+JSONValue OAuthTokens::encode() const
+{
+    auto json = JSONValue::object();
+    json["access_token"] = JSONValue { access_token };
+    json["refresh_token"] = JSONValue { refresh_token };
+    json["expires_at"] = JSONValue { expires_at };
+    if (code_verifier) {
+        json["code_verifier"] = JSONValue { *code_verifier };
+    }
+    return json;
+}
+
+std::optional<OAuthTokens> read_tokens(fs::path const &file)
+{
+    std::error_code ec { };
+    if (!fs::exists(file, ec)) {
+        return { };
+    }
+    auto const contents = read_file_by_name(file.string());
+    if (!contents) {
+        warning(OAuth, "Could not read `{}`: {}", file.string(), contents.error().to_string());
+        return { };
+    }
+    auto const json = JSONValue::deserialize(*contents);
+    if (!json) {
+        warning(OAuth, "Ignoring `{}`: {}", file.string(), json.error().to_string());
+        return { };
+    }
+    auto tokens = OAuthTokens::decode(*json);
+    if (!tokens) {
+        warning(OAuth, "Ignoring `{}`: {}", file.string(), tokens.error().to_string());
+        return { };
+    }
+    return std::move(*tokens);
+}
+
+std::expected<void, LibCError> write_tokens(fs::path const &file, OAuthTokens const &tokens)
+{
+    // On Linux, nothing else may have made SweatTrails' config folder yet.
+    std::error_code ec { };
+    fs::create_directories(file.parent_path(), ec);
+    return write_file_atomically(file, tokens.encode().serialize(), fs::perms::owner_read | fs::perms::owner_write);
+}
+
 std::string random_token(size_t bytes)
 {
     std::string buffer(bytes, '\0');
@@ -509,6 +568,23 @@ std::expected<void, LibCError> open_browser(std::string const &url)
         return std::unexpected(LibCError { std::format("exit code {}", *exit_code) });
     }
     return { };
+}
+
+std::expected<std::string, std::string> login_code(std::expected<QueryParameters, RedirectError> const &redirect, std::string_view service)
+{
+    if (!redirect) {
+        return std::unexpected(redirect.error().kind == RedirectError::Kind::TimedOut
+                ? std::format("The {} login timed out. Try again from SweatTrails when you're ready to log in.", service)
+                : redirect.error().to_string());
+    }
+    // access_denied when the user doesn't allow SweatTrails access.
+    if (redirect->contains("error")) {
+        return std::unexpected(std::format("The {} login didn't go through: {}", service, redirect->at("error")));
+    }
+    if (!redirect->contains("code") || redirect->at("code").empty()) {
+        return std::unexpected(std::format("The {} login came back without a code. Try again.", service));
+    }
+    return redirect->at("code");
 }
 
 }

@@ -126,85 +126,17 @@ WahooResult<void> write_whole_file(fs::path const &path, std::string_view conten
 
 }
 
-Decoded<WahooTokens> WahooTokens::decode(JSONValue const &json)
-{
-    if (!json.is_object()) {
-        return std::unexpected(JSONError { JSONError::Code::TypeMismatch, "the tokens aren't an object" });
-    }
-    return WahooTokens {
-        .access_token = TRY_EVAL(json.try_get<std::string>("access_token")),
-        .refresh_token = TRY_EVAL(json.try_get<std::string>("refresh_token")),
-        .expires_at = TRY_EVAL(json.try_get<i64>("expires_at")),
-        .code_verifier = TRY_EVAL(json.try_get<std::string>("code_verifier")),
-    };
-}
-
-JSONValue WahooTokens::encode() const
-{
-    auto json = JSONValue::object();
-    json["access_token"] = JSONValue { access_token };
-    json["refresh_token"] = JSONValue { refresh_token };
-    json["expires_at"] = JSONValue { expires_at };
-    json["code_verifier"] = JSONValue { code_verifier };
-    return json;
-}
-
 fs::path wahoo_tokens_file(fs::path const &config_dir)
 {
     return config_dir / "wahoo-tokens.json";
 }
 
-std::optional<WahooTokens> read_tokens(fs::path const &file)
+WahooResult<void> save_tokens(fs::path const &file, OAuthTokens const &tokens)
 {
-    std::error_code ec { };
-    if (!fs::exists(file, ec)) {
-        return { };
-    }
-    auto const contents = read_file_by_name(file.string());
-    if (!contents) {
-        warning(Wahoo, "Could not read `{}`: {}", file.string(), contents.error().to_string());
-        return { };
-    }
-    auto const json = JSONValue::deserialize(*contents);
-    if (!json) {
-        warning(Wahoo, "Ignoring `{}`: {}", file.string(), json.error().to_string());
-        return { };
-    }
-    auto tokens = WahooTokens::decode(*json);
-    if (!tokens) {
-        warning(Wahoo, "Ignoring `{}`: {}", file.string(), tokens.error().to_string());
-        return { };
-    }
-    return std::move(*tokens);
-}
-
-WahooResult<void> write_tokens(fs::path const &file, WahooTokens const &tokens)
-{
-    // On Linux, nothing else may have made SweatTrails' config folder yet.
-    std::error_code ec { };
-    fs::create_directories(file.parent_path(), ec);
-    auto const written = write_file_atomically(file, tokens.encode().serialize(), fs::perms::owner_read | fs::perms::owner_write);
-    if (!written) {
+    if (auto const written = write_tokens(file, tokens); !written) {
         return std::unexpected(failed(std::format("Could not save the Wahoo login: {}", written.error().to_string())));
     }
     return { };
-}
-
-std::expected<std::string, std::string> login_code(std::expected<QueryParameters, RedirectError> const &redirect)
-{
-    if (!redirect) {
-        return std::unexpected(redirect.error().kind == RedirectError::Kind::TimedOut
-                ? std::string { "The Wahoo login timed out. Try again from SweatTrails when you're ready to log in." }
-                : redirect.error().to_string());
-    }
-    // access_denied when the user doesn't allow SweatTrails access.
-    if (redirect->contains("error")) {
-        return std::unexpected(std::format("The Wahoo login didn't go through: {}", redirect->at("error")));
-    }
-    if (!redirect->contains("code") || redirect->at("code").empty()) {
-        return std::unexpected(std::string { "The Wahoo login came back without a code. Try again." });
-    }
-    return redirect->at("code");
 }
 
 Decoded<std::vector<WahooWorkout>> parse_workouts(JSONValue const &page)
@@ -292,7 +224,7 @@ WahooResult<void> Wahoo::request_tokens(std::vector<std::pair<std::string, std::
     if (!access_token || !refresh_token || !expires_in) {
         return std::unexpected(failed("Wahoo's answer to the login has no tokens"));
     }
-    WahooTokens fresh {
+    OAuthTokens fresh {
         .access_token = *access_token,
         .refresh_token = *refresh_token,
         .expires_at = now() + *expires_in,
@@ -300,7 +232,7 @@ WahooResult<void> Wahoo::request_tokens(std::vector<std::pair<std::string, std::
     };
     // Saved before they're used: once the new access token is used, Wahoo
     // revokes the old tokens, and the saved ones have to be the new ones.
-    if (auto const saved = write_tokens(tokens_file, fresh); !saved) {
+    if (auto const saved = save_tokens(tokens_file, fresh); !saved) {
         return std::unexpected(saved.error());
     }
     tokens = std::move(fresh);
@@ -321,9 +253,9 @@ WahooResult<void> Wahoo::refresh_if_expiring()
             { "grant_type", "refresh_token" },
             { "client_id", client_id },
             { "refresh_token", tokens->refresh_token },
-            { "code_verifier", tokens->code_verifier },
+            { "code_verifier", tokens->code_verifier.value_or("") },
         },
-        tokens->code_verifier);
+        tokens->code_verifier.value_or(""));
 }
 
 WahooResult<HttpResponse> Wahoo::get(std::string const &path)

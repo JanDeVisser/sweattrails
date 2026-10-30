@@ -42,8 +42,13 @@ StringList  split_by_whitespace(std::string_view const &s);
 std::string_view strip(std::string_view const &s);
 
 // The text in lines no wider than `width`, as `measure` measures them,
-// broken between words. A word wider than that is a line of its own.
+// broken between words and at each newline. A word wider than that is a
+// line of its own, and empty lines are left out.
 std::vector<std::string> wrap_words(std::string_view text, float width, std::function<float(std::string_view)> const &measure);
+
+// At most `max` of `lines`. If there are more, the last one kept ends in
+// "…", cut short to fit `width` with it.
+std::vector<std::string> clamp_lines(std::vector<std::string> lines, size_t max, float width, std::function<float(std::string_view)> const &measure);
 std::string_view         rstrip(std::string_view const &s);
 std::string_view         lstrip(std::string_view const &s);
 

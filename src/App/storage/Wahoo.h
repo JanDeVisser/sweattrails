@@ -63,30 +63,8 @@ struct WahooError {
 template<typename T>
 using WahooResult = std::expected<T, WahooError>;
 
-// What a login gives. A refresh sends the PKCE verifier again, so it's
-// kept with the tokens.
-struct WahooTokens {
-    std::string access_token { };
-    std::string refresh_token { };
-    i64         expires_at { 0 }; // Unix time
-    std::string code_verifier { };
-
-    static Decoded<WahooTokens> decode(JSONValue const &json);
-    [[nodiscard]] JSONValue     encode() const;
-};
-
 // `wahoo-tokens.json` in SweatTrails' config folder.
 fs::path wahoo_tokens_file(fs::path const &config_dir);
-
-// The tokens in `file`, or nothing if there's no file or it can't be read.
-std::optional<WahooTokens> read_tokens(fs::path const &file);
-
-// Writes `tokens` to `file`, readable only by the user.
-WahooResult<void> write_tokens(fs::path const &file, WahooTokens const &tokens);
-
-// The code the browser brought back from the login, or what to tell the
-// user if it didn't bring one.
-std::expected<std::string, std::string> login_code(std::expected<QueryParameters, RedirectError> const &redirect);
 
 // A workout in Wahoo's list.
 struct WahooWorkout {
@@ -104,7 +82,7 @@ struct Wahoo {
     HttpFetch                  fetch;
     std::string                client_id { };
     fs::path                   tokens_file { };
-    std::optional<WahooTokens> tokens { };
+    std::optional<OAuthTokens> tokens { };
     std::function<i64()>       now { [] { return static_cast<i64>(std::time(nullptr)); } };
 
     // Where the browser goes to log in. `state` comes back with the code.

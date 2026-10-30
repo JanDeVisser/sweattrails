@@ -1,9 +1,9 @@
 # SweatTrails
 
 A desktop app for exploring sports activities: rides, runs, walks and
-more, from FIT files, Garmin Connect and Wahoo. It shows an activity on a map,
-with its data and graphs. It's written in C++26, on
-[raylib](https://www.raylib.com).
+more, from FIT files, Garmin Connect and Wahoo, with their titles from
+Strava. It shows an activity on a map, with its data and graphs. It's
+written in C++26, on [raylib](https://www.raylib.com).
 
 ## Requirements
 
@@ -15,9 +15,9 @@ later, Ninja, and these libraries:
 |---|---|---|---|
 | [raylib](https://www.raylib.com) | windows, drawing, input | Homebrew | your distribution, or built from source |
 | FreeType | fonts | Homebrew | your distribution |
-| libcurl | map tiles, Garmin Connect, Wahoo | the system's | your distribution |
+| libcurl | map tiles, Garmin Connect, Wahoo, Strava | the system's | your distribution |
 | zlib | unzipping Garmin Connect downloads | the system's | your distribution |
-| OpenSSL 3 or later | the Wahoo login | Homebrew | your distribution |
+| OpenSSL 3 or later | the Wahoo and Strava logins | Homebrew | your distribution |
 | iconv | text encodings | the system's | glibc's |
 | OpenGL | reading back the overlay's frames | the system's | your distribution |
 
@@ -177,6 +177,47 @@ along with Garmin Connect's. It looks at the last 30 days; `"wahoo": {
 on Wahoo becomes its title. A ride recorded on a Wahoo and a Garmin at the
 same time shows up twice. If you don't use SweatTrails for 60 days, Wahoo
 forgets the login, and Ctrl+G asks you to log in again.
+
+## Strava
+
+SweatTrails doesn't download activities from Strava, which doesn't hand
+out the FIT files, but it gives the activities it has their names and
+descriptions from Strava. Strava has you register an app of your own for
+that, and log in to it:
+
+1. Create an app at https://www.strava.com/settings/api. Give it the
+   Authorization Callback Domain `localhost`; the website can be anything,
+   such as `http://localhost`.
+2. Put its client ID and client secret in your `settings.json`, in
+   SweatTrails' config folder. The secret is yours alone: don't share the
+   file with it in.
+
+   ```json
+   { "strava": { "client_id": "...", "client_secret": "..." } }
+   ```
+
+3. The login comes back to the same address as Wahoo's, so it needs the
+   same certificate: see step 3 under Wahoo.
+4. Press Ctrl+G. SweatTrails asks whether to log in to Strava: Yes opens
+   the browser at Strava's login page, which asks to let SweatTrails read
+   your activities, private ones too. The browser then comes back to
+   SweatTrails, which fetches the titles. The login is saved in
+   `strava-tokens.json` in the config folder, readable only by you.
+
+Ctrl+G, and starting SweatTrails, then give the activities of the last 30
+days their names from Strava, after the Garmin Connect and Wahoo
+downloads; `"strava": { "days": 365 }` in the settings looks further
+back. Ctrl+Shift+G does it for all the activities SweatTrails has, back
+to the oldest. An activity takes the name of the Strava activity that
+started within a minute of it, so a ride on two devices gets the name on
+both. A name you gave an activity in SweatTrails wins over Strava's.
+
+The description, which SweatTrails shows under the title, takes a
+request of its own for each activity. Strava allows 100 requests every 15
+minutes and 1,000 a day, so the descriptions of a long history come over
+a few runs: SweatTrails says how many are left, and from when it can
+fetch them. A description changed on Strava, without the name, isn't
+seen again.
 
 ## Video overlay
 
@@ -347,6 +388,9 @@ License (`share/overlays/icons/LICENSE`).
 The overlay's font is [Inter](https://rsms.me/inter/), by The Inter
 Project Authors, under the SIL Open Font License 1.1
 (`share/fonts/Inter-OFL.txt`).
+
+Activities' names and descriptions can come from
+[Strava](https://www.strava.com), through its API.
 
 The map tiles are from [OpenStreetMap](https://www.openstreetmap.org),
 © OpenStreetMap contributors.

@@ -7,6 +7,7 @@
 #include <raylib.h>
 
 #include <Format.h>
+#include <StringUtil.h>
 
 #include <Widget.h>
 
@@ -58,12 +59,13 @@ void ActivityDataDisplay::draw()
         FontSize::Small,
         RAYWHITE);
 
-    // The title, and the summary under it in the same font.
+    // The title, the notes under it in the small font, and the summary
+    // under those in the title's font.
     auto const line_height = 6.0f * App::measure_text("Mg", FontSize::Large).y / 5.0f;
     auto const title_y = top + sz.y + 20;
     auto const title_size = render_text(116, title_y, activity->activity.title, FontSize::Large, RAYWHITE);
     title_area = Rectangle { .x = viewport.x + 116, .y = viewport.y + title_y, .width = title_size.x, .height = title_size.y };
-    auto const summary_y = title_y + line_height;
+    auto const summary_y = draw_notes(title_y + line_height);
     auto const summary = activity->lap ? lap_summary(activity->activity, *activity->lap) : activity_summary(activity->activity);
     render_text(116, summary_y, summary, FontSize::Large, RAYWHITE);
 
@@ -71,6 +73,26 @@ void ActivityDataDisplay::draw()
     // summary, whichever is lower.
     auto const icon_bottom = top + 96;
     draw_fields(std::max(icon_bottom, summary_y + line_height) + 10);
+}
+
+// Draws the activity's notes at y, wrapped, NotesLines lines at most, and
+// returns where what's below them goes.
+float ActivityDataDisplay::draw_notes(float y)
+{
+    auto const width = viewport.width - 116 - 10;
+    auto const measure = [](std::string_view text) {
+        return App::measure_text(std::string { text }.c_str(), FontSize::Small).x;
+    };
+    auto const lines = clamp_lines(wrap_words(activity->activity.notes, width, measure), NotesLines, width, measure);
+    if (lines.empty()) {
+        return y;
+    }
+    auto const line_height = 6.0f * App::measure_text("Mg", FontSize::Small).y / 5.0f;
+    for (auto const &line : lines) {
+        render_text(116, y, line, FontSize::Small, RAYWHITE);
+        y += line_height;
+    }
+    return y + line_height / 2;
 }
 
 // Draws the fields, the selected lap's or the activity's, in two columns.

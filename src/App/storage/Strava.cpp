@@ -1,25 +1,17 @@
 /*
- * Copyright (c) 2025, Jan de Visser <jan@finiandarcy.com>
+ * Copyright (c) 2026, Jan de Visser <jan@finiandarcy.com>
  *
  * SPDX-License-Identifier: MIT
- *
- * C++ translation of zig/connect/strava.zig.
  */
 
-#include <cassert>
-#include <cctype>
-#include <cerrno>
+#include <charconv>
 #include <format>
-#include <system_error>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
-#include <IO.h>
-#include <Logging.h>
-#include <Process.h>
+#include <Date.h>
 #include <StringUtil.h>
 
 #include <storage/Strava.h>
@@ -28,415 +20,290 @@ namespace ST {
 
 namespace {
 
-struct CurlTempFiles {
-    std::string body_file;
-    std::string status_file;
+constexpr std::string_view AuthorizePath = "/oauth/authorize";
+constexpr std::string_view TokenPath = "/oauth/token";
+constexpr std::string_view ActivitiesPath = "/api/v3/athlete/activities";
+constexpr std::string_view ActivityPath = "/api/v3/activities";
 
-    static CurlTempFiles make()
-    {
-        auto const stamp = ST::now();
-        return {
-            .body_file = (fs::temp_directory_path() / std::format("sweattrails-strava-{}-body.json", stamp)).string(),
-            .status_file = (fs::temp_directory_path() / std::format("sweattrails-strava-{}-status.txt", stamp)).string(),
+// Strava's largest page.
+constexpr size_t PageSize = 200;
+
+// An access token this close to expiring is refreshed first, so that it
+// doesn't expire halfway through.
+constexpr i64 RefreshMargin = 60;
+
+constexpr i64 QuarterHour = 15 * 60;
+constexpr i64 Day = 24 * 60 * 60;
+
+StravaError failed(std::string message)
+{
+    return StravaError { .kind = StravaError::Kind::Failed, .message = std::move(message) };
+}
+
+StravaError not_logged_in()
+{
+    return StravaError {
+        .kind = StravaError::Kind::NotLoggedIn,
+        .message = "SweatTrails isn't logged in to Strava, or Strava no longer accepts the login. Log in to Strava again.",
+    };
+}
+
+StravaError unreachable(LibCError const &error)
+{
+    return failed(std::format("Could not reach Strava: {}", error.to_string()));
+}
+
+StravaError http_error(HttpResponse const &response, std::string_view what, i64 now)
+{
+    if (response.status == 429) {
+        return StravaError {
+            .kind = StravaError::Kind::RateLimited,
+            .message = "Strava's limit on requests is reached.",
+            .status = response.status,
+            .resets_at = rate_limit_reset(response, now),
         };
     }
-};
-
-// curl's `-o <file>` writes the response body directly, and `-w '%{http_code}'`
-// (combined with `-s`, which silences everything else curl would otherwise
-// print) writes just the HTTP status code to stdout. Process::stdout_file
-// redirects that via dup2() in the child process (see Process::start()), so
-// unlike ReadPipe there is no background thread to race against; the file is
-// simply there once execute() returns. This is the same approach used for
-// tile fetching in ../Map.cpp.
-StravaResult<std::string> curl_finish(Process<> &curl, CurlTempFiles const &files, std::string_view const &url)
-{
-    curl.stdout_file = files.status_file;
-    auto exit_code = curl.execute();
-    if (!exit_code) {
-        return std::unexpected(StravaError { exit_code.error() });
-    }
-    if (*exit_code != 0) {
-        return std::unexpected(StravaError { LibCError { std::format("curl exited with {} fetching `{}`", *exit_code, url) } });
-    }
-    auto            status = read_file_by_name(files.status_file);
-    auto            body = read_file_by_name(files.body_file);
-    std::error_code ec { };
-    fs::remove(files.status_file, ec);
-    fs::remove(files.body_file, ec);
-    if (!status) {
-        return std::unexpected(StravaError { status.error() });
-    }
-    if (*status != "200") {
-        return std::unexpected(StravaError { LibCError { std::format("`{}` returned HTTP status {}", url, *status) } });
-    }
-    if (!body) {
-        return std::unexpected(StravaError { body.error() });
-    }
-    return *body;
-}
-
-StravaResult<std::string> curl_get(std::string_view const &url, std::string_view const &bearer_token)
-{
-    auto const files = CurlTempFiles::make();
-    auto const auth_header = std::format("Authorization: Bearer {}", bearer_token);
-    Process<>  curl {
-        "curl",
-        "-s",
-        "-S",
-        "-o",
-        files.body_file,
-        "-w",
-        "%{http_code}",
-        "-A",
-        "sweattrails/1.0",
-        "-H",
-        auth_header,
-        std::string { url },
+    return StravaError {
+        .kind = StravaError::Kind::Failed,
+        .message = std::format("Strava answered HTTP {} {}", response.status, what),
+        .status = response.status,
     };
-    return curl_finish(curl, files, url);
 }
 
-StravaResult<std::string> curl_post(std::string_view const &url, std::string_view const &payload)
+// What a 400 or 401 from the token request means. A code or refresh token
+// Strava doesn't take, which it reports as an "invalid" error on that
+// field, means logging in again. Anything else, such as a client secret
+// Strava doesn't know, logging in again won't fix, so the user sees what
+// Strava said.
+StravaError token_error(HttpResponse const &response)
 {
-    auto const files = CurlTempFiles::make();
-    Process<>  curl {
-        "curl",
-        "-s",
-        "-S",
-        "-o",
-        files.body_file,
-        "-w",
-        "%{http_code}",
-        "-A",
-        "sweattrails/1.0",
-        "-X",
-        "POST",
-        "--data",
-        std::string { payload },
-        std::string { url },
-    };
-    return curl_finish(curl, files, url);
-}
-
-// ST::Socket::listen(ip_address, port) (src/IO.h) is not implemented
-// (`fatal("listen(ip_addr, port) not yet implemented")` in IO.cpp), so the
-// OAuth redirect callback is handled with a small raw-socket server here,
-// mirroring what zig's std.Io.net did: bind, accept once, read the request
-// line, answer with a canned HTML page, and pull `code=...` out of the
-// request line.
-StravaResult<std::string> wait_for_oauth_callback(int port)
-{
-    int const listen_fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (listen_fd < 0) {
-        return std::unexpected(StravaError { LibCError { } });
-    }
-    int reuse = 1;
-    ::setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-
-    sockaddr_in addr { };
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(static_cast<uint16_t>(port));
-    if (::bind(listen_fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
-        LibCError const err { };
-        ::close(listen_fd);
-        return std::unexpected(StravaError { err });
-    }
-    if (::listen(listen_fd, 1) < 0) {
-        LibCError const err { };
-        ::close(listen_fd);
-        return std::unexpected(StravaError { err });
-    }
-
-    int const conn_fd = ::accept(listen_fd, nullptr, nullptr);
-    ::close(listen_fd);
-    if (conn_fd < 0) {
-        return std::unexpected(StravaError { LibCError { } });
-    }
-
-    std::string request_line;
-    char        buf[4096];
-    while (request_line.find('\n') == std::string::npos) {
-        auto const count = ::read(conn_fd, buf, sizeof(buf));
-        if (count <= 0) {
-            break;
-        }
-        request_line.append(buf, static_cast<size_t>(count));
-    }
-    info(Strava, "auth callback: {}", request_line);
-
-    static constexpr std::string_view response = "HTTP/1.1 200 OK\r\n"
-                                                 "Content-Type: text/html\r\n"
-                                                 "Connection: close\r\n"
-                                                 "\r\n"
-                                                 "<html><body><h1>Authorization successful!</h1>\r\n"
-                                                 "<p>You can close this window and return to SweatTrails.</p></body></html>\r\n"
-                                                 "\r\n";
-    ::write(conn_fd, response.data(), response.length());
-    ::close(conn_fd);
-
-    auto const code_start = request_line.find("code=");
-    if (code_start == std::string::npos) {
-        return std::unexpected(StravaError { StravaError::Code::NoAuthCodeReceived });
-    }
-    auto code_end = code_start + 5;
-    while (code_end < request_line.length() && request_line[code_end] != '&' && !std::isspace(static_cast<unsigned char>(request_line[code_end]))) {
-        ++code_end;
-    }
-    return request_line.substr(code_start + 5, code_end - (code_start + 5));
-}
-
-}
-
-std::string StravaError::to_string() const
-{
-    return std::visit(
-        overloaded {
-            [](LibCError const &e) { return e.to_string(); },
-            [](JSONError const &e) { return e.to_string(); },
-            [](Code const &c) -> std::string {
-                switch (c) {
-                case Code::InvalidConfigFile:
-                    return "Strava config file is invalid (missing client_id/client_secret)";
-                case Code::NoAuthCodeReceived:
-                    return "No authorization code received from Strava";
-                case Code::RequestError:
-                    return "Strava request failed";
-                case Code::InvalidAuthenticationTokenResponse:
-                    return "Strava returned an invalid authentication token response";
+    auto const json = JSONValue::deserialize(response.body);
+    if (json && json->is_object()) {
+        if (auto const errors = json->get("errors"); errors && errors->is_array()) {
+            for (auto const &error : *errors) {
+                auto const field = error.try_get<std::string>("field").value_or("");
+                if ((field == "code" || field == "refresh_token") && error.try_get<std::string>("code").value_or("") == "invalid") {
+                    return not_logged_in();
                 }
-                return "Unknown Strava error";
-            },
-        },
-        error);
-}
-
-Decoded<Strava::Config> Strava::Config::decode(JSONValue const &json)
-{
-    if (!json.is_object()) {
-        return std::unexpected(JSONError { JSONError::Code::TypeMismatch, "Expected a JSON object for Strava::Config" });
-    }
-    auto get_string = [&json](std::string_view const &key) -> Decoded<std::string> {
-        if (auto v = json.get(key); v) {
-            std::string s;
-            TRY(v->convert(s));
-            return s;
+            }
         }
-        return std::string { };
-    };
-    auto get_u64 = [&json](std::string_view const &key) -> Decoded<u64> {
-        if (auto v = json.get(key); v) {
-            u64 n = 0;
-            TRY(v->convert(n));
-            return n;
-        }
-        return u64 { 0 };
-    };
-
-    Config ret { };
-    ret.client_id = TRY_EVAL(get_string("client_id"));
-    ret.client_secret = TRY_EVAL(get_string("client_secret"));
-    ret.access_token = TRY_EVAL(get_string("access_token"));
-    ret.refresh_token = TRY_EVAL(get_string("refresh_token"));
-    ret.expires_at = TRY_EVAL(get_u64("expires_at"));
-    ret.newest_synced = TRY_EVAL(get_u64("newest_synced"));
-    ret.oldest_synced = TRY_EVAL(get_u64("oldest_synced"));
-    return ret;
+    }
+    auto const message = (json && json->is_object()) ? json->try_get<std::string>("message").value_or("") : std::string { };
+    return failed(std::format("Strava refused the login: {}", message.empty() ? std::format("HTTP {}", response.status) : message));
 }
 
-JSONValue Strava::Config::encode() const
+// `<15-minute>,<daily>`, as in X-ReadRateLimit-Usage.
+std::optional<std::pair<i64, i64>> two_numbers(std::optional<std::string> const &value)
 {
-    auto obj = JSONValue::object();
-    ST::set(obj, "client_id", client_id);
-    ST::set(obj, "client_secret", client_secret);
-    ST::set(obj, "access_token", access_token);
-    ST::set(obj, "refresh_token", refresh_token);
-    ST::set(obj, "expires_at", expires_at);
-    ST::set(obj, "newest_synced", newest_synced);
-    ST::set(obj, "oldest_synced", oldest_synced);
-    return obj;
-}
-
-StravaResult<std::optional<Strava>> Strava::init(fs::path const &data_dir)
-{
-    auto const config_path = (data_dir / "strava.config").string();
-    if (!fs::exists(config_path)) {
-        return std::optional<Strava> { };
-    }
-    auto text = read_file_by_name(config_path);
-    if (!text) {
-        return std::unexpected(StravaError { text.error() });
-    }
-    auto json = JSONValue::deserialize(*text);
-    if (!json) {
-        return std::unexpected(StravaError { json.error() });
-    }
-    auto config = Config::decode(*json);
-    if (!config) {
-        return std::unexpected(StravaError { config.error() });
-    }
-    if (config->client_id.empty() || config->client_secret.empty()) {
-        return std::unexpected(StravaError { StravaError::Code::InvalidConfigFile });
-    }
-
-    Strava ret { };
-    ret.data_dir = data_dir;
-    ret.config = *config;
-    return std::optional<Strava> { std::move(ret) };
-}
-
-Error<StravaError> Strava::write_config()
-{
-    auto const text = std::format("{}\n", config.encode().serialize(true));
-    auto       res = write_file_by_name((data_dir / "strava.config").string(), std::string_view { text });
-    if (!res) {
-        return std::unexpected(StravaError { res.error() });
-    }
-    return { };
-}
-
-Error<StravaError> Strava::parse_token_response(std::string_view const &resp)
-{
-    auto json = JSONValue::deserialize(resp);
-    if (!json) {
-        return std::unexpected(StravaError { json.error() });
-    }
-    auto value = Config::decode(*json);
     if (!value) {
-        return std::unexpected(StravaError { value.error() });
+        return { };
     }
-    if (value->access_token.empty() || value->refresh_token.empty() || value->expires_at == 0) {
-        return std::unexpected(StravaError { StravaError::Code::InvalidAuthenticationTokenResponse });
+    auto const comma = value->find(',');
+    if (comma == std::string::npos) {
+        return { };
     }
-    config.access_token = value->access_token;
-    config.refresh_token = value->refresh_token;
-    config.expires_at = value->expires_at;
-    return { };
+    auto const number = [](std::string_view text) -> std::optional<i64> {
+        text = strip(text);
+        i64        n { 0 };
+        auto const result = std::from_chars(text.data(), text.data() + text.size(), n);
+        if (result.ec != std::errc { } || result.ptr != text.data() + text.size()) {
+            return { };
+        }
+        return n;
+    };
+    auto const first = number(std::string_view { *value }.substr(0, comma));
+    auto const second = number(std::string_view { *value }.substr(comma + 1));
+    if (!first || !second) {
+        return { };
+    }
+    return std::pair { *first, *second };
 }
 
-StravaResult<std::string> Strava::request_response(std::string_view const &url)
+}
+
+fs::path strava_tokens_file(fs::path const &config_dir)
 {
-    info(Strava, "GET {}", url);
-    auto response = curl_get(url, config.access_token);
+    return config_dir / "strava-tokens.json";
+}
+
+i64 rate_limit_reset(HttpResponse const &response, i64 now)
+{
+    auto const usage = two_numbers(response.header("X-ReadRateLimit-Usage"));
+    auto const limit = two_numbers(response.header("X-ReadRateLimit-Limit"));
+    if (usage && limit && usage->second >= limit->second) {
+        return (now / Day + 1) * Day;
+    }
+    return (now / QuarterHour + 1) * QuarterHour;
+}
+
+Decoded<std::vector<StravaActivity>> parse_activities(JSONValue const &page)
+{
+    if (!page.is_array()) {
+        return std::unexpected(JSONError { JSONError::Code::TypeMismatch, "the page isn't a list of activities" });
+    }
+    std::vector<StravaActivity> activities;
+    for (auto const &entry : page) {
+        auto const id = entry.try_get<u64>("id");
+        auto const start_date = entry.try_get<std::string>("start_date");
+        auto const start = start_date ? DateTime::parse_iso8601(*start_date) : std::unexpected(LibCError { std::string { "no start" } });
+        // One odd entry shouldn't keep the others from their titles.
+        if (!id || !start) {
+            warning(Strava, "Skipping an activity without an ID or start time: {}", entry.serialize());
+            continue;
+        }
+        activities.push_back(StravaActivity {
+            .id = *id,
+            .start_time = static_cast<i64>(start->timestamp),
+            .name = entry.try_get<std::string>("name").value_or(""),
+        });
+    }
+    return activities;
+}
+
+std::string Strava::authorize_url(std::string_view state) const
+{
+    return std::format("{}{}?{}", StravaBaseUrl, AuthorizePath,
+        form_encode({
+            { "client_id", client_id },
+            { "redirect_uri", std::string { StravaRedirectUri } },
+            { "response_type", "code" },
+            { "approval_prompt", "auto" },
+            { "scope", std::string { StravaScopes } },
+            { "state", std::string { state } },
+        }));
+}
+
+StravaResult<void> Strava::exchange_code(std::string_view code)
+{
+    return request_tokens({
+        { "client_id", client_id },
+        { "client_secret", client_secret },
+        { "code", std::string { code } },
+        { "grant_type", "authorization_code" },
+    });
+}
+
+StravaResult<void> Strava::request_tokens(std::vector<std::pair<std::string, std::string>> const &form)
+{
+    auto const response = fetch(HttpRequest {
+        .method = "POST",
+        .url = std::format("{}{}", StravaBaseUrl, TokenPath),
+        .headers = { "Accept: application/json", "Content-Type: application/x-www-form-urlencoded" },
+        .body = form_encode(form),
+    });
     if (!response) {
-        log_error("GET {} failed: {}", url, response.error().to_string());
-        return std::unexpected(StravaError { StravaError::Code::RequestError });
+        return std::unexpected(unreachable(response.error()));
     }
-    return *response;
-}
-
-Error<StravaError> Strava::populate_pending_list(std::string_view const &filter)
-{
-    auto const url = std::format("{}/athlete/activities?per_page=200{}", STRAVA_API_URL, filter);
-    auto       activities = TRY_EVAL(request<JSONValue>(url));
-    assert(activities.is_array());
-    for (auto const &activity : activities) {
-        assert(activity.is_object());
-        auto const id = TRY_EVAL(activity.try_get<i64>("id"));
-        auto const name = activity.get("name");
-        auto const start_date = activity.get("start_date");
-        info(Strava, "{} {} {}",
-            id,
-            name ? name->to_string() : std::string { },
-            start_date ? start_date->to_string() : std::string { });
-        pending.push_back(id);
+    if (response->status == 400 || response->status == 401) {
+        return std::unexpected(token_error(*response));
     }
+    if (response->status != 200) {
+        return std::unexpected(http_error(*response, "when asked for tokens", now()));
+    }
+    auto const json = JSONValue::deserialize(response->body);
+    auto const access_token = json ? json->try_get<std::string>("access_token") : std::unexpected(json.error());
+    auto const refresh_token = json ? json->try_get<std::string>("refresh_token") : std::unexpected(json.error());
+    auto const expires_at = json ? json->try_get<i64>("expires_at") : std::unexpected(json.error());
+    if (!access_token || !refresh_token || !expires_at) {
+        return std::unexpected(failed("Strava's answer to the login has no tokens"));
+    }
+    OAuthTokens fresh {
+        .access_token = *access_token,
+        .refresh_token = *refresh_token,
+        .expires_at = *expires_at,
+    };
+    // Saved before anything else: Strava gives a new refresh token with
+    // each refresh, and the old one stops working at once.
+    if (auto const saved = write_tokens(tokens_file, fresh); !saved) {
+        return std::unexpected(failed(std::format("Could not save the Strava login: {}", saved.error().to_string())));
+    }
+    tokens = std::move(fresh);
     return { };
 }
 
-Error<StravaError> Strava::authenticate()
+StravaResult<void> Strava::refresh_if_expiring()
 {
-    if (config.access_token.empty() || config.refresh_token.empty() || config.expires_at == 0) {
-        auto const auth_url = std::format(
-            "{}?client_id={}&response_type=code&redirect_uri={}&approval_prompt=auto&scope=activity:read_all",
-            STRAVA_AUTH_URL, config.client_id, REDIRECT_URI);
-        info(Strava, "Opening browser for Strava authorization...");
-        info(Strava, "If browser doesn't open, visit:\n{}\n", auth_url);
-
-        // macOS-specific, matching the zig source
-        // (`std.process.run(..., .{ .argv = &.{ "open", auth_url } })`).
-        Process<> open_browser { "open", auth_url };
-        if (auto res = open_browser.execute(); !res) {
-            return std::unexpected(StravaError { res.error() });
-        }
-
-        auto code = TRY_EVAL(wait_for_oauth_callback(CALLBACK_PORT));
-        info(Strava, "code: {}", code);
-
-        auto const post_data = std::format(
-            "client_id={}&client_secret={}&code={}&grant_type=authorization_code",
-            config.client_id, config.client_secret, code);
-        auto response = TRY_EVAL(curl_post(STRAVA_TOKEN_URL, post_data));
-        info(Strava, "fetched auth token: {}", response);
-        TRY(parse_token_response(response));
-        TRY(write_config());
+    if (!tokens) {
+        return std::unexpected(not_logged_in());
     }
-
-    if (config.expires_at < static_cast<u64>(now()) + 300) {
-        auto const post_data = std::format(
-            "client_id={}&client_secret={}&refresh_token={}&grant_type=refresh_token",
-            config.client_id, config.client_secret, config.refresh_token);
-        auto response = TRY_EVAL(curl_post(STRAVA_TOKEN_URL, post_data));
-        info(Strava, "re-fetched auth token: {}", response);
-        TRY(parse_token_response(response));
-        TRY(write_config());
+    if (tokens->expires_at - now() > RefreshMargin) {
+        return { };
     }
-    return { };
+    trace(Strava, "Refreshing the access token");
+    return request_tokens({
+        { "client_id", client_id },
+        { "client_secret", client_secret },
+        { "grant_type", "refresh_token" },
+        { "refresh_token", tokens->refresh_token },
+    });
 }
 
-Error<StravaError> Strava::get_next_activity()
+StravaResult<HttpResponse> Strava::get(std::string const &path)
 {
-    TRY(authenticate());
+    if (auto const refreshed = refresh_if_expiring(); !refreshed) {
+        return std::unexpected(refreshed.error());
+    }
+    auto response = fetch(HttpRequest {
+        .url = std::format("{}{}", StravaBaseUrl, path),
+        .headers = { "Accept: application/json", std::format("Authorization: Bearer {}", tokens->access_token) },
+    });
+    if (!response) {
+        return std::unexpected(unreachable(response.error()));
+    }
+    if (response->status == 401) {
+        return std::unexpected(not_logged_in());
+    }
+    if (response->status != 200) {
+        return std::unexpected(http_error(*response, std::format("for `{}`", path), now()));
+    }
+    return std::move(*response);
+}
 
-    if (pending.empty() && config.newest_synced > 0) {
-        TRY(populate_pending_list(std::format("&after={}", config.newest_synced)));
-    }
-    if (pending.empty()) {
-        if (config.oldest_synced > 0) {
-            TRY(populate_pending_list(std::format("&before={}", config.oldest_synced)));
-        } else {
-            TRY(populate_pending_list(""));
+StravaResult<StravaListing> Strava::list_activities(i64 after, i64 before)
+{
+    StravaListing ret;
+    // The first page's error is the list's; a later one's leaves what
+    // came before it.
+    auto const stop = [&ret](StravaError error) -> StravaResult<StravaListing> {
+        if (ret.activities.empty()) {
+            return std::unexpected(std::move(error));
+        }
+        ret.stopped = std::move(error);
+        return std::move(ret);
+    };
+    for (size_t page = 1;; ++page) {
+        auto const response = get(std::format("{}?after={}&before={}&page={}&per_page={}", ActivitiesPath, after, before, page, PageSize));
+        if (!response) {
+            return stop(response.error());
+        }
+        auto const json = JSONValue::deserialize(response->body);
+        if (!json) {
+            return stop(failed(std::format("Strava's list of activities isn't JSON: {}", json.error().to_string())));
+        }
+        auto const listed = parse_activities(*json);
+        if (!listed) {
+            return stop(failed(std::format("Unexpected list of activities from Strava: {}", listed.error().to_string())));
+        }
+        ret.activities.insert(ret.activities.end(), listed->begin(), listed->end());
+        // A short page is the last: counted before entries were skipped.
+        if (json->size() < PageSize) {
+            return ret;
         }
     }
-    if (!pending.empty()) {
-        auto const id = pending.front();
-        pending.pop_front();
-        auto const url = std::format("{}/activities/{}", STRAVA_API_URL, id);
-        auto       activity = TRY_EVAL(request<JSONValue>(url));
-        auto const start_date = TRY_EVAL(activity.try_get<std::string>("start_date"));
-        auto       d = DateTime::parse_iso8601(start_date);
-        if (!d) {
-            return std::unexpected(StravaError { d.error() });
-        }
-        auto const      activity_json = activity.serialize();
-        auto const      dest_dir_name = std::format("activity/{:04}/{:02}", static_cast<u16>(d->year), static_cast<u8>(d->month) + 1);
-        auto const      dest_dir = data_dir / dest_dir_name;
-        std::error_code ec { };
-        fs::create_directories(dest_dir, ec);
-        if (ec) {
-            return std::unexpected(StravaError { LibCError { ec.message() } });
-        }
-        auto const fname = std::format("{}.strava", d->timestamp);
-        info(Strava, "Writing {}/{}", dest_dir_name, fname);
-        auto write_res = write_file_by_name((dest_dir / fname).string(), std::string_view { activity_json });
-        if (!write_res) {
-            return std::unexpected(StravaError { write_res.error() });
-        }
-        bool write_cfg = false;
-        if (d->timestamp > config.newest_synced) {
-            config.newest_synced = d->timestamp;
-            write_cfg = true;
-        }
-        if (config.oldest_synced == 0 || d->timestamp < config.oldest_synced) {
-            config.oldest_synced = d->timestamp;
-            write_cfg = true;
-        }
-        if (write_cfg) {
-            TRY(write_config());
-        }
+}
+
+StravaResult<std::string> Strava::description(u64 id)
+{
+    auto const response = get(std::format("{}/{}", ActivityPath, id));
+    if (!response) {
+        return std::unexpected(response.error());
     }
-    return { };
+    auto const json = JSONValue::deserialize(response->body);
+    if (!json || !json->is_object()) {
+        return std::unexpected(failed(std::format("Strava's activity {} isn't JSON", id)));
+    }
+    // A null description is none.
+    return json->try_get<std::string>("description").value_or("");
 }
 
 }

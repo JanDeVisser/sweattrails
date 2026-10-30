@@ -4,8 +4,10 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <chrono>
 #include <cstdlib>
 #include <ctime>
+#include <functional>
 #include <variant>
 
 #include <config.h>
@@ -31,6 +33,8 @@
 #include <storage/Activity.h>
 #include <storage/Garmin.h>
 #include <storage/Storage.h>
+#include <storage/Strava.h>
+#include <storage/StravaTitles.h>
 #include <storage/Types.h>
 #include <storage/Wahoo.h>
 #include <widget/Activity.h>
@@ -42,13 +46,12 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// How long the Wahoo login waits for the browser to come back.
-constexpr std::chrono::minutes WahooLoginTimeout { 5 };
+// How long a login waits for the browser to come back.
+constexpr std::chrono::minutes LoginTimeout { 5 };
 
-constexpr std::string_view WaitingForLoginStatus = "Waiting for the Wahoo login in your browser";
-
-// The certificate the Wahoo login's server answers with: Wahoo only sends
-// the browser back to an https URL. The user makes it with mkcert.
+// The certificate the login's server answers with: Wahoo only sends the
+// browser back to an https URL, and Strava's login comes back to the same
+// server. The user makes it with mkcert.
 fs::path certificate_file(fs::path const &config_dir)
 {
     return config_dir / "localhost.pem";
@@ -127,9 +130,83 @@ SourceOutcome download_from_wahoo(pSweatTrails const &the, std::optional<std::st
     return outcome;
 }
 
+// A time as the user's clock says it, such as "14:45".
+std::string clock_time(i64 time)
+{
+    auto const local = DateTime::from_timestamp(static_cast<i32>(time));
+    return std::format("{:02}:{:02}", local.hour, local.minute);
+}
+
+// Gives the activities in the store that started since `after` their
+// titles from Strava, and tells the UI which changed.
+SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<StravaClient> const &client, i64 after)
+{
+    SourceOutcome outcome { .source = "Strava", .kind = SourceOutcome::Kind::Titled };
+    // Without a client ID, the user doesn't use Strava; without the secret,
+    // they do, and should hear about it.
+    if (auto problem = strava_setup_problem(client); problem) {
+        outcome.kind = client ? SourceOutcome::Kind::Failed : SourceOutcome::Kind::NotSetUp;
+        outcome.message = std::move(*problem);
+        return outcome;
+    }
+    auto const tokens_file = strava_tokens_file(the->user_config_dir);
+    Strava     strava {
+        .fetch = http_fetch,
+        .client_id = client->id,
+        .client_secret = client->secret,
+        .tokens_file = tokens_file,
+        .tokens = read_tokens(tokens_file),
+    };
+    auto const on_description = [&the](size_t index, size_t count) {
+        the->notify_latest<NotificationType::Downloading>(Downloading { "Strava", index, count });
+    };
+    auto const update = update_strava_titles(strava, the->storage, after, static_cast<i64>(std::time(nullptr)), on_description);
+    if (!update) {
+        switch (update.error().kind) {
+        case StravaError::Kind::NotLoggedIn:
+            outcome.kind = SourceOutcome::Kind::NeedsLogin;
+            return outcome;
+        case StravaError::Kind::RateLimited:
+            return failed(outcome, std::format("Strava: its limit is reached for now. Try again after {}.", clock_time(update.error().resets_at)));
+        case StravaError::Kind::Failed:
+            return failed(outcome, update.error().to_string());
+        }
+    }
+    if (!update->changed.empty()) {
+        the->notify<NotificationType::TitlesChanged>(TitlesChanged { update->changed });
+    }
+    info(ST, "Strava: {} titles and {} descriptions, {} descriptions left", update->titles, update->descriptions, update->waiting);
+    outcome.count = update->titles;
+    outcome.descriptions = update->descriptions;
+    outcome.waiting = update->waiting;
+    outcome.resets_at = update->resets_at ? clock_time(*update->resets_at) : std::string { };
+    outcome.message = update->error;
+    return outcome;
+}
+
+// Moves what the downloads brought into the store, and tells the UI how
+// far it got.
+void process_inbox(pSweatTrails const &the)
+{
+    // Files are processed faster than the UI handles notifications, so each
+    // update replaces the previous one if the UI hasn't got to it yet.
+    auto const on_file = [&the](std::string_view const &file_name, size_t index, size_t count) {
+        trace(ST, "Processing inbox file {}", file_name);
+        the->notify_latest<NotificationType::ImportingFile>(ImportingFile { std::string { file_name }, index, count });
+    };
+    auto res = the->storage.process_inbox(on_file);
+    the->notify_latest<NotificationType::ImportingFile>(ImportingFile { });
+    if (!res) {
+        the->notify<NotificationType::Message>(std::format("Error processing inbox: {}", res.error().to_string()));
+        return;
+    }
+    info(ST, "Processed {} inbox files", res.value());
+}
+
 // Downloads from the sources the request asks for, one after the other,
 // and tells the UI what they brought in. If anything came in, the inbox is
-// processed and the newest activity shown.
+// processed and the newest activity shown. Strava comes last, after the
+// inbox, so that what the others brought in gets its title too.
 void run_downloads(pSweatTrails const &the, DownloadRequest const &request)
 {
     std::vector<SourceOutcome> outcomes;
@@ -144,8 +221,12 @@ void run_downloads(pSweatTrails const &the, DownloadRequest const &request)
         return outcome.kind == SourceOutcome::Kind::Failed || (outcome.kind == SourceOutcome::Kind::Downloaded && outcome.count > 0);
     });
     if (brought_any) {
-        the->schedule<JobType::ProcessInbox>(std::monostate { });
+        process_inbox(the);
         the->schedule<JobType::FindNewestActivity>(std::monostate { });
+    }
+    if (request.strava) {
+        auto const after = static_cast<i64>(std::time(nullptr)) - static_cast<i64>(request.strava_days) * 24 * 60 * 60;
+        outcomes.push_back(download_from_strava(the, request.strava_client, after));
     }
     the->notify<NotificationType::DownloadDone>(download_report(outcomes, request.quiet));
 }
@@ -216,21 +297,7 @@ void SweatTrails::job_find_newest_activity(Job::Payload const &)
 
 void SweatTrails::job_process_inbox(Job::Payload const &)
 {
-    // Files are processed faster than the UI handles notifications, so each
-    // update replaces the previous one if the UI hasn't got to it yet.
-    auto const on_file = [](std::string_view const &file_name, size_t index, size_t count) {
-        trace(ST, "Processing inbox file {}", file_name);
-        SweatTrails::the()->notify_latest<NotificationType::ImportingFile>(
-            ImportingFile { std::string { file_name }, index, count });
-    };
-    auto res = SweatTrails::the()->storage.process_inbox(on_file);
-    SweatTrails::the()->notify_latest<NotificationType::ImportingFile>(ImportingFile { });
-    if (!res) {
-        SweatTrails::the()->notify<NotificationType::Message>(
-            std::format("Error processing inbox: {}", res.error().to_string()));
-        return;
-    }
-    info(ST, "Processed {} inbox files", res.value());
+    process_inbox(SweatTrails::the());
 }
 
 void SweatTrails::job_download_tiles(Job::Payload const &data)
@@ -277,13 +344,63 @@ void SweatTrails::job_wahoo_login(Job::Payload const &data)
         .tokens_file = wahoo_tokens_file(the->user_config_dir),
     };
     if (auto const exchanged = wahoo.exchange_code(login.code, login.verifier); !exchanged) {
-        the->notify<NotificationType::WahooLoginEnded>(WahooLoginEnded { exchanged.error().to_string() });
+        the->notify<NotificationType::LoginEnded>(LoginEnded { exchanged.error().to_string() });
         return;
     }
     info(ST, "Logged in to Wahoo");
-    the->notify<NotificationType::WahooLoginEnded>(WahooLoginEnded { .downloading = true });
+    the->notify<NotificationType::LoginEnded>(LoginEnded { .downloading = true });
     // What the user logged in for. The report says how it went.
     run_downloads(the, DownloadRequest { .wahoo = true, .wahoo_days = login.days, .wahoo_client_id = login.client_id });
+}
+
+// Fetches the titles the request asks for, and tells the UI how it went.
+// The login it may offer fetches the same titles after it.
+void run_strava_titles(pSweatTrails const &the, StravaTitlesRequest const &request)
+{
+    auto const now = static_cast<i64>(std::time(nullptr));
+    auto       after = now - static_cast<i64>(request.days.value_or(0)) * 24 * 60 * 60;
+    if (!request.days) {
+        auto const oldest = the->storage.oldest_start();
+        if (!oldest) {
+            the->notify<NotificationType::DownloadDone>(DownloadReport { .text = std::format("Could not read the store: {}", oldest.error().to_string()) });
+            return;
+        }
+        after = oldest->value_or(now) - StravaMatchSeconds;
+    }
+    auto report = download_report({ download_from_strava(the, request.client, after) }, false);
+    report.login_arguments = JSONValue::object();
+    if (request.days) {
+        report.login_arguments.set("days", JSONValue { *request.days });
+    } else {
+        report.login_arguments.set("history", JSONValue { true });
+    }
+    the->notify<NotificationType::DownloadDone>(report);
+}
+
+void SweatTrails::job_strava_titles(Job::Payload const &data)
+{
+    run_strava_titles(SweatTrails::the(), std::get<StravaTitlesRequest>(data));
+}
+
+void SweatTrails::job_strava_login(Job::Payload const &data)
+{
+    auto const &login = std::get<StravaLogin>(data);
+    auto const  the = SweatTrails::the();
+    auto const &client = login.titles.client.value();
+    Strava      strava {
+        .fetch = http_fetch,
+        .client_id = client.id,
+        .client_secret = client.secret,
+        .tokens_file = strava_tokens_file(the->user_config_dir),
+    };
+    if (auto const exchanged = strava.exchange_code(login.code); !exchanged) {
+        the->notify<NotificationType::LoginEnded>(LoginEnded { exchanged.error().to_string() });
+        return;
+    }
+    info(ST, "Logged in to Strava");
+    the->notify<NotificationType::LoginEnded>(LoginEnded { .downloading = true });
+    // What the user logged in for. The report says how it went.
+    run_strava_titles(the, login.titles);
 }
 
 pSweatTrails SweatTrails::the()
@@ -322,7 +439,7 @@ void SweatTrails::on_resize()
 void SweatTrails::on_terminate()
 {
     // Not waiting for a browser that's not coming back.
-    wahoo_login.request_stop();
+    login.request_stop();
     // While there's an OpenGL context to let go of the render texture in.
     // A render that isn't done stops, and its file is removed.
     overlay_render.reset();
@@ -364,7 +481,7 @@ void cmd_quit(pSweatTrails const &sweattrails, JSONValue const &)
 // Downloads new activities from the sources asked for. Arguments: `days`,
 // how far back to look, instead of the settings, and `quiet`, as at
 // startup.
-void start_download(pSweatTrails const &sweattrails, JSONValue const &arguments, bool garmin, bool wahoo)
+void start_download(pSweatTrails const &sweattrails, JSONValue const &arguments, Sources sources)
 {
     // Not under a modal, as in cmd_quit, and not while a download runs:
     // another would only list what this one is downloading.
@@ -372,31 +489,114 @@ void start_download(pSweatTrails const &sweattrails, JSONValue const &arguments,
         return;
     }
     sweattrails->downloading = true;
-    sweattrails->schedule<JobType::Download>(make_download_request(sweattrails->settings, arguments, garmin, wahoo));
+    sweattrails->schedule<JobType::Download>(make_download_request(sweattrails->settings, arguments, sources));
 }
 
 void cmd_download(pSweatTrails const &sweattrails, JSONValue const &arguments)
 {
-    start_download(sweattrails, arguments, true, true);
+    start_download(sweattrails, arguments, Sources { .garmin = true, .wahoo = true, .strava = true });
 }
 
 void cmd_garmin_download(pSweatTrails const &sweattrails, JSONValue const &arguments)
 {
-    start_download(sweattrails, arguments, true, false);
+    start_download(sweattrails, arguments, Sources { .garmin = true });
 }
 
 void cmd_wahoo_download(pSweatTrails const &sweattrails, JSONValue const &arguments)
 {
-    start_download(sweattrails, arguments, false, true);
+    start_download(sweattrails, arguments, Sources { .wahoo = true });
 }
 
-// Logs in to Wahoo: opens the browser at Wahoo's login page, and waits, on a
-// thread of its own, for the browser to come back with the code. Waiting as
-// a job would hold up the other jobs, such as the inbox, for as long as the
-// user takes to log in.
+// Gives the activities in the store their titles from Strava. Arguments:
+// `days`, how far back to look; without, the store's whole history.
+void cmd_strava_titles(pSweatTrails const &sweattrails, JSONValue const &arguments)
+{
+    if (!sweattrails->modals.empty() || sweattrails->downloading) {
+        return;
+    }
+    StravaTitlesRequest request { .client = strava_client(sweattrails->settings) };
+    if (arguments.is_object()) {
+        if (auto const days = arguments.try_get<int>("days"); days) {
+            request.days = *days;
+        }
+    }
+    sweattrails->downloading = true;
+    sweattrails->schedule<JobType::StravaTitles>(request);
+}
+
+// What differs between the logins: the service, its login page, the
+// `state` that comes back with the code, and what to do with the code.
+struct LoginFlow {
+    std::string                                                        service { }; // "Wahoo", "Strava"
+    std::string                                                        url { };
+    std::string                                                        state { };
+    std::function<void(pSweatTrails const &, std::string const &code)> on_code { };
+};
+
+// Logs in to a service: opens the browser at its login page, and waits, on
+// a thread of its own, for the browser to come back with the code. Waiting
+// as a job would hold up the other jobs, such as the inbox, for as long as
+// the user takes to log in.
+void start_login(pSweatTrails const &sweattrails, LoginFlow flow)
+{
+    auto const &config_dir = sweattrails->user_config_dir;
+    auto        tls = TlsContext::load(certificate_file(config_dir), certificate_key_file(config_dir));
+    if (!tls) {
+        warning(ST, "No certificate for the {} login: {}", flow.service, tls.error().to_string());
+        message_box(std::format(
+            "Logging in to {} needs a certificate for localhost. Make one with mkcert: run `mkcert -install` once, "
+            "and then, in {}, `mkcert -cert-file localhost.pem -key-file localhost-key.pem localhost 127.0.0.1 ::1`.",
+            flow.service, config_dir.string()));
+        return;
+    }
+    auto server = LoopbackServer::listen(WahooCallbackPort, std::move(*tls));
+    if (!server) {
+        message_box(std::format("Could not wait for the {} login: {}. Is another program using port {}?",
+            flow.service, server.error().to_string(), WahooCallbackPort));
+        return;
+    }
+    if (auto const opened = open_browser(flow.url); !opened) {
+        message_box(std::format("Could not open the browser for the {} login: {}", flow.service, opened.error().to_string()));
+        return;
+    }
+    sweattrails->logging_in = flow.service;
+    sweattrails->set_status("");
+    sweattrails->login = std::jthread {
+        [server = std::move(*server), flow = std::move(flow)](std::stop_token const &stop) mutable {
+            auto const redirect = server.wait_for_redirect(WahooCallbackPath, flow.state, LoginTimeout, stop);
+            // The app is quitting, and may be gone already: whatever the
+            // browser brought, leave the app alone.
+            if (stop.stop_requested()) {
+                return;
+            }
+            auto const the = SweatTrails::the();
+            auto const code = login_code(redirect, flow.service);
+            if (!code) {
+                the->notify<NotificationType::LoginEnded>(LoginEnded { code.error() });
+                return;
+            }
+            flow.on_code(the, *code);
+        }
+    };
+}
+
+// Whether a login can start: not under a modal, as in cmd_quit, and not
+// while another waits for the browser, as they share the port.
+bool can_log_in(pSweatTrails const &sweattrails)
+{
+    if (!sweattrails->modals.empty()) {
+        return false;
+    }
+    if (!sweattrails->logging_in.empty()) {
+        message_box(std::format("The {} login is still waiting for your browser.", sweattrails->logging_in));
+        return false;
+    }
+    return true;
+}
+
 void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    if (!sweattrails->modals.empty() || sweattrails->wahoo_logging_in) {
+    if (!can_log_in(sweattrails)) {
         return;
     }
     auto const client_id = wahoo_client_id(sweattrails->settings);
@@ -405,54 +605,47 @@ void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &)
                     "\"wahoo\": { \"client_id\": \"...\" }. The README says how.");
         return;
     }
-    auto const &config_dir = sweattrails->user_config_dir;
-    auto        tls = TlsContext::load(certificate_file(config_dir), certificate_key_file(config_dir));
-    if (!tls) {
-        warning(ST, "No certificate for the Wahoo login: {}", tls.error().to_string());
-        message_box(std::format(
-            "Logging in to Wahoo needs a certificate for localhost. Make one with mkcert: run `mkcert -install` once, "
-            "and then, in {}, `mkcert -cert-file localhost.pem -key-file localhost-key.pem localhost 127.0.0.1 ::1`.",
-            config_dir.string()));
-        return;
-    }
-    auto server = LoopbackServer::listen(WahooCallbackPort, std::move(*tls));
-    if (!server) {
-        message_box(std::format("Could not wait for the Wahoo login: {}. Is another program using port {}?",
-            server.error().to_string(), WahooCallbackPort));
-        return;
-    }
-    auto const days = make_download_request(sweattrails->settings, JSONValue { }, false, true).wahoo_days;
+    auto const days = make_download_request(sweattrails->settings, JSONValue { }, Sources { .wahoo = true }).wahoo_days;
     auto const pkce = Pkce::make();
     auto const state = random_token(16);
-    auto const url = Wahoo { .client_id = *client_id }.authorize_url(pkce.challenge, state);
-    if (auto const opened = open_browser(url); !opened) {
-        message_box(std::format("Could not open the browser for the Wahoo login: {}", opened.error().to_string()));
+    start_login(sweattrails,
+        LoginFlow {
+            .service = "Wahoo",
+            .url = Wahoo { .client_id = *client_id }.authorize_url(pkce.challenge, state),
+            .state = state,
+            .on_code = [client_id = *client_id, verifier = pkce.verifier, days](pSweatTrails const &the, std::string const &code) {
+                the->schedule<JobType::WahooLogin>(WahooLogin { .client_id = client_id, .code = code, .verifier = verifier, .days = days });
+            },
+        });
+}
+
+// Logs in to Strava, and then fetches titles. Arguments: `days`, how far
+// back, else `strava.days` from the settings, or `history`, back to the
+// store's oldest activity, as Ctrl+Shift+G does.
+void cmd_strava_login(pSweatTrails const &sweattrails, JSONValue const &arguments)
+{
+    if (!can_log_in(sweattrails)) {
         return;
     }
-    sweattrails->wahoo_logging_in = true;
-    sweattrails->set_status(WaitingForLoginStatus);
-    sweattrails->wahoo_login = std::jthread {
-        [server = std::move(*server), client_id = *client_id, pkce, state, days](std::stop_token const &stop) mutable {
-            auto const redirect = server.wait_for_redirect(WahooCallbackPath, state, WahooLoginTimeout, stop);
-            // The app is quitting, and may be gone already: whatever the
-            // browser brought, leave the app alone.
-            if (stop.stop_requested()) {
-                return;
-            }
-            auto const the = SweatTrails::the();
-            auto const code = login_code(redirect);
-            if (!code) {
-                the->notify<NotificationType::WahooLoginEnded>(WahooLoginEnded { code.error() });
-                return;
-            }
-            the->schedule<JobType::WahooLogin>(WahooLogin {
-                .client_id = client_id,
-                .code = *code,
-                .verifier = pkce.verifier,
-                .days = days,
-            });
-        }
-    };
+    auto const          request = make_download_request(sweattrails->settings, arguments, Sources { .strava = true });
+    StravaTitlesRequest titles { .days = request.strava_days, .client = request.strava_client };
+    if (arguments.is_object() && arguments.try_get<bool>("history").value_or(false)) {
+        titles.days.reset();
+    }
+    if (auto const problem = strava_setup_problem(titles.client); problem) {
+        message_box(*problem);
+        return;
+    }
+    auto const state = random_token(16);
+    start_login(sweattrails,
+        LoginFlow {
+            .service = "Strava",
+            .url = Strava { .client_id = titles.client->id }.authorize_url(state),
+            .state = state,
+            .on_code = [titles](pSweatTrails const &the, std::string const &code) {
+                the->schedule<JobType::StravaLogin>(StravaLogin { .code = code, .titles = titles });
+            },
+        });
 }
 
 // The activity on display, for the keys that act on it, such as the lap
@@ -882,13 +1075,14 @@ void SweatTrails::notif_download_done(Notification::Payload const &data)
     the->downloading = false;
     the->set_status("");
     // Not while a login is waiting for the browser already.
-    if (report.ask_login && !the->wahoo_logging_in) {
-        auto const log_in = [](pSweatTrails const &sweattrails, QueryOption selection) {
+    if (!report.ask_login.empty() && the->logging_in.empty()) {
+        auto const task = (report.ask_login == "Strava") ? "st-strava-login" : "st-wahoo-login";
+        auto const log_in = [task, arguments = report.login_arguments](pSweatTrails const &sweattrails, QueryOption selection) {
             if (selection == QueryOption::QueryOptionYes) {
-                sweattrails->bus.submit("st-wahoo-login", JSONValue { });
+                sweattrails->bus.submit(task, arguments);
             }
         };
-        query_box(the, std::format("{} Log in to Wahoo now?", report.text), log_in, QueryOptionYesNo);
+        query_box(the, std::format("{} Log in to {} now?", report.text, report.ask_login), log_in, QueryOptionYesNo);
         return;
     }
     if (!report.text.empty()) {
@@ -896,11 +1090,11 @@ void SweatTrails::notif_download_done(Notification::Payload const &data)
     }
 }
 
-void SweatTrails::notif_wahoo_login_ended(Notification::Payload const &data)
+void SweatTrails::notif_login_ended(Notification::Payload const &data)
 {
-    auto const &ended = std::get<WahooLoginEnded>(data);
+    auto const &ended = std::get<LoginEnded>(data);
     auto const  the = SweatTrails::the();
-    the->wahoo_logging_in = false;
+    the->logging_in.clear();
     the->set_status("");
     // The download its DownloadDone ends: until then, Ctrl+G mustn't start
     // another.
@@ -909,6 +1103,19 @@ void SweatTrails::notif_wahoo_login_ended(Notification::Payload const &data)
     }
     if (!ended.message.empty()) {
         message_box(ended.message);
+    }
+}
+
+void SweatTrails::notif_titles_changed(Notification::Payload const &data)
+{
+    auto const &changed = std::get<TitlesChanged>(data);
+    auto const  displayed = SweatTrails::the()->activity_display->activity;
+    if (!displayed) {
+        return;
+    }
+    auto &activity = displayed->activity;
+    if (std::ranges::any_of(changed.starts, [&activity](i64 start) { return activity.id.name == std::to_string(start); })) {
+        activity.read_names();
     }
 }
 
@@ -1010,6 +1217,10 @@ void SweatTrails::initialize()
     bus.add_task<SweatTrails>("st-wahoo-download", self(), cmd_wahoo_download);
     // No key: Ctrl+G offers it when it's needed.
     bus.add_task<SweatTrails>("st-wahoo-login", self(), cmd_wahoo_login);
+    // Ctrl+G's titles go back strava.days; this goes back all the way.
+    bus.add_task<SweatTrails>("st-strava-titles", self(), cmd_strava_titles)
+        .bind(KeyCombo { KEY_G, KModControl | KModShift });
+    bus.add_task<SweatTrails>("st-strava-login", self(), cmd_strava_login);
     bus.add_task<SweatTrails>("st-message", self(), cmd_message);
     // The table and the data panel follow the lap these select.
     bus.add_task<SweatTrails>("st-next-lap", self(), cmd_next_lap)
@@ -1255,8 +1466,9 @@ void SweatTrails::stop_render()
 void SweatTrails::set_status(std::string_view const &status_text)
 {
     // A download or the inbox may finish while a login waits.
-    auto const text = (status_text.empty() && wahoo_logging_in)
-        ? WaitingForLoginStatus
+    auto const waiting = std::format("Waiting for the {} login in your browser", logging_in);
+    auto const text = (status_text.empty() && !logging_in.empty())
+        ? std::string_view { waiting }
         : status_text;
     status->text = text;
     auto const policy = text.empty() ? SizePolicy::Hide : SizePolicy::Characters;

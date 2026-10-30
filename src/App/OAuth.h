@@ -16,12 +16,14 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include <Error.h>
+#include <JSON.h>
 
 struct ssl_ctx_st;
 
@@ -39,6 +41,25 @@ struct Pkce {
     static Pkce        make();
     static std::string challenge_for(std::string_view verifier);
 };
+
+// What a login gives: Wahoo's and Strava's are kept the same way. A Wahoo
+// refresh sends the PKCE verifier again, so it's kept with the tokens;
+// Strava has none.
+struct OAuthTokens {
+    std::string                access_token { };
+    std::string                refresh_token { };
+    i64                        expires_at { 0 }; // Unix time
+    std::optional<std::string> code_verifier { };
+
+    static Decoded<OAuthTokens> decode(JSONValue const &json);
+    [[nodiscard]] JSONValue     encode() const;
+};
+
+// The tokens in `file`, or nothing if there's no file or it can't be read.
+std::optional<OAuthTokens> read_tokens(fs::path const &file);
+
+// Writes `tokens` to `file`, readable only by the user.
+std::expected<void, LibCError> write_tokens(fs::path const &file, OAuthTokens const &tokens);
 
 // `bytes` random bytes, base64url-encoded: for PKCE's verifier, and the
 // login's `state`.
@@ -109,5 +130,9 @@ std::expected<int, LibCError> run_and_wait(std::vector<std::string> const &comma
 
 // Opens `url` in the user's browser.
 std::expected<void, LibCError> open_browser(std::string const &url);
+
+// The code the browser brought back from `service`'s login, such as
+// "Wahoo", or what to tell the user if it didn't bring one.
+std::expected<std::string, std::string> login_code(std::expected<QueryParameters, RedirectError> const &redirect, std::string_view service);
 
 }

@@ -219,6 +219,8 @@ add_executable(
         src/App/storage/Garmin.cpp
         src/App/storage/Storage.cpp
         src/App/storage/Types.cpp
+        src/App/storage/Strava.cpp
+        src/App/storage/StravaTitles.cpp
         src/App/storage/Wahoo.cpp
         share/icons/sweattrails.icns
 )
@@ -686,6 +688,16 @@ target_include_directories(garmin_test PRIVATE src/App)
 target_link_libraries(garmin_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
+        strava_test
+        test/StravaTest.cpp
+        src/App/storage/Strava.cpp
+        src/App/Http.cpp
+        src/App/OAuth.cpp
+)
+target_include_directories(strava_test PRIVATE src/App)
+target_link_libraries(strava_test PRIVATE ${CURL_LIBRARIES} OpenSSL::SSL)
+
+sweattrails_test(
         wahoo_test
         test/WahooTest.cpp
         src/App/storage/Wahoo.cpp
@@ -701,6 +713,24 @@ sweattrails_test(
 )
 target_include_directories(wahoo_test PRIVATE src/App)
 target_link_libraries(wahoo_test PRIVATE ${CURL_LIBRARIES} OpenSSL::SSL)
+
+sweattrails_test(
+        strava_titles_test
+        test/StravaTitlesTest.cpp
+        src/App/storage/Strava.cpp
+        src/App/storage/StravaTitles.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Http.cpp
+        src/App/Map.cpp
+        src/App/OAuth.cpp
+)
+target_include_directories(strava_titles_test PRIVATE src/App)
+target_link_libraries(strava_titles_test PRIVATE ${CURL_LIBRARIES} OpenSSL::SSL)
 
 sweattrails_test(download_test test/DownloadTest.cpp src/App/storage/Download.cpp)
 target_include_directories(download_test PRIVATE src/App)

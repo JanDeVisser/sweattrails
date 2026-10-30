@@ -1,140 +1,118 @@
 /*
- * Copyright (c) 2025, Jan de Visser <jan@finiandarcy.com>
+ * Copyright (c) 2026, Jan de Visser <jan@finiandarcy.com>
  *
  * SPDX-License-Identifier: MIT
  *
- * C++ translation of zig/connect/strava.zig.
- *
- * Assumptions on top of the ones documented in ../storage/Types.h:
- *   - `pub const Activity = strava/activity.zig.DetailedActivity` and
- *     `pub const SportType = strava/enums.zig.SportType` are re-exports for
- *     callers outside this file (storage/activity.zig uses `strava.Activity`
- *     to decode `*.strava` sidecar files). Those two files have not been
- *     translated; `ST::strava::Activity` is assumed to exist elsewhere with
- *     optional `name`/`description` members and a
- *     `static Decoded<Activity> decode(JSONValue const &)`, matching the
- *     assumption already documented in storage/Activity.h. Nothing in this
- *     file needs the type to be complete, so it is only forward-declared
- *     here.
- *   - `ST::Socket::listen(ip_address, port)` (src/IO.h) is not implemented
- *     yet (`fatal("listen(ip_addr, port) not yet implemented")` in IO.cpp),
- *     so the OAuth redirect callback server is implemented with raw POSIX
- *     sockets directly in Strava.cpp instead of going through ST::Socket.
- *   - There is no HTTP client in src/ (unlike zig's std.http.Client), so all
- *     HTTP calls shell out to `curl` via ST::Process, the same approach used
- *     in ../Map.cpp for tile fetching.
+ * Reads the athlete's activities from Strava's API, for their titles and
+ * descriptions: see specs/strava-titles.md. The user registers an app with
+ * Strava, and logs in to it from SweatTrails with OAuth 2. Strava has no
+ * PKCE: the token request takes the app's client secret. The login's
+ * tokens are kept in a file in SweatTrails' config folder.
  */
 
 #pragma once
 
-#include <cstdint>
-#include <deque>
+#include <ctime>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <variant>
+#include <utility>
+#include <vector>
 
-#include <Date.h>
-#include <Error.h>
-#include <Expected.h>
 #include <JSON.h>
+#include <Logging.h>
 
-#include <storage/strava/Activity.h>
+#include <Http.h>
+#include <OAuth.h>
 
 namespace ST {
 
 namespace fs = std::filesystem;
 
+constexpr std::string_view StravaBaseUrl = "https://www.strava.com";
+
+// The same server, port and certificate as Wahoo's login: Strava takes
+// localhost as the callback domain.
+constexpr std::string_view StravaRedirectUri = "https://localhost:8090/callback";
+
+// activity:read_all reads the activities only the athlete sees, too.
+constexpr std::string_view StravaScopes = "activity:read_all";
+
+// The number of days a download looks back when the settings don't say.
+constexpr int StravaDefaultDays = 30;
+
 struct StravaError {
-    enum class Code {
-        InvalidConfigFile,
-        NoAuthCodeReceived,
-        RequestError,
-        InvalidAuthenticationTokenResponse,
+    enum class Kind {
+        NotLoggedIn, // No tokens, or tokens Strava no longer accepts
+        RateLimited, // Strava answered 429: see `resets_at`
+        Failed,      // Anything else: no connection, an HTTP error, bad data
     };
 
-    using ErrorVariant = std::variant<LibCError, JSONError, Code>;
+    Kind        kind { Kind::Failed };
+    std::string message { };
+    long        status { 0 };    // The HTTP status, for an HTTP error
+    i64         resets_at { 0 }; // Unix time, for RateLimited
 
-    ErrorVariant error;
-
-    StravaError(StravaError const &) = default;
-    StravaError(StravaError &&) = default;
-    StravaError &operator=(StravaError const &) = default;
-    StravaError &operator=(StravaError &&) = default;
-
-    template<typename E>
-        requires std::constructible_from<ErrorVariant, E>
-    StravaError(E const &e)
-        : error(e)
-    {
-    }
-
-    [[nodiscard]] std::string to_string() const;
+    [[nodiscard]] std::string to_string() const { return message; }
 };
 
 template<typename T>
 using StravaResult = std::expected<T, StravaError>;
 
+// `strava-tokens.json` in SweatTrails' config folder.
+fs::path strava_tokens_file(fs::path const &config_dir);
+
+// When the read limit a 429 ran into resets. Strava doesn't say: the
+// 15-minute limit resets at :00, :15, :30 and :45, and the daily one at
+// midnight UTC, which is when it resets if X-ReadRateLimit-Usage says the
+// day's limit is used up.
+i64 rate_limit_reset(HttpResponse const &response, i64 now);
+
+// An activity in the athlete's list.
+struct StravaActivity {
+    u64         id { 0 };
+    i64         start_time { 0 }; // Unix time, from start_date
+    std::string name { };
+};
+
+// The activities in a page of Strava's list. One without an ID or a start
+// time is skipped, with a warning.
+Decoded<std::vector<StravaActivity>> parse_activities(JSONValue const &page);
+
+struct StravaListing {
+    std::vector<StravaActivity> activities { };
+    std::optional<StravaError>  stopped { }; // Why the list stopped short, if it did
+};
+
 struct Strava {
-    static constexpr std::string_view CONFIG_PATH = "/.config/sweattrails/strava_config"; // unused, kept for parity with the zig source.
-    static constexpr std::string_view STRAVA_AUTH_URL = "https://www.strava.com/oauth/authorize";
-    static constexpr std::string_view STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token";
-    static constexpr std::string_view STRAVA_API_URL = "https://www.strava.com/api/v3";
-    static constexpr int              CALLBACK_PORT = 8089;
-    static constexpr std::string_view REDIRECT_URI = "http://localhost:8089/callback";
+    HttpFetch                  fetch;
+    std::string                client_id { };
+    std::string                client_secret { };
+    fs::path                   tokens_file { };
+    std::optional<OAuthTokens> tokens { };
+    std::function<i64()>       now { [] { return static_cast<i64>(std::time(nullptr)); } };
 
-    struct Config {
-        std::string client_id { };
-        std::string client_secret { };
-        std::string access_token { };
-        std::string refresh_token { };
-        u64         expires_at { 0 };
-        u64         newest_synced { 0 };
-        u64         oldest_synced { 0 };
+    // Where the browser goes to log in. `state` comes back with the code.
+    [[nodiscard]] std::string authorize_url(std::string_view state) const;
 
-        static Decoded<Config>  decode(JSONValue const &json);
-        [[nodiscard]] JSONValue encode() const;
-    };
+    // Trades the code the login brought back for tokens, and saves them.
+    StravaResult<void> exchange_code(std::string_view code);
 
-    fs::path        data_dir { };
-    Config          config { };
-    std::deque<i64> pending { };
+    // The activities that started between `after` and `before`, Unix times.
+    // A page that fails after the first leaves the ones listed so far, with
+    // the error in `stopped`.
+    StravaResult<StravaListing> list_activities(i64 after, i64 before);
 
-    // zig's `init(app: Sweattrails) !?Strava` only ever touches
-    // `app.storage.data_dir`, so that is all this takes. Returns an empty
-    // optional if there is no `strava.config` file yet (zig: `error.FileNotFound
-    // => return null`).
-    static StravaResult<std::optional<Strava>> init(fs::path const &data_dir);
-
-    Error<StravaError>        authenticate();
-    StravaResult<std::string> request_response(std::string_view const &url);
-    Error<StravaError>        get_next_activity();
-
-    template<typename T>
-    StravaResult<T> request(std::string_view const &url)
-    {
-        auto text = TRY_EVAL(request_response(url));
-        auto json = JSONValue::deserialize(text);
-        if (!json) {
-            return std::unexpected(StravaError { json.error() });
-        }
-        if constexpr (std::is_same_v<T, JSONValue>) {
-            return *json;
-        } else {
-            auto decoded = decode<T>(*json);
-            if (!decoded) {
-                return std::unexpected(StravaError { decoded.error() });
-            }
-            return *decoded;
-        }
-    }
+    // An activity's description: empty if it has none.
+    StravaResult<std::string> description(u64 id);
 
 private:
-    Error<StravaError> write_config();
-    Error<StravaError> parse_token_response(std::string_view const &resp);
-    Error<StravaError> populate_pending_list(std::string_view const &filter);
+    StravaResult<void>         refresh_if_expiring();
+    StravaResult<void>         request_tokens(std::vector<std::pair<std::string, std::string>> const &form);
+    StravaResult<HttpResponse> get(std::string const &path);
 };
 
 }

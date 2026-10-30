@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <vector>
+
 #include <raylib.h>
 
 #include <IO.h>
@@ -37,7 +39,24 @@ void App::draw()
     }
 }
 
-int codepoints[992] { };
+// The characters the app's fonts have: Latin, Greek and Cyrillic, from 32
+// to 1023, and General Punctuation, U+2000 to U+206F, for the curly quotes,
+// dashes and "…" that text typed elsewhere, such as Strava's descriptions,
+// has.
+std::vector<int> const &codepoints()
+{
+    static std::vector<int> const ret = [] {
+        std::vector<int> points;
+        for (auto ch = 32; ch < 1024; ++ch) {
+            points.push_back(ch);
+        }
+        for (auto ch = 0x2000; ch <= 0x206F; ++ch) {
+            points.push_back(ch);
+        }
+        return points;
+    }();
+    return ret;
+}
 
 void App::set_fonts(std::string_view const &path)
 {
@@ -46,12 +65,9 @@ void App::set_fonts(std::string_view const &path)
         auto sz = clamp(font_sizes[ix], 4, 48);
         font_sizes[ix] = sz;
         trace(App, "Loading font '{}', size {}", p, sz);
-        if (codepoints[0] != 32) {
-            for (auto ix = 0; ix < 992; ++ix) {
-                codepoints[ix] = ix + 32;
-            }
-        }
-        auto f = LoadFontEx(p.c_str(), sz, codepoints, 992);
+        auto const &points = codepoints();
+        // raylib takes the characters as a pointer that isn't const.
+        auto f = LoadFontEx(p.c_str(), sz, const_cast<int *>(points.data()), static_cast<int>(points.size()));
         if (f.baseSize == 0) {
             return;
         }

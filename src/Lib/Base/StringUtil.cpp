@@ -162,23 +162,49 @@ constexpr std::string_view Whitespace = " \t\n\v\f\r";
 std::vector<std::string> wrap_words(std::string_view text, float width, std::function<float(std::string_view)> const &measure)
 {
     std::vector<std::string> ret;
-    std::string              line;
-    for (auto const &word : split(text, ' ')) {
-        if (word.empty()) {
-            continue;
+    for (auto const &paragraph : split(text, '\n')) {
+        std::string line;
+        for (auto const &word : split(strip(paragraph), ' ')) {
+            if (word.empty()) {
+                continue;
+            }
+            auto const longer = line.empty() ? std::string { word } : std::format("{} {}", line, word);
+            if (!line.empty() && measure(longer) > width) {
+                ret.push_back(std::move(line));
+                line = std::string { word };
+            } else {
+                line = longer;
+            }
         }
-        auto const longer = line.empty() ? std::string { word } : std::format("{} {}", line, word);
-        if (!line.empty() && measure(longer) > width) {
+        if (!line.empty()) {
             ret.push_back(std::move(line));
-            line = std::string { word };
-        } else {
-            line = longer;
         }
-    }
-    if (!line.empty()) {
-        ret.push_back(std::move(line));
     }
     return ret;
+}
+
+std::vector<std::string> clamp_lines(std::vector<std::string> lines, size_t max, float width, std::function<float(std::string_view)> const &measure)
+{
+    if (lines.size() <= max) {
+        return lines;
+    }
+    lines.resize(max);
+    if (lines.empty()) {
+        return lines;
+    }
+    auto &last = lines.back();
+    while (!last.empty() && measure(std::format("{}…", last)) > width) {
+        // A whole UTF-8 character at a time: its continuation bytes, and
+        // then its first.
+        while (!last.empty() && (static_cast<unsigned char>(last.back()) & 0xC0) == 0x80) {
+            last.pop_back();
+        }
+        if (!last.empty()) {
+            last.pop_back();
+        }
+    }
+    last = std::format("{}…", rstrip(last));
+    return lines;
 }
 
 std::string_view strip(std::string_view const &s)

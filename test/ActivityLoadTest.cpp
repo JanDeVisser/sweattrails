@@ -238,14 +238,17 @@ void test_lap_cadence_is_from_the_recorded_cadence()
 }
 
 // An activity in a directory of its own, as `dummy.fit` and, if
-// `sidecar` isn't empty, `dummy.json`, loaded as the store loads it.
+// `sidecar` isn't empty, `dummy.json`, loaded as the store loads it. The
+// counter keeps the directories of a test's activities apart.
+int activities_in_dirs { 0 };
+
 struct ActivityInDir {
-    fs::path dir { fs::temp_directory_path() / std::format("sweattrails-sidecar-{}", std::time(nullptr)) };
+    fs::path dir { fs::temp_directory_path() / std::format("sweattrails-sidecar-{}-{}", std::time(nullptr), ++activities_in_dirs) };
     Storage  storage { };
     Activity activity { storage, ActivityID::dummy(ActivityFile::Fit) };
     bool     loaded { false };
 
-    explicit ActivityInDir(std::string_view sidecar)
+    explicit ActivityInDir(std::string_view sidecar, std::string_view strava_file = "")
     {
         fs::create_directories(dir);
         FITBuilder fit;
@@ -254,6 +257,9 @@ struct ActivityInDir {
         MUST(write_file_by_name((dir / "dummy.fit").string(), fit.file()));
         if (!sidecar.empty()) {
             MUST(write_file_by_name((dir / "dummy.json").string(), sidecar));
+        }
+        if (!strava_file.empty()) {
+            MUST(write_file_by_name((dir / "dummy.strava").string(), strava_file));
         }
         activity.depth = LoadingDepth::Deep;
         auto const res = activity.load_from_dir(dir);
@@ -407,6 +413,88 @@ void test_rename_to_the_same_name()
     CHECK(t.activity.rename("").has_value());
     CHECK(!fs::exists(t.activity.sidecar));
 }
+// Strava's name wins over the service's, and the user's over Strava's.
+// The original title is Strava's, and the notes are its description.
+void test_strava_title_from_the_sidecar()
+{
+    ActivityInDir t { R"({"activityName": "Morning Ride", "strava": {"id": 17, "name": "Ride to Niagara", "description": "With Anna"}})" };
+    CHECK(t.loaded);
+    CHECK_EQ(t.activity.title, "Ride to Niagara");
+    CHECK_EQ(t.activity.original_title, "Ride to Niagara");
+    CHECK_EQ(t.activity.notes, "With Anna");
+    ActivityInDir own { R"({"activityName": "Morning Ride", "title": "Niagara", "strava": {"id": 17, "name": "Ride to Niagara"}})" };
+    CHECK_EQ(own.activity.title, "Niagara");
+    CHECK_EQ(own.activity.original_title, "Ride to Niagara");
+    CHECK_EQ(own.activity.notes, "");
+}
+
+// A `"strava"` that can't be read, or has an empty name, leaves the
+// service's name.
+void test_strava_in_the_sidecar_that_isnt_valid()
+{
+    for (auto const *sidecar : { R"({"name": "Morning Ride", "strava": 12})", R"({"name": "Morning Ride", "strava": {"name": "Ride"}})",
+             R"({"name": "Morning Ride", "strava": {"id": 17, "name": ""}})" }) {
+        ActivityInDir t { sidecar };
+        CHECK(t.loaded);
+        CHECK_EQ(t.activity.title, "Morning Ride");
+    }
+}
+
+// The old app's `.strava` file wins over the service's name, and the
+// sidecar's Strava over it. Its description is the notes until Strava's
+// description has been fetched.
+void test_title_from_a_strava_file()
+{
+    auto const    strava_file = R"({"id": 3, "name": "Old ride", "description": "From the old app"})";
+    ActivityInDir t { R"({"activityName": "Morning Ride"})", strava_file };
+    CHECK_EQ(t.activity.title, "Old ride");
+    CHECK_EQ(t.activity.notes, "From the old app");
+    ActivityInDir newer { R"({"strava": {"id": 3, "name": "New ride"}})", strava_file };
+    CHECK_EQ(newer.activity.title, "New ride");
+    CHECK_EQ(newer.activity.notes, "From the old app");
+    ActivityInDir fetched { R"({"strava": {"id": 3, "name": "New ride", "description": ""}})", strava_file };
+    CHECK_EQ(fetched.activity.notes, "");
+    ActivityInDir broken { "", "not JSON" };
+    CHECK(broken.loaded);
+    CHECK_EQ(broken.activity.title, "Tempo intervals");
+}
+
+// Strava's name saved after the activity was loaded shows when its names
+// are read again, and goes when it does.
+void test_read_names_again()
+{
+    ActivityInDir t { R"({"activityName": "Morning Ride"})" };
+    CHECK(save_sidecar_strava(t.activity.sidecar, StravaTitle { .id = 17, .name = "Ride to Niagara", .description = "With Anna" }).has_value());
+    t.activity.read_names();
+    CHECK_EQ(t.activity.title, "Ride to Niagara");
+    CHECK_EQ(t.activity.original_title, "Ride to Niagara");
+    CHECK_EQ(t.activity.notes, "With Anna");
+    MUST(write_file_by_name(t.activity.sidecar.string(), std::string_view { "{}" }));
+    t.activity.read_names();
+    CHECK_EQ(t.activity.title, "Tempo intervals");
+    CHECK_EQ(t.activity.notes, "");
+}
+
+// Saving Strava's name keeps the user's and the service's, and replaces
+// what Strava had before.
+void test_save_sidecar_strava()
+{
+    ActivityInDir t { R"({"activityName": "Morning Ride", "title": "Niagara"})" };
+    auto const    sidecar = t.dir / "dummy.json";
+    CHECK(save_sidecar_strava(sidecar, StravaTitle { .id = 17, .name = "Ride to Niagara" }).has_value());
+    StravaTitle const described { .id = 17, .name = "Ride to Niagara", .description = "With Anna" };
+    CHECK(save_sidecar_strava(sidecar, described).has_value());
+    auto const names = sidecar_titles(sidecar);
+    CHECK_EQ(names.service.value_or(""), "Morning Ride");
+    CHECK_EQ(names.own.value_or(""), "Niagara");
+    CHECK(names.strava == described);
+    ActivityInDir none { "" };
+    CHECK(save_sidecar_strava(none.dir / "dummy.json", described).has_value());
+    CHECK(sidecar_titles(none.dir / "dummy.json").strava == described);
+    ActivityInDir array { "[1, 2]" };
+    CHECK(!save_sidecar_strava(array.dir / "dummy.json", described).has_value());
+    CHECK_EQ(read_json(array.dir / "dummy.json"), "[1, 2]");
+}
 
 // An activity that wasn't loaded from a directory has nowhere to save its
 // name, and keeps the one it has.
@@ -460,6 +548,27 @@ void test_rename_back_to_the_services_name_by_typing_it()
 }
 }
 
+// Added by the Reviewer: a rename wins over Strava's name, and taking it
+// out brings Strava's back, also when Strava's came after the rename.
+void test_rename_over_stravas_title()
+{
+    ActivityInDir t { R"({"activityName": "Morning Ride", "strava": {"id": 17, "name": "Ride to Niagara"}})" };
+    CHECK(t.activity.rename("Niagara").has_value());
+    CHECK_EQ(t.activity.title, "Niagara");
+    CHECK(t.activity.rename("").has_value());
+    CHECK_EQ(t.activity.title, "Ride to Niagara");
+    CHECK(!sidecar_own_title(t.activity.sidecar).has_value());
+    CHECK(sidecar_titles(t.activity.sidecar).strava.has_value());
+
+    ActivityInDir later { R"({"activityName": "Morning Ride"})" };
+    CHECK(later.activity.rename("Niagara").has_value());
+    CHECK(save_sidecar_strava(later.activity.sidecar, StravaTitle { .id = 17, .name = "Ride to Niagara" }).has_value());
+    later.activity.read_names();
+    CHECK_EQ(later.activity.title, "Niagara");
+    CHECK(later.activity.rename("").has_value());
+    CHECK_EQ(later.activity.title, "Ride to Niagara");
+}
+
 int main()
 {
     test_manufacturer_is_loaded();
@@ -478,6 +587,12 @@ int main()
     test_title_from_a_wahoo_sidecar();
     test_sidecar_without_a_title();
     test_own_title_wins();
+    test_strava_title_from_the_sidecar();
+    test_strava_in_the_sidecar_that_isnt_valid();
+    test_title_from_a_strava_file();
+    test_read_names_again();
+    test_save_sidecar_strava();
+    test_rename_over_stravas_title();
     test_save_keeps_the_rest_of_the_sidecar();
     test_save_without_a_sidecar();
     test_save_refuses_a_sidecar_that_isnt_an_object();
