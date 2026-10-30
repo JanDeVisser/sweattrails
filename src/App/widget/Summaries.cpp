@@ -420,10 +420,10 @@ bool SummariesScreen::up()
     if (trail.empty()) {
         return false;
     }
-    // The period the user drilled into: back up, it's selected.
+    // The period on display, which Left, Right, R or C may have moved
+    // since drilling into it: back up, it's selected, in its own year.
     auto const drilled_into = chrono::year { view.year } / chrono::month { view.month.value_or(1) } / 1;
     view.period = trail.back().period;
-    view.year = trail.back().year;
     view.month = trail.back().month;
     trail.pop_back();
     refresh();

@@ -749,5 +749,7 @@ int main()
     test_empty_store_lines_and_drilling();
     test_metric_in_the_lines();
     test_year_to_date_this_month();
+    test_up_after_changing_sport();
+    test_up_after_stepping_months();
     return Test::test_result();
 }
