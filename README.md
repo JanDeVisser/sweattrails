@@ -114,6 +114,16 @@ activities or ascent in the chart. Left and Right go a year back or on,
 and Up and Down through the table. Ctrl+T or Escape goes back to the
 activity.
 
+G shows the year so far instead: a line of the total up to each day of
+the year, against the two years before, and a table of where each month
+ended, in this year and the last, and the difference. G again goes back
+to the bars.
+
+Enter on a row, or a click on a bar, goes into it: a year shows its
+months, a month its weeks, and a week opens the activity list at its
+first activity. Backspace or Escape goes back up. In a month's weeks,
+Left and Right go a month back or on.
+
 A week starts on Monday, and belongs to the year its Monday is in. The
 totals come from `summaries.json` in the data directory, which the app
 builds in the background the first time, reading every activity, and

@@ -34,7 +34,7 @@ IncludeCategories:
   - Regex: "^<([a-z0-9_]+/)*[a-z0-9_]+\\.h>$"
     Priority: 2 # system and third party headers, and config.h
     CaseSensitive: true
-  - Regex: "^<(App|BarChart|Colors|FontCache|Modal|Scroll|Table|TextLine|Widget|Window)\\.h>$"
+  - Regex: "^<(App|BarChart|Chart|Colors|FontCache|LineChart|Modal|Scroll|Table|TextLine|Widget|Window)\\.h>$"
     Priority: 4 # src/Lib/Widget
     CaseSensitive: true
   - Regex: "^<(Test[A-Za-z0-9_]*|TempDir|TempStore)\\.h>$"

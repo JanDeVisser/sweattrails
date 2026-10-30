@@ -18,6 +18,7 @@
 
 #include <raylib.h>
 
+#include <Chart.h>
 #include <Widget.h>
 
 namespace ST {
@@ -27,29 +28,12 @@ struct Bar {
     double      value { 0 };
 };
 
-// A scale from 0 to `top`, in steps of 1, 2 or 5 times a power of ten.
-struct ChartScale {
-    double top { 1 };
-    double step { 1 };
-
-    bool operator==(ChartScale const &) const = default;
-};
-
-// A scale that `max` fits in, in about `ticks` steps, none smaller than
-// `min_step`: 1 for a count, so that there are no half activities.
-[[nodiscard]] ChartScale nice_scale(double max, int ticks = 5, double min_step = 0);
-
-// Which labels, centred at `centres` and as wide as `widths`, can be drawn
-// without overlapping the one drawn before, `gap` apart, from left to
-// right.
-[[nodiscard]] std::vector<size_t> visible_labels(std::vector<float> const &centres, std::vector<float> const &widths, float gap);
-
 struct BarChart : public Widget {
     static constexpr int   Ticks = 5;
     static constexpr float BarFraction = 0.8f; // Of a bar's slot, the rest a gap
 
     std::vector<Bar>                           bars { };
-    std::function<std::string(double)>         format_value { [](double v) { return std::format("{:g}", v); } };
+    FormatValue                                format_value { [](double v) { return std::format("{:g}", v); } };
     double                                     min_step { 0 };
     std::optional<size_t>                      highlight { };
     std::function<void(std::optional<size_t>)> on_hover { }; // When the bar under the mouse changes

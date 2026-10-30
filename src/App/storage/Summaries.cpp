@@ -12,6 +12,7 @@
 #include <IO.h>
 #include <JSON.h>
 #include <Logging.h>
+#include <StringUtil.h>
 
 #include <storage/Activity.h>
 #include <storage/Storage.h>
@@ -189,6 +190,22 @@ ActivitySummary read_summary(Storage &storage, SummaryFile const &file)
     ret.moving = activity.segment.moving.elapsed;
     ret.ascent = activity.segment.total_ascent.value_or(0);
     return ret;
+}
+
+std::optional<ActivityID> summary_activity(ActivitySummary const &summary)
+{
+    auto const file = fs::path { summary.source.file };
+    auto const month_dir = file.parent_path();
+    auto const year = string_to_integer<size_t>(month_dir.parent_path().string(), 10);
+    auto const month = string_to_integer<int>(month_dir.filename().string(), 10);
+    if (!year || !month || *month < 1 || *month > 12 || month_dir.parent_path().has_parent_path()) {
+        return { };
+    }
+    return ActivityID {
+        Month { *year, static_cast<DateTime::Month>(*month - 1) },
+        file.stem().string(),
+        FileTypes::one(ActivityFile::Fit),
+    };
 }
 
 void merge_summaries(ActivitySummaries &into, ActivitySummaries const &summaries)

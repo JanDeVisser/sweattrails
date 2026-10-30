@@ -236,6 +236,104 @@ void test_other_sports_left_out()
     CHECK_EQ(months[4].count, 0uz);
 }
 
+// The weeks whose Monday is in the month: March 2025 has five, from the
+// 3rd, February 2026 four, from the 2nd.
+void test_weeks_of_a_month()
+{
+    ActivitySummaries const summaries { ride(2025, 3, 2), ride(2025, 3, 3), ride(2025, 4, 6) };
+    auto const              march = volume_totals(summaries, VolumeSport::Cycling, Period::Week, 2025, 3u);
+    CHECK_EQ(march.size(), 5uz);
+    CHECK(march.front().first_day == date(2025, 3, 3));
+    CHECK(march.back().first_day == date(2025, 3, 31));
+    // Sunday 2 March is in February's last week; Sunday 6 April in the
+    // week of Monday 31 March.
+    CHECK_EQ(march.front().count, 1uz);
+    CHECK_EQ(march.back().count, 1uz);
+    auto const february = volume_totals({ }, VolumeSport::Cycling, Period::Week, 2026, 2u);
+    CHECK_EQ(february.size(), 4uz);
+    CHECK(february.front().first_day == date(2026, 2, 2));
+}
+
+void test_year_to_date()
+{
+    ActivitySummaries const summaries { ride(2025, 1, 1, 40), ride(2025, 1, 3, 60), run(2025, 1, 2), ride(2025, 12, 31, 10) };
+    auto const              values = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2025, date(2026, 6, 1));
+    CHECK_EQ(values.size(), 365uz);
+    CHECK_EQ(values[0], 40000.0);
+    CHECK_EQ(values[1], 40000.0); // The run doesn't count
+    CHECK_EQ(values[2], 100000.0);
+    CHECK_EQ(values[363], 100000.0);
+    CHECK_EQ(values[364], 110000.0);
+    auto const count = year_to_date(summaries, VolumeSport::Cycling, Metric::Count, 2025, date(2026, 6, 1));
+    CHECK_EQ(count.back(), 3.0);
+}
+
+// This year's stop at today, a year to come has none, and a leap year
+// has 366 days.
+void test_year_to_date_until_today()
+{
+    ActivitySummaries const summaries { ride(2026, 1, 1), ride(2026, 3, 10) };
+    auto const              values = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2026, date(2026, 3, 9));
+    CHECK_EQ(values.size(), 68uz); // January 31, February 28, 9 of March
+    CHECK_EQ(values.back(), 40000.0);
+    CHECK(year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2027, date(2026, 3, 9)).empty());
+    CHECK_EQ(year_to_date({ }, VolumeSport::Cycling, Metric::Distance, 2024, date(2026, 3, 9)).size(), 366uz);
+}
+
+void test_year_to_date_months()
+{
+    ActivitySummaries const summaries { ride(2025, 1, 31, 40), ride(2025, 2, 1, 60), ride(2026, 1, 15, 30) };
+    auto const              before = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2025, date(2026, 2, 10));
+    auto const              year = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2026, date(2026, 2, 10));
+    auto const              rows = year_to_date_months(year, before, 2026);
+    CHECK_EQ(rows.size(), 12uz);
+    CHECK((rows[0] == YearToDateRow { .month = chrono::January, .year = 30000.0, .before = 40000.0 }));
+    // February so far: to the 10th, in both years.
+    CHECK((rows[1] == YearToDateRow { .month = chrono::February, .year = 30000.0, .before = 100000.0, .until = chrono::day { 10 } }));
+    CHECK((rows[2] == YearToDateRow { .month = chrono::March, .year = { }, .before = 100000.0 }));
+    CHECK((rows[11] == YearToDateRow { .month = chrono::December, .year = { }, .before = 100000.0 }));
+}
+
+// Added in review: 29 February is in February's total, in a leap year
+// before a common one, and December ends on the leap year's last day.
+void test_year_to_date_months_after_a_leap_year()
+{
+    ActivitySummaries const summaries { ride(2024, 2, 29, 40), ride(2024, 12, 31, 10), ride(2025, 3, 1, 20) };
+    auto const              before = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2024, date(2025, 12, 31));
+    auto const              year = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2025, date(2025, 12, 31));
+    CHECK_EQ(before.size(), 366uz);
+    CHECK_EQ(year.size(), 365uz);
+    auto const rows = year_to_date_months(year, before, 2025);
+    CHECK((rows[1] == YearToDateRow { .month = chrono::February, .year = 0.0, .before = 40000.0 }));
+    CHECK((rows[2] == YearToDateRow { .month = chrono::March, .year = 20000.0, .before = 40000.0 }));
+    CHECK((rows[11] == YearToDateRow { .month = chrono::December, .year = 20000.0, .before = 50000.0 }));
+}
+
+// Until 1 January: a single day, and the first day's activities in it.
+void test_year_to_date_on_new_years_day()
+{
+    ActivitySummaries const summaries { ride(2026, 1, 1, 40), ride(2026, 1, 2, 40) };
+    auto const              values = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2026, date(2026, 1, 1));
+    CHECK_EQ(values.size(), 1uz);
+    CHECK_EQ(values.front(), 40000.0);
+}
+
+// This month against the same date last year, not its month's end; the
+// 29th of February against the 28th.
+void test_year_to_date_month_so_far()
+{
+    ActivitySummaries const summaries { ride(2023, 2, 10, 20), ride(2023, 2, 20, 30), ride(2024, 2, 5, 10) };
+    auto const              before = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2023, date(2024, 2, 15));
+    auto const              year = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2024, date(2024, 2, 15));
+    auto const              rows = year_to_date_months(year, before, 2024);
+    CHECK((rows[1] == YearToDateRow { .month = chrono::February, .year = 10000.0, .before = 20000.0, .until = chrono::day { 15 } }));
+    auto const leap_day = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2024, date(2024, 2, 29));
+    CHECK((year_to_date_months(leap_day, before, 2024)[1].before == 50000.0));
+    // The month's last day is the month's end, not a month so far.
+    auto const month_end = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2024, date(2024, 1, 31));
+    CHECK(!year_to_date_months(month_end, before, 2024)[0].until);
+}
+
 }
 
 int main()
@@ -251,5 +349,12 @@ int main()
     test_volume_years();
     test_week_boundary_at_midnight();
     test_other_sports_left_out();
+    test_weeks_of_a_month();
+    test_year_to_date();
+    test_year_to_date_until_today();
+    test_year_to_date_months();
+    test_year_to_date_month_so_far();
+    test_year_to_date_months_after_a_leap_year();
+    test_year_to_date_on_new_years_day();
     return Test::test_result();
 }
