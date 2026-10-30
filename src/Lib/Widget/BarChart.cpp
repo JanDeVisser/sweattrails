@@ -66,7 +66,8 @@ void BarChart::set_bars(std::vector<Bar> new_bars)
     if (highlight && *highlight >= bars.size()) {
         highlight.reset();
     }
-    hovered.reset();
+    // `hovered` stays: new bars under a mouse that didn't move aren't a
+    // hover, which would undo a selection made with the keys.
 }
 
 Rectangle BarChart::plot_area() const

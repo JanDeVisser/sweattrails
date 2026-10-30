@@ -351,6 +351,7 @@ int main()
     test_new_summaries();
     test_new_summaries_keep_the_scroll();
     test_new_summaries_keep_the_selected_year();
+    test_hover_doesnt_undo_the_keys();
     test_empty_store();
     test_summaries_before_open();
     return Test::test_result();
