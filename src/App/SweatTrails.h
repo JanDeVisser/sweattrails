@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <set>
 #include <string_view>
 #include <thread>
@@ -24,9 +25,11 @@
 #include <storage/Garmin.h>
 #include <storage/Storage.h>
 #include <storage/Strava.h>
+#include <storage/Summaries.h>
 #include <storage/Types.h>
 #include <storage/Wahoo.h>
 #include <widget/Activity.h>
+#include <widget/Summaries.h>
 
 namespace ST {
 
@@ -89,6 +92,12 @@ struct StravaLogin {
     StravaTitlesRequest titles { };
 };
 
+// The UpdateSummaries job, a chunk at a time: how many files the chunks
+// before it read.
+struct SummaryProgress {
+    size_t done { 0 };
+};
+
 #define JOBTYPE(S)                        \
     S(FindCurrentFolder, std::monostate)  \
     S(FindNewestActivity, std::monostate) \
@@ -98,7 +107,8 @@ struct StravaLogin {
     S(WahooLogin, WahooLogin)             \
     S(StravaTitles, StravaTitlesRequest)  \
     S(StravaLogin, StravaLogin)           \
-    S(PrepareZwiftWorld, ZwiftWorld)
+    S(PrepareZwiftWorld, ZwiftWorld)      \
+    S(UpdateSummaries, SummaryProgress)
 
 enum class JobType {
     JOBTYPE(ENUMVALUE2)
@@ -142,18 +152,29 @@ struct TitlesChanged {
     std::vector<i64> starts { };
 };
 
-#define NOTIFICATIONTYPE(S)         \
-    S(Message, std::string)         \
-    S(ActivityList, Activities)     \
-    S(Activity, Activity)           \
-    S(ImportingFile, ImportingFile) \
-    S(MapTile, MapTile)             \
-    S(MapTilesDone, MapTilesDone)   \
-    S(Downloading, Downloading)     \
-    S(DownloadDone, DownloadReport) \
-    S(LoginEnded, LoginEnded)       \
-    S(TitlesChanged, TitlesChanged) \
-    S(ZwiftWorldReady, ZwiftWorldReady)
+// Sent by the UpdateSummaries job after each chunk: the summaries so far,
+// how many of the files to read it has read, and what went wrong, if
+// anything did.
+struct SummariesUpdated {
+    ActivitySummaries summaries { };
+    size_t            done { 0 };
+    size_t            total { 0 };
+    std::string       error { }; // Why it stopped early, for the status line
+};
+
+#define NOTIFICATIONTYPE(S)             \
+    S(Message, std::string)             \
+    S(ActivityList, Activities)         \
+    S(Activity, Activity)               \
+    S(ImportingFile, ImportingFile)     \
+    S(MapTile, MapTile)                 \
+    S(MapTilesDone, MapTilesDone)       \
+    S(Downloading, Downloading)         \
+    S(DownloadDone, DownloadReport)     \
+    S(LoginEnded, LoginEnded)           \
+    S(TitlesChanged, TitlesChanged)     \
+    S(ZwiftWorldReady, ZwiftWorldReady) \
+    S(SummariesUpdated, SummariesUpdated)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -179,6 +200,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void job_strava_titles(Job::Payload const &data);
     static void job_strava_login(Job::Payload const &data);
     static void job_prepare_zwift_world(Job::Payload const &data);
+    static void job_update_summaries(Job::Payload const &data);
 
     // The payload variant starts with a std::monostate, so a job type's
     // payload comes one after its value.
@@ -197,6 +219,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 job_strava_titles,
                 job_strava_login,
                 job_prepare_zwift_world,
+                job_update_summaries,
             });
     }
 
@@ -217,6 +240,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_login_ended(Notification::Payload const &data);
     static void notif_titles_changed(Notification::Payload const &data);
     static void notif_zwift_world_ready(Notification::Payload const &data);
+    static void notif_summaries_updated(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -235,6 +259,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_login_ended,
                 notif_titles_changed,
                 notif_zwift_world_ready,
+                notif_summaries_updated,
             });
     }
 
@@ -277,8 +302,18 @@ struct SweatTrails : public Main<Job, Notification> {
     std::set<std::string> zwift_preparing { };
     std::set<std::string> zwift_failed { };
 
+    // The summaries the UpdateSummaries job read last. Only used on the UI
+    // thread.
+    ActivitySummaries summaries { };
+    // From scheduling the UpdateSummaries job until its last chunk, so that
+    // there's one at a time. Only used by jobs, and to schedule one.
+    std::atomic<bool> updating_summaries { false };
+    // The status line says how far it is.
+    bool reading_summaries { false };
+
     std::shared_ptr<WidgetStack>     widget_stack { nullptr };
     std::shared_ptr<ActivityDisplay> activity_display { nullptr };
+    std::shared_ptr<SummariesScreen> summaries_screen { nullptr };
     std::shared_ptr<Label>           status { nullptr };
 
     SweatTrails();
@@ -302,6 +337,11 @@ struct SweatTrails : public Main<Job, Notification> {
     // An empty text, while a login waits, shows that it waits.
     void set_status(std::string_view const &text);
     void show_activity(Activity const &activity);
+    // Has the job read what's new in the store for the summaries, unless
+    // it's doing that already.
+    void               update_summaries();
+    [[nodiscard]] bool showing_summaries() const;
+    void               show_summaries(bool on);
     // Where Zwift worlds' maps are cut into tiles.
     [[nodiscard]] fs::path zwift_cache() const { return storage.tiles_dir / "zwift"; }
     // Has the job cut the world into tiles, unless it's doing that already,

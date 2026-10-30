@@ -150,6 +150,8 @@ add_library(
         STATIC
         src/Lib/Widget/App.h
         src/Lib/Widget/App.cpp
+        src/Lib/Widget/BarChart.h
+        src/Lib/Widget/BarChart.cpp
         src/Lib/Widget/ClipShader.h
         src/Lib/Widget/ClipShader.cpp
         src/Lib/Widget/Colors.h
@@ -214,8 +216,11 @@ add_executable(
         src/App/widget/DisplayedActivity.cpp
         src/App/widget/OverlayPreview.cpp
         src/App/widget/SportIcon.cpp
+        src/App/widget/Summaries.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
+        src/App/storage/Summaries.cpp
+        src/App/storage/Volume.cpp
         src/App/storage/Download.cpp
         src/App/storage/Garmin.cpp
         src/App/storage/Storage.cpp
@@ -309,6 +314,7 @@ endfunction()
 sweattrails_test(listbox_test test/ListBoxTest.cpp)
 sweattrails_test(scroll_test test/ScrollTest.cpp)
 sweattrails_test(table_test test/TableTest.cpp)
+sweattrails_test(bar_chart_test test/BarChartTest.cpp)
 sweattrails_test(text_line_test test/TextLineTest.cpp)
 sweattrails_test(colors_test test/ColorsTest.cpp)
 sweattrails_test(window_test test/WindowTest.cpp)
@@ -665,6 +671,37 @@ sweattrails_test(
 )
 target_include_directories(laps_test PRIVATE src/App)
 target_link_libraries(laps_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        summaries_test
+        test/SummariesTest.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Summaries.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(summaries_test PRIVATE src/App)
+target_link_libraries(summaries_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        summaries_screen_test
+        test/SummariesScreenTest.cpp
+        src/App/widget/Summaries.cpp
+        src/App/storage/Volume.cpp
+)
+target_include_directories(summaries_screen_test PRIVATE src/App)
+
+sweattrails_test(
+        volume_test
+        test/VolumeTest.cpp
+        src/App/storage/Volume.cpp
+)
+target_include_directories(volume_test PRIVATE src/App)
 
 sweattrails_test(
         activity_load_test

@@ -36,7 +36,9 @@
 #include <storage/Storage.h>
 #include <storage/Strava.h>
 #include <storage/StravaTitles.h>
+#include <storage/Summaries.h>
 #include <storage/Types.h>
+#include <storage/Volume.h>
 #include <storage/Wahoo.h>
 #include <widget/Activity.h>
 #include <widget/ActivitySelector.h>
@@ -202,6 +204,31 @@ void process_inbox(pSweatTrails const &the)
         return;
     }
     info(ST, "Processed {} inbox files", res.value());
+    if (res.value() > 0) {
+        the->update_summaries();
+    }
+}
+
+// One chunk of the update, which schedules the next, and tells the UI.
+void update_summaries_chunk(pSweatTrails const &the, SummaryProgress progress)
+{
+    auto done = update_summaries(the->storage);
+    if (!done.error.empty()) {
+        warning(ST, "{}", done.error);
+    }
+    progress.done += done.read;
+    auto const more = done.left > 0 && done.error.empty();
+    the->notify_latest<NotificationType::SummariesUpdated>(SummariesUpdated {
+        .summaries = std::move(done.summaries),
+        .done = progress.done,
+        .total = more ? progress.done + done.left : progress.done,
+        .error = std::move(done.error),
+    });
+    if (more) {
+        the->schedule<JobType::UpdateSummaries>(progress);
+        return;
+    }
+    the->updating_summaries = false;
 }
 
 // Downloads from the sources the request asks for, one after the other,
@@ -328,6 +355,11 @@ void SweatTrails::job_prepare_zwift_world(Job::Payload const &data)
     }
     info(ST, "Cut {}'s map into tiles", world.name);
     the->notify<NotificationType::ZwiftWorldReady>(ZwiftWorldReady { .cache_name = world.cache_name(), .map = std::move(*map) });
+}
+
+void SweatTrails::job_update_summaries(Job::Payload const &data)
+{
+    update_summaries_chunk(SweatTrails::the(), std::get<SummaryProgress>(data));
 }
 
 void SweatTrails::job_download(Job::Payload const &data)
@@ -871,6 +903,70 @@ void cmd_device_laps(pSweatTrails const &sweattrails, JSONValue const &)
     set_laps(sweattrails, *activity, std::nullopt);
 }
 
+// Opens the summaries, on this year by week, and on the sport of the
+// activity on display, or closes them.
+void cmd_summaries(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (sweattrails->showing_summaries()) {
+        sweattrails->show_summaries(false);
+        return;
+    }
+    auto sport = VolumeSport::Running;
+    if (auto const &activity = sweattrails->activity_display->activity; activity) {
+        sport = volume_sport(activity->activity.sport, activity->activity.sub_sport).value_or(VolumeSport::Running);
+    }
+    auto const today = DateTime::from_timestamp(static_cast<i32>(std::time(nullptr)));
+    sweattrails->summaries_screen->open(sport, today.year);
+    sweattrails->show_summaries(true);
+}
+
+void cmd_summaries_close(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    sweattrails->show_summaries(false);
+}
+
+// W, M and Y, with the period's name.
+void cmd_summaries_period(pSweatTrails const &sweattrails, JSONValue const &arguments)
+{
+    if (auto const period = Period_by_name(arguments.try_get<std::string>("period").value_or("")); period) {
+        sweattrails->summaries_screen->set_period(*period);
+    }
+}
+
+void cmd_summaries_sport(pSweatTrails const &sweattrails, JSONValue const &arguments)
+{
+    if (auto const sport = VolumeSport_by_name(arguments.try_get<std::string>("sport").value_or("")); sport) {
+        sweattrails->summaries_screen->set_sport(*sport);
+    }
+}
+
+void cmd_summaries_metric(pSweatTrails const &sweattrails, JSONValue const &arguments)
+{
+    if (auto const metric = Metric_by_name(arguments.try_get<std::string>("metric").value_or("")); metric) {
+        sweattrails->summaries_screen->set_metric(*metric);
+    }
+}
+
+// Left and Right: a year back or forward.
+void cmd_summaries_year(pSweatTrails const &sweattrails, JSONValue const &arguments)
+{
+    sweattrails->summaries_screen->step_year(arguments.try_get<int>("step").value_or(0));
+}
+
+// Up and Down through the table's rows.
+void cmd_summaries_row(pSweatTrails const &sweattrails, JSONValue const &arguments)
+{
+    sweattrails->summaries_screen->step_row(arguments.try_get<int>("step").value_or(0));
+}
+
+// The arguments of a summaries key, such as { "period": "week" }.
+JSONValue summaries_argument(std::string_view key, JSONValue value)
+{
+    auto ret = JSONValue::object();
+    ret.set(key, std::move(value));
+    return ret;
+}
+
 // The layout the preview shows before the user picks one.
 constexpr char const DefaultOverlayLayout[] = "cycling-basic";
 
@@ -1255,6 +1351,45 @@ void SweatTrails::prepare_zwift_world(ZwiftWorld const &world)
     schedule<JobType::PrepareZwiftWorld>(world);
 }
 
+void SweatTrails::update_summaries()
+{
+    if (!updating_summaries.exchange(true)) {
+        schedule<JobType::UpdateSummaries>(SummaryProgress { });
+    }
+}
+
+bool SweatTrails::showing_summaries() const
+{
+    return !widget_stack->widgets.empty() && widget_stack->widgets.front() == summaries_screen;
+}
+
+void SweatTrails::show_summaries(bool on)
+{
+    if (on) {
+        widget_stack->activate<SummariesScreen>();
+    } else {
+        widget_stack->activate<ActivityDisplay>();
+    }
+}
+
+void SweatTrails::notif_summaries_updated(Notification::Payload const &data)
+{
+    auto const &updated = std::get<SummariesUpdated>(data);
+    auto const  the = SweatTrails::the();
+    the->summaries = updated.summaries;
+    the->summaries_screen->set_summaries(updated.summaries);
+    if (!updated.error.empty()) {
+        the->reading_summaries = false;
+        the->set_status(updated.error);
+    } else if (updated.done < updated.total) {
+        the->reading_summaries = true;
+        the->set_status(std::format("Reading activities for the totals: {} of {}", updated.done, updated.total));
+    } else if (the->reading_summaries) {
+        the->reading_summaries = false;
+        the->set_status("");
+    }
+}
+
 void SweatTrails::show_activity(Activity const &activity)
 {
     trace(ST, "Showing activity {}", activity.id);
@@ -1286,6 +1421,7 @@ void SweatTrails::initialize()
 
     widget_stack = add_widget<WidgetStack>();
     activity_display = widget_stack->add_widget<ActivityDisplay>();
+    summaries_screen = widget_stack->add_widget<SummariesScreen>();
     // A status line at the bottom of the window, hidden while it's empty.
     status = add_widget<Label>("");
     status->policy = SizePolicy::Hide;
@@ -1309,18 +1445,49 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_G, KModControl | KModShift });
     bus.add_task<SweatTrails>("st-strava-login", self(), cmd_strava_login);
     bus.add_task<SweatTrails>("st-message", self(), cmd_message);
+    // The screens' keys: Left, Right, Up, Down and Esc are both's.
+    auto const on_activity_screen = [this] { return !showing_summaries(); };
+    auto const on_summaries = [this] { return showing_summaries(); };
+    bus.add_task<SweatTrails>("st-summaries", self(), cmd_summaries)
+        .bind(KeyCombo { KEY_T, KModControl });
+    bus.add_task<SweatTrails>("st-summaries-close", self(), cmd_summaries_close)
+        .bind(KeyCombo { KEY_ESCAPE, KModNone })
+        .when(on_summaries);
+    auto &period = bus.add_task<SweatTrails>("st-summaries-period", self(), cmd_summaries_period).when(on_summaries);
+    period.bind(KeyCombo { KEY_W, KModNone }, summaries_argument("period", JSONValue { "week" }));
+    period.bind(KeyCombo { KEY_M, KModNone }, summaries_argument("period", JSONValue { "month" }));
+    period.bind(KeyCombo { KEY_Y, KModNone }, summaries_argument("period", JSONValue { "year" }));
+    auto &sport = bus.add_task<SweatTrails>("st-summaries-sport", self(), cmd_summaries_sport).when(on_summaries);
+    sport.bind(KeyCombo { KEY_R, KModNone }, summaries_argument("sport", JSONValue { "running" }));
+    sport.bind(KeyCombo { KEY_C, KModNone }, summaries_argument("sport", JSONValue { "cycling" }));
+    auto &metric = bus.add_task<SweatTrails>("st-summaries-metric", self(), cmd_summaries_metric).when(on_summaries);
+    metric.bind(KeyCombo { KEY_D, KModNone }, summaries_argument("metric", JSONValue { "distance" }));
+    metric.bind(KeyCombo { KEY_T, KModNone }, summaries_argument("metric", JSONValue { "time" }));
+    metric.bind(KeyCombo { KEY_N, KModNone }, summaries_argument("metric", JSONValue { "count" }));
+    metric.bind(KeyCombo { KEY_A, KModNone }, summaries_argument("metric", JSONValue { "ascent" }));
+    auto &year = bus.add_task<SweatTrails>("st-summaries-year", self(), cmd_summaries_year).when(on_summaries);
+    year.bind(KeyCombo { KEY_LEFT, KModNone }, summaries_argument("step", JSONValue { -1 }));
+    year.bind(KeyCombo { KEY_RIGHT, KModNone }, summaries_argument("step", JSONValue { 1 }));
+    auto &row = bus.add_task<SweatTrails>("st-summaries-row", self(), cmd_summaries_row).when(on_summaries);
+    row.bind(KeyCombo { KEY_UP, KModNone }, summaries_argument("step", JSONValue { -1 }));
+    row.bind(KeyCombo { KEY_DOWN, KModNone }, summaries_argument("step", JSONValue { 1 }));
     // The table and the data panel follow the lap these select.
     bus.add_task<SweatTrails>("st-next-lap", self(), cmd_next_lap)
-        .bind(KeyCombo { KEY_DOWN, KModNone });
+        .bind(KeyCombo { KEY_DOWN, KModNone })
+        .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-previous-lap", self(), cmd_previous_lap)
-        .bind(KeyCombo { KEY_UP, KModNone });
+        .bind(KeyCombo { KEY_UP, KModNone })
+        .when(on_activity_screen);
     // As Left and Right go through the months in Ctrl+M's list.
     bus.add_task<SweatTrails>("st-next-activity", self(), cmd_next_activity)
-        .bind(KeyCombo { KEY_RIGHT, KModNone });
+        .bind(KeyCombo { KEY_RIGHT, KModNone })
+        .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-previous-activity", self(), cmd_previous_activity)
-        .bind(KeyCombo { KEY_LEFT, KModNone });
+        .bind(KeyCombo { KEY_LEFT, KModNone })
+        .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-whole-activity", self(), cmd_whole_activity)
-        .bind(KeyCombo { KEY_ESCAPE, KModNone });
+        .bind(KeyCombo { KEY_ESCAPE, KModNone })
+        .when(on_activity_screen);
     // F2 rather than Ctrl+R, which often means reload, and Cmd+Shift+R
     // (Ctrl+Shift+R off macOS) for keyboards without function keys. A
     // click on the title in the data panel runs it too.
@@ -1330,30 +1497,40 @@ void SweatTrails::initialize()
     auto const command = KModControl;
 #endif
     bus.add_task<SweatTrails>("st-mark-lap", self(), cmd_mark_lap)
-        .bind(KeyCombo { KEY_L, KModControl });
+        .bind(KeyCombo { KEY_L, KModControl })
+        .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-split-laps", self(), cmd_split_laps)
-        .bind(KeyCombo { KEY_L, KModControl | KModShift });
+        .bind(KeyCombo { KEY_L, KModControl | KModShift })
+        .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-device-laps", self(), cmd_device_laps)
-        .bind(KeyCombo { KEY_L, KModControl | KModAlt });
+        .bind(KeyCombo { KEY_L, KModControl | KModAlt })
+        .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-rename-activity", self(), cmd_rename_activity)
         .bind(KeyCombo { KEY_F2, KModNone })
-        .bind(KeyCombo { KEY_R, command | KModShift });
+        .bind(KeyCombo { KEY_R, command | KModShift })
+        .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-overlay-preview", self(), cmd_overlay_preview)
-        .bind(KeyCombo { KEY_O, KModControl });
+        .bind(KeyCombo { KEY_O, KModControl })
+        .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-overlay-layout", self(), cmd_overlay_layout)
-        .bind(KeyCombo { KEY_O, KModControl | KModShift });
+        .bind(KeyCombo { KEY_O, KModControl | KModShift })
+        .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-overlay-render", self(), cmd_overlay_render)
-        .bind(KeyCombo { KEY_E, KModControl });
+        .bind(KeyCombo { KEY_E, KModControl })
+        .when(on_activity_screen);
     // + is Shift = on most keyboards.
     bus.add_task<SweatTrails>("st-map-zoom-in", self(), cmd_map_zoom_in)
         .bind(KeyCombo { KEY_EQUAL, KModNone })
         .bind(KeyCombo { KEY_EQUAL, KModShift })
-        .bind(KeyCombo { KEY_KP_ADD, KModNone });
+        .bind(KeyCombo { KEY_KP_ADD, KModNone })
+        .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-map-zoom-out", self(), cmd_map_zoom_out)
         .bind(KeyCombo { KEY_MINUS, KModNone })
-        .bind(KeyCombo { KEY_KP_SUBTRACT, KModNone });
+        .bind(KeyCombo { KEY_KP_SUBTRACT, KModNone })
+        .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-map-whole-route", self(), cmd_map_whole_route)
-        .bind(KeyCombo { KEY_ZERO, KModNone });
+        .bind(KeyCombo { KEY_ZERO, KModNone })
+        .when(on_activity_screen);
 
     // Jobs run one at a time in the order they're scheduled: the newest
     // activity shows before Garmin Connect or Wahoo is asked for anything,
@@ -1361,6 +1538,7 @@ void SweatTrails::initialize()
     // anything.
     bus.schedule(make_job<JobType::ProcessInbox>(std::monostate { }));
     bus.schedule(make_job<JobType::FindNewestActivity>(std::monostate { }));
+    update_summaries();
     auto quiet = JSONValue::object();
     quiet["quiet"] = JSONValue { true };
     bus.submit("st-download", quiet);
