@@ -412,7 +412,8 @@ void test_line_stops_at_today()
     CHECK_EQ(screen->lines->series[0].values.size(), 166uz); // To 15 June
     // As wide as 2024's line, two years back, a leap year.
     CHECK_EQ(screen->lines->x_count, 366uz);
-    CHECK_EQ(screen->table->rows[5][1], ""); // June isn't over
+    CHECK_EQ(screen->table->rows[5][0], "June to the 15th");
+    CHECK_EQ(screen->table->rows[6][1], ""); // July is to come
     CHECK_EQ(screen->table->rows[4][1], "0.0 km");
 }
 
@@ -747,5 +748,6 @@ int main()
     test_drill_into_a_week_across_months();
     test_empty_store_lines_and_drilling();
     test_metric_in_the_lines();
+    test_year_to_date_this_month();
     return Test::test_result();
 }

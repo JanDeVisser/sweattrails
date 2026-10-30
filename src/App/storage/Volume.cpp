@@ -276,23 +276,37 @@ std::vector<double> year_to_date(ActivitySummaries const &summaries, VolumeSport
 
 std::vector<YearToDateRow> year_to_date_months(std::vector<double> const &year_values, std::vector<double> const &before_values, int year)
 {
-    // The total so far at the end of the month, if the values go that far.
-    auto const at_month_end = [](std::vector<double> const &values, int of_year, unsigned month) -> std::optional<double> {
-        auto const new_year = chrono::sys_days { chrono::year { of_year } / chrono::January / 1 };
-        auto const end = chrono::sys_days { chrono::year { of_year } / chrono::month { month } / chrono::last };
-        auto const day = static_cast<size_t>((end - new_year).count());
-        if (day >= values.size()) {
+    // The total so far at the end of a day, if the values go that far.
+    auto const at = [](std::vector<double> const &values, chrono::year_month_day day) -> std::optional<double> {
+        auto const new_year = chrono::sys_days { day.year() / chrono::January / 1 };
+        auto const ix = static_cast<size_t>((chrono::sys_days { day } - new_year).count());
+        if (ix >= values.size()) {
             return { };
         }
-        return values[day];
+        return values[ix];
     };
+    auto const new_year = chrono::sys_days { chrono::year { year } / chrono::January / 1 };
+    // The day the year's values go up to, today in this year.
+    auto const                 last_day = chrono::year_month_day { new_year + chrono::days { static_cast<int>(year_values.size()) - 1 } };
     std::vector<YearToDateRow> ret;
     for (auto month = 1u; month <= 12; ++month) {
-        ret.push_back(YearToDateRow {
-            .month = chrono::month { month },
-            .year = at_month_end(year_values, year, month),
-            .before = at_month_end(before_values, year - 1, month),
-        });
+        auto const end = chrono::year { year } / chrono::month { month } / chrono::last;
+        auto       row = YearToDateRow { .month = chrono::month { month } };
+        if (!year_values.empty() && last_day.year() == chrono::year { year } && last_day.month() == chrono::month { month } && last_day < chrono::year_month_day { end }) {
+            // The month so far, against the year before at the same date,
+            // or its month's end, for the 29th of February.
+            auto before_day = chrono::year { year - 1 } / last_day.month() / last_day.day();
+            if (!before_day.ok()) {
+                before_day = chrono::year { year - 1 } / last_day.month() / chrono::last;
+            }
+            row.year = year_values.back();
+            row.before = at(before_values, before_day);
+            row.until = last_day.day();
+        } else {
+            row.year = at(year_values, end);
+            row.before = at(before_values, chrono::year { year - 1 } / chrono::month { month } / chrono::last);
+        }
+        ret.push_back(row);
     }
     return ret;
 }

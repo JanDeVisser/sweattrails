@@ -96,6 +96,24 @@ std::string format_metric(double value, Metric metric, bool sign = false)
     UNREACHABLE();
 }
 
+// "st", "nd", "rd" or "th", as in "the 15th".
+std::string ordinal_suffix(unsigned day)
+{
+    if (day % 100 >= 11 && day % 100 <= 13) {
+        return "th";
+    }
+    switch (day % 10) {
+    case 1:
+        return "st";
+    case 2:
+        return "nd";
+    case 3:
+        return "rd";
+    default:
+        return "th";
+    }
+}
+
 // The lines' colours: the year shown, and the years before it, fainter.
 Color line_color(int years_back)
 {
@@ -243,7 +261,11 @@ std::vector<TableRow> year_to_date_rows(std::vector<YearToDateRow> const &rows, 
             return value ? format_metric(*value, metric) : std::string { };
         };
         auto const difference = (row.year && row.before) ? format_metric(*row.year - *row.before, metric, true) : std::string { };
-        ret.push_back(TableRow { MonthNames[static_cast<unsigned>(row.month) - 1], format(row.year), format(row.before), difference });
+        auto       name = std::string { MonthNames[static_cast<unsigned>(row.month) - 1] };
+        if (row.until) {
+            name = std::format("{} to the {}{}", name, static_cast<unsigned>(*row.until), ordinal_suffix(static_cast<unsigned>(*row.until)));
+        }
+        ret.push_back(TableRow { std::move(name), format(row.year), format(row.before), difference });
     }
     return ret;
 }

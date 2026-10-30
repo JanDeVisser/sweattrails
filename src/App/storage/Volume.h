@@ -104,11 +104,12 @@ struct PeriodTotal {
 
 // A month of the year-to-date table: the totals so far at its end, in the
 // year and in the year before. None where the values don't go that far,
-// as after today.
+// as after today. This month's are up to today, `until`, in both years.
 struct YearToDateRow {
-    std::chrono::month    month { 1 };
-    std::optional<double> year { };
-    std::optional<double> before { };
+    std::chrono::month              month { 1 };
+    std::optional<double>           year { };
+    std::optional<double>           before { };
+    std::optional<std::chrono::day> until { };
 
     bool operator==(YearToDateRow const &) const = default;
 };

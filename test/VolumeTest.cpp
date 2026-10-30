@@ -288,8 +288,9 @@ void test_year_to_date_months()
     auto const              rows = year_to_date_months(year, before, 2026);
     CHECK_EQ(rows.size(), 12uz);
     CHECK((rows[0] == YearToDateRow { .month = chrono::January, .year = 30000.0, .before = 40000.0 }));
-    // February isn't over: no total at its end yet.
-    CHECK((rows[1] == YearToDateRow { .month = chrono::February, .year = { }, .before = 100000.0 }));
+    // February so far: to the 10th, in both years.
+    CHECK((rows[1] == YearToDateRow { .month = chrono::February, .year = 30000.0, .before = 100000.0, .until = chrono::day { 10 } }));
+    CHECK((rows[2] == YearToDateRow { .month = chrono::March, .year = { }, .before = 100000.0 }));
     CHECK((rows[11] == YearToDateRow { .month = chrono::December, .year = { }, .before = 100000.0 }));
 }
 
@@ -317,6 +318,22 @@ void test_year_to_date_on_new_years_day()
     CHECK_EQ(values.front(), 40000.0);
 }
 
+// This month against the same date last year, not its month's end; the
+// 29th of February against the 28th.
+void test_year_to_date_month_so_far()
+{
+    ActivitySummaries const summaries { ride(2023, 2, 10, 20), ride(2023, 2, 20, 30), ride(2024, 2, 5, 10) };
+    auto const              before = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2023, date(2024, 2, 15));
+    auto const              year = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2024, date(2024, 2, 15));
+    auto const              rows = year_to_date_months(year, before, 2024);
+    CHECK((rows[1] == YearToDateRow { .month = chrono::February, .year = 10000.0, .before = 20000.0, .until = chrono::day { 15 } }));
+    auto const leap_day = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2024, date(2024, 2, 29));
+    CHECK((year_to_date_months(leap_day, before, 2024)[1].before == 50000.0));
+    // The month's last day is the month's end, not a month so far.
+    auto const month_end = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2024, date(2024, 1, 31));
+    CHECK(!year_to_date_months(month_end, before, 2024)[0].until);
+}
+
 }
 
 int main()
@@ -336,6 +353,7 @@ int main()
     test_year_to_date();
     test_year_to_date_until_today();
     test_year_to_date_months();
+    test_year_to_date_month_so_far();
     test_year_to_date_months_after_a_leap_year();
     test_year_to_date_on_new_years_day();
     return Test::test_result();
