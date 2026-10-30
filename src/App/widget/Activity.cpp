@@ -350,6 +350,7 @@ void ActivityGraph::process_input()
             activity->set_segment(record_at());
         } else {
             dragging = false;
+            activity->end_segment();
         }
         return;
     }
@@ -372,10 +373,9 @@ void ActivityGraph::process_input()
         return;
     }
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        activity->clear_segment();
         activity->clear_mark();
         dragging = true;
-        activity->set_segment(record_at());
+        activity->start_segment(record_at());
     } else if (IsMouseButtonUp(MOUSE_BUTTON_LEFT)) {
         activity->set_mark(record_at());
     }

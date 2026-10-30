@@ -20,6 +20,14 @@ void DisplayedActivity::clear_segment()
 {
     segment.reset();
     lap.reset();
+    range_stats.reset();
+    anchor.reset();
+}
+
+void DisplayedActivity::start_segment(size_t t)
+{
+    clear_segment();
+    set_segment(t);
 }
 
 std::optional<std::pair<size_t, size_t>> DisplayedActivity::selection() const
@@ -42,16 +50,25 @@ void DisplayedActivity::set_mark(size_t t)
 
 void DisplayedActivity::set_segment(size_t t)
 {
-    if (segment) {
-        if (t < segment->min) {
-            segment->min = t;
-            segment->max = t;
-        } else {
-            segment->max = t;
-        }
-    } else {
-        segment = RecordRange { .min = t, .max = t };
+    if (!anchor) {
+        anchor = t;
     }
+    segment = RecordRange { .min = std::min(*anchor, t), .max = std::max(*anchor, t) };
+}
+
+void DisplayedActivity::end_segment()
+{
+    anchor.reset();
+    if (!segment || lap) {
+        return;
+    }
+    auto const &records = activity.records;
+    if (segment->max >= records.size()
+        || records[segment->max].timestamp.timestamp - records[segment->min].timestamp.timestamp < MinRangeSeconds) {
+        segment.reset();
+        return;
+    }
+    range_stats = range_segment(activity, segment->min, segment->max);
 }
 
 size_t DisplayedActivity::current_record() const
@@ -59,8 +76,9 @@ size_t DisplayedActivity::current_record() const
     if (mark) {
         return *mark;
     }
+    // Where the drag is: the range's left end when it went left.
     if (segment) {
-        return segment->max;
+        return (anchor && segment->min < *anchor) ? segment->min : segment->max;
     }
     return 0;
 }
@@ -77,6 +95,8 @@ void DisplayedActivity::select_lap(size_t ix)
     }
     auto const &l = activity.laps[ix];
     lap = ix;
+    range_stats.reset();
+    anchor.reset();
     // A lap without records, which a watch can log, has no range to show.
     if (l.end_record > l.first_record && l.end_record <= activity.records.size()) {
         segment = RecordRange { .min = l.first_record, .max = l.end_record - 1 };

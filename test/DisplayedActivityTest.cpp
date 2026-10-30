@@ -3,8 +3,8 @@
  *
  * SPDX-License-Identifier: MIT
  *
- * Tests selecting laps in the activity on display, and the laps' parts of
- * the strip under the graph.
+ * Tests selecting laps and ranges in the activity on display, and the
+ * laps' parts of the strip under the graph.
  */
 
 #include <optional>
@@ -21,7 +21,7 @@ using namespace ST;
 
 namespace {
 
-// 100 records in laps of 10, 30 and 60 records.
+// 100 records, a second apart, in laps of 10, 30 and 60 records.
 struct TestActivity {
     Storage                            storage { };
     std::shared_ptr<DisplayedActivity> displayed;
@@ -30,6 +30,10 @@ struct TestActivity {
     {
         Activity activity { storage, ActivityID { } };
         activity.records.resize(lap_ends.empty() ? 0 : lap_ends.back());
+        for (size_t ix = 0; ix < activity.records.size(); ++ix) {
+            activity.records[ix].timestamp.timestamp = 1'000'000 + static_cast<u32>(ix);
+        }
+        activity.recorded = activity.records;
         size_t first = 0;
         for (auto end : lap_ends) {
             activity.laps.push_back(Lap { .first_record = first, .end_record = end });
@@ -102,7 +106,7 @@ void test_toggle_lap()
     TestActivity t;
     auto        &d = *t.displayed;
     d.toggle_lap(0);
-    CHECK_EQ(lap(d.lap), 0);
+    CHECK(d.lap == 0uz);
     d.toggle_lap(2);
     CHECK_EQ(lap(d.lap), 2);
     d.toggle_lap(2);
@@ -115,7 +119,7 @@ void test_next_and_previous()
     TestActivity t;
     auto        &d = *t.displayed;
     d.next_lap();
-    CHECK_EQ(lap(d.lap), 0);
+    CHECK(d.lap == 0uz);
     d.next_lap();
     d.next_lap();
     CHECK_EQ(lap(d.lap), 2);
@@ -125,7 +129,7 @@ void test_next_and_previous()
     CHECK_EQ(lap(d.lap), 1);
     d.previous_lap();
     d.previous_lap(); // Stays on the first
-    CHECK_EQ(lap(d.lap), 0);
+    CHECK(d.lap == 0uz);
 
     d.whole_activity();
     CHECK_EQ(lap(d.lap), -1);
@@ -244,9 +248,86 @@ void test_selection()
     CHECK(!d.selection());
 }
 
+// A drag selects from where it started to where the mouse is, either
+// side, and back across where it started.
+void test_drag_either_way()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.start_segment(50);
+    d.set_segment(30);
+    CHECK(d.segment.has_value() && d.segment->min == 30 && d.segment->max == 50);
+    CHECK_EQ(d.current_record(), 30uz);
+    d.set_segment(20);
+    CHECK(d.segment.has_value() && d.segment->min == 20 && d.segment->max == 50);
+    d.set_segment(70);
+    CHECK(d.segment.has_value() && d.segment->min == 50 && d.segment->max == 70);
+    CHECK_EQ(d.current_record(), 70uz);
+    d.end_segment();
+    CHECK(d.segment.has_value() && d.segment->min == 50 && d.segment->max == 70);
+    // The next drag starts afresh.
+    d.start_segment(10);
+    d.set_segment(5);
+    CHECK(d.segment.has_value() && d.segment->min == 5 && d.segment->max == 10);
+    CHECK(!d.range_stats.has_value());
+}
+
+// Let go, a range of 10 s or more gets its stats; a shorter one, such as a
+// plain click, is cleared.
+void test_end_segment()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.start_segment(40);
+    d.set_segment(30);
+    d.end_segment();
+    CHECK(d.segment.has_value());
+    CHECK(d.range_stats.has_value());
+    CHECK(d.range_stats.has_value() && d.range_stats->elapsed.elapsed == 10u);
+    CHECK(!d.anchor.has_value());
+
+    d.start_segment(40);
+    d.set_segment(31);
+    d.end_segment();
+    CHECK(!d.segment.has_value());
+    CHECK(!d.range_stats.has_value());
+
+    d.start_segment(40);
+    d.end_segment();
+    CHECK(!d.segment.has_value());
+    CHECK_EQ(d.current_record(), 0uz);
+}
+
+// A new drag, Esc and selecting a lap clear a range's stats.
+void test_range_stats_cleared()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    auto const   drag = [&d] {
+        d.start_segment(20);
+        d.set_segment(60);
+        d.end_segment();
+        CHECK(d.range_stats.has_value());
+    };
+    drag();
+    d.start_segment(5);
+    CHECK(!d.range_stats.has_value());
+    drag();
+    d.whole_activity();
+    CHECK(!d.range_stats.has_value());
+    CHECK(!d.segment.has_value());
+    drag();
+    d.next_lap();
+    CHECK(!d.range_stats.has_value());
+    CHECK(d.lap == 0uz);
+}
+
 int main()
 {
     test_current_record();
+    test_drag_either_way();
+    test_end_segment();
+    test_range_stats_cleared();
     test_select_lap();
     test_drag_ends_the_lap();
     test_toggle_lap();
