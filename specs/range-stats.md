@@ -198,3 +198,15 @@ Nothing here belongs in `src/Lib/Widget`: it's all the app's data.
 6. **Missing test (added): the time heading past an hour, and out of
    bounds.** `test_range_summary_by_time_past_an_hour`, the spec's own
    "0:42:10–1:05:33" example (passes).
+
+### Resolution
+
+1. Fixed: only `start_segment()`, a press in the graph, starts a drag,
+   and `set_segment()` does nothing without one. Esc, selecting a lap
+   and another activity end a drag; `test_esc_during_a_drag` was added.
+2. Fixed: the times are subtracted signed. A range going back in time is
+   too short to select, and `range_segment()`'s elapsed and moving times
+   don't go below zero.
+3. Fixed: the heading goes by whether the records have distance, so a
+   range at a stop says where it is in km.
+4.–6. The Reviewer's tests are kept.
