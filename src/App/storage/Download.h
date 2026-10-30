@@ -5,9 +5,9 @@
  *
  * What the download tasks ask for, and what they tell the user when the
  * download is done. One download job runs every source asked for, and
- * says in one message what each brought in: see specs/wahoo-download.md.
+ * says in one message what each brought in: see specs/08-wahoo-download.md.
  * Strava brings in no activities, only their titles: see
- * specs/strava-titles.md.
+ * specs/24-strava-titles.md.
  */
 
 #pragma once

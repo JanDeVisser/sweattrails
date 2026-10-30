@@ -9,7 +9,7 @@ or an interval that wasn't a lap of its own, and the data panel shows
 that part's stats: its distance, time, speed or pace, heart rate, power,
 cadence and elevation, just as it does for a lap. Now a dragged range is
 only drawn on the map and in the graph, and the panel stays on the whole
-activity (`specs/lap-display.md`).
+activity (`specs/09-lap-display.md`).
 
 ## Feature
 
@@ -80,7 +80,7 @@ activity (`specs/lap-display.md`).
 - Dragging leftwards selects a range too.
 - Ranges under 10 seconds are cleared when the drag ends.
 - Zooming the map to the range stays *(deferred)*, as in
-  `specs/map-pan-zoom.md`.
+  `specs/10-map-pan-zoom.md`.
 
 ## Open questions
 

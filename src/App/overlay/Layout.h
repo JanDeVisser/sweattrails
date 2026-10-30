@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: MIT
  *
  * An overlay layout, decoded from its JSON: what's shown where, in which
- * font, size and color. The format is in specs/overlay-layout.md; this
- * slice decodes text and value elements (specs/overlay-preview.md).
+ * font, size and color. The format is in specs/02-overlay-layout.md; this
+ * slice decodes text and value elements (specs/12-overlay-preview.md).
  */
 
 #pragma once

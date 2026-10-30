@@ -5,7 +5,7 @@
  *
  * The geometry of the overlay's gauges, graphs and panels, and the values a
  * graph shows: no drawing, so that tests reach all of it. In pixels, once
- * the renderer has scaled the layout. See specs/overlay-gauge-graph.md.
+ * the renderer has scaled the layout. See specs/14-overlay-gauge-graph.md.
  */
 
 #pragma once

@@ -9,13 +9,13 @@ out: a title card with the ride's name and date for the first seconds, an
 outro card for the last ones. Until now every element shows for the whole
 video, so a title would have to be cut in the editor.
 
-This is slice 7a of the [overlay roadmap](overlay-layout.md#roadmap). Slice
+This is slice 7a of the [overlay roadmap](02-overlay-layout.md#roadmap). Slice
 7 was split in three, as none of its parts needs the others: 7a is
 `visible` and `fade`, the smallest, and new to what an overlay can do; 7b
 is `image`, for icons beside values; 7c is `group`, which mostly tidies
 layouts that already work, such as the dashboard's panels, which are
 empty `text` elements now. The format is in the layout reference, under
-[Visibility over time](overlay-layout.md#visibility-over-time). This spec
+[Visibility over time](02-overlay-layout.md#visibility-over-time). This spec
 says what of it is built now, and where it departs from the reference.
 
 ## Feature

@@ -5,7 +5,7 @@
  *
  * The OpenStreetMap tiles of one renderer's maps, the preview's or a
  * render's: loaded from the cache at once, or else downloaded on the job
- * thread, one download at a time. See specs/overlay-map-tiles.md.
+ * thread, one download at a time. See specs/17-overlay-map-tiles.md.
  */
 
 #pragma once

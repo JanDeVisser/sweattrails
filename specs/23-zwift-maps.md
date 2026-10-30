@@ -15,8 +15,8 @@ ride never went down.
 - Zwift writes its FIT files with GPS positions, so the app treats a
   Zwift ride as any other ride: the activity map (`ActivityMap`, on
   `Map.h`) and the overlay's `map` element show the track on
-  OpenStreetMap tiles (`specs/map-pan-zoom.md`,
-  `specs/overlay-map-tiles.md`).
+  OpenStreetMap tiles (`specs/10-map-pan-zoom.md`,
+  `specs/17-overlay-map-tiles.md`).
 - Zwift places each world on the earth. Its fictional worlds, such as
   Watopia and the Makuri Islands, lie in the Pacific, so OpenStreetMap
   shows the track over open sea. Its worlds on real cities, such as
@@ -26,7 +26,7 @@ ride never went down.
   a Zwift file, but `Activity` doesn't keep it, so nothing after loading
   can tell a Zwift ride from another.
 - Zwift files come into the store from Garmin Connect and Strava, the
-  same as outdoor rides (`specs/garmin-download.md`).
+  same as outdoor rides (`specs/07-garmin-download.md`).
 
 ### Which rides, and which map
 
@@ -82,7 +82,7 @@ ride never went down.
 - The image is drawn under the track where its corners lie, in place of
   OpenStreetMap's tiles. The track, the laps, the selection and the
   marker are drawn over it as now, and zooming and panning work as now
-  (`specs/map-pan-zoom.md`).
+  (`specs/10-map-pan-zoom.md`).
 - Until the image has downloaded, the map shows OpenStreetMap, as now,
   and changes to the Zwift world when it's there. If the download fails,
   such as when Zwift has moved the image, the map stays on

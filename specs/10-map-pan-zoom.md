@@ -17,7 +17,7 @@ move the map around, and go back to the whole route, as on any map.
   the grid's size, and works out the track's pixel positions, in screen
   coordinates, once.
 - Cached tiles are drawn right away; the others are grey until the job
-  thread has downloaded them (`async-map-tiles.md`). Opening another
+  thread has downloaded them (`03-async-map-tiles.md`). Opening another
   activity cancels the downloads still waiting. Downloads follow the OSM
   tile usage policy: one at a time, and cached.
 - The map doesn't take any input (`ActivityMap::process_input()` is
@@ -81,7 +81,7 @@ through the laps.
   scaled**: zoomed in, the old tiles enlarged and blurred, until each
   sharp tile arrives. A tile with nothing from the previous view to show
   is grey, as now. Without this the whole map would flash grey on every
-  zoom. (`async-map-tiles.md` deferred showing scaled tiles; zooming
+  zoom. (`03-async-map-tiles.md` deferred showing scaled tiles; zooming
   makes it needed.)
 - Only the current view's tiles are downloaded. Each change of the view
   drops the downloads still waiting for the one before, with the

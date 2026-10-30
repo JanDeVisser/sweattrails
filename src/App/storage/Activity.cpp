@@ -241,7 +241,7 @@ void Activity::read_names()
     }
     // Each name wins over the ones before: the FIT file's, the service's,
     // the old app's `.strava` file's, Strava's in the sidecar, and the
-    // user's. See specs/strava-titles.md.
+    // user's. See specs/24-strava-titles.md.
     auto const names = sidecar_titles(sidecar);
     auto const old_strava = read_strava_file(fs::path { sidecar }.replace_extension(".strava"));
     title = fit_title;

@@ -6,7 +6,7 @@
  * The activity's map: OpenStreetMap tiles with the track over them, which
  * the user can zoom and pan. MapNavigator in Map.h keeps the view; this
  * draws it, and loads and downloads the tiles it needs. A ride in Zwift
- * gets the tiles cut from its world's map instead (specs/zwift-maps.md).
+ * gets the tiles cut from its world's map instead (specs/23-zwift-maps.md).
  */
 
 #include <cmath>

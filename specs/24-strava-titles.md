@@ -12,7 +12,7 @@ than the one Garmin Connect or Wahoo gave it, such as "Toronto Cycling".
 ### What there is now
 
 - An activity's title comes from, lowest to highest priority
-  (`specs/edit-activity-name.md`): the start time; the name in the
+  (`specs/11-edit-activity-name.md`): the start time; the name in the
   download's sidecar, `<name>.json` next to the FIT file, which is
   Garmin Connect's `activityName` or Wahoo's `name`
   (`sidecar_titles()` in `storage/Activity.cpp`); and the name the user
@@ -61,7 +61,7 @@ doesn't ship one. The README says how:
    secret of the user's own app, which only they can use, in their own
    settings file.
 3. The mkcert certificate that Wahoo's login uses
-   (`specs/wahoo-download.md`); a user without Wahoo makes it the same
+   (`specs/08-wahoo-download.md`); a user without Wahoo makes it the same
    way.
 4. Log in from SweatTrails (below).
 
@@ -104,7 +104,7 @@ never mentions it to them.
 - **Where it's kept**: in the activity's sidecar, under a key of
   SweatTrails' own, `"strava"`: `{ "id": 123, "name": "...",
   "description": "..." }`. The rest of the sidecar is kept, as a rename
-  keeps it (`specs/edit-activity-name.md`); an activity without a
+  keeps it (`specs/11-edit-activity-name.md`); an activity without a
   sidecar, such as one copied in by hand, gets one. A sidecar that isn't
   JSON isn't overwritten, and that activity is passed over.
 - **The title**, from lowest to highest priority: the start time; the

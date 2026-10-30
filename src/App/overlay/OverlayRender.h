@@ -5,7 +5,7 @@
  *
  * A render of an overlay to video, while it runs. It draws on the UI
  * thread, where the OpenGL context is, a few frames at a time, so that the
- * app stays usable. See specs/video-overlay.md.
+ * app stays usable. See specs/01-video-overlay.md.
  */
 
 #pragma once

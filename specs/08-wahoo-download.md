@@ -7,7 +7,7 @@ Status: Done
 Activities recorded on a Wahoo device or app (an ELEMNT bike computer,
 the Wahoo app, SYSTM) show up in SweatTrails without copying FIT files by
 hand, as Garmin Connect's do since
-[garmin-download.md](garmin-download.md).
+[07-garmin-download.md](07-garmin-download.md).
 
 ## How it works now
 

@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: MIT
  *
- * Feeds frames to ffmpeg. See specs/video-overlay.md.
+ * Feeds frames to ffmpeg. See specs/01-video-overlay.md.
  */
 
 #pragma once

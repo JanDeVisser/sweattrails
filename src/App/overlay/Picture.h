@@ -5,7 +5,7 @@
  *
  * The pictures an overlay's images show, decoded from their files. No
  * window is needed: only making a texture of one does. See
- * specs/overlay-image.md.
+ * specs/19-overlay-image.md.
  */
 
 #pragma once

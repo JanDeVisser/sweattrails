@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  *
  * The overlay drawn over a checkerboard, at the record marked in the graph,
- * to see a layout while writing it. See specs/overlay-preview.md.
+ * to see a layout while writing it. See specs/12-overlay-preview.md.
  */
 
 #pragma once

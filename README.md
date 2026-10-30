@@ -244,7 +244,7 @@ data folder, which the app makes when it starts
 (`~/Library/Application Support/sweattrails/overlays` on macOS), named
 `<name>.overlay.json`: the preview shows a change as soon as it's saved,
 and one named like a built-in layout replaces it.
-The format is in `specs/overlay-layout.md`.
+The format is in `specs/02-overlay-layout.md`.
 
 A `text` element shows a template, such as `"{speed:.1f} {speed.unit}"`,
 and a `value` element a field with its unit. The fields:

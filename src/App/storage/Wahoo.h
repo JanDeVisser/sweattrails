@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: MIT
  *
- * Downloads workouts from Wahoo's Cloud API: see specs/wahoo-download.md.
+ * Downloads workouts from Wahoo's Cloud API: see specs/08-wahoo-download.md.
  * The user registers an app with Wahoo, and logs in to it from
  * SweatTrails with OAuth 2 and PKCE. The login's tokens are kept in a file
  * in SweatTrails' config folder.

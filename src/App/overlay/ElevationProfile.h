@@ -6,7 +6,7 @@
  * The overlay's elevation profile: which part of the ride it shows, its
  * line, the marker on it, and where its labels go. No drawing, so that
  * tests reach all of it. In pixels, once the renderer has scaled the
- * layout. See specs/overlay-profile.md.
+ * layout. See specs/15-overlay-profile.md.
  */
 
 #pragma once

@@ -3,8 +3,8 @@
 Status: Done
 
 The first slice of the video overlay (see the
-[roadmap](overlay-layout.md#roadmap)). The format is described in
-[overlay-layout.md](overlay-layout.md), the design reference; this spec says
+[roadmap](02-overlay-layout.md#roadmap)). The format is described in
+[02-overlay-layout.md](02-overlay-layout.md), the design reference; this spec says
 which parts of it are built now, and how the preview works in the app.
 
 ## Goal
@@ -58,7 +58,7 @@ file, the style cascade, positioning, colors, and fonts at the right size.
 
 ### What's built of the layout format
 
-From [Layout structure](overlay-layout.md#layout-structure):
+From [Layout structure](02-overlay-layout.md#layout-structure):
 
 - `version` (1), `design_size`, `units`, `defaults`, `styles`, `elements`.
 - The style cascade: `defaults`, then each style named in `style` (a string
@@ -72,7 +72,7 @@ From [Layout structure](overlay-layout.md#layout-structure):
 - Style properties: `font`, `font_size`, `color`, `shadow` (a color and an offset;
   a hard shadow, not blurred).
 
-The elements, from [Element types](overlay-layout.md#element-types):
+The elements, from [Element types](02-overlay-layout.md#element-types):
 
 - **`text`**, with `text` and `align`. Placeholders `{field}`,
   `{field:spec}` and `{field.unit}` are filled in, with `std::format` specs
@@ -93,7 +93,7 @@ checked until their slice.
 ### Fields
 
 `speed`, `power`, `heart_rate`, `cadence`, `distance` and `elapsed`, as in
-[Fields](overlay-layout.md#fields), in metric and imperial units. A field
+[Fields](02-overlay-layout.md#fields), in metric and imperial units. A field
 the activity doesn't have, or that the record at the mark doesn't have, is
 missing. The pause rules and the other fields come in slice 3.
 
@@ -118,7 +118,7 @@ next to them, and the distance and elapsed time in the top left, at 1920 ×
 ### Version 1 scope
 
 Everything above. Deferred to later slices of the
-[roadmap](overlay-layout.md#roadmap): rendering to video and interpolation,
+[roadmap](02-overlay-layout.md#roadmap): rendering to video and interpolation,
 the other fields and specs, `color_by`, the other elements, and
 `visible`/`fade`.
 
@@ -161,7 +161,7 @@ thin file.
   were skipped. `decode_layout(JSONValue const &)` returns it or a
   **`LayoutError`** (`element` index if any, `property`, and a message),
   whose `to_string()` is what the canvas shows.
-- Decoding is as in the [reference](overlay-layout.md#format-json): for
+- Decoding is as in the [reference](02-overlay-layout.md#format-json): for
   each element, `defaults` merged with each of its styles and then its own
   properties, and the merged object decoded by the element type's decoder.
   The merge is `cascade(base, over)` here, not `JSONValue::merge()`, which

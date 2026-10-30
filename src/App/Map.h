@@ -96,7 +96,7 @@ constexpr u8 MaxFitZoom = 16;
 constexpr u8 ZoomOutPastFit = 2;
 
 // Where the activity map's tiles come from: OpenStreetMap, or a Zwift
-// world's map, cut into tiles. See specs/zwift-maps.md.
+// world's map, cut into tiles. See specs/23-zwift-maps.md.
 struct MapSource {
     fs::path    dir { };                        // The tiles' cache
     char const *attribution { OsmAttribution }; // The licence's credit

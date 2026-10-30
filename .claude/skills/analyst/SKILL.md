@@ -17,7 +17,7 @@ Spec or feature: $ARGUMENTS
   doesn't exist yet, create it from `specs/TEMPLATE.md`, with Status: Draft.
 - Read the specs it links to, and the code the feature touches, so that what
   you propose fits what's there. Note what already exists that the feature
-  can use, and what's missing. For example, `overlay-layout.md` notes that
+  can use, and what's missing. For example, `02-overlay-layout.md` notes that
   there's no color parser yet.
 
 ## Sparring
@@ -41,6 +41,7 @@ Spec or feature: $ARGUMENTS
 - Write for a reader who wasn't in the conversation: say what was decided,
   and why when that's not obvious.
 - Don't fill in Architecture, Test plan or Review notes.
+- Prefix the spec file name with a counter so it's possible to follow the development arc.
 
 ## Done
 

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  *
  * Zwift's worlds, for showing a ride in Zwift on the map of its world
- * rather than on OpenStreetMap. See specs/zwift-maps.md.
+ * rather than on OpenStreetMap. See specs/23-zwift-maps.md.
  */
 
 #pragma once

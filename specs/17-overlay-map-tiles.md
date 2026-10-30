@@ -9,11 +9,11 @@ see the roads, the towns and the coast the ride went past, not only its
 shape. On a ride video, a map with streets says where it is in a way a
 line on a dark panel can't.
 
-This is slice 6b of the [overlay roadmap](overlay-layout.md#roadmap),
-after [overlay-map.md](overlay-map.md), which drew the track, `fit` and
+This is slice 6b of the [overlay roadmap](02-overlay-layout.md#roadmap),
+after [16-overlay-map.md](16-overlay-map.md), which drew the track, `fit` and
 `follow`, the clip and the marker, and took `tiles` and `attribution`
 without drawing them. The format is in the layout reference, under
-[`map`](overlay-layout.md#map-gps-track-position-optional-osm-underlay).
+[`map`](02-overlay-layout.md#map-gps-track-position-optional-osm-underlay).
 This spec says what of it is built now, and where it departs from the
 reference.
 

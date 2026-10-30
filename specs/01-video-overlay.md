@@ -3,10 +3,10 @@
 Status: Done
 
 The second slice of the video overlay (see the
-[roadmap](overlay-layout.md#roadmap)). The first,
-[overlay-preview.md](overlay-preview.md), draws a layout in the app; this
+[roadmap](02-overlay-layout.md#roadmap)). The first,
+[12-overlay-preview.md](12-overlay-preview.md), draws a layout in the app; this
 one renders it to a video file. The layout format is in
-[overlay-layout.md](overlay-layout.md).
+[02-overlay-layout.md](02-overlay-layout.md).
 
 ## Goal
 
@@ -75,7 +75,7 @@ before most of the elements exist.
 Records usually come once a second, and the video has 30 or 60 frames a
 second, so values are **interpolated** linearly between the two records
 around a frame's time, as in
-[Sampling and smoothing](overlay-layout.md#sampling-and-smoothing).
+[Sampling and smoothing](02-overlay-layout.md#sampling-and-smoothing).
 `elapsed` runs on with the frame's time. Two records more than 5 seconds
 apart (a pause, or a lost signal) aren't interpolated between: the frame
 shows the earlier record. The full pause rules, field by field, come with
@@ -112,7 +112,7 @@ settings come from the app, not a render job file.
   `SetConfigFlags(FLAG_WINDOW_HIDDEN)` before `InitWindow`.
 - For frame `n`, the activity time is `range.from + n / fps`, computed with
   integer math on the rational frame rate (see
-  [overlay-layout.md](overlay-layout.md#two-files-layout-and-render-job)).
+  [02-overlay-layout.md](02-overlay-layout.md#two-files-layout-and-render-job)).
 - Draw the layout into a `RenderTexture2D` cleared to `BLANK` (fully
   transparent), with the blend mode described under [Alpha](#alpha).
 - Read the pixels back into one buffer that's reused for every frame (with
@@ -149,7 +149,7 @@ render loop simply produces frames as fast as it can.
 
 Estimated size: a few hundred lines for the encoding loop and the child
 process handling. The layout renderer is much bigger (see
-[overlay-layout.md](overlay-layout.md#roadmap)).
+[02-overlay-layout.md](02-overlay-layout.md#roadmap)).
 
 ### Output settings
 

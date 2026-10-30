@@ -6,7 +6,7 @@
  * The parts of an OAuth 2 login that don't depend on the service: PKCE,
  * opening the browser, and a small HTTPS server on localhost that catches
  * the browser when the service sends it back with the authorization code.
- * See specs/wahoo-download.md.
+ * See specs/08-wahoo-download.md.
  */
 
 #pragma once

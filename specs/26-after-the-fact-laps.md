@@ -8,7 +8,7 @@ The user gives an activity laps it didn't get while it was recorded: a
 device that doesn't lap by itself gives one lap, the whole activity, and
 a lap button forgotten during an interval session leaves the intervals
 unmarked. Laps made afterwards show in the lap table, the strip and the
-data panel as the device's laps do (`specs/lap-display.md`), so the
+data panel as the device's laps do (`specs/09-lap-display.md`), so the
 intervals can be compared side by side.
 
 ## Feature
@@ -19,7 +19,7 @@ intervals can be compared side by side.
   (`first_record`, `end_record`) and its `Segment`, whose distance and
   times come from the lap message and the rest from
   `Segment::analyze()`.
-- `range_segment()` (`specs/range-stats.md`) works out a lap's stats for
+- `range_segment()` (`specs/25-range-stats.md`) works out a lap's stats for
   any range of records, from the records as recorded, distance and times
   included. A lap made afterwards can get its stats from it.
 - A range dragged in the graph shows its stats in the data panel, but
@@ -35,7 +35,7 @@ intervals can be compared side by side.
   ends and the next begins. The laps run from the start to the first
   boundary, from boundary to boundary, and from the last to the end, so
   they always cover the whole activity, as the lap strip and the table
-  assume (`specs/lap-display.md`). There are no gaps that aren't laps.
+  assume (`specs/09-lap-display.md`). There are no gaps that aren't laps.
 - **They replace the device's laps.** An activity shows one set: the
   user's, if they've made any, else the device's. The table, the strip,
   Up and Down, and the data panel work on them as on the device's.
@@ -64,7 +64,7 @@ intervals can be compared side by side.
 
 ### Marking a range as a lap
 
-- With a range dragged in the graph (`specs/range-stats.md`), a task
+- With a range dragged in the graph (`specs/25-range-stats.md`), a task
   makes it a lap: a boundary at each end of it. The lap the range was in
   becomes up to three: before the range, the range, and after it. A
   range across a boundary splits both laps it touches, and the
@@ -89,7 +89,7 @@ intervals can be compared side by side.
   Unix time each lap after the first starts, earliest first, such as
   `"laps": [1793102760, 1793103100]`. The rest of the sidecar is kept,
   and an activity without a sidecar gets one, as for the user's title
-  (`specs/edit-activity-name.md`). Going back to the device's laps
+  (`specs/11-edit-activity-name.md`). Going back to the device's laps
   removes the key, and the sidecar if nothing else is left in it.
 - Times rather than record indices: they stay right if the records are
   ever read differently. A boundary at a time between two records is at

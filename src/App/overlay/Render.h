@@ -5,7 +5,7 @@
  *
  * What rendering an overlay to video needs that isn't drawing or ffmpeg:
  * the settings, the range, the frames' times, the timecode, the file's
- * name, finding ffmpeg, and straight alpha. See specs/video-overlay.md.
+ * name, finding ffmpeg, and straight alpha. See specs/01-video-overlay.md.
  */
 
 #pragma once

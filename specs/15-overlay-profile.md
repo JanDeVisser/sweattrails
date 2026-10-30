@@ -10,10 +10,10 @@ footage fits into the whole ride. Numbers and a graph of the last minute
 don't say that; a profile does at a glance, which is why it's on almost
 every cycling broadcast.
 
-This is slice 5 of the [overlay roadmap](overlay-layout.md#roadmap), after
-[overlay-gauge-graph.md](overlay-gauge-graph.md). The format is in the
+This is slice 5 of the [overlay roadmap](02-overlay-layout.md#roadmap), after
+[14-overlay-gauge-graph.md](14-overlay-gauge-graph.md). The format is in the
 layout reference, under
-[`profile`](overlay-layout.md#profile-elevation-profile-with-the-current-position).
+[`profile`](02-overlay-layout.md#profile-elevation-profile-with-the-current-position).
 This spec says what of it is built now, and where it departs from the
 reference.
 
@@ -71,7 +71,7 @@ reference.
   work, and they take height from a short box.
 - The elevation against distance, from the source's profile: the records
   with both, with an altimeter's drift during a stop taken out, as for the
-  grade ([overlay-fields.md](overlay-fields.md)). A pause takes no width.
+  grade ([13-overlay-fields.md](13-overlay-fields.md)). A pause takes no width.
 - **`done` and `remaining`**: line and fill before and after the moment.
   Without `remaining`, `done` is the whole profile.
 - **`marker`**: a dot on the line at the moment, at the frame's distance,

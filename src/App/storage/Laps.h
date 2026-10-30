@@ -5,7 +5,7 @@
  *
  * Laps made after the fact: splits by distance or time, and ranges marked
  * as laps. They're kept as the times the laps after the first start, and
- * replace the device's laps: see specs/after-the-fact-laps.md.
+ * replace the device's laps: see specs/26-after-the-fact-laps.md.
  */
 
 #pragma once

@@ -10,11 +10,11 @@ minute, or over the whole activity, with a cursor at the moment. Numbers
 are exact, but a filling bar or a trace of heart rate is what a viewer
 takes in at a glance, while watching the footage.
 
-This is slice 4 of the [overlay roadmap](overlay-layout.md#roadmap),
-after [overlay-fields.md](overlay-fields.md). The format is in the layout
-reference, under [`gauge`](overlay-layout.md#gauge-bar-or-arc) and
-[`graph`](overlay-layout.md#graph-any-field-over-time-or-distance), with
-[strokes and fills](overlay-layout.md#strokes-and-fills). These are the
+This is slice 4 of the [overlay roadmap](02-overlay-layout.md#roadmap),
+after [13-overlay-fields.md](13-overlay-fields.md). The format is in the layout
+reference, under [`gauge`](02-overlay-layout.md#gauge-bar-or-arc) and
+[`graph`](02-overlay-layout.md#graph-any-field-over-time-or-distance), with
+[strokes and fills](02-overlay-layout.md#strokes-and-fills). These are the
 first elements that aren't text, so this slice also brings the drawing of
 shapes into the overlay: the gauges and graphs, and the panels behind
 elements, which layouts already accept but nothing draws yet.
@@ -40,7 +40,7 @@ elements, which layouts already accept but nothing draws yet.
   field. (The reference allowed `"auto"` only for the five fields that
   `Segment` has a range for.)
 - `color_by` takes thresholds as a `value` does
-  ([overlay-fields.md](overlay-fields.md#colors-by-value)), and colors the
+  ([13-overlay-fields.md](13-overlay-fields.md#colors-by-value)), and colors the
   fill: a power arc can turn red above threshold.
 - `track` is the fill of the empty part, `fill` of the part up to the
   value, and `thickness` how thick a bar or the arc is, in design pixels.

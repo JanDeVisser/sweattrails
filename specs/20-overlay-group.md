@@ -11,10 +11,10 @@ the panel, with its elements placed on the canvas beside it. Moving the
 dashboard's bottom-left panel means changing the `at` of ten elements,
 and the title card needs `visible` on all three of its elements.
 
-This is slice 7c of the [overlay roadmap](overlay-layout.md#roadmap),
-after [visibility](overlay-visibility.md) (7a) and
-[images](overlay-image.md) (7b). The format is in the layout reference,
-under [`group`](overlay-layout.md#group). This spec says what of it is
+This is slice 7c of the [overlay roadmap](02-overlay-layout.md#roadmap),
+after [visibility](18-overlay-visibility.md) (7a) and
+[images](19-overlay-image.md) (7b). The format is in the layout reference,
+under [`group`](02-overlay-layout.md#group). This spec says what of it is
 built now, and where it departs from the reference.
 
 ## Feature
@@ -118,7 +118,7 @@ dashboard's three panels as groups, and the skipping removed.
 - A group that fits its children, without a `size`.
 - Clipping children to the group's box.
 - Fading a group as a whole, without its children showing through each
-  other, as for any element in [overlay-visibility.md](overlay-visibility.md).
+  other, as for any element in [18-overlay-visibility.md](18-overlay-visibility.md).
 
 ## Open questions
 

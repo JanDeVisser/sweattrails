@@ -10,10 +10,10 @@ the video. Until now an overlay is text and shapes only, and the
 dashboard's labels say "HEART RATE" in words where most ride videos have
 an icon.
 
-This is slice 7b of the [overlay roadmap](overlay-layout.md#roadmap),
-after [overlay-visibility.md](overlay-visibility.md). The format is in
+This is slice 7b of the [overlay roadmap](02-overlay-layout.md#roadmap),
+after [18-overlay-visibility.md](18-overlay-visibility.md). The format is in
 the layout reference, under
-[`image`](overlay-layout.md#image-logos-and-icons). This spec says what
+[`image`](02-overlay-layout.md#image-logos-and-icons). This spec says what
 of it is built now, and where it departs from the reference.
 
 ## Feature

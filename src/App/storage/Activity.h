@@ -77,7 +77,7 @@ std::optional<std::string> sidecar_title(fs::path const &sidecar);
 std::optional<std::string> sidecar_own_title(fs::path const &sidecar);
 
 // What Strava has for an activity, under SweatTrails' key `"strava"` in its
-// sidecar: see specs/strava-titles.md. The description is fetched with a
+// sidecar: see specs/24-strava-titles.md. The description is fetched with a
 // request of its own: until it is, it isn't there, and a description
 // fetched empty is "".
 struct StravaTitle {
@@ -121,7 +121,7 @@ std::expected<void, LibCError> save_sidecar_strava(fs::path const &sidecar, Stra
 
 // The laps the user made, under SweatTrails' key `"laps"` in the sidecar:
 // the Unix times the laps after the first start. Nothing for the device's
-// laps, and an empty list for one lap. See specs/after-the-fact-laps.md.
+// laps, and an empty list for one lap. See specs/26-after-the-fact-laps.md.
 std::optional<std::vector<i64>> sidecar_laps(fs::path const &sidecar);
 
 // Saves the user's laps in the sidecar, with update_sidecar(), or removes

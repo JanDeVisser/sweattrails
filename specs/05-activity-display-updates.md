@@ -5,7 +5,7 @@ Status: Done
 ## Goal
 
 Three additions to the activity display, after
-[activity-data-fields.md](activity-data-fields.md):
+[04-activity-data-fields.md](04-activity-data-fields.md):
 
 - Cadence in the data panel, with its maximum and minimum clickable, as HR
   and power are.

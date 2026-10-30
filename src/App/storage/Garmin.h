@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  *
  * Downloads activities from Garmin Connect, with Garmin's Personal API:
- * see specs/garmin-download.md. The user creates an API key on the Garmin
+ * see specs/07-garmin-download.md. The user creates an API key on the Garmin
  * Connect website; the key buys a bearer token, valid for a day, for the
  * other requests.
  */

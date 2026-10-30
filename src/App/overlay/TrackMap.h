@@ -7,7 +7,7 @@
  * or following the rider, the track split at the moment, and the shape
  * the map is clipped to. No drawing, so that tests reach all of it. In
  * pixels, once the renderer has scaled the layout. See
- * specs/overlay-map.md.
+ * specs/16-overlay-map.md.
  */
 
 #pragma once

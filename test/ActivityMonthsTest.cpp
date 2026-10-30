@@ -5,7 +5,7 @@
  *
  * The months with activities, and going from one activity to the one
  * before or after it, as Ctrl+M's list and Left and Right do. See
- * specs/activity-selection.md.
+ * specs/21-activity-selection.md.
  */
 
 #include <filesystem>

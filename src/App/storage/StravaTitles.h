@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  *
  * Gives the store's activities their titles and descriptions from Strava:
- * see specs/strava-titles.md.
+ * see specs/24-strava-titles.md.
  */
 
 #pragma once

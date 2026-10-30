@@ -1,7 +1,7 @@
 # Overlay Layout Format
 
 This defines the file that describes what the transparent overlay video from
-[video-overlay.md](video-overlay.md) contains: which data is shown
+[01-video-overlay.md](01-video-overlay.md) contains: which data is shown
 where, in which font, size and color, plus static labels, graphs, and the GPS
 track with an optional OpenStreetMap underlay.
 
@@ -81,7 +81,7 @@ integer math on the rational frame rate (`n * 1001 / 30000` seconds), not by
 adding up floating-point frame durations, which drifts over long renders.
 
 There's no video in the render job. Lining the overlay up with the footage is
-done by hand in Final Cut (see [video-overlay.md](video-overlay.md)).
+done by hand in Final Cut (see [01-video-overlay.md](01-video-overlay.md)).
 
 ## Layout structure
 
@@ -137,7 +137,7 @@ strokes; `graph.fill` and `profile.done.fill` are fills.
 
 Every element can have a panel behind its box: `background` (a fill),
 `radius` for its corners, `border` (a stroke), and `padding`, which insets
-the content. See [overlay-gauge-graph.md](overlay-gauge-graph.md#panels).
+the content. See [14-overlay-gauge-graph.md](14-overlay-gauge-graph.md#panels).
 
 ### Positioning
 
@@ -245,7 +245,7 @@ next to it.
   - `"auto"`: the field's range over the activity, from the records, for
     any number field.
 - `color_by` colors the fill, as a `value`'s colors its number. See
-  [overlay-gauge-graph.md](overlay-gauge-graph.md) for bars' thickness.
+  [14-overlay-gauge-graph.md](14-overlay-gauge-graph.md) for bars' thickness.
   - *(deferred)* `{ "of": "ftp" | "max_hr", "factor": 1.5 }`, which needs the
     athlete profile.
 
@@ -268,7 +268,7 @@ next to it.
   position.
 - `min` and `max` are as for a gauge, `"auto"` by default, so the scale
   doesn't move. Missing values break the line; each pixel column is the
-  average of its stretch. See [overlay-gauge-graph.md](overlay-gauge-graph.md).
+  average of its stretch. See [14-overlay-gauge-graph.md](14-overlay-gauge-graph.md).
 - For elevation, use the more specific `profile` element below.
 
 ### `profile`: elevation profile with the current position
@@ -325,7 +325,7 @@ still to come can be styled differently, the same way the map track is.
   with it. It flips to the left side of the marker near the right edge, so it
   doesn't get cut off.
 - **`min`, `max` and `min_span`**: the elevation range on the y axis, as
-  [overlay-profile.md](overlay-profile.md) has them, rather than in a
+  [15-overlay-profile.md](15-overlay-profile.md) has them, rather than in a
   `scale` object. `"auto"` uses the minimum
   and maximum of the elevation inside `extent`. `min_span` (in m, ft for
   imperial) keeps a flat ride from being stretched until 5 m of rolling road
@@ -341,7 +341,7 @@ Data and rendering:
   x axis. Records without a distance (for example indoor rides) can't be
   placed on a profile, and the element is hidden when the activity has none.
 - Altitude is smoothed with a centered average over `smooth` meters (default
-  20, see [overlay-profile.md](overlay-profile.md); this said 10 seconds) before drawing, because barometric and especially GPS altitude are
+  20, see [15-overlay-profile.md](15-overlay-profile.md); this said 10 seconds) before drawing, because barometric and especially GPS altitude are
   jagged. Centered rather than trailing, because the whole shape is known in
   advance and a trailing average would shift the hills.
 - The marker position is interpolated between records, like every other
@@ -471,7 +471,7 @@ Notes per field:
 - **`grade`**: computed as the change in altitude over the change in
   distance across a 30 m window centred on the moment; a `value` element
   can set `"window"`, 10 to 200 m. (100 m smoothed short, steep ramps
-  away; see [overlay-fields.md](overlay-fields.md).) `record.grade` is not
+  away; see [13-overlay-fields.md](13-overlay-fields.md).) `record.grade` is not
   used: most devices don't record it.
 - **`lr_balance`**: the raw value is a bitfield. Bit `0x80` set means the
   value is the right leg's share, bits `0x7F` are the percentage. Display it
@@ -509,7 +509,7 @@ that changes once a second looks jumpy.
   So the overlay's own smoothing defaults to none for those fields. Elements
   can set `"smooth": <seconds>` for more, as a trailing average.
   *Note for the slice that builds this:* a profile's `smooth` is in meters
-  ([overlay-profile.md](overlay-profile.md)), and both cascade from the
+  ([15-overlay-profile.md](15-overlay-profile.md)), and both cascade from the
   defaults and styles, so a `"smooth": 3` in the defaults meant for values
   would reach every profile as 3 m. Settle it then: such as a profile only
   taking a `smooth` of its own, or another name for one of the two.
@@ -549,7 +549,7 @@ without GPS) is missing for the whole render. A `map` with no positions and a
   color. On top of arbitrary footage, text without a shadow or outline is hard
   to read, which is why `defaults` includes a shadow. *(Deferred)* blurred
   shadows, which need a two-pass blur shader and an extra render texture.
-- **Alpha blending**: see [video-overlay.md](video-overlay.md#alpha). Every
+- **Alpha blending**: see [01-video-overlay.md](01-video-overlay.md#alpha). Every
   element is drawn with the overlay's custom blend mode.
 - **Circle and rounded clipping**: raylib has no stencil API. Draw the map
   into its own `RenderTexture2D` the size of the map box, then draw that
@@ -619,12 +619,12 @@ so that a video with only speed and power over the footage is useful early,
 and the parts that could go wrong (alpha, ffmpeg, timecode) are tried before
 most of the elements exist.
 
-1. **[overlay-preview.md](overlay-preview.md)**: the layout file (`defaults`,
+1. **[12-overlay-preview.md](12-overlay-preview.md)**: the layout file (`defaults`,
    `styles` and the cascade, `design_size`, positioning, colors), the `text`
    and `value` elements with hard shadows and a few fields, drawn in the app
    as a preview at the mark, and reloaded when the file changes. One
    built-in layout, and the fonts it uses.
-2. **Rendering to video** (now [video-overlay.md](video-overlay.md), to be
+2. **Rendering to video** (now [01-video-overlay.md](01-video-overlay.md), to be
    brought into the template): the render job, ffmpeg and ProRes 4444, the
    alpha blend mode, the timecode, the range, and interpolation between
    records, which matters between frames.
@@ -633,17 +633,17 @@ most of the elements exist.
 4. **`gauge` and `graph`**.
 5. **`profile`**.
 6. **`map`**, split in two:
-   - 6a, [overlay-map.md](overlay-map.md): the track, `fit` and `follow`,
+   - 6a, [16-overlay-map.md](16-overlay-map.md): the track, `fit` and `follow`,
      clipping, and the marker.
-   - 6b, [overlay-map-tiles.md](overlay-map-tiles.md): the OpenStreetMap
+   - 6b, [17-overlay-map-tiles.md](17-overlay-map-tiles.md): the OpenStreetMap
      tiles under it, tile filters, the attribution, fetching each
      frame's tiles during a render (OSM's policy doesn't allow fetching
      them before it), and some of the tile code prerequisites.
 7. **`group`, `image`, and `visible`/`fade`**, split in three:
-   - 7a, [overlay-visibility.md](overlay-visibility.md): `visible` and
+   - 7a, [18-overlay-visibility.md](18-overlay-visibility.md): `visible` and
      `fade`.
-   - 7b, [overlay-image.md](overlay-image.md): `image`.
-   - 7c, [overlay-group.md](overlay-group.md): `group`.
+   - 7b, [19-overlay-image.md](19-overlay-image.md): `image`.
+   - 7c, [20-overlay-group.md](20-overlay-group.md): `group`.
 
 Deferred, in no slice yet:
 

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  *
  * Reads the athlete's activities from Strava's API, for their titles and
- * descriptions: see specs/strava-titles.md. The user registers an app with
+ * descriptions: see specs/24-strava-titles.md. The user registers an app with
  * Strava, and logs in to it from SweatTrails with OAuth 2. Strava has no
  * PKCE: the token request takes the app's client secret. The login's
  * tokens are kept in a file in SweatTrails' config folder.

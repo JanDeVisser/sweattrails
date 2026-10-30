@@ -1,6 +1,6 @@
 // SweatTrails' built-in dashboard for rides, and an example to copy: put
 // your own layouts in `overlays/` in SweatTrails' data folder, named
-// `<name>.overlay.json`. The format is in specs/overlay-layout.md.
+// `<name>.overlay.json`. The format is in specs/02-overlay-layout.md.
 {
     "version": 1,
     "design_size": { "width": 1920, "height": 1080 },

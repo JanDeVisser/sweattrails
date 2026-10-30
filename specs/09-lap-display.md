@@ -18,7 +18,7 @@ the graph, so that intervals can be compared and found.
   speed, HR, power, NP, IF, VI, TSS, cadence (with the pedaling rule), and
   the climb, which laps work out themselves, since the device's total
   ascent is only for the session. Laps are analyzed before the session,
-  from the recorded values (activity-display-updates.md). A lap's
+  from the recorded values (05-activity-display-updates.md). A lap's
   `min_at` and `max_at` are relative to its first record.
 - `Lap::title` and `Lap::notes` exist, but nothing fills them: FIT lap
   messages don't have names.
@@ -30,7 +30,7 @@ the graph, so that intervals can be compared and found.
   and below it the graph (`ActivityGraph`, 200 pixels high).
 - **The data panel** shows the activity's fields from `data_fields()`
   (`widget/DataFields.h`), which takes an `Activity`, and picks the fields
-  by sport and by the data the activity has (activity-data-fields.md).
+  by sport and by the data the activity has (04-activity-data-fields.md).
   Clicking a maximum marks its record.
 - **Marks and ranges.** `DisplayedActivity` has a `mark`, a record, and a
   `segment`, a range of records. The graph sets the mark when hovered,

@@ -10,10 +10,10 @@ position, either over the whole ride or following the rider. Viewers of a
 ride video want to know where it is; a profile says how far up, a map says
 where.
 
-This is slice 6 of the [overlay roadmap](overlay-layout.md#roadmap), after
-[overlay-profile.md](overlay-profile.md). The format is in the layout
+This is slice 6 of the [overlay roadmap](02-overlay-layout.md#roadmap), after
+[15-overlay-profile.md](15-overlay-profile.md). The format is in the layout
 reference, under
-[`map`](overlay-layout.md#map-gps-track-position-optional-osm-underlay).
+[`map`](02-overlay-layout.md#map-gps-track-position-optional-osm-underlay).
 This spec says what of it is built now, and where it departs from the
 reference.
 

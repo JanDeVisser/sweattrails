@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  *
  * The data an overlay shows: the fields, their units, and how they're
- * formatted. See specs/overlay-layout.md, under Fields.
+ * formatted. See specs/02-overlay-layout.md, under Fields.
  */
 
 #pragma once

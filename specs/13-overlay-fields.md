@@ -5,17 +5,17 @@ Status: Done
 ## Goal
 
 The overlay can show everything the layout reference lists under
-[Fields](overlay-layout.md#fields), not just speed, power, heart rate,
+[Fields](02-overlay-layout.md#fields), not just speed, power, heart rate,
 cadence, distance and elapsed time: pace for runs, altitude and grade for
 climbs, the time of day to line the video up with the footage, the lap,
 the activity's title and date. Values behave sensibly during a pause, and
 a value can change color with how hard the effort is, such as power
 turning red above threshold.
 
-This is slice 3 of the [overlay roadmap](overlay-layout.md#roadmap). It
-builds on [overlay-preview.md](overlay-preview.md), which has the layout
+This is slice 3 of the [overlay roadmap](02-overlay-layout.md#roadmap). It
+builds on [12-overlay-preview.md](12-overlay-preview.md), which has the layout
 file, `text` and `value` elements, and the fields so far, and on
-[video-overlay.md](video-overlay.md), which renders to video and
+[01-video-overlay.md](01-video-overlay.md), which renders to video and
 interpolates between records.
 
 ## Feature
