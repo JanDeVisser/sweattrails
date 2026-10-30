@@ -251,9 +251,11 @@ A widget of its own, as it knows nothing of activities:
   Runs, Ascent. `set_summaries()` and the view's changes rebuild the
   bars and the rows from `volume_totals()`.
 - The bar's value is the metric in the unit shown: km, hours, a count,
-  m. The table's distance uses `format_distance()`; its time is hours
-  and minutes ("312:10"), as `format_moving_time()`'s seconds mean
-  little in a year's total.
+  m. The table's distance is in km to a tenth ("1234.5 km", "0.0
+  km"), not `format_distance()`'s, which says "0 m" for a week off and
+  changes its decimals with the size; its time is hours and minutes
+  ("312:10"), as `format_moving_time()`'s seconds mean little in a
+  year's total.
 - Hovering over a bar selects its row in the table, which scrolls to
   it; selecting a row (Up, Down, a click) highlights its bar.
 - `ActivityDisplay` and `SummariesScreen` are both in the app's

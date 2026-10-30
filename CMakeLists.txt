@@ -216,6 +216,7 @@ add_executable(
         src/App/widget/DisplayedActivity.cpp
         src/App/widget/OverlayPreview.cpp
         src/App/widget/SportIcon.cpp
+        src/App/widget/Summaries.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Summaries.cpp
@@ -686,6 +687,14 @@ sweattrails_test(
 )
 target_include_directories(summaries_test PRIVATE src/App)
 target_link_libraries(summaries_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        summaries_screen_test
+        test/SummariesScreenTest.cpp
+        src/App/widget/Summaries.cpp
+        src/App/storage/Volume.cpp
+)
+target_include_directories(summaries_screen_test PRIVATE src/App)
 
 sweattrails_test(
         volume_test
