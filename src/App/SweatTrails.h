@@ -153,11 +153,13 @@ struct TitlesChanged {
 };
 
 // Sent by the UpdateSummaries job after each chunk: the summaries so far,
-// and how many of the files to read it has read.
+// how many of the files to read it has read, and what went wrong, if
+// anything did.
 struct SummariesUpdated {
     ActivitySummaries summaries { };
     size_t            done { 0 };
     size_t            total { 0 };
+    std::string       error { }; // Why it stopped early, for the status line
 };
 
 #define NOTIFICATIONTYPE(S)             \

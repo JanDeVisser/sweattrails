@@ -84,4 +84,17 @@ StorageResult<std::vector<SummaryFile>> summary_files(Storage const &storage);
 // Adds `summaries` to `into`, keeping it in order of start time.
 void merge_summaries(ActivitySummaries &into, ActivitySummaries const &summaries);
 
+// What a chunk of an update did.
+struct SummaryChunkDone {
+    ActivitySummaries summaries { }; // All of them, as written
+    size_t            read { 0 };    // Files read in this chunk
+    size_t            left { 0 };    // Files still to read
+    std::string       error { };     // Why the update can't go on, if it can't
+};
+
+// Reads the next `chunk` files that are new or changed since the summary
+// file was written, and writes it. Each chunk plans afresh, so that files
+// the inbox filed since the chunk before are read too.
+[[nodiscard]] SummaryChunkDone update_summaries(Storage &storage, size_t chunk = SummaryChunk);
+
 }

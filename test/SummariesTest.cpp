@@ -7,6 +7,7 @@
  * reads, and reading a FIT file's summary.
  */
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <format>
@@ -156,24 +157,76 @@ void test_read_from_the_store()
     CHECK_EQ(broken.start, unix_start + 86400);
 }
 
-// What the job does for a start: plan from the file and the store, read
-// what's to read, and write the file. How many files it read.
+// What the job does for a start, in one chunk. How many files it read.
 size_t update(Storage &storage)
 {
-    auto const path = summaries_path(storage);
-    auto const files = summary_files(storage);
-    CHECK(files.has_value());
-    if (!files) {
-        return 0;
+    auto const done = update_summaries(storage, 1000);
+    CHECK_EQ(done.error, "");
+    CHECK_EQ(done.left, 0uz);
+    return done.read;
+}
+
+// Rides a day apart, as the inbox would file them.
+void add_rides(Test::TempStore const &store, int count, int first_day = 0)
+{
+    for (auto day = first_day; day < first_day + count; ++day) {
+        Test::FITBuilder fit;
+        Test::add_file_id(fit, 1);
+        Test::add_session(fit, 3600, 250, Test::NoSubSport, static_cast<u32>(day) * 86400);
+        auto const unix_start = static_cast<i64>(Test::Start) + DateTime::FIT_TIMESTAMP_OFFSET + day * 86400;
+        auto const date = DateTime::from_timestamp(static_cast<i32>(unix_start));
+        auto const dir = store.storage.activity_dir / std::format("{:04}/{:02}", static_cast<u16>(date.year), static_cast<u8>(date.month) + 1);
+        fs::create_directories(dir);
+        MUST(write_file_by_name((dir / std::format("{}.fit", unix_start)).string(), std::string_view { fit.file() }));
     }
-    auto              work = plan_update(read_summaries(path), *files);
-    ActivitySummaries read;
-    for (auto const &file : work.to_read) {
-        read.push_back(read_summary(storage, file));
-    }
-    merge_summaries(work.kept, read);
-    CHECK(write_summaries(path, work.kept).has_value());
-    return read.size();
+}
+
+// Five files two at a time: three chunks, each writing what it read.
+void test_update_in_chunks()
+{
+    Test::TempStore store;
+    add_rides(store, 5);
+    auto done = update_summaries(store.storage, 2);
+    CHECK_EQ(done.read, 2uz);
+    CHECK_EQ(done.left, 3uz);
+    CHECK_EQ(done.summaries.size(), 2uz);
+    CHECK_EQ(read_summaries(summaries_path(store.storage)).size(), 2uz);
+    done = update_summaries(store.storage, 2);
+    CHECK_EQ(done.read, 2uz);
+    CHECK_EQ(done.left, 1uz);
+    done = update_summaries(store.storage, 2);
+    CHECK_EQ(done.read, 1uz);
+    CHECK_EQ(done.left, 0uz);
+    CHECK_EQ(done.summaries.size(), 5uz);
+    CHECK(std::ranges::is_sorted(done.summaries, { }, &ActivitySummary::start));
+    CHECK_EQ(done.error, "");
+}
+
+// The inbox files a ride between two chunks: the next chunk reads it.
+void test_update_reads_what_came_in_between()
+{
+    Test::TempStore store;
+    add_rides(store, 3);
+    auto done = update_summaries(store.storage, 2);
+    CHECK_EQ(done.left, 1uz);
+    add_rides(store, 1, 10);
+    done = update_summaries(store.storage, 2);
+    CHECK_EQ(done.read, 2uz);
+    CHECK_EQ(done.left, 0uz);
+    CHECK_EQ(done.summaries.size(), 4uz);
+}
+
+// A summary file that can't be written stops the update, saying why:
+// the next chunk would read the same files again.
+void test_update_that_cant_write()
+{
+    Test::TempStore store;
+    add_rides(store, 3);
+    // A directory where the file goes.
+    fs::create_directories(summaries_path(store.storage));
+    auto const done = update_summaries(store.storage, 2);
+    CHECK(done.error.starts_with("Couldn't save the totals"));
+    CHECK_EQ(done.summaries.size(), 2uz);
 }
 
 // The first start reads every file, the next one none, so that the job
@@ -235,5 +288,8 @@ int main()
     test_read_from_the_store();
     test_second_start_reads_nothing();
     test_empty_store();
+    test_update_in_chunks();
+    test_update_reads_what_came_in_between();
+    test_update_that_cant_write();
     return Test::test_result();
 }

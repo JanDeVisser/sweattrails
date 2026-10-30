@@ -197,4 +197,30 @@ void merge_summaries(ActivitySummaries &into, ActivitySummaries const &summaries
     std::ranges::stable_sort(into, { }, &ActivitySummary::start);
 }
 
+SummaryChunkDone update_summaries(Storage &storage, size_t chunk)
+{
+    auto const path = summaries_path(storage);
+    auto const summaries = read_summaries(path);
+    auto const files = summary_files(storage);
+    if (!files) {
+        return SummaryChunkDone { .summaries = summaries, .error = std::format("Couldn't list the activities for the totals: {}", files.error().to_string()) };
+    }
+    auto              work = plan_update(summaries, *files);
+    auto const        count = std::min(chunk, work.to_read.size());
+    ActivitySummaries read;
+    for (auto ix = 0uz; ix < count; ++ix) {
+        read.push_back(read_summary(storage, work.to_read[ix]));
+    }
+    merge_summaries(work.kept, read);
+    SummaryChunkDone ret { .read = count, .left = work.to_read.size() - count };
+    if (work.kept != summaries) {
+        if (auto const written = write_summaries(path, work.kept); !written) {
+            // The next chunk would read the same files again.
+            ret.error = std::format("Couldn't save the totals: {}", written.error().to_string());
+        }
+    }
+    ret.summaries = std::move(work.kept);
+    return ret;
+}
+
 }

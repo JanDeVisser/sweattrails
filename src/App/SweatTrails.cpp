@@ -209,42 +209,20 @@ void process_inbox(pSweatTrails const &the)
     }
 }
 
-// Reads the next chunk of the files that are new or changed since the
-// summary file was written, writes it, and tells the UI. Each chunk plans
-// afresh, so that what the inbox files between chunks is read too.
+// One chunk of the update, which schedules the next, and tells the UI.
 void update_summaries_chunk(pSweatTrails const &the, SummaryProgress progress)
 {
-    auto      &storage = the->storage;
-    auto const path = summaries_path(storage);
-    auto const summaries = read_summaries(path);
-    auto const files = summary_files(storage);
-    if (!files) {
-        warning(ST, "Can't list the activities for the totals: {}", files.error().to_string());
-        the->notify_latest<NotificationType::SummariesUpdated>(SummariesUpdated { .summaries = summaries });
-        the->updating_summaries = false;
-        return;
+    auto done = update_summaries(the->storage);
+    if (!done.error.empty()) {
+        warning(ST, "{}", done.error);
     }
-    auto              work = plan_update(summaries, *files);
-    auto const        total = progress.done + work.to_read.size();
-    auto const        count = std::min(SummaryChunk, work.to_read.size());
-    ActivitySummaries read;
-    for (auto ix = 0uz; ix < count; ++ix) {
-        read.push_back(read_summary(storage, work.to_read[ix]));
-    }
-    merge_summaries(work.kept, read);
-    auto more = count < work.to_read.size();
-    if (work.kept != summaries) {
-        if (auto const written = write_summaries(path, work.kept); !written) {
-            // The next chunk would read the same files again.
-            warning(ST, "Can't write `{}`: {}", path.string(), written.error().to_string());
-            more = false;
-        }
-    }
-    progress.done += count;
+    progress.done += done.read;
+    auto const more = done.left > 0 && done.error.empty();
     the->notify_latest<NotificationType::SummariesUpdated>(SummariesUpdated {
-        .summaries = std::move(work.kept),
+        .summaries = std::move(done.summaries),
         .done = progress.done,
-        .total = more ? total : progress.done,
+        .total = more ? progress.done + done.left : progress.done,
+        .error = std::move(done.error),
     });
     if (more) {
         the->schedule<JobType::UpdateSummaries>(progress);
@@ -1400,7 +1378,10 @@ void SweatTrails::notif_summaries_updated(Notification::Payload const &data)
     auto const  the = SweatTrails::the();
     the->summaries = updated.summaries;
     the->summaries_screen->set_summaries(updated.summaries);
-    if (updated.done < updated.total) {
+    if (!updated.error.empty()) {
+        the->reading_summaries = false;
+        the->set_status(updated.error);
+    } else if (updated.done < updated.total) {
         the->reading_summaries = true;
         the->set_status(std::format("Reading activities for the totals: {} of {}", updated.done, updated.total));
     } else if (the->reading_summaries) {
