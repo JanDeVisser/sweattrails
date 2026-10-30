@@ -799,10 +799,22 @@ bool set_laps(pSweatTrails const &sweattrails, DisplayedActivity &displayed, std
     return true;
 }
 
+// The activity whose laps the lap keys change, if there is one. Not while
+// rendering: the render reads the laps from the same activity, and the
+// video's lap lines would change halfway through.
+std::shared_ptr<DisplayedActivity> activity_for_lap_keys(pSweatTrails const &sweattrails)
+{
+    if (sweattrails->overlay_render) {
+        sweattrails->set_status("The laps can't change while a video is rendering");
+        return nullptr;
+    }
+    return activity_for_keys(sweattrails);
+}
+
 // Makes the range dragged in the graph a lap, and selects it.
 void cmd_mark_lap(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    auto activity = activity_for_keys(sweattrails);
+    auto activity = activity_for_lap_keys(sweattrails);
     if (!activity) {
         return;
     }
@@ -829,7 +841,7 @@ void cmd_mark_lap(pSweatTrails const &sweattrails, JSONValue const &)
 // splits it.
 void cmd_split_laps(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    auto activity = activity_for_keys(sweattrails);
+    auto activity = activity_for_lap_keys(sweattrails);
     if (!activity) {
         return;
     }
@@ -852,7 +864,7 @@ void cmd_split_laps(pSweatTrails const &sweattrails, JSONValue const &)
 // Goes back to the laps the device recorded.
 void cmd_device_laps(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    auto activity = activity_for_keys(sweattrails);
+    auto activity = activity_for_lap_keys(sweattrails);
     if (!activity || !activity->activity.user_lap_starts) {
         return;
     }
