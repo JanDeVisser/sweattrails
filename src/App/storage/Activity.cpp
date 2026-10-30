@@ -472,6 +472,7 @@ Error<StorageError> Activity::analyze()
     // Last: it smooths the records, and the laps should see them as
     // recorded, as the activity does. So should a range, later.
     recorded = records;
+    device_laps = laps;
     segment.analyze(records, true);
     return { };
 }

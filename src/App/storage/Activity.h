@@ -182,6 +182,7 @@ struct Activity {
     std::vector<record>              records { };  // Smoothed, for the graph
     std::vector<record>              recorded { }; // As recorded, for a range's stats
     std::vector<Lap>                 laps { };
+    std::vector<Lap>                 device_laps { }; // The FIT file's, which the user's laps replace
 
     // Local time minus UTC in seconds, from the FIT activity message. Empty
     // if the file doesn't record the local time.
