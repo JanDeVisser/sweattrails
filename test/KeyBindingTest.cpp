@@ -71,6 +71,62 @@ void test_binding_under_a_modal()
     CHECK_EQ(bus.messages.size(), 1uz);
 }
 
+// The task a key ran, by name.
+std::string task_run(Bus const &bus)
+{
+    if (bus.messages.size() != 1) {
+        return "";
+    }
+    return std::get<Bus::PendingTask>(bus.messages.front()).task.task;
+}
+
+// Two tasks on the same key, each for another time: the key goes to the
+// one whose time it is, whichever was bound first.
+void test_when()
+{
+    Test::ScopedTestApp app;
+    auto                summaries = false;
+    for (auto summaries_first : { true, false }) {
+        Bus  bus;
+        auto bind_summaries = [&] {
+            bus.add_task<Widget>("test-summaries-left", app.app, [](auto const &, JSONValue const &) { })
+                .bind(KeyCombo { KEY_LEFT, KModNone })
+                .when([&summaries] { return summaries; });
+        };
+        auto bind_activity = [&] {
+            bus.add_task<Widget>("test-previous-activity", app.app, [](auto const &, JSONValue const &) { })
+                .bind(KeyCombo { KEY_LEFT, KModNone })
+                .when([&summaries] { return !summaries; });
+        };
+        if (summaries_first) {
+            bind_summaries();
+            bind_activity();
+        } else {
+            bind_activity();
+            bind_summaries();
+        }
+        summaries = false;
+        bus.handle_keys({ KEY_LEFT }, false);
+        CHECK_EQ(task_run(bus), "test-previous-activity");
+        bus.messages.clear();
+        summaries = true;
+        bus.handle_keys({ KEY_LEFT }, false);
+        CHECK_EQ(task_run(bus), "test-summaries-left");
+    }
+}
+
+// A task whose time it isn't doesn't take its key, and nothing else does.
+void test_when_not_active()
+{
+    Test::ScopedTestApp app;
+    Bus                 bus;
+    bus.add_task<Widget>("test-summaries-left", app.app, [](auto const &, JSONValue const &) { })
+        .bind(KeyCombo { KEY_LEFT, KModNone })
+        .when([] { return false; });
+    bus.handle_keys({ KEY_LEFT }, false);
+    CHECK(bus.messages.empty());
+}
+
 }
 
 int main()
@@ -78,5 +134,7 @@ int main()
     test_binding_runs();
     test_no_binding_under_a_modal();
     test_binding_under_a_modal();
+    test_when();
+    test_when_not_active();
     return Test::test_result();
 }

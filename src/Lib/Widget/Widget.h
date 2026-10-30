@@ -219,6 +219,9 @@ struct AppBus {
         pWidget     owner;
         Handler     handler;
         bool        under_modals { false }; // Whether its keys work while a modal is open
+        // When its keys work, if not always: when it's false, a key goes to
+        // the next task it's bound to.
+        std::function<bool()> active { };
 
         Task(AppBus &bus, std::string name, pWidget const &owner, Handler handler)
             : bus(bus)
@@ -239,6 +242,23 @@ struct AppBus {
         {
             under_modals = true;
             return *this;
+        }
+
+        // Its keys only work while `predicate` is true, such as while the
+        // screen it's for is showing. Other tasks can then have the same
+        // keys for other times.
+        Task &when(std::function<bool()> predicate)
+        {
+            active = std::move(predicate);
+            return *this;
+        }
+
+        [[nodiscard]] bool takes_keys(bool modal_was_open) const
+        {
+            if (modal_was_open && !under_modals) {
+                return false;
+            }
+            return !active || active();
         }
     };
 
@@ -411,13 +431,14 @@ struct AppBus {
         KeyboardModifier modifier = modifier_current();
         for (auto key : pressed_keys) {
             for (auto const &[combo, task, arguments] : bindings) {
-                if (modal_was_open && !(tasks.contains(task) && tasks.at(task).under_modals)) {
+                if (combo.key != key || combo.modifier != modifier) {
                     continue;
                 }
-                if (combo.key == key && combo.modifier == modifier) {
-                    submit(task, arguments);
-                    return;
+                if (!tasks.contains(task) || !tasks.at(task).takes_keys(modal_was_open)) {
+                    continue;
                 }
+                submit(task, arguments);
+                return;
             }
         }
     }
