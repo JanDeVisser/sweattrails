@@ -810,12 +810,15 @@ void cmd_mark_lap(pSweatTrails const &sweattrails, JSONValue const &)
         message_box("Drag across the graph to select a range first: Ctrl+L makes it a lap.");
         return;
     }
-    auto const first = activity->segment->min;
-    auto const starts = mark_starts(activity->activity, activity->activity.lap_starts(), first, activity->segment->max);
-    if (!set_laps(sweattrails, *activity, starts)) {
+    auto const &a = activity->activity;
+    auto const  first = activity->segment->min;
+    // Where the marked lap starts, which snapping can move to a record
+    // that's in the lap before the range's first.
+    auto const start = mark_start(a, a.lap_starts(), first);
+    if (!set_laps(sweattrails, *activity, mark_starts(a, a.lap_starts(), first, activity->segment->max))) {
         return;
     }
-    if (auto const lap = activity->lap_of(first); lap && activity->has_laps()) {
+    if (auto const lap = activity->lap_of(record_at(activity->activity, start)); lap && activity->has_laps()) {
         activity->select_lap(*lap);
     }
 }
