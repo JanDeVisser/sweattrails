@@ -236,6 +236,63 @@ void test_other_sports_left_out()
     CHECK_EQ(months[4].count, 0uz);
 }
 
+// The weeks whose Monday is in the month: March 2025 has five, from the
+// 3rd, February 2026 four, from the 2nd.
+void test_weeks_of_a_month()
+{
+    ActivitySummaries const summaries { ride(2025, 3, 2), ride(2025, 3, 3), ride(2025, 4, 6) };
+    auto const              march = volume_totals(summaries, VolumeSport::Cycling, Period::Week, 2025, 3u);
+    CHECK_EQ(march.size(), 5uz);
+    CHECK(march.front().first_day == date(2025, 3, 3));
+    CHECK(march.back().first_day == date(2025, 3, 31));
+    // Sunday 2 March is in February's last week; Sunday 6 April in the
+    // week of Monday 31 March.
+    CHECK_EQ(march.front().count, 1uz);
+    CHECK_EQ(march.back().count, 1uz);
+    auto const february = volume_totals({ }, VolumeSport::Cycling, Period::Week, 2026, 2u);
+    CHECK_EQ(february.size(), 4uz);
+    CHECK(february.front().first_day == date(2026, 2, 2));
+}
+
+void test_year_to_date()
+{
+    ActivitySummaries const summaries { ride(2025, 1, 1, 40), ride(2025, 1, 3, 60), run(2025, 1, 2), ride(2025, 12, 31, 10) };
+    auto const              values = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2025, date(2026, 6, 1));
+    CHECK_EQ(values.size(), 365uz);
+    CHECK_EQ(values[0], 40000.0);
+    CHECK_EQ(values[1], 40000.0); // The run doesn't count
+    CHECK_EQ(values[2], 100000.0);
+    CHECK_EQ(values[363], 100000.0);
+    CHECK_EQ(values[364], 110000.0);
+    auto const count = year_to_date(summaries, VolumeSport::Cycling, Metric::Count, 2025, date(2026, 6, 1));
+    CHECK_EQ(count.back(), 3.0);
+}
+
+// This year's stop at today, a year to come has none, and a leap year
+// has 366 days.
+void test_year_to_date_until_today()
+{
+    ActivitySummaries const summaries { ride(2026, 1, 1), ride(2026, 3, 10) };
+    auto const              values = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2026, date(2026, 3, 9));
+    CHECK_EQ(values.size(), 68uz); // January 31, February 28, 9 of March
+    CHECK_EQ(values.back(), 40000.0);
+    CHECK(year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2027, date(2026, 3, 9)).empty());
+    CHECK_EQ(year_to_date({ }, VolumeSport::Cycling, Metric::Distance, 2024, date(2026, 3, 9)).size(), 366uz);
+}
+
+void test_year_to_date_months()
+{
+    ActivitySummaries const summaries { ride(2025, 1, 31, 40), ride(2025, 2, 1, 60), ride(2026, 1, 15, 30) };
+    auto const              before = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2025, date(2026, 2, 10));
+    auto const              year = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2026, date(2026, 2, 10));
+    auto const              rows = year_to_date_months(year, before, 2026);
+    CHECK_EQ(rows.size(), 12uz);
+    CHECK((rows[0] == YearToDateRow { .month = chrono::January, .year = 30000.0, .before = 40000.0 }));
+    // February isn't over: no total at its end yet.
+    CHECK((rows[1] == YearToDateRow { .month = chrono::February, .year = { }, .before = 100000.0 }));
+    CHECK((rows[11] == YearToDateRow { .month = chrono::December, .year = { }, .before = 100000.0 }));
+}
+
 }
 
 int main()
@@ -251,5 +308,9 @@ int main()
     test_volume_years();
     test_week_boundary_at_midnight();
     test_other_sports_left_out();
+    test_weeks_of_a_month();
+    test_year_to_date();
+    test_year_to_date_until_today();
+    test_year_to_date_months();
     return Test::test_result();
 }

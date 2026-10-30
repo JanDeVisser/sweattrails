@@ -5,6 +5,7 @@
  */
 
 #include <functional>
+#include <numeric>
 
 #include <Date.h>
 
@@ -146,12 +147,17 @@ struct Periods {
     std::function<std::optional<size_t>(chrono::sys_days day)> index_of;
 };
 
-Periods weeks_of(int year)
+// The weeks whose Monday is in the year, or in one of its months.
+Periods weeks_of(int year, std::optional<unsigned> month)
 {
-    auto const new_year = chrono::sys_days { chrono::year { year } / chrono::January / 1 };
-    auto const first_monday = new_year + (chrono::Monday - chrono::weekday { new_year });
-    Periods    ret;
-    for (auto monday = first_monday; chrono::year_month_day { monday }.year() == chrono::year { year }; monday += chrono::weeks { 1 }) {
+    auto const first_day = chrono::sys_days { chrono::year { year } / chrono::month { month.value_or(1) } / 1 };
+    auto const first_monday = first_day + (chrono::Monday - chrono::weekday { first_day });
+    auto const in_span = [year, month](chrono::sys_days day) {
+        auto const date = chrono::year_month_day { day };
+        return date.year() == chrono::year { year } && (!month || date.month() == chrono::month { *month });
+    };
+    Periods ret;
+    for (auto monday = first_monday; in_span(monday); monday += chrono::weeks { 1 }) {
         ret.totals.push_back(PeriodTotal { .first_day = monday, .last_day = monday + chrono::days { 6 } });
     }
     auto const count = ret.totals.size();
@@ -206,12 +212,12 @@ Periods years_of(int first_year, int last_year)
 
 }
 
-std::vector<PeriodTotal> volume_totals(ActivitySummaries const &summaries, VolumeSport sport, Period period, int year)
+std::vector<PeriodTotal> volume_totals(ActivitySummaries const &summaries, VolumeSport sport, Period period, int year, std::optional<unsigned> month)
 {
     auto periods = [&]() {
         switch (period) {
         case Period::Week:
-            return weeks_of(year);
+            return weeks_of(year, month);
         case Period::Month:
             return months_of(year);
         case Period::Year:
@@ -239,6 +245,56 @@ std::pair<int, int> volume_years(ActivitySummaries const &summaries, VolumeSport
         }
     }
     return { this_year, this_year };
+}
+
+std::vector<double> year_to_date(ActivitySummaries const &summaries, VolumeSport sport, Metric metric, int year, chrono::year_month_day until)
+{
+    auto const new_year = chrono::sys_days { chrono::year { year } / chrono::January / 1 };
+    auto const days = static_cast<size_t>((chrono::sys_days { chrono::year { year + 1 } / chrono::January / 1 } - new_year).count());
+    auto       count = days;
+    if (until.year() < chrono::year { year }) {
+        count = 0;
+    } else if (until.year() == chrono::year { year }) {
+        count = static_cast<size_t>((chrono::sys_days { until } - new_year).count()) + 1;
+    }
+    std::vector<double> ret(count, 0.0);
+    for (auto const &summary : summaries) {
+        if (volume_sport(summary.sport, summary.sub_sport) != sport) {
+            continue;
+        }
+        auto const day = (chrono::sys_days { start_day(summary) } - new_year).count();
+        if (day < 0 || static_cast<size_t>(day) >= count) {
+            continue;
+        }
+        PeriodTotal one { };
+        one.add(summary);
+        ret[static_cast<size_t>(day)] += one.value(metric);
+    }
+    std::partial_sum(ret.begin(), ret.end(), ret.begin());
+    return ret;
+}
+
+std::vector<YearToDateRow> year_to_date_months(std::vector<double> const &year_values, std::vector<double> const &before_values, int year)
+{
+    // The total so far at the end of the month, if the values go that far.
+    auto const at_month_end = [](std::vector<double> const &values, int of_year, unsigned month) -> std::optional<double> {
+        auto const new_year = chrono::sys_days { chrono::year { of_year } / chrono::January / 1 };
+        auto const end = chrono::sys_days { chrono::year { of_year } / chrono::month { month } / chrono::last };
+        auto const day = static_cast<size_t>((end - new_year).count());
+        if (day >= values.size()) {
+            return { };
+        }
+        return values[day];
+    };
+    std::vector<YearToDateRow> ret;
+    for (auto month = 1u; month <= 12; ++month) {
+        ret.push_back(YearToDateRow {
+            .month = chrono::month { month },
+            .year = at_month_end(year_values, year, month),
+            .before = at_month_end(before_values, year - 1, month),
+        });
+    }
+    return ret;
 }
 
 }
