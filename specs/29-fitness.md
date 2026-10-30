@@ -1,6 +1,6 @@
 # Fitness, fatigue and form (CTL, ATL, TSB)
 
-Status: Ready
+Status: In progress, on branch feature/29-fitness
 
 <!--
 Status is one of:
@@ -186,11 +186,122 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### Where the spec leaves a gap
+
+- **The current week's row** has the TSS so far, and CTL, ATL and TSB
+  today. The weeks after today aren't in the table, and in a past year
+  every week is.
+- **"Without TSS"** counts the year's activities with a sport that got
+  no score: no power or heart rate, or no threshold for what they have.
+  Files that can't be read don't count, as they have no sport.
+- **Bad thresholds in `settings.json`**, such as a `from` that isn't a
+  date, or entries out of order, are said on the status line at start,
+  and count as none. A threshold that is 0 or below is bad too.
+- **A lap's and a range's TSS** in the data panel use the activity's
+  sport and day, as its own does.
+- **Enter and a click** do nothing in the fitness view, as in the lines.
+  Up and Down go through the weeks.
+
+### The scores (`storage/Fitness.*`), pure
+
+- **`Thresholds`**: `from`, a `year_month_day`, and optional `ftp`,
+  `lthr_running` and `lthr_cycling`. **`decode_thresholds(JSONValue)`**
+  reads `settings.thresholds` into a `std::vector<Thresholds>`, or says
+  what's wrong with it. **`thresholds_on(list, day)`**: the thresholds in
+  force on a day, each one carried forward from the entry that last set
+  it, the first entry's counting back before its date.
+- **`TrainingStress { value, heart_rate }`**, and
+  **`training_stress(np, moving, hr_load, sport, thresholds)`**: power's
+  `moving × NP² / (FTP² × 36)` if there's an NP and an FTP, else
+  `hr_load / (LTHR² × 36)` with the sport's LTHR (cycling's for
+  cycling, running's for the rest), else none. Taking the numbers, not a
+  segment, lets the data panel and the summaries share it.
+- **`FitnessDay { tss, ctl, atl, tsb }`**, and
+  **`fitness_days(summaries, thresholds, until)`**: a day each from the
+  first activity's to `until`, by `start_day()` as for the volume.
+  **`ramp_rate(days, ix)`**: CTL at `ix` less CTL a week before.
+  **`fitness_weeks(days, first_day, year)`** gives the table's rows,
+  **`without_stress(summaries, thresholds, year)`** the heading's count.
+
+### Heart rate in the records (`storage/Activity.*`)
+
+- `Segment` gets **`hr_load`**, `Σ HR² × seconds` over the gaps of
+  `RangeMovingGap` (10 s) or less, worked out in `analyze()` as NP is.
+  `intensity_factor` and `tss` go, and with them `JANS_FTP`: they depend
+  on the thresholds, which the segment doesn't know.
+- `Storage` gets **`thresholds`**, set once by the app after reading the
+  settings, before any job runs, so that it can be read from any
+  thread, as the paths can. The data panel reads them through
+  `activity.storage`, so `activity_summary()` and the others keep their
+  signatures. The data panel works out IF (power only), "TSS 87" or
+  "hrTSS 64" with `training_stress()`.
+
+### The summary file (`storage/Summaries.*`)
+
+- `ActivitySummary` gets an optional **`np`** (W) and an optional
+  **`hr_load`**. `SummariesVersion` goes to 2, so the file of version 1
+  is read as none, and built again, as `read_summaries()` already does.
+- `read_summary()` loads deeply, to get the records. It's no longer as
+  quick: the job's chunks of 50 files still let other jobs in between.
+
+### The chart (`src/Lib/Widget/Chart.*`, `LineChart.*`)
+
+- `ChartScale` gets a **`bottom`**, 0 by default, and
+  **`nice_scale(min, max, ticks, min_step)`**, an overload for a range
+  that may go below 0: the bottom and the top on a step. The bar chart
+  stays from 0.
+- `draw_chart_scale()` draws from the bottom; the line at 0 is already
+  marked brighter than the others. `LineChart::scale()` takes the
+  lowest value as well, so lines that go below 0 get a scale that does,
+  and the year-to-date lines are as they are. `y_at()` uses the bottom.
+
+### The screen (`widget/Summaries.*`)
+
+- `SummaryView::lines` becomes **`graph`**, an enum of `Bars`,
+  `YearToDate` and `Fitness`, as there are now three.
+- `SummariesScreen` gets `thresholds`, and **`toggle_fitness()`** (F):
+  the fitness view at the top, or back to the bars. G from the fitness
+  view goes to the lines, W, M and Y to the bars. R, C, D, T, N and A
+  change the view underneath, which shows when the user leaves.
+- The fitness view uses the line chart, three series: CTL bold, ATL,
+  TSB, and the table with `fitness_columns()` and `fitness_rows()`, pure
+  as the others. **`fitness_heading()`**: "Fitness · CTL 72 · ATL 85 ·
+  TSB -13 · +4.2 a week · 2026 · 3 without TSS", or the message about
+  settings.json without thresholds, when the chart and the table are
+  empty.
+- Left and Right go between the year of the first activity of any
+  sport and this year.
+
+### The app (`SweatTrails.cpp`)
+
+- `read_settings()`'s caller decodes the thresholds into
+  `storage.thresholds`, and sets the status if they're bad.
+- Task `st-summaries-fitness`, F, `.when(on_summaries)`.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `FitnessTest`: `decode_thresholds()`, good and bad; `thresholds_on()`
+  before the first entry, between them, carrying a threshold forward;
+  `training_stress()`: an hour at FTP is 100, an hour at LTHR is 100,
+  power before heart rate, cycling's LTHR for a ride and running's for a
+  hike, none without the threshold; `fitness_days()`: one activity's
+  CTL and ATL against the formula, the decay through rest days, TSB as
+  yesterday's, two activities on a day adding up; `ramp_rate()`;
+  `fitness_weeks()` up to today; `without_stress()`.
+- `ActivityTest` (or `DataFieldsTest`): `hr_load` over records with a
+  gap longer than 10 s; the summary's "TSS 44" with an FTP of 275 in
+  the storage's thresholds, "hrTSS" without power, nothing without
+  thresholds.
+- `SummariesTest`: version 2 round trip with `np` and `hr_load`; a file
+  of version 1 is read as none; `read_summary()` of a FIT file with
+  power and heart rate.
+- `ChartTest`/`LineChartTest`: `nice_scale(-23, 85)`; `y_at()` with a
+  bottom below 0; the year-to-date scale still from 0.
+- `SummariesScreenTest`: F and back, G and W from the fitness view; the
+  heading's values, and the message without thresholds; Left and Right
+  by year; R doesn't change the fitness; the weeks' rows.
+- By hand: the chart below zero with its zero line, and the heading on
+  Jan's activities, after the summary file is built again.
 
 ## Review notes
 
