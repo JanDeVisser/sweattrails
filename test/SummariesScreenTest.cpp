@@ -233,6 +233,87 @@ void test_new_summaries()
     CHECK_EQ(screen->table->rows[0][3], "2");
 }
 
+// The job sends new summaries after each chunk of the first build. A table
+// the user scrolled through, with nothing selected, stays where it is.
+void test_new_summaries_keep_the_scroll()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->step_year(-1); // 2025: 52 weeks
+    screen->table->scroll.top_line = 20;
+    screen->set_summaries(screen->summaries);
+    CHECK_EQ(screen->table->scroll.top_line, 20);
+}
+
+// The mouse rests on a bar, which selects its row; Down then selects the
+// next one. Neither new summaries nor another metric should put the
+// selection back on the bar under the mouse, which didn't move.
+void test_hover_doesnt_undo_the_keys()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    auto const         &chart = screen->chart;
+    // Without a window the mouse is at (0, 0): put bar 5 of 52 under it.
+    chart->scale_width = 100;
+    chart->label_height = 20;
+    chart->viewport = Rect<float> { -(100 + 5.5f * 10), -100, 100 + 52 * 10 + 10, 300 };
+    chart->process_input();
+    CHECK(screen->table->selection == 5uz);
+    screen->step_row(1);
+    chart->process_input();
+    CHECK(screen->table->selection == 6uz);
+
+    screen->set_summaries(screen->summaries);
+    chart->process_input();
+    CHECK(screen->table->selection == 6uz);
+
+    screen->set_metric(Metric::Time);
+    chart->process_input();
+    CHECK(screen->table->selection == 6uz);
+}
+
+// An empty store, as on the first start before the job read anything:
+// every view has its periods, with nothing in them, and nothing crashes.
+void test_empty_store()
+{
+    Test::ScopedTestApp app;
+    auto                screen = Widget::make<SummariesScreen>(nullptr);
+    screen->set_summaries({ });
+    screen->open(VolumeSport::Running, 2026);
+    CHECK_EQ(screen->view.first_year, 2026);
+    CHECK_EQ(screen->chart->bars.size(), 52uz);
+    CHECK_EQ(screen->table->rows.size(), 53uz);
+    CHECK((screen->table->rows.back() == TableRow { "Total", "0.0 km", "0:00", "0", "0 m" }));
+    screen->step_year(-1);
+    CHECK_EQ(screen->view.year, 2026);
+    screen->set_period(Period::Year);
+    CHECK_EQ(screen->chart->bars.size(), 1uz);
+    CHECK_EQ(screen->table->rows.size(), 2uz);
+    screen->step_row(-1);
+    CHECK(screen->table->selection == 1uz);
+    screen->on_draw();
+    CHECK(!screen->chart->highlight);
+    CHECK((screen->chart->scale() == ChartScale { .top = 1, .step = 1 }));
+    screen->set_metric(Metric::Count);
+    screen->set_period(Period::Month);
+    CHECK_EQ(screen->chart->bars.size(), 12uz);
+}
+
+// The summaries come in before the screen is ever opened: opening it
+// then still starts on this year, by week.
+void test_summaries_before_open()
+{
+    Test::ScopedTestApp app;
+    auto                screen = Widget::make<SummariesScreen>(nullptr);
+    screen->set_summaries({ ride(2023, 3, 6) });
+    screen->open(VolumeSport::Cycling, 2026);
+    CHECK_EQ(screen->view.year, 2026);
+    CHECK_EQ(screen->view.first_year, 2023);
+    screen->set_summaries({ ride(2023, 3, 6), ride(2026, 3, 2) });
+    CHECK_EQ(screen->view.year, 2026);
+    CHECK_EQ(screen->table->rows.back()[3], "1");
+}
+
 }
 
 int main()
@@ -249,5 +330,7 @@ int main()
     test_step_row();
     test_hover_selects_the_row();
     test_new_summaries();
+    test_empty_store();
+    test_summaries_before_open();
     return Test::test_result();
 }

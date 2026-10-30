@@ -7,6 +7,7 @@
  * reads, and reading a FIT file's summary.
  */
 
+#include <chrono>
 #include <filesystem>
 #include <format>
 
@@ -155,6 +156,72 @@ void test_read_from_the_store()
     CHECK_EQ(broken.start, unix_start + 86400);
 }
 
+// What the job does for a start: plan from the file and the store, read
+// what's to read, and write the file. How many files it read.
+size_t update(Storage &storage)
+{
+    auto const path = summaries_path(storage);
+    auto const files = summary_files(storage);
+    CHECK(files.has_value());
+    if (!files) {
+        return 0;
+    }
+    auto              work = plan_update(read_summaries(path), *files);
+    ActivitySummaries read;
+    for (auto const &file : work.to_read) {
+        read.push_back(read_summary(storage, file));
+    }
+    merge_summaries(work.kept, read);
+    CHECK(write_summaries(path, work.kept).has_value());
+    return read.size();
+}
+
+// The first start reads every file, the next one none, so that the job
+// doesn't go round reading the same files; a changed file is read again,
+// and one that's gone drops out.
+void test_second_start_reads_nothing()
+{
+    Test::TempStore  store;
+    Test::FITBuilder fit;
+    Test::add_file_id(fit, 1);
+    Test::add_session(fit, 3600, 250);
+    auto const unix_start = static_cast<i64>(Test::Start) + DateTime::FIT_TIMESTAMP_OFFSET;
+    auto const date = DateTime::from_timestamp(static_cast<i32>(unix_start));
+    auto const dir = store.storage.activity_dir / std::format("{:04}/{:02}", static_cast<u16>(date.year), static_cast<u8>(date.month) + 1);
+    fs::create_directories(dir);
+    auto const ride = dir / std::format("{}.fit", unix_start);
+    MUST(write_file_by_name(ride.string(), std::string_view { fit.file() }));
+    store.add_activity(unix_start + 86400); // Not a FIT file
+
+    CHECK_EQ(update(store.storage), 2uz);
+    auto const first = read_summaries(summaries_path(store.storage));
+    CHECK_EQ(first.size(), 2uz);
+    CHECK_EQ(update(store.storage), 0uz);
+    CHECK(read_summaries(summaries_path(store.storage)) == first);
+
+    fs::last_write_time(ride, fs::last_write_time(ride) + std::chrono::seconds { 10 });
+    CHECK_EQ(update(store.storage), 1uz);
+    CHECK_EQ(read_summaries(summaries_path(store.storage)).size(), 2uz);
+
+    fs::remove(dir / std::format("{}.fit", unix_start + 86400));
+    CHECK_EQ(update(store.storage), 0uz);
+    auto const last = read_summaries(summaries_path(store.storage));
+    CHECK_EQ(last.size(), 1uz);
+    if (last.size() == 1) {
+        CHECK(last[0].sport == FIT::sport::Cycling);
+    }
+}
+
+// An empty store has no files and an empty summary file.
+void test_empty_store()
+{
+    Test::TempStore store;
+    auto const      files = summary_files(store.storage);
+    CHECK(files.has_value() && files->empty());
+    CHECK_EQ(update(store.storage), 0uz);
+    CHECK(read_summaries(summaries_path(store.storage)).empty());
+}
+
 }
 
 int main()
@@ -166,5 +233,7 @@ int main()
     test_plan_from_nothing();
     test_merge_summaries();
     test_read_from_the_store();
+    test_second_start_reads_nothing();
+    test_empty_store();
     return Test::test_result();
 }

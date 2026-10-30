@@ -303,4 +303,75 @@ A widget of its own, as it knows nothing of activities:
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug.** New summaries throw the table back to the top.
+   `SummariesScreen::set_summaries()` (`src/App/widget/Summaries.cpp:226`)
+   calls `refresh()`, whose `Table::set_rows()` sets `scroll.top_line` to
+   0, and then only selects the row that was selected before. While the
+   first build runs, a notification comes in after every chunk of 50
+   files, so a user who scrolled the weeks table with the wheel, with no
+   row selected, is put back at the top every chunk. The selection is
+   also kept by index: in the years view, when the job reads a ride from
+   a year before the first one shown (an old file the inbox filed, or one
+   reread), the rows shift down by one and the selection moves to another
+   year. `test_new_summaries_keep_the_scroll` in `SummariesScreenTest`
+   fails.
+2. **Bug.** The bar under a resting mouse takes back the selection made
+   with Up and Down. `BarChart::set_bars()` (`src/Lib/Widget/BarChart.cpp:69`)
+   resets `hovered`, so on the next frame `process_input()` reports the
+   bar under the mouse again, and `on_hover` selects its row. With the
+   mouse resting on bar 5: Down selects row 6, then a chunk's new
+   summaries, or D, T, N or A (`set_metric()`, which means to keep the
+   selection), put it back on row 5. `test_hover_doesnt_undo_the_keys`
+   in `SummariesScreenTest` fails on both.
+3. **Suggestion (spec difference).** The Feature's bar chart has the
+   weeks numbered along the bottom; the Architecture, and the code
+   (`bar_label()`, `src/App/widget/Summaries.cpp:49`), label only the first
+   week of each month, with the month's name, and the table's rows say
+   "Mon 3 Mar". Either is reasonable; the spec should say one of them.
+4. **Suggestion.** If `summaries.json` can't be written
+   (`src/App/SweatTrails.cpp:240`), the job stops after its first chunk
+   and only logs a warning: the totals show the first 50 activities, the
+   status line clears as if the build were done, and nothing tells the
+   user. It'd be better to say so on the status line or in a message.
+5. **Missing test.** The job's chunk logic (`update_summaries_chunk()`,
+   `src/App/SweatTrails.cpp:215`: the count, `more`, the total, the reset
+   of `updating_summaries`) is in `SweatTrails.cpp` and has no test,
+   though nothing in it needs a window. Moving it into
+   `storage/Summaries` as a function that does one chunk and returns the
+   summaries, `done`, `total` and whether there's more would make it
+   testable. Meanwhile `test_second_start_reads_nothing` in
+   `SummariesTest` runs the same plan, read, merge and write by hand: a
+   first start reads everything, a second nothing, a touched file is
+   reread and a removed one drops out. It passes. Reading the code: the
+   job can't run twice at once (one job thread, the atomic flag, and
+   every way out of the job clears it), it plans again each chunk so
+   what the inbox files between chunks is picked up, and it can't loop,
+   as every file read is kept by its size and time next time.
+6. **Suggestion.** The Architecture says a virtual ride under another
+   sport counts as cycling, but `volume_sport()`
+   (`src/App/storage/Volume.cpp:91`) only checks the sub-sports
+   treadmill, indoor running, spin and indoor cycling: `virtual_activity`
+   counts only under running or cycling. That's right for Zwift, which
+   records cycling; the Architecture should say so, or the code should
+   do what it says.
+7. **Suggestion.** The status line says "Reading activities for the
+   totals: 340 of 1802" (`src/App/SweatTrails.cpp:1405`), not "1,802" as
+   the spec shows.
+
+Tests the Reviewer added, uncommitted:
+
+- `SummariesScreenTest`: `test_new_summaries_keep_the_scroll` (fails,
+  1), `test_hover_doesnt_undo_the_keys` (fails, 2), `test_empty_store`
+  and `test_summaries_before_open` (pass).
+- `SummariesTest`: `test_second_start_reads_nothing` and
+  `test_empty_store` (pass).
+- `VolumeTest`: `test_week_boundary_at_midnight` (23:59 Sunday and 00:01
+  Monday, around the changes to and from summer time) and
+  `test_other_sports_left_out` (pass).
+- `KeyBindingTest`: `test_when_under_a_modal`,
+  `test_same_key_other_modifier` (T and Ctrl+T) and
+  `test_when_keeps_the_arguments` (pass).
+
+`nice_scale()` was also tried, outside the tests, on 600,000 distances,
+hours and counts: the top was never under the largest value and never a
+step too high.

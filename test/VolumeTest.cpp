@@ -190,6 +190,52 @@ void test_volume_years()
     CHECK_EQ(volume_totals({ }, VolumeSport::Cycling, Period::Year, 2026).size(), 1uz);
 }
 
+i64 local_time(int year, unsigned month, unsigned day, int hour, int minute)
+{
+    std::tm tm {
+        .tm_sec = 0,
+        .tm_min = minute,
+        .tm_hour = hour,
+        .tm_mday = static_cast<int>(day),
+        .tm_mon = static_cast<int>(month) - 1,
+        .tm_year = year - 1900,
+        .tm_isdst = -1,
+    };
+    return static_cast<i64>(std::mktime(&tm));
+}
+
+// A week ends at midnight between Sunday and Monday, local time, also in
+// the weeks around the changes to and from summer time.
+void test_week_boundary_at_midnight()
+{
+    auto late_sunday = ride(2025, 3, 30);
+    late_sunday.start = local_time(2025, 3, 30, 23, 59); // Summer time starts in Europe
+    auto early_monday = ride(2025, 3, 31);
+    early_monday.start = local_time(2025, 3, 31, 0, 1);
+    auto autumn_sunday = ride(2025, 10, 26);
+    autumn_sunday.start = local_time(2025, 10, 26, 23, 59);
+    auto const weeks = volume_totals({ late_sunday, early_monday, autumn_sunday }, VolumeSport::Cycling, Period::Week, 2025);
+    // 6 January is week 0: 24 March is 11, 31 March 12, 20 October 41.
+    CHECK(weeks[11].first_day == date(2025, 3, 24));
+    CHECK_EQ(weeks[11].count, 1uz);
+    CHECK_EQ(weeks[12].count, 1uz);
+    CHECK_EQ(weeks[41].count, 1uz);
+    CHECK_EQ(weeks[42].count, 0uz);
+}
+
+// Other sports, and files that couldn't be read, count nowhere, also not
+// in the years the years view starts from.
+void test_other_sports_left_out()
+{
+    ActivitySummary         walk { .start = local_noon(2008, 5, 1), .sport = FIT::sport::Walking, .distance = 5000, .moving = 3600 };
+    ActivitySummary         unreadable { .start = local_noon(2007, 5, 1) };
+    ActivitySummaries const summaries { unreadable, walk, ride(2010, 5, 1) };
+    CHECK((volume_years(summaries, VolumeSport::Cycling, 2026) == std::pair { 2010, 2026 }));
+    CHECK((volume_years(summaries, VolumeSport::Running, 2026) == std::pair { 2026, 2026 }));
+    auto const months = volume_totals(summaries, VolumeSport::Running, Period::Month, 2008);
+    CHECK_EQ(months[4].count, 0uz);
+}
+
 }
 
 int main()
@@ -203,5 +249,7 @@ int main()
     test_years();
     test_without_distance();
     test_volume_years();
+    test_week_boundary_at_midnight();
+    test_other_sports_left_out();
     return Test::test_result();
 }
