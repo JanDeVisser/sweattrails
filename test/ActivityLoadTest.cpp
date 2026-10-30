@@ -314,6 +314,11 @@ void test_range_distance_and_moving_time()
     CHECK_EQ(range->end_time.timestamp, 1'000'076u);
     // Part of it.
     CHECK_EQ(range_segment(activity, 3, 4)->distance, 5.0f);
+    // The clock set back during a range: no negative times.
+    auto backwards = activity;
+    backwards.recorded[4].timestamp.timestamp = 1'000'000;
+    auto const back = range_segment(backwards, 3, 4);
+    CHECK(back.has_value() && back->elapsed.elapsed == 0u && back->moving.elapsed == 0u);
     // Out of bounds.
     CHECK(!range_segment(activity, 0, 9).has_value());
     CHECK(!range_segment(activity, 4, 3).has_value());

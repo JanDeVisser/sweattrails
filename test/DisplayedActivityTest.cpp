@@ -380,6 +380,7 @@ int main()
     test_range_stats_cleared();
     test_lap_selected_during_a_drag();
     test_esc_during_a_drag();
+    test_range_with_time_going_back();
     test_select_lap();
     test_drag_ends_the_lap();
     test_toggle_lap();

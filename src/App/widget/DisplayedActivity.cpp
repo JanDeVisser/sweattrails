@@ -65,8 +65,10 @@ void DisplayedActivity::end_segment()
         return;
     }
     auto const &records = activity.records;
-    if (segment->max >= records.size()
-        || records[segment->max].timestamp.timestamp - records[segment->min].timestamp.timestamp < MinRangeSeconds) {
+    // Signed: a watch can set its clock back, and the last record can be
+    // earlier than the first.
+    auto const seconds = [&records](size_t ix) { return static_cast<i64>(records[ix].timestamp.timestamp); };
+    if (segment->max >= records.size() || seconds(segment->max) - seconds(segment->min) < MinRangeSeconds) {
         segment.reset();
         return;
     }
