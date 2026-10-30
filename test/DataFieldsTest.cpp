@@ -904,11 +904,32 @@ void test_range_fields_mark_the_activitys_records()
     CHECK_EQ(max_hr.value_or(0), 70uz);
 }
 
+// By time, hours from the start are shown as such, past the first hour;
+// a range out of bounds has just the summary.
+void test_range_summary_by_time_past_an_hour()
+{
+    Storage  storage { };
+    Activity activity { storage, ActivityID { } };
+    activity.sport = sport::Cycling;
+    for (u32 ix = 0; ix < 5000; ++ix) {
+        activity.records.push_back(record { .timestamp = DateTime { .timestamp = 1'000'000 + ix } });
+    }
+    activity.recorded = activity.records;
+    auto const range = range_segment(activity, 2530, 3933);
+    CHECK(range.has_value());
+    if (!range) {
+        return;
+    }
+    CHECK_EQ(range_summary(activity, 2530, 3933, *range), "0:42:10–1:05:33 · 23:23");
+    CHECK_EQ(range_summary(activity, 2530, 5000, *range), "23:23");
+}
+
 int main()
 {
     test_range_max_at_is_the_index_passed();
     test_range_summary();
     test_range_fields_mark_the_activitys_records();
+    test_range_summary_by_time_past_an_hour();
     test_range_ties_go_to_the_first_record();
     test_smoothed_range_max_at();
     test_analyze_max_at_is_a_record_index();

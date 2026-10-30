@@ -331,6 +331,97 @@ void test_range_without_distance()
     CHECK(range.has_value() && range->moving.elapsed == 6u);
 }
 
+// A record with power and heart rate, which the graph smooths.
+void add_power_record(FITBuilder &fit, u32 at, u16 power, u8 heart_rate)
+{
+    fit.definition(4, 20,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 3, .size = 1, .base_type = Uint8 },
+            { .num = 7, .size = 2, .base_type = Uint16 },
+        });
+    fit.message(4);
+    fit.u32_le(Start + at);
+    fit.byte(heart_rate);
+    fit.u16_le(power);
+}
+
+// Two laps of 40 records with spiky power and heart rate: smoothing for
+// the graph moves the maxima, so a range over a lap only has the lap's
+// maxima, NP and averages if it's worked out from the records as recorded.
+void test_range_over_a_lap_has_its_power_and_heart_rate()
+{
+    FITBuilder fit;
+    add_lap(fit, 0, 40);
+    add_lap(fit, 40, 40);
+    for (u32 ix = 0; ix < 80; ++ix) {
+        auto const power = static_cast<u16>((ix % 7 == 3) ? 600 : 150 + 10 * (ix % 5));
+        auto const hr = static_cast<u8>((ix == 57) ? 185 : 130 + ix % 11);
+        add_power_record(fit, ix, power, hr);
+    }
+    add_session(fit, 80, 0xFFFF);
+    LoadedActivity t { fit.file() };
+    CHECK(t.loaded);
+    if (t.activity.laps.size() != 2 || t.activity.recorded.size() != 80) {
+        CHECK_EQ(t.activity.laps.size(), 2uz);
+        CHECK_EQ(t.activity.recorded.size(), 80uz);
+        return;
+    }
+    auto const &lap = t.activity.laps[1];
+    auto const  range = range_segment(t.activity, lap.first_record, lap.end_record - 1);
+    if (!range) {
+        CHECK(range.has_value());
+        return;
+    }
+    auto const &lp = lap.segment.computed_power_range.range;
+    auto const &rp = range->computed_power_range.range;
+    CHECK(lp.has_value() && rp.has_value());
+    if (lp && rp) {
+        CHECK_EQ(rp->max, lp->max);
+        CHECK_EQ(rp->max_at, lp->max_at);
+        CHECK_EQ(rp->average, lp->average);
+    }
+    auto const &lnp = lap.segment.computed_normalized_range.range;
+    auto const &rnp = range->computed_normalized_range.range;
+    CHECK(lnp.has_value() && rnp.has_value());
+    if (lnp && rnp) {
+        CHECK_EQ(rnp->normalized, lnp->normalized);
+    }
+    auto const &lhr = lap.segment.computed_hr_range.range;
+    auto const &rhr = range->computed_hr_range.range;
+    CHECK(lhr.has_value() && rhr.has_value());
+    if (lhr && rhr) {
+        CHECK_EQ(rhr->max, lhr->max);
+        CHECK_EQ(rhr->max_at, lhr->max_at);
+        CHECK_EQ(rhr->average, lhr->average);
+    }
+}
+
+// TSS is over the moving time: a range with a pause in it has the TSS of
+// the same records without one.
+void test_range_tss_is_over_the_moving_time()
+{
+    Storage  storage { };
+    Activity steady { storage, ActivityID::dummy(ActivityFile::Fit) };
+    Activity paused { storage, ActivityID::dummy(ActivityFile::Fit) };
+    for (u32 ix = 0; ix < 120; ++ix) {
+        auto const power = static_cast<u16>(200 + 20 * (ix % 3));
+        steady.recorded.push_back(record { .timestamp = DateTime { .timestamp = 1'000'000 + ix }, .power = power });
+        paused.recorded.push_back(record { .timestamp = DateTime { .timestamp = 1'000'000 + ix + ((ix >= 60) ? 600 : 0) }, .power = power });
+    }
+    auto const a = range_segment(steady, 0, 119);
+    auto const b = range_segment(paused, 0, 119);
+    if (!a || !b) {
+        CHECK(a.has_value() && b.has_value());
+        return;
+    }
+    CHECK_EQ(a->moving.elapsed, 119u);
+    CHECK_EQ(b->moving.elapsed, 118u);
+    CHECK_EQ(b->elapsed.elapsed, 719u);
+    CHECK(a->tss.has_value() && *a->tss > 0);
+    CHECK(b->tss.has_value() && a->tss.has_value() && *b->tss <= *a->tss);
+}
+
 // An activity in a directory of its own, as `dummy.fit` and, if
 // `sidecar` isn't empty, `dummy.json`, loaded as the store loads it. The
 // counter keeps the directories of a test's activities apart.
@@ -681,6 +772,8 @@ int main()
     test_range_over_a_lap();
     test_range_distance_and_moving_time();
     test_range_without_distance();
+    test_range_over_a_lap_has_its_power_and_heart_rate();
+    test_range_tss_is_over_the_moving_time();
     test_title_from_the_sidecar();
     test_title_from_a_wahoo_sidecar();
     test_sidecar_without_a_title();

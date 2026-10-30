@@ -47,7 +47,8 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     void                                                   clear_mark();
     void                                                   set_mark(size_t t);
     // The drag is at record `t`: the range runs from where it started to
-    // `t`, on either side.
+    // `t`, on either side. Nothing if no drag is going on: Esc, selecting
+    // a lap or another activity end it.
     void set_segment(size_t t);
     // The drag is over: a range under MinRangeSeconds is cleared, and a
     // longer one gets its stats.

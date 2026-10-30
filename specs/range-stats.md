@@ -158,4 +158,43 @@ Nothing here belongs in `src/Lib/Widget`: it's all the app's data.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: a lap selected mid-drag leaves the lap with another range.**
+   `DisplayedActivity::set_segment()` (`DisplayedActivity.cpp:51`)
+   re-anchors when there's no anchor, and `ActivityGraph::process_input()`
+   (`Activity.cpp:363`) keeps calling it until the button is let go.
+   Pressing Down (or Up) while dragging runs `select_lap()`, which resets
+   the anchor but leaves `lap` set; the next frame's `set_segment(t)`
+   makes `segment` `[t, t]`, growing with the mouse, and `end_segment()`
+   returns early because `lap` is set. The panel shows the lap's stats,
+   the map and graph a range that isn't the lap. Esc mid-drag and Left/Right
+   to another activity mid-drag go the same way: the drag isn't cancelled,
+   it restarts where the mouse is, and gets stats on release. Fix: let
+   `start_segment()` set the anchor, and have `set_segment()` do nothing
+   without one, so that Esc, a lap or a new activity ends the drag; or
+   `lap.reset()` in `set_segment()`. Test:
+   `test_lap_selected_during_a_drag` (fails).
+2. **Bug: a range whose time goes back gets stats of 136 years.**
+   `end_segment()` (`DisplayedActivity.cpp:67`) and `range_segment()`
+   (`Activity.cpp:166`) subtract `u32` timestamps, first from last. When
+   the last record's time is earlier than the first's, as after a watch
+   corrects its clock, the difference wraps: the range passes the 10 s
+   check and `elapsed` is about 4.29e9 s. Fix: compare and subtract as
+   signed (`i64`), treat a negative span as under `MinRangeSeconds`, and
+   clamp `elapsed` at 0. Test: `test_range_with_time_going_back` (fails).
+3. **Suggestion: the heading of a range standing still.**
+   `range_summary()` (`DataFields.cpp:252`) goes by time when the range's
+   `segment.distance` is 0, also in an activity that has distance, so a
+   10 s+ range at a stop says "0:42:10–0:42:30" where every other range
+   of the ride says km. The spec's rule is the activity's records having
+   no distance; testing `from.distance && to.distance` alone would follow
+   it.
+4. **Missing test (added): a range over a lap has the lap's power, NP and
+   heart rate.** The Developer's test compared climb, cadence and
+   elevation only; the graph's smoothing changes power and heart rate
+   most. `test_range_over_a_lap_has_its_power_and_heart_rate` (passes).
+5. **Missing test (added): TSS over the moving time.**
+   `test_range_tss_is_over_the_moving_time`: a 10-minute pause in a
+   range doesn't add to its TSS (passes).
+6. **Missing test (added): the time heading past an hour, and out of
+   bounds.** `test_range_summary_by_time_past_an_hour`, the spec's own
+   "0:42:10–1:05:33" example (passes).

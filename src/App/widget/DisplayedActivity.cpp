@@ -27,6 +27,7 @@ void DisplayedActivity::clear_segment()
 void DisplayedActivity::start_segment(size_t t)
 {
     clear_segment();
+    anchor = t;
     set_segment(t);
 }
 
@@ -50,8 +51,9 @@ void DisplayedActivity::set_mark(size_t t)
 
 void DisplayedActivity::set_segment(size_t t)
 {
+    // Esc, a lap, or another activity during the drag ended it.
     if (!anchor) {
-        anchor = t;
+        return;
     }
     segment = RecordRange { .min = std::min(*anchor, t), .max = std::max(*anchor, t) };
 }

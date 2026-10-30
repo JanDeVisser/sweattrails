@@ -62,7 +62,7 @@ void test_current_record()
     CHECK_EQ(d.current_record(), 17uz);
     // A drag from 12 to 25, and back to 5.
     d.clear_mark();
-    d.set_segment(12);
+    d.start_segment(12);
     d.set_segment(25);
     CHECK_EQ(d.current_record(), 25uz);
     d.set_segment(5);
@@ -89,14 +89,13 @@ void test_select_lap()
     CHECK_EQ(lap(d.lap), 1);
 }
 
-// A drag in the graph starts with clear_segment().
+// A drag in the graph starts with start_segment(), which clears the lap.
 void test_drag_ends_the_lap()
 {
     TestActivity t;
     auto        &d = *t.displayed;
     d.select_lap(2);
-    d.clear_segment();
-    d.set_segment(5);
+    d.start_segment(5);
     CHECK_EQ(lap(d.lap), -1);
     CHECK(d.segment.has_value() && d.segment->min == 5);
 }
@@ -196,7 +195,7 @@ void test_select_lap_replaces_a_dragged_range()
 {
     TestActivity t;
     auto        &d = *t.displayed;
-    d.set_segment(50);
+    d.start_segment(50);
     d.set_segment(70);
     d.next_lap();
     CHECK(d.segment.has_value() && d.segment->min == 0 && d.segment->max == 9);
@@ -239,7 +238,7 @@ void test_selection()
     TestActivity t;
     auto        &d = *t.displayed;
     CHECK(!d.selection());
-    d.set_segment(12);
+    d.start_segment(12);
     d.set_segment(25);
     CHECK(d.selection() == (std::pair { 12uz, 25uz }));
     d.select_lap(1);
@@ -322,12 +321,65 @@ void test_range_stats_cleared()
     CHECK(d.lap == 0uz);
 }
 
+// Up or Down while the button is held selects a lap mid-drag. The graph
+// goes on calling set_segment() until the button is let go, so the drag
+// mustn't leave a lap selected with a range that isn't the lap's: the
+// panel would show the lap's stats, and the map and graph another range.
+void test_lap_selected_during_a_drag()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.start_segment(20);
+    d.set_segment(60);
+    d.next_lap(); // Down, with the button held
+    d.set_segment(65);
+    d.set_segment(80);
+    d.end_segment();
+    if (d.lap) {
+        CHECK(d.segment.has_value() && d.segment->min == 0 && d.segment->max == 9);
+    } else {
+        CHECK(!d.segment.has_value() || d.range_stats.has_value());
+    }
+}
+
+// Esc during a drag ends it: the mouse moving on, and letting go, select
+// nothing.
+void test_esc_during_a_drag()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.start_segment(20);
+    d.set_segment(60);
+    d.whole_activity();
+    d.set_segment(70);
+    d.end_segment();
+    CHECK(!d.segment.has_value());
+    CHECK(!d.range_stats.has_value());
+}
+
+// A watch can correct its clock a few seconds back. A range whose last
+// record has an earlier time than its first is under 10 s, not 136 years.
+void test_range_with_time_going_back()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    for (auto *records : { &d.activity.records, &d.activity.recorded }) {
+        (*records)[55].timestamp.timestamp = 1'000'045;
+    }
+    d.start_segment(50);
+    d.set_segment(55);
+    d.end_segment();
+    CHECK(!d.range_stats.has_value() || d.range_stats->elapsed.elapsed < 3600u);
+}
+
 int main()
 {
     test_current_record();
     test_drag_either_way();
     test_end_segment();
     test_range_stats_cleared();
+    test_lap_selected_during_a_drag();
+    test_esc_during_a_drag();
     test_select_lap();
     test_drag_ends_the_lap();
     test_toggle_lap();
