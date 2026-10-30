@@ -81,6 +81,10 @@ StorageResult<std::vector<SummaryFile>> summary_files(Storage const &storage);
 // one without a sport.
 [[nodiscard]] ActivitySummary read_summary(Storage &storage, SummaryFile const &file);
 
+// The activity a summary is of, from its file, "2025/03/1741000000.fit":
+// none if the file isn't in a month's directory.
+[[nodiscard]] std::optional<ActivityID> summary_activity(ActivitySummary const &summary);
+
 // Adds `summaries` to `into`, keeping it in order of start time.
 void merge_summaries(ActivitySummaries &into, ActivitySummaries const &summaries);
 

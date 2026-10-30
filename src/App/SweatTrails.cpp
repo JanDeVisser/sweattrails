@@ -921,9 +921,30 @@ void cmd_summaries(pSweatTrails const &sweattrails, JSONValue const &)
     sweattrails->show_summaries(true);
 }
 
+// Esc: back up a level, and at the top, back to the activity.
 void cmd_summaries_close(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    sweattrails->show_summaries(false);
+    if (!sweattrails->summaries_screen->up()) {
+        sweattrails->show_summaries(false);
+    }
+}
+
+// Backspace: back up a level, if there's one.
+void cmd_summaries_up(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    (void) sweattrails->summaries_screen->up();
+}
+
+// G: the year-to-date lines, or back to the bars.
+void cmd_summaries_graph(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    sweattrails->summaries_screen->toggle_lines();
+}
+
+// Enter: into the selected period.
+void cmd_summaries_drill(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    sweattrails->summaries_screen->drill();
 }
 
 // W, M and Y, with the period's name.
@@ -1173,7 +1194,9 @@ void cmd_overlay_render(pSweatTrails const &sweattrails, JSONValue const &)
     input_box(sweattrails, "Range", picked, format_range(initial));
 }
 
-void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
+// Lists the month of `shown`, with it selected, or the latest month that
+// lists any activities if it isn't in the store.
+void list_month(pSweatTrails const &sweattrails, ActivityID const &shown)
 {
     if (!sweattrails->modals.empty()) {
         // Not while any modal is open, as in cmd_quit. In particular, Ctrl-M
@@ -1197,10 +1220,7 @@ void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
             message_box(activity.error());
         }
     };
-    // At the activity on display, or else at the latest month that lists
-    // any.
-    auto const &shown = sweattrails->last_activity;
-    auto        month = shown.month;
+    auto month = shown.month;
     if (!std::ranges::binary_search(*months, shown.month)) {
         auto const latest = sweattrails->storage.listed_month(months->back(), -1, true);
         if (!latest || !*latest) {
@@ -1212,6 +1232,12 @@ void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
     auto const &selector = Widget::make<ActivitySelector>(activity_selected, month, sweattrails->storage);
     selector->show();
     selector->select(shown);
+}
+
+// At the activity on display.
+void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    list_month(sweattrails, sweattrails->last_activity);
 }
 
 void cmd_message(pSweatTrails const &, JSONValue const &msg)
@@ -1423,6 +1449,12 @@ void SweatTrails::initialize()
     widget_stack = add_widget<WidgetStack>();
     activity_display = widget_stack->add_widget<ActivityDisplay>();
     summaries_screen = widget_stack->add_widget<SummariesScreen>();
+    // Drilling into a week lists it, at its first activity.
+    summaries_screen->on_week = [this](ActivitySummary const &summary) {
+        if (auto const id = summary_activity(summary); id) {
+            list_month(the(), *id);
+        }
+    };
     // A status line at the bottom of the window, hidden while it's empty.
     status = add_widget<Label>("");
     status->policy = SizePolicy::Hide;
@@ -1453,6 +1485,16 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_T, KModControl });
     bus.add_task<SweatTrails>("st-summaries-close", self(), cmd_summaries_close)
         .bind(KeyCombo { KEY_ESCAPE, KModNone })
+        .when(on_summaries);
+    bus.add_task<SweatTrails>("st-summaries-up", self(), cmd_summaries_up)
+        .bind(KeyCombo { KEY_BACKSPACE, KModNone })
+        .when(on_summaries);
+    bus.add_task<SweatTrails>("st-summaries-graph", self(), cmd_summaries_graph)
+        .bind(KeyCombo { KEY_G, KModNone })
+        .when(on_summaries);
+    bus.add_task<SweatTrails>("st-summaries-drill", self(), cmd_summaries_drill)
+        .bind(KeyCombo { KEY_ENTER, KModNone })
+        .bind(KeyCombo { KEY_KP_ENTER, KModNone })
         .when(on_summaries);
     auto &period = bus.add_task<SweatTrails>("st-summaries-period", self(), cmd_summaries_period).when(on_summaries);
     period.bind(KeyCombo { KEY_W, KModNone }, summaries_argument("period", JSONValue { "week" }));

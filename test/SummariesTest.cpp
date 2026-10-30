@@ -275,6 +275,23 @@ void test_empty_store()
     CHECK(read_summaries(summaries_path(store.storage)).empty());
 }
 
+void test_summary_activity()
+{
+    auto const id = summary_activity(summary("2025/03/1741000000.fit", 1741000000));
+    CHECK(id.has_value());
+    if (id) {
+        CHECK((id->month == Month { 2025, DateTime::Month::March }));
+        CHECK_EQ(id->name, "1741000000");
+        CHECK(id->files.contains(ActivityFile::Fit));
+    }
+    // "08" and "09", which aren't octal.
+    auto const august = summary_activity(summary("2024/08/1723000000.fit", 1723000000));
+    CHECK(august && august->month == (Month { 2024, DateTime::Month::August }));
+    CHECK(!summary_activity(summary("1741000000.fit", 1741000000)));
+    CHECK(!summary_activity(summary("2025/13/1741000000.fit", 1741000000)));
+    CHECK(!summary_activity(summary("x/2025/03/1741000000.fit", 1741000000)));
+}
+
 }
 
 int main()
@@ -291,5 +308,6 @@ int main()
     test_update_in_chunks();
     test_update_reads_what_came_in_between();
     test_update_that_cant_write();
+    test_summary_activity();
     return Test::test_result();
 }
