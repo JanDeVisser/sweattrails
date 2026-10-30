@@ -1,6 +1,6 @@
 # Titles from Strava
 
-Status: In review, on branch feature/strava-titles
+Status: Done
 
 ## Goal
 
