@@ -729,6 +729,22 @@ void test_step_by_month_stops_at_the_activities()
     CHECK(screen->view.month == 3u);
 }
 
+// 2023, the rides' first year: no 2022 to compare with, so its column and
+// the difference are empty.
+void test_no_year_before_the_first()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->toggle_lines();
+    for (auto ix = 0; ix < 3; ++ix) {
+        screen->step_year(-1);
+    }
+    CHECK_EQ(screen->view.year, 2023);
+    CHECK_EQ(screen->table->rows[2][1], "84.7 km");
+    CHECK_EQ(screen->table->rows[2][2], "");
+    CHECK_EQ(screen->table->rows[2][3], "");
+}
+
 }
 
 int main()
@@ -771,5 +787,6 @@ int main()
     test_up_after_changing_sport();
     test_up_after_stepping_months();
     test_step_by_month_stops_at_the_activities();
+    test_no_year_before_the_first();
     return Test::test_result();
 }

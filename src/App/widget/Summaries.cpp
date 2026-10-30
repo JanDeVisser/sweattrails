@@ -505,7 +505,11 @@ void SummariesScreen::refresh()
 void SummariesScreen::refresh_lines()
 {
     auto const year_values = year_to_date(summaries, view.sport, view.metric, view.year, today);
-    auto const before_values = year_to_date(summaries, view.sport, view.metric, view.year - 1, today);
+    // None before the sport's first year, which has no line either: its
+    // column is empty, not zeros.
+    auto const before_values = view.year - 1 < view.first_year
+        ? std::vector<double> { }
+        : year_to_date(summaries, view.sport, view.metric, view.year - 1, today);
     lines->series.clear();
     for (auto back = 0; back <= ComparedYears; ++back) {
         auto const year = view.year - back;
