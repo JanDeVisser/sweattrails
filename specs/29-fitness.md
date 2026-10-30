@@ -1,0 +1,197 @@
+# Fitness, fatigue and form (CTL, ATL, TSB)
+
+Status: Ready
+
+<!--
+Status is one of:
+- Draft: the Analyst and Jan are working on it.
+- Ready: no open questions left; the Developer can start.
+- In progress: the Developer is working on it, on branch <branch>.
+- In review: the Reviewer is reviewing the branch.
+- Done: merged into main.
+-->
+
+## Goal
+
+The user sees how fit, how tired and how fresh they are, day by day, from
+the training stress of everything they've done: the chronic training load
+(CTL, "fitness"), the acute training load (ATL, "fatigue") and the
+training stress balance (TSB, "form"), as TrainingPeaks' Performance
+Management Chart shows them. They can see fitness build through a season,
+fatigue after a hard block, and whether they're fresh for a race.
+
+## Feature
+
+### The method
+
+These are the standard definitions, from Coggan and Allen's Performance
+Management Chart, built on Banister's impulse-response model:
+
+- Each activity has a **training stress score** (TSS): an hour at
+  threshold is 100. A day's TSS is the sum of its activities'; a day
+  without any has 0.
+- **CTL** is an exponentially weighted average of the daily TSS with a
+  time constant of 42 days, **ATL** the same with 7 days:
+  `CTL(today) = CTL(yesterday) + (TSS(today) − CTL(yesterday)) × k`, with
+  `k = 1 − e^(−1/42)` for CTL and `1 − e^(−1/7)` for ATL. Some tools use
+  `k = 1/42` and `1/7`; the difference is under 2%.
+- **TSB** is the form going into a day: yesterday's CTL minus yesterday's
+  ATL. Positive is fresh, negative is tired.
+- The **ramp rate** is how much CTL rose in the last 7 days.
+- CTL and ATL start at 0 on the day of the first activity. With 17 years
+  of activities, they've long settled by any year worth looking at.
+
+### What there is now
+
+- An activity's TSS comes from its power only:
+  `TSS = moving seconds × NP × IF / (FTP × 3600) × 100`, with
+  `IF = NP / FTP`. The FTP is a constant in the code, `JANS_FTP = 275`
+  (`storage/Activity.h`); there's no setting.
+- NP needs the records, so there's a TSS only when an activity is fully
+  loaded, not in a month's list, and not in the summary file
+  (`summaries.json`, `27-volume-summaries.md`), which the totals read
+  from.
+- Runs, and rides without a power meter, have no TSS. Their records
+  usually have heart rate, and runs have pace.
+- The summaries screen (Ctrl+T, `27-volume-summaries.md`,
+  `28-volume-year-to-date.md`) has bars and lines of totals per period,
+  which a fitness chart could sit next to.
+
+### Training stress without power
+
+The other common scores, which TrainingPeaks also uses:
+
+- **hrTSS**, from heart rate: the time in heart-rate zones, set from the
+  lactate threshold heart rate (LTHR). Good for steady efforts, low for
+  intervals, as heart rate lags.
+- **rTSS**, for runs, from pace: normalized graded pace, adjusted for
+  the slope, against threshold pace. Poor on trails, where surface and
+  terrain aren't in the pace.
+- **TRIMP**, Banister's own, from duration and average heart rate
+  against resting and maximum heart rate. On its own scale, not TSS's.
+
+Each needs a threshold the app doesn't have: FTP for power, LTHR for
+heart rate, threshold pace for rTSS.
+
+### Where the training stress comes from
+
+- An activity with **power** gets its TSS from power, as now, with the
+  FTP in force on its day.
+- An activity without power but with **heart rate** gets an **hrTSS**,
+  with the LTHR in force on its day for its sport.
+- An activity with neither counts as a rest day. Pace-based rTSS is left
+  out *(deferred)*: it needs a threshold pace and grade-adjusted pace,
+  for the few runs without heart rate.
+- **hrTSS** is worked out as power's TSS is, with heart rate for power:
+  second by second, `(HR / LTHR)²`, added up over the moving time, so
+  that an hour at LTHR is 100, as an hour at FTP is. TrainingPeaks' own
+  hrTSS is a lookup by zone, which it doesn't publish; this one is
+  reproducible. Like any heart-rate score, it runs a little low for
+  intervals, as heart rate lags.
+- Running's LTHR scores every sport but cycling: a long hike is real
+  fatigue, and running's is closest for being on one's feet.
+
+### Scores that don't depend on the thresholds
+
+A new threshold changes the TSS of every activity after its date, and
+reading 1,800 FIT files again for each change would take minutes. Both
+scores can be written as a number of the activity's own, divided by its
+threshold squared:
+
+- `TSS = moving seconds × NP² / (FTP² × 36)`
+- `hrTSS = Σ (HR² × seconds) / (LTHR² × 36)`, over the moving records:
+  the gaps between records of 10 seconds or less, as a dragged range's
+  moving time leaves out pauses (`25-range-stats.md`).
+
+So the summary file keeps each activity's NP and moving time (as it
+does), and the sum of its heart rate squared over time, none of which
+depend on a threshold, and the TSS is worked out from them when the
+chart is drawn. Changing a threshold is instant. The summary file is
+built again once, as NP and the heart rate need the records, which the
+first build didn't read: that build takes longer than the first did.
+
+### Thresholds
+
+- The thresholds change over the years, so they're dated, in
+  `settings.json`: from a date on, an FTP, and an LTHR for running and
+  for cycling. Each activity is scored with the ones in force on its
+  day.
+
+  ```json
+  "thresholds": [
+    { "from": "2012-01-01", "ftp": 240, "lthr_running": 170, "lthr_cycling": 162 },
+    { "from": "2024-03-01", "ftp": 275 }
+  ]
+  ```
+
+  An entry that leaves a threshold out keeps the one before: above, the
+  LTHRs of 2012 still count after March 2024. The first entry counts
+  back to the first activity, so a list of one is simply today's
+  thresholds for everything.
+- They replace `JANS_FTP`: the data panel's IF and TSS use them too,
+  and an activity with heart rate but no power shows its hrTSS there,
+  "hrTSS 64", where a ride with power shows "TSS 87".
+- Without any thresholds in `settings.json`, there's no TSS: the data
+  panel shows no IF or TSS, and the fitness view says "Set your FTP and
+  LTHR in settings.json to see your fitness", with the format. There's
+  no default: 275 W is Jan's, and nobody else's.
+
+### One fitness for all sports
+
+- CTL, ATL and TSB are of all the activities' TSS together, as
+  TrainingPeaks' chart is by default: fatigue doesn't care which sport
+  made it. Per sport is left out *(deferred)*.
+
+### On the summaries screen
+
+- The fitness chart is a view of the summaries screen (Ctrl+T), next to
+  the bars and the year-to-date lines. **F** shows it, and F again, G,
+  or W, M and Y leave it for the bars or the lines.
+- **The lines**: CTL bold, ATL and TSB, across the year shown, day by
+  day; this year's stop at today. CTL and ATL decay through the days
+  without activities, as they do. TSB goes below zero, so the line
+  chart's scale runs from its lowest value to its highest, with the zero
+  line marked, rather than from zero up as now.
+- **The heading**: today's values, or the year's last day's for a past
+  year, and the ramp rate: "Fitness · CTL 72 · ATL 85 · TSB -13 · +4.2
+  a week · 2026". If the year has activities without power or heart
+  rate, which count as rest days, it says how many: "· 3 without TSS".
+- **The table**: a row per week of the year, the weeks whose Monday is
+  in it as on the bars: the week's TSS, and CTL, ATL and TSB at its end.
+  A week makes a hard block or a rest week stand out, which a month
+  would hide.
+- **Left and Right** go a year back or forward, from the year of the
+  first activity to this one. R and C, and D, T, N and A, don't change
+  it: the fitness is of all sports, in TSS.
+
+### README
+
+The README says how to set the thresholds, what CTL, ATL and TSB are,
+and the F key.
+
+### Version 1 scope
+
+Everything above. Deferred:
+
+- rTSS from pace, for runs without heart rate *(deferred)*.
+- Fitness per sport *(deferred)*.
+- Estimating FTP and LTHR from the activities *(deferred)*.
+- Planned training, and the fitness it would lead to *(deferred)*.
+- The device's own training load or TSS from the FIT file
+  *(deferred)*: the app's own is the same for every device.
+
+## Open questions
+
+None.
+
+## Architecture
+
+*Filled in by the Developer.*
+
+## Test plan
+
+*Filled in by the Developer.*
+
+## Review notes
+
+*Filled in by the Reviewer.*
