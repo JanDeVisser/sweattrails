@@ -544,6 +544,171 @@ void test_lines_step_by_year()
     CHECK_EQ(view.year, 2025);
 }
 
+// Added in review.
+
+// The month today is in has its total so far: only the months after it
+// are empty, as the architecture says. On 15 January the whole year would
+// otherwise be blank.
+void test_year_to_date_this_month()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->set_summaries({ ride(2025, 6, 2), ride(2026, 6, 10) });
+    screen->toggle_lines();
+    CHECK_EQ(screen->view.year, 2026);
+    CHECK_EQ(screen->table->rows[5][1], "42.3 km"); // June, so far
+    CHECK_EQ(screen->table->rows[5][3], "+0.0 km");
+    CHECK_EQ(screen->table->rows[6][1], ""); // July
+}
+
+// R or C deep down, then back up: the year stays in the sport's years,
+// and what was drilled into is selected.
+void test_up_after_changing_sport()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->set_sport(VolumeSport::Running); // 2021 to 2026
+    screen->set_period(Period::Year);
+    screen->drill(0);                        // 2021's months
+    screen->drill(2);                        // March 2021's weeks
+    screen->set_sport(VolumeSport::Cycling); // 2023 to 2026: March 2023
+    CHECK_EQ(screen->view.year, 2023);
+    CHECK(screen->up());
+    CHECK(screen->view.period == Period::Month);
+    CHECK(screen->view.year >= screen->view.first_year);
+    CHECK_EQ(screen->view.year, 2023);
+    CHECK(screen->table->selection == 2uz); // March
+}
+
+// Left in a month's weeks, across New Year, then back up: the months of
+// the year of the weeks shown, with that month selected.
+void test_up_after_stepping_months()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->set_period(Period::Month);
+    screen->step_year(-1); // 2025
+    screen->drill(2);      // March 2025's weeks
+    screen->step_year(-1);
+    screen->step_year(-1);
+    screen->step_year(-1); // December 2024
+    CHECK_EQ(screen->view.year, 2024);
+    CHECK(screen->view.month == 12u);
+    CHECK(screen->up());
+    CHECK_EQ(screen->view.year, 2024);
+    CHECK(screen->table->selection == 11uz); // December
+}
+
+// The job's chunks while the lines show: still the lines, the same row
+// selected, the new numbers in.
+void test_new_summaries_in_the_lines()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->step_year(-1); // 2025
+    screen->toggle_lines();
+    screen->table->select(3);
+    screen->set_summaries({ run(2021, 3, 1), ride(2023, 3, 6), ride(2023, 3, 8), ride(2025, 1, 6), ride(2025, 3, 3), ride(2025, 2, 3) });
+    CHECK(screen->view.lines);
+    CHECK(screen->chart->policy == SizePolicy::Hide);
+    CHECK(screen->table->selection == 3uz);
+    CHECK_EQ(screen->table->rows.size(), 12uz);
+    CHECK_EQ(screen->table->rows[1][1], "84.7 km"); // February, with the new ride
+    CHECK_EQ(screen->lines->series[0].values.back(), 127.035);
+}
+
+// The job's chunks in a month's weeks: still that month, the same week
+// selected, and the trail kept.
+void test_new_summaries_in_a_month()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->set_period(Period::Year);
+    screen->drill(0); // 2023's months
+    screen->drill(2); // March 2023's weeks
+    screen->table->select(1);
+    screen->set_summaries({ run(2021, 3, 1), ride(2023, 3, 6), ride(2023, 3, 8), ride(2023, 3, 14), ride(2025, 1, 6), ride(2025, 3, 3) });
+    CHECK(screen->view.month == 3u);
+    CHECK_EQ(screen->view.year, 2023);
+    CHECK_EQ(screen->trail.size(), 2uz);
+    CHECK(screen->table->selection == 1uz);
+    CHECK_EQ(screen->table->rows[1][3], "1");
+}
+
+// A leap year's lines: 366 days, and March starts a day later.
+void test_lines_in_a_leap_year()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->step_year(-2); // 2024
+    screen->toggle_lines();
+    CHECK_EQ(screen->lines->x_count, 366uz);
+    CHECK_EQ(screen->lines->series[0].values.size(), 366uz);
+    CHECK_EQ(screen->lines->series[1].values.size(), 365uz); // 2023
+    CHECK_EQ(screen->lines->ticks[2].x, 60.0);
+    CHECK_EQ(screen->lines->ticks[11].x, 335.0); // 1 December
+}
+
+// The week of Monday 31 March lists its first ride, on 2 April.
+void test_drill_into_a_week_across_months()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->set_summaries({ ride(2025, 3, 3), ride(2025, 4, 2), ride(2025, 4, 3) });
+    std::optional<i64> listed { };
+    screen->on_week = [&listed](ActivitySummary const &summary) { listed = summary.start; };
+    screen->set_period(Period::Month);
+    screen->step_year(-1); // 2025
+    screen->drill(2);      // March's weeks
+    CHECK_EQ(screen->chart->bars.size(), 5uz);
+    screen->drill(4); // Monday 31 March
+    CHECK(listed == local_noon(2025, 4, 2));
+}
+
+// Nothing in the store: the lines, drilling and going up don't fall over.
+void test_empty_store_lines_and_drilling()
+{
+    Test::ScopedTestApp app;
+    auto                screen = Widget::make<SummariesScreen>(nullptr);
+    screen->viewport = Rect<float> { 0, 0, 1000, 800 };
+    screen->set_summaries({ });
+    screen->open(VolumeSport::Running, Today);
+    bool listed = false;
+    screen->on_week = [&listed](ActivitySummary const &) { listed = true; };
+    screen->drill(0);
+    CHECK(!listed);
+    screen->toggle_lines();
+    CHECK_EQ(screen->lines->series.size(), 1uz);
+    CHECK_EQ(screen->lines->series[0].values.size(), 166uz);
+    CHECK_EQ(screen->table->rows.size(), 12uz);
+    CHECK(!screen->up());
+    screen->set_period(Period::Year);
+    screen->drill(0);
+    CHECK(screen->view.period == Period::Month);
+    screen->drill(0);
+    CHECK(screen->view.month == 1u);
+    CHECK(screen->up());
+    CHECK(screen->up());
+    CHECK(!screen->up());
+}
+
+// D, T, N, A in the lines: the lines and the table in that number.
+void test_metric_in_the_lines()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_screen();
+    screen->step_year(-1); // 2025
+    screen->toggle_lines();
+    screen->table->select(2);
+    screen->set_metric(Metric::Count);
+    CHECK(screen->view.lines);
+    CHECK_EQ(screen->heading->text, "Cycling · count to date · 2025");
+    CHECK_EQ(screen->table->rows[2][1], "2");
+    CHECK_EQ(screen->table->rows[2][3], "+2");
+    CHECK_EQ(screen->lines->min_step, 1.0);
+    CHECK(screen->table->selection == 2uz);
+}
+
 }
 
 int main()
@@ -576,5 +741,11 @@ int main()
     test_period_clears_the_trail();
     test_step_by_month();
     test_lines_step_by_year();
+    test_new_summaries_in_the_lines();
+    test_new_summaries_in_a_month();
+    test_lines_in_a_leap_year();
+    test_drill_into_a_week_across_months();
+    test_empty_store_lines_and_drilling();
+    test_metric_in_the_lines();
     return Test::test_result();
 }

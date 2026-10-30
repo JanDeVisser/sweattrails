@@ -180,3 +180,63 @@ None.
 ## Review notes
 
 *Filled in by the Reviewer.*
+
+1. **Bug: the year-to-date table leaves the current month empty.**
+   `year_to_date_months()` (`storage/Volume.cpp:284`) gives a month a
+   total only if the values reach its last day, and this year's values
+   stop at today. So on 15 June the June row has no total and no
+   difference, and on 15 January the whole year's column is blank, with
+   nothing to read "ahead by 120 km" off. The Architecture says only
+   the months *after* this one are empty. The current month should
+   show the total so far up to today. `test_line_stops_at_today`
+   expects the empty June (`test/SummariesScreenTest.cpp:415`, "June
+   isn't over"), so the fix has to change that check too. Failing
+   test: `test_year_to_date_this_month`.
+2. **Bug: Backspace after Left or Right in a month's weeks goes to the
+   wrong year.** `up()` (`widget/Summaries.cpp:404`) takes the year
+   from the trail, not from the month on display. Drill from 2025's
+   months into March, press Left three times to December 2024, then
+   Backspace: the screen shows 2025's months with nothing selected,
+   because `drilled_into` (1 December 2024) isn't among them. It should
+   show 2024's months with December selected. Failing test:
+   `test_up_after_stepping_months`.
+3. **Bug: Backspace after R or C deep down goes to a year outside the
+   sport's years.** For the same reason as 2, and `up()` doesn't call
+   `set_years()`. Running, Y, drill into 2021, then into March, then C
+   (cycling starts in 2023): the weeks become March 2023, as
+   `set_years()` clamps. Backspace then shows *2021*'s cycling months,
+   all zeros, before `first_year`, with nothing selected, and the next
+   Left jumps to 2023. Taking the year from the current view, as for 2,
+   fixes both. Failing test: `test_up_after_changing_sport`.
+4. **Bug (minor): this year's line is invisible on 1 January.**
+   `LineChart::draw()` (`src/Lib/Widget/LineChart.cpp:69`) draws
+   segments between values, so a series with one value draws nothing,
+   and the legend names a year with no line. Drawing a dot for a
+   one-value series would fix it. This can't be tested without a
+   window.
+5. **Suggestion: Right in a month's weeks goes into the months still to
+   come.** `SummaryView::step_year()` (`widget/Summaries.cpp:157`)
+   checks only the year. On 15 June 2026, Right from June's weeks goes
+   to July through December 2026, all empty. Left also goes back to the
+   months of `first_year` before the first activity. By year, Right
+   stops at this year. Stopping at today's month would match.
+6. **Suggestion: the year before the first activity gets a column of
+   zeros.** That year has no line (Architecture), but the table's
+   year-before column (`widget/Summaries.cpp:478`) still shows "0.0 km"
+   for it, and "+" the whole total as the difference. Empty cells, as
+   for the months after today, would match the lines.
+7. **Suggestion: a stale comment in a test.** `test_lines`
+   (`test/SummariesScreenTest.cpp:389`) says "no 2023 line" but checks
+   for three series, 2025, 2024 and 2023. The check is right and the
+   comment is wrong.
+
+Tests added in review, uncommitted: in `test/SummariesScreenTest.cpp`,
+`test_year_to_date_this_month`, `test_up_after_changing_sport` and
+`test_up_after_stepping_months`, which fail (1, 3 and 2), and
+`test_new_summaries_in_the_lines`, `test_new_summaries_in_a_month`,
+`test_lines_in_a_leap_year`, `test_drill_into_a_week_across_months`,
+`test_empty_store_lines_and_drilling` and `test_metric_in_the_lines`,
+which pass. In `test/VolumeTest.cpp`,
+`test_year_to_date_months_after_a_leap_year` and
+`test_year_to_date_on_new_years_day`, which pass. All other tests pass
+(`ctest -E oauth`); only `summaries_screen_test` fails.

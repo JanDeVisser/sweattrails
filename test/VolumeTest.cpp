@@ -293,6 +293,30 @@ void test_year_to_date_months()
     CHECK((rows[11] == YearToDateRow { .month = chrono::December, .year = { }, .before = 100000.0 }));
 }
 
+// Added in review: 29 February is in February's total, in a leap year
+// before a common one, and December ends on the leap year's last day.
+void test_year_to_date_months_after_a_leap_year()
+{
+    ActivitySummaries const summaries { ride(2024, 2, 29, 40), ride(2024, 12, 31, 10), ride(2025, 3, 1, 20) };
+    auto const              before = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2024, date(2025, 12, 31));
+    auto const              year = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2025, date(2025, 12, 31));
+    CHECK_EQ(before.size(), 366uz);
+    CHECK_EQ(year.size(), 365uz);
+    auto const rows = year_to_date_months(year, before, 2025);
+    CHECK((rows[1] == YearToDateRow { .month = chrono::February, .year = 0.0, .before = 40000.0 }));
+    CHECK((rows[2] == YearToDateRow { .month = chrono::March, .year = 20000.0, .before = 40000.0 }));
+    CHECK((rows[11] == YearToDateRow { .month = chrono::December, .year = 20000.0, .before = 50000.0 }));
+}
+
+// Until 1 January: a single day, and the first day's activities in it.
+void test_year_to_date_on_new_years_day()
+{
+    ActivitySummaries const summaries { ride(2026, 1, 1, 40), ride(2026, 1, 2, 40) };
+    auto const              values = year_to_date(summaries, VolumeSport::Cycling, Metric::Distance, 2026, date(2026, 1, 1));
+    CHECK_EQ(values.size(), 1uz);
+    CHECK_EQ(values.front(), 40000.0);
+}
+
 }
 
 int main()
@@ -312,5 +336,7 @@ int main()
     test_year_to_date();
     test_year_to_date_until_today();
     test_year_to_date_months();
+    test_year_to_date_months_after_a_leap_year();
+    test_year_to_date_on_new_years_day();
     return Test::test_result();
 }
