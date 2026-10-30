@@ -152,6 +152,8 @@ add_library(
         src/Lib/Widget/App.cpp
         src/Lib/Widget/BarChart.h
         src/Lib/Widget/BarChart.cpp
+        src/Lib/Widget/Chart.h
+        src/Lib/Widget/Chart.cpp
         src/Lib/Widget/ClipShader.h
         src/Lib/Widget/ClipShader.cpp
         src/Lib/Widget/Colors.h
