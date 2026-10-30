@@ -217,6 +217,7 @@ add_executable(
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Summaries.cpp
+        src/App/storage/Volume.cpp
         src/App/storage/Download.cpp
         src/App/storage/Garmin.cpp
         src/App/storage/Storage.cpp
@@ -682,6 +683,13 @@ sweattrails_test(
 )
 target_include_directories(summaries_test PRIVATE src/App)
 target_link_libraries(summaries_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        volume_test
+        test/VolumeTest.cpp
+        src/App/storage/Volume.cpp
+)
+target_include_directories(volume_test PRIVATE src/App)
 
 sweattrails_test(
         activity_load_test
