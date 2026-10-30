@@ -92,29 +92,76 @@ std::expected<std::vector<i64>, std::string> split_starts(Activity const &activi
     return starts;
 }
 
+namespace {
+
+// The start nearest `time`, if one is within MarkSnapSeconds.
+std::optional<i64> nearest_start(std::vector<i64> const &starts, i64 time)
+{
+    std::optional<i64> ret;
+    for (auto const start : starts) {
+        if (std::abs(start - time) <= MarkSnapSeconds && (!ret || std::abs(start - time) < std::abs(*ret - time))) {
+            ret = start;
+        }
+    }
+    return ret;
+}
+
+// Where a marked lap that ends at `last` ends: the next lap's start, or
+// nothing when it runs to the end, as it does within MarkSnapSeconds of
+// it.
+std::optional<i64> mark_end(Activity const &activity, std::vector<i64> const &starts, size_t last)
+{
+    auto const &records = activity.recorded;
+    if (last + 1 >= records.size()) {
+        return { };
+    }
+    auto const time = time_of(records[last + 1]);
+    if (time_of(records.back()) - time <= MarkSnapSeconds) {
+        return { };
+    }
+    return nearest_start(starts, time).value_or(time);
+}
+
+}
+
+i64 mark_start(Activity const &activity, std::vector<i64> const &starts, size_t first)
+{
+    auto const &records = activity.recorded;
+    if (first >= records.size()) {
+        return 0;
+    }
+    auto const time = time_of(records[first]);
+    // The activity's start wins: a lap of a few seconds before the marked
+    // one is what snapping is there to prevent.
+    if (time - time_of(records.front()) <= MarkSnapSeconds) {
+        return time_of(records.front());
+    }
+    return nearest_start(starts, time).value_or(time);
+}
+
+size_t record_at(Activity const &activity, i64 time)
+{
+    return record_at_or_after(activity.recorded, time);
+}
+
 std::vector<i64> mark_starts(Activity const &activity, std::vector<i64> const &starts, size_t first, size_t last)
 {
     auto const &records = activity.recorded;
     if (first > last || last >= records.size()) {
         return starts;
     }
-    auto const snap = [&starts](i64 time) {
-        for (auto const start : starts) {
-            if (std::abs(start - time) <= MarkSnapSeconds) {
-                return start;
-            }
-        }
-        return time;
-    };
-    auto const       from = snap(time_of(records[first]));
-    auto const       to = (last + 1 < records.size()) ? std::optional { snap(time_of(records[last + 1])) } : std::nullopt;
+    auto const       from = mark_start(activity, starts, first);
+    auto const       to = mark_end(activity, starts, last);
     std::vector<i64> ret;
     for (auto const start : starts) {
         if (start < from || (to && start > *to)) {
             ret.push_back(start);
         }
     }
-    ret.push_back(from);
+    // A lap from the activity's start needs no start of its own.
+    if (from > time_of(records.front())) {
+        ret.push_back(from);
+    }
     if (to) {
         ret.push_back(*to);
     }

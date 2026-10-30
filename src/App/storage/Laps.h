@@ -49,9 +49,17 @@ std::expected<std::vector<i64>, std::string> split_starts(Activity const &activi
 
 // `starts` with the records from `first` to `last` made a lap: starts at
 // `first`, and at the record after `last` unless it's the last record,
-// each moved to a start within MarkSnapSeconds of it, and the starts in
-// between gone.
+// and the starts in between gone. Each moves to the nearest start within
+// MarkSnapSeconds of it, or to the activity's start or end within that of
+// them.
 std::vector<i64> mark_starts(Activity const &activity, std::vector<i64> const &starts, size_t first, size_t last);
+
+// Where the lap that mark_starts() makes from `first` starts, after it's
+// snapped, for selecting it.
+i64 mark_start(Activity const &activity, std::vector<i64> const &starts, size_t first);
+
+// The first record at or after `time`.
+size_t record_at(Activity const &activity, i64 time);
 
 // The laps that `starts` make, from the activity's first record to its
 // last, with their stats from range_segment(), each up to the next lap's

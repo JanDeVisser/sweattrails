@@ -125,7 +125,7 @@ void test_mark()
 void test_mark_at_the_ends()
 {
     TestActivity t;
-    CHECK((mark_starts(t.activity, { }, 0, 99) == std::vector<i64> { Start, Start + 100 }));
+    CHECK((mark_starts(t.activity, { }, 0, 99) == std::vector<i64> { Start + 100 }));
     CHECK((laps_at(t.activity, mark_starts(t.activity, { }, 0, 99)).size() == 2uz));
     CHECK((mark_starts(t.activity, { }, 500, 599) == std::vector<i64> { Start + 500 }));
     // Out of bounds: as they were.
@@ -139,6 +139,21 @@ void test_mark_snaps()
     CHECK((mark_starts(t.activity, { Start + 97, Start + 300 }, 100, 204) == std::vector<i64> { Start + 97, Start + 205, Start + 300 }));
     CHECK((mark_starts(t.activity, { Start + 97, Start + 208 }, 100, 204) == std::vector<i64> { Start + 97, Start + 208 }));
     CHECK((mark_starts(t.activity, { Start + 94, Start + 300 }, 100, 204) == std::vector<i64> { Start + 94, Start + 100, Start + 205, Start + 300 }));
+}
+
+// The nearest start within 5 s wins, and the activity's start and end win
+// over any: no lap of a few seconds at either end.
+void test_mark_snaps_to_the_nearest()
+{
+    TestActivity t;
+    CHECK((mark_starts(t.activity, { Start + 95, Start + 101 }, 100, 199) == std::vector<i64> { Start + 95, Start + 101, Start + 200 }));
+    CHECK_EQ(mark_start(t.activity, { Start + 95, Start + 101 }, 100), Start + 101);
+    // 3 s in: from the start.
+    CHECK_EQ(mark_start(t.activity, { Start + 6 }, 3), Start);
+    // Ending 4 s before the end: to the end, with the start in between gone.
+    CHECK((mark_starts(t.activity, { Start + 597 }, 300, 594) == std::vector<i64> { Start + 300 }));
+    CHECK_EQ(record_at(t.activity, Start + 101), 101uz);
+    CHECK_EQ(record_at(t.activity, Start + 5000), 600uz);
 }
 
 // The laps' records, with the stats of their records.
@@ -291,6 +306,8 @@ int main()
     test_mark();
     test_mark_at_the_ends();
     test_mark_snaps();
+    test_mark_from_the_start_doesnt_snap_away();
+    test_mark_snaps_to_the_nearest();
     test_laps_at();
     test_laps_at_passes_over_empty_laps();
     test_device_lap_starts();
