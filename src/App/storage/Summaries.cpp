@@ -38,6 +38,12 @@ JSONValue encode(ActivitySummary const &summary)
     json.set("distance", JSONValue { summary.distance });
     json.set("moving", JSONValue { summary.moving });
     json.set("ascent", JSONValue { summary.ascent });
+    if (summary.np) {
+        json.set("np", JSONValue { *summary.np });
+    }
+    if (summary.hr_load) {
+        json.set("hr_load", JSONValue { *summary.hr_load });
+    }
     return json;
 }
 
@@ -60,6 +66,12 @@ Decoded<ActivitySummary> decode(JSONValue const &json)
     }
     if (json.has("sub_sport")) {
         ret.sub_sport = static_cast<FIT::sub_sport>(TRY_EVAL(json.try_get<int>("sub_sport")));
+    }
+    if (json.has("np")) {
+        ret.np = TRY_EVAL(json.try_get<u16>("np"));
+    }
+    if (json.has("hr_load")) {
+        ret.hr_load = TRY_EVAL(json.try_get<float64>("hr_load"));
     }
     return ret;
 }
@@ -173,7 +185,7 @@ ActivitySummary read_summary(Storage &storage, SummaryFile const &file)
             FileTypes::one(ActivityFile::Fit),
         },
     };
-    activity.depth = LoadingDepth::Shallow;
+    activity.depth = LoadingDepth::Deep;
     ActivitySummary ret { .source = file };
     if (auto const start = string_to_integer<i64>(path.stem().string()); start) {
         ret.start = *start;
@@ -189,6 +201,10 @@ ActivitySummary read_summary(Storage &storage, SummaryFile const &file)
     ret.distance = activity.segment.distance;
     ret.moving = activity.segment.moving.elapsed;
     ret.ascent = activity.segment.total_ascent.value_or(0);
+    if (auto const &np = activity.segment.computed_normalized_range.range; np && np->normalized > 0) {
+        ret.np = np->normalized;
+    }
+    ret.hr_load = activity.segment.hr_load;
     return ret;
 }
 

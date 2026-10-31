@@ -224,6 +224,7 @@ add_executable(
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Summaries.cpp
+        src/App/storage/Fitness.cpp
         src/App/storage/Thresholds.cpp
         src/App/storage/Volume.cpp
         src/App/storage/Download.cpp
@@ -705,6 +706,15 @@ sweattrails_test(
         src/App/storage/Volume.cpp
 )
 target_include_directories(summaries_screen_test PRIVATE src/App)
+
+sweattrails_test(
+        fitness_test
+        test/FitnessTest.cpp
+        src/App/storage/Fitness.cpp
+        src/App/storage/Thresholds.cpp
+        src/App/storage/Volume.cpp
+)
+target_include_directories(fitness_test PRIVATE src/App)
 
 sweattrails_test(
         volume_test

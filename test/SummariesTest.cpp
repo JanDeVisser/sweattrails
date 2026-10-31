@@ -38,6 +38,8 @@ ActivitySummary summary(std::string const &file, i64 start)
         .distance = 42310.5,
         .moving = 5530,
         .ascent = 412,
+        .np = 231,
+        .hr_load = 1.2e8,
     };
 }
 
@@ -48,6 +50,8 @@ void test_round_trip()
     auto          unreadable = summary("2025/03/1741000100.fit", 1741000100);
     unreadable.sport.reset();
     unreadable.sub_sport.reset();
+    unreadable.np.reset();
+    unreadable.hr_load.reset();
     ActivitySummaries const written { summary("2025/03/1741000000.fit", 1741000000), unreadable };
     CHECK(write_summaries(path, written).has_value());
     CHECK(read_summaries(path) == written);
@@ -76,7 +80,10 @@ void test_no_file()
     CHECK(read_summaries(path).empty());
     MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 2, "activities": [] })" }));
     CHECK(read_summaries(path).empty());
-    MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 1, "activities": [ { "file": "a.fit" } ] })" }));
+    MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 2, "activities": [ { "file": "a.fit" } ] })" }));
+    CHECK(read_summaries(path).empty());
+    // Version 1 had no NP or heart rate.
+    MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 1, "activities": [ { "file": "a.fit", "size": 1, "modified": 1, "start": 1, "distance": 0, "moving": 0, "ascent": 0 } ] })" }));
     CHECK(read_summaries(path).empty());
 }
 
@@ -122,6 +129,31 @@ void test_merge_summaries()
 }
 
 // A ride as the inbox would file it, and a file that isn't one.
+// The NP and Σ HR² × seconds from the records: 120 records a second
+// apart, at 150 bpm and 200 W, have 119 seconds between them.
+void test_read_records()
+{
+    Test::TempStore  store;
+    Test::FITBuilder fit;
+    Test::add_file_id(fit, 1);
+    Test::add_records(fit, 120, 150, 200);
+    Test::add_session(fit, 120, 0);
+    auto const unix_start = static_cast<i64>(Test::Start) + DateTime::FIT_TIMESTAMP_OFFSET;
+    auto const date = DateTime::from_timestamp(static_cast<i32>(unix_start));
+    auto const dir = store.storage.activity_dir / std::format("{:04}/{:02}", static_cast<u16>(date.year), static_cast<u8>(date.month) + 1);
+    fs::create_directories(dir);
+    MUST(write_file_by_name((dir / std::format("{}.fit", unix_start)).string(), std::string_view { fit.file() }));
+    auto const files = summary_files(store.storage);
+    if (!files || files->size() != 1) {
+        CHECK_EQ(files ? files->size() : 0uz, 1uz);
+        return;
+    }
+    auto const ride = read_summary(store.storage, (*files)[0]);
+    // NP is worked out in floats, which can round 200 W down.
+    CHECK(ride.np && (*ride.np == 199 || *ride.np == 200));
+    CHECK(ride.hr_load == 150.0 * 150 * 119);
+}
+
 void test_read_from_the_store()
 {
     Test::TempStore  store;
@@ -302,6 +334,7 @@ int main()
     test_plan_update();
     test_plan_from_nothing();
     test_merge_summaries();
+    test_read_records();
     test_read_from_the_store();
     test_second_start_reads_nothing();
     test_empty_store();

@@ -46,13 +46,17 @@ struct ActivitySummary {
     float64                       distance { 0 }; // m
     u32                           moving { 0 };   // s
     u32                           ascent { 0 };   // m
+    // What the training stress is made of, which doesn't depend on the
+    // thresholds: power's NP, and Σ HR² × seconds over the moving records.
+    std::optional<u16>     np { };      // W
+    std::optional<float64> hr_load { }; // bpm² s
 
     bool operator==(ActivitySummary const &) const = default;
 };
 
 using ActivitySummaries = std::vector<ActivitySummary>;
 
-constexpr int SummariesVersion = 1;
+constexpr int SummariesVersion = 2;
 // Read at a time by the job, which other jobs can run between.
 constexpr size_t SummaryChunk = 50;
 
@@ -77,7 +81,8 @@ struct SummaryWork {
 // The store's FIT files, by start time, with their sizes and times.
 StorageResult<std::vector<SummaryFile>> summary_files(Storage const &storage);
 
-// Reads a FIT file's summary, shallowly. A file that can't be read gets
+// Reads a FIT file's summary, with its records, for the NP and the heart
+// rate. A file that can't be read gets
 // one without a sport.
 [[nodiscard]] ActivitySummary read_summary(Storage &storage, SummaryFile const &file);
 
