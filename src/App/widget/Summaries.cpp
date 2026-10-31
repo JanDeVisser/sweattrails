@@ -150,6 +150,23 @@ std::string capitalized(std::string text)
     return text;
 }
 
+// The months' first days along the lines' x axis, of days from New Year.
+std::vector<ChartTick> month_ticks(int year)
+{
+    auto const             new_year = chrono::sys_days { chrono::year { year } / chrono::January / 1 };
+    std::vector<ChartTick> ret;
+    for (auto month = 1u; month <= 12; ++month) {
+        auto const first = chrono::sys_days { chrono::year { year } / chrono::month { month } / 1 };
+        ret.push_back(ChartTick { .x = static_cast<double>((first - new_year).count()), .label = short_month(chrono::month { month }) });
+    }
+    return ret;
+}
+
+int days_in_year(int year)
+{
+    return chrono::year { year }.is_leap() ? 366 : 365;
+}
+
 TableRow total_row(std::string name, PeriodTotal const &total)
 {
     return TableRow {
@@ -183,10 +200,11 @@ bool SummaryView::step_year(int step)
         month = static_cast<unsigned>(next.month());
         return true;
     }
-    if (period == Period::Year && !lines) {
+    if (period == Period::Year && graph == Graph::Bars) {
         return false;
     }
-    auto const next = std::clamp(year + step, first_year, last_year);
+    auto const [first, last] = graph == Graph::Fitness ? fitness_years : std::pair { first_year, last_year };
+    auto const next = std::clamp(year + step, first, last);
     if (next == year) {
         return false;
     }
@@ -197,7 +215,7 @@ bool SummaryView::step_year(int step)
 std::string volume_heading(SummaryView const &view)
 {
     auto const sport = capitalized(VolumeSport_name(view.sport));
-    if (view.lines) {
+    if (view.graph == Graph::YearToDate) {
         return std::format("{} · {} to date · {}", sport, Metric_name(view.metric), view.year);
     }
     if (view.month) {
@@ -245,6 +263,61 @@ std::vector<TableRow> volume_rows(std::vector<PeriodTotal> const &totals, Period
     return ret;
 }
 
+std::string fitness_heading(std::vector<FitnessDay> const &days, chrono::year_month_day day, size_t without, bool has_thresholds)
+{
+    if (!has_thresholds) {
+        return "Set your FTP and LTHR in settings.json to see your fitness";
+    }
+    std::string ret { "Fitness" };
+    if (auto const ix = fitness_day_at(days, day); ix) {
+        auto const &values = days[*ix];
+        ret += std::format(" · CTL {} · ATL {} · TSB {} · {:+.1f} a week", std::llround(values.ctl), std::llround(values.atl),
+            std::llround(values.tsb), ramp_rate(days, *ix));
+    }
+    ret += std::format(" · {}", static_cast<int>(day.year()));
+    if (without > 0) {
+        ret += std::format(" · {} without TSS", without);
+    }
+    return ret;
+}
+
+std::vector<TableColumn> fitness_columns(bool has_thresholds)
+{
+    if (!has_thresholds) {
+        return { { .header = "In settings.json, for example" } };
+    }
+    return {
+        { .header = "Week" },
+        { .header = "TSS", .right_aligned = true },
+        { .header = "CTL", .right_aligned = true },
+        { .header = "ATL", .right_aligned = true },
+        { .header = "TSB", .right_aligned = true },
+    };
+}
+
+std::vector<TableRow> fitness_rows(std::vector<FitnessWeek> const &weeks, bool has_thresholds)
+{
+    if (!has_thresholds) {
+        return {
+            { R"("thresholds": [)" },
+            { R"(    { "from": "2020-01-01", "ftp": 250, "lthr_running": 170, "lthr_cycling": 160 },)" },
+            { R"(    { "from": "2024-03-01", "ftp": 275 })" },
+            { "]" },
+        };
+    }
+    std::vector<TableRow> ret;
+    for (auto const &week : weeks) {
+        ret.push_back(TableRow {
+            period_name(PeriodTotal { .first_day = week.monday }, Period::Week),
+            std::format("{}", std::llround(week.tss)),
+            std::format("{}", std::llround(week.end.ctl)),
+            std::format("{}", std::llround(week.end.atl)),
+            std::format("{}", std::llround(week.end.tsb)),
+        });
+    }
+    return ret;
+}
+
 std::vector<TableColumn> year_to_date_columns(int year)
 {
     return {
@@ -286,7 +359,7 @@ void SummariesScreen::initialize()
 {
     heading = add_widget<Label>("");
     heading->size = FontSize::Large;
-    keys = add_widget<Label>("W M Y: week, month, year    G: to date    R C: running, cycling    D T N A: distance, time, number, ascent    "
+    keys = add_widget<Label>("W M Y: week, month, year    G: to date    F: fitness    R C: running, cycling    D T N A: distance, time, number, ascent    "
                              "Left Right: year    Enter: open    Backspace: back    Esc: close",
         LIGHTGRAY);
     keys->size = FontSize::Small;
@@ -338,8 +411,7 @@ void SummariesScreen::set_period(Period period)
     trail.clear();
     view.period = period;
     view.month.reset();
-    view.lines = false;
-    refresh();
+    show_graph(Graph::Bars);
 }
 
 void SummariesScreen::set_sport(VolumeSport sport)
@@ -357,9 +429,22 @@ void SummariesScreen::set_metric(Metric metric)
 
 void SummariesScreen::toggle_lines()
 {
+    show_graph(view.graph == Graph::YearToDate ? Graph::Bars : Graph::YearToDate);
+}
+
+void SummariesScreen::toggle_fitness()
+{
+    show_graph(view.graph == Graph::Fitness ? Graph::Bars : Graph::Fitness);
+}
+
+// At the top. Leaving the fitness, whose years are those of any sport,
+// the year goes back among the sport's.
+void SummariesScreen::show_graph(Graph graph)
+{
     trail.clear();
     view.month.reset();
-    view.lines = !view.lines;
+    view.graph = graph;
+    set_span();
     refresh();
 }
 
@@ -387,7 +472,7 @@ void SummariesScreen::step_row(int step)
 void SummariesScreen::drill(std::optional<size_t> bar)
 {
     auto const ix = bar ? bar : table->selection;
-    if (view.lines || !ix || *ix >= totals.size()) {
+    if (view.graph != Graph::Bars || !ix || *ix >= totals.size()) {
         return;
     }
     auto const &period = totals[*ix];
@@ -435,7 +520,15 @@ bool SummariesScreen::up()
 
 void SummariesScreen::set_span()
 {
-    view.set_years(volume_years(summaries, view.sport, static_cast<int>(today.year())));
+    view.fitness_years = fitness_years(summaries, static_cast<int>(today.year()));
+    if (view.graph == Graph::Fitness) {
+        // R and C change the view underneath, not the year shown.
+        auto const year = view.year;
+        view.set_years(volume_years(summaries, view.sport, static_cast<int>(today.year())));
+        view.year = std::clamp(year, view.fitness_years.first, view.fitness_years.second);
+    } else {
+        view.set_years(volume_years(summaries, view.sport, static_cast<int>(today.year())));
+    }
     std::tie(view.first_month, view.last_month) = volume_months(summaries, view.sport, today);
 }
 
@@ -454,15 +547,16 @@ void SummariesScreen::refresh_in_place()
     auto const                            top_line = table->scroll.top_line;
     auto const                            selection = table->selection;
     std::optional<chrono::year_month_day> selected_period { };
-    auto const                            total_selected = !view.lines && selection && *selection >= totals.size();
-    if (!view.lines && selection && !total_selected) {
+    auto const                            bars = view.graph == Graph::Bars;
+    auto const                            total_selected = bars && selection && *selection >= totals.size();
+    if (bars && selection && !total_selected) {
         selected_period = totals[*selection].first_day;
     }
     refresh();
     table->scroll.top_line = top_line;
     table->scroll.clamp();
-    if (view.lines) {
-        // The rows are the months, whatever the numbers.
+    if (!bars) {
+        // The rows are the months or the weeks, whatever the numbers.
         table->select(selection);
     } else if (total_selected) {
         table->select(table->rows.size() - 1);
@@ -480,14 +574,23 @@ void SummariesScreen::refresh()
     };
     auto const min_step = view.metric == Metric::Count ? 1.0 : 0.0;
     auto const policy = [](bool shown) { return shown ? SizePolicy::Stretch : SizePolicy::Hide; };
-    if (chart->policy != policy(!view.lines)) {
-        chart->policy = policy(!view.lines);
-        lines->policy = policy(view.lines);
+    auto const bars = view.graph == Graph::Bars;
+    if (chart->policy != policy(bars)) {
+        chart->policy = policy(bars);
+        lines->policy = policy(!bars);
         resize();
     }
-    if (view.lines) {
+    if (!bars) {
         totals.clear();
         chart->set_bars({ });
+    }
+    if (view.graph == Graph::Fitness) {
+        lines->format_value = [](double value) { return std::format("{:g}", value); };
+        lines->min_step = 0;
+        refresh_fitness();
+        return;
+    }
+    if (view.graph == Graph::YearToDate) {
         lines->format_value = format_value;
         lines->min_step = min_step;
         refresh_lines();
@@ -523,17 +626,44 @@ void SummariesScreen::refresh_lines()
         }
         lines->series.push_back(ChartSeries { .label = std::format("{}", year), .color = line_color(back), .bold = back == 0, .values = std::move(values) });
     }
-    auto const new_year = chrono::sys_days { chrono::year { view.year } / chrono::January / 1 };
-    lines->x_count = static_cast<size_t>((chrono::sys_days { chrono::year { view.year + 1 } / chrono::January / 1 } - new_year).count());
+    lines->x_count = static_cast<size_t>(days_in_year(view.year));
     for (auto const &line : lines->series) {
         lines->x_count = std::max(lines->x_count, line.values.size());
     }
-    lines->ticks.clear();
-    for (auto month = 1u; month <= 12; ++month) {
-        auto const first = chrono::sys_days { chrono::year { view.year } / chrono::month { month } / 1 };
-        lines->ticks.push_back(ChartTick { .x = static_cast<double>((first - new_year).count()), .label = short_month(chrono::month { month }) });
-    }
+    lines->ticks = month_ticks(view.year);
     table->set_rows(year_to_date_columns(view.year), year_to_date_rows(year_to_date_months(year_values, before_values, view.year), view.metric));
+}
+
+// CTL, ATL and TSB through the year, up to today in this one; a week a
+// row in the table.
+void SummariesScreen::refresh_fitness()
+{
+    auto const has_thresholds = !thresholds.empty();
+    auto const new_years_eve = chrono::year { view.year } / chrono::December / 31;
+    auto const until = std::min(chrono::sys_days { today }, chrono::sys_days { new_years_eve });
+    auto const days = has_thresholds ? fitness_days(summaries, thresholds, until) : std::vector<FitnessDay> { };
+    heading->text = fitness_heading(days, until, without_stress(summaries, thresholds, view.year), has_thresholds);
+    lines->series = {
+        ChartSeries { .label = "CTL", .color = SKYBLUE, .bold = true },
+        ChartSeries { .label = "ATL", .color = Fade(PINK, 0.7f) },
+        ChartSeries { .label = "TSB", .color = Fade(YELLOW, 0.7f) },
+    };
+    if (!days.empty()) {
+        // The days of the year before the first activity, at 0.
+        for (auto day = chrono::sys_days { chrono::year { view.year } / chrono::January / 1 }; day <= until; day += chrono::days { 1 }) {
+            auto const ix = fitness_day_at(days, day);
+            auto const values = ix ? days[*ix] : FitnessDay { };
+            lines->series[0].values.push_back(values.ctl);
+            lines->series[1].values.push_back(values.atl);
+            lines->series[2].values.push_back(values.tsb);
+        }
+    }
+    if (lines->series[0].values.empty()) {
+        lines->series.clear();
+    }
+    lines->x_count = static_cast<size_t>(days_in_year(view.year));
+    lines->ticks = month_ticks(view.year);
+    table->set_rows(fitness_columns(has_thresholds), fitness_rows(fitness_weeks(days, view.year), has_thresholds));
 }
 
 }

@@ -704,6 +704,8 @@ sweattrails_test(
         test/SummariesScreenTest.cpp
         src/App/widget/Summaries.cpp
         src/App/storage/Volume.cpp
+        src/App/storage/Fitness.cpp
+        src/App/storage/Thresholds.cpp
 )
 target_include_directories(summaries_screen_test PRIVATE src/App)
 

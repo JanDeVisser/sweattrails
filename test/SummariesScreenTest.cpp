@@ -346,9 +346,9 @@ std::chrono::year_month_day date(int year, unsigned month, unsigned day)
 
 void test_year_to_date_heading()
 {
-    SummaryView view { .sport = VolumeSport::Cycling, .metric = Metric::Time, .year = 2025, .lines = true };
+    SummaryView view { .sport = VolumeSport::Cycling, .metric = Metric::Time, .year = 2025, .graph = Graph::YearToDate };
     CHECK_EQ(volume_heading(view), "Cycling · time to date · 2025");
-    view.lines = false;
+    view.graph = Graph::Bars;
     view.month = 3;
     CHECK_EQ(volume_heading(view), "Cycling · time by week · March 2025");
 }
@@ -379,7 +379,7 @@ void test_lines()
     auto                screen = make_screen();
     screen->step_year(-1); // 2025
     screen->toggle_lines();
-    CHECK(screen->view.lines);
+    CHECK(screen->view.graph == Graph::YearToDate);
     CHECK(screen->chart->policy == SizePolicy::Hide);
     CHECK(screen->lines->policy == SizePolicy::Stretch);
     CHECK_EQ(screen->heading->text, "Cycling · distance to date · 2025");
@@ -398,7 +398,7 @@ void test_lines()
     screen->step_year(-1);
     CHECK_EQ(screen->lines->series.size(), 1uz); // 2023 alone
     screen->toggle_lines();
-    CHECK(!screen->view.lines);
+    CHECK(screen->view.graph == Graph::Bars);
     CHECK(screen->chart->policy == SizePolicy::Stretch);
     CHECK_EQ(screen->chart->bars.size(), 52uz);
 }
@@ -424,7 +424,7 @@ void test_period_leaves_the_lines()
     auto                screen = make_screen();
     screen->toggle_lines();
     screen->set_period(Period::Month);
-    CHECK(!screen->view.lines);
+    CHECK(screen->view.graph == Graph::Bars);
     CHECK_EQ(screen->chart->bars.size(), 12uz);
 }
 
@@ -540,7 +540,7 @@ void test_step_by_month()
 // The lines go by year also from the years view.
 void test_lines_step_by_year()
 {
-    SummaryView view { .period = Period::Year, .year = 2026, .lines = true, .first_year = 2020, .last_year = 2026 };
+    SummaryView view { .period = Period::Year, .year = 2026, .graph = Graph::YearToDate, .first_year = 2020, .last_year = 2026 };
     CHECK(view.step_year(-1));
     CHECK_EQ(view.year, 2025);
 }
@@ -610,7 +610,7 @@ void test_new_summaries_in_the_lines()
     screen->toggle_lines();
     screen->table->select(3);
     screen->set_summaries({ run(2021, 3, 1), ride(2023, 3, 6), ride(2023, 3, 8), ride(2025, 1, 6), ride(2025, 3, 3), ride(2025, 2, 3) });
-    CHECK(screen->view.lines);
+    CHECK(screen->view.graph == Graph::YearToDate);
     CHECK(screen->chart->policy == SizePolicy::Hide);
     CHECK(screen->table->selection == 3uz);
     CHECK_EQ(screen->table->rows.size(), 12uz);
@@ -702,7 +702,7 @@ void test_metric_in_the_lines()
     screen->toggle_lines();
     screen->table->select(2);
     screen->set_metric(Metric::Count);
-    CHECK(screen->view.lines);
+    CHECK(screen->view.graph == Graph::YearToDate);
     CHECK_EQ(screen->heading->text, "Cycling · count to date · 2025");
     CHECK_EQ(screen->table->rows[2][1], "2");
     CHECK_EQ(screen->table->rows[2][3], "+2");
@@ -743,6 +743,152 @@ void test_no_year_before_the_first()
     CHECK_EQ(screen->table->rows[2][1], "84.7 km");
     CHECK_EQ(screen->table->rows[2][2], "");
     CHECK_EQ(screen->table->rows[2][3], "");
+}
+
+// An hour at an FTP of 250 W, or at running's LTHR of 170 bpm: TSS 100.
+ThresholdList fitness_thresholds()
+{
+    return { Thresholds { .from = std::chrono::year { 2020 } / 1 / 1, .ftp = 250, .lthr_running = 170, .lthr_cycling = 160 } };
+}
+
+ActivitySummary hard_ride(unsigned month, unsigned day)
+{
+    auto ret = ride(2026, month, day);
+    ret.moving = 3600;
+    ret.np = 250;
+    return ret;
+}
+
+// A run of TSS 100 in 2021, rides of 100 every day from the 1st to the
+// 14th of June 2026, and a ride without power or heart rate.
+std::shared_ptr<SummariesScreen> make_fitness_screen(ThresholdList thresholds = fitness_thresholds())
+{
+    auto screen = Widget::make<SummariesScreen>(nullptr);
+    screen->viewport = Rect<float> { 0, 0, 1000, 800 };
+    auto hard_run = run(2021, 3, 1);
+    hard_run.moving = 3600;
+    hard_run.hr_load = 170.0 * 170 * 3600;
+    ActivitySummaries summaries { hard_run, ride(2026, 5, 1) };
+    for (auto day = 1u; day <= 14; ++day) {
+        summaries.push_back(hard_ride(6, day));
+    }
+    screen->thresholds = std::move(thresholds);
+    screen->set_summaries(summaries);
+    screen->open(VolumeSport::Cycling, Today);
+    return screen;
+}
+
+void test_fitness_heading()
+{
+    namespace chrono = std::chrono;
+    std::vector<FitnessDay> days;
+    for (auto day = 8u; day <= 15; ++day) {
+        days.push_back(FitnessDay { .day = chrono::year { 2026 } / chrono::June / chrono::day { day } });
+    }
+    days.front().ctl = 68.2;
+    days.back().ctl = 72.4;
+    days.back().atl = 85.2;
+    days.back().tsb = -12.6;
+    CHECK_EQ(fitness_heading(days, Today, 3, true), "Fitness · CTL 72 · ATL 85 · TSB -13 · +4.2 a week · 2026 · 3 without TSS");
+    CHECK_EQ(fitness_heading(days, Today, 0, true), "Fitness · CTL 72 · ATL 85 · TSB -13 · +4.2 a week · 2026");
+    // A day without values, before the first activity.
+    CHECK_EQ(fitness_heading(days, chrono::year { 2025 } / chrono::December / 31, 0, true), "Fitness · 2025");
+    CHECK_EQ(fitness_heading(days, Today, 0, false), "Set your FTP and LTHR in settings.json to see your fitness");
+}
+
+void test_fitness_view()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_fitness_screen();
+    screen->toggle_fitness();
+    CHECK(screen->view.graph == Graph::Fitness);
+    CHECK(screen->heading->text.starts_with("Fitness · CTL "));
+    CHECK(screen->heading->text.ends_with(" a week · 2026 · 1 without TSS"));
+    CHECK(screen->chart->policy == SizePolicy::Hide);
+    CHECK(screen->lines->policy == SizePolicy::Stretch);
+    // Up to today, the 15th of June: 166 days.
+    CHECK_EQ(screen->lines->series.size(), 3uz);
+    if (screen->lines->series.size() == 3) {
+        CHECK_EQ(screen->lines->series[0].label, "CTL");
+        CHECK(screen->lines->series[0].bold);
+        CHECK_EQ(screen->lines->series[2].label, "TSB");
+        CHECK_EQ(screen->lines->series[0].values.size(), 166uz);
+    }
+    CHECK_EQ(screen->lines->x_count, 365uz);
+    // Two weeks of hard rides: tired, and the scale goes below 0.
+    CHECK(screen->lines->scale().bottom < 0);
+    // The weeks from Monday the 5th of January to this one.
+    auto const &rows = screen->table->rows;
+    CHECK_EQ(rows.size(), 24uz);
+    if (rows.size() == 24) {
+        CHECK_EQ(rows[21][0], "Mon 1 Jun");
+        CHECK_EQ(rows[21][1], "700");
+        CHECK_EQ(rows[23][0], "Mon 15 Jun");
+        CHECK_EQ(rows[23][1], "0");
+    }
+    // Nothing to drill into.
+    screen->step_row(1);
+    screen->drill();
+    CHECK(screen->view.graph == Graph::Fitness);
+    CHECK(!screen->up());
+}
+
+void test_fitness_by_year()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_fitness_screen();
+    screen->toggle_fitness();
+    screen->step_year(-1);
+    CHECK_EQ(screen->view.year, 2025);
+    CHECK(screen->heading->text.ends_with(" a week · 2025"));
+    // A past year is all of it, and all its weeks.
+    if (!screen->lines->series.empty()) {
+        CHECK_EQ(screen->lines->series[0].values.size(), 365uz);
+    }
+    CHECK_EQ(screen->table->rows.size(), 52uz);
+    // Back to the first activity of any sport, the run of 2021.
+    for (auto step = 0; step < 10; ++step) {
+        screen->step_year(-1);
+    }
+    CHECK_EQ(screen->view.year, 2021);
+    screen->step_year(1);
+    CHECK_EQ(screen->view.year, 2022);
+    // Leaving it, the year is among cycling's again.
+    screen->set_period(Period::Month);
+    CHECK(screen->view.graph == Graph::Bars);
+    CHECK_EQ(screen->view.year, 2026);
+}
+
+void test_leaving_the_fitness()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_fitness_screen();
+    screen->toggle_fitness();
+    auto const heading = screen->heading->text;
+    // The fitness is of all sports, in TSS.
+    screen->set_sport(VolumeSport::Running);
+    screen->set_metric(Metric::Ascent);
+    CHECK_EQ(screen->heading->text, heading);
+    screen->toggle_lines();
+    CHECK(screen->view.graph == Graph::YearToDate);
+    CHECK_EQ(screen->heading->text, "Running · ascent to date · 2026");
+    screen->toggle_fitness();
+    screen->toggle_fitness();
+    CHECK(screen->view.graph == Graph::Bars);
+    CHECK_EQ(screen->heading->text, "Running · ascent by week · 2026");
+}
+
+void test_fitness_without_thresholds()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_fitness_screen({ });
+    screen->toggle_fitness();
+    CHECK_EQ(screen->heading->text, "Set your FTP and LTHR in settings.json to see your fitness");
+    CHECK(screen->lines->series.empty());
+    CHECK_EQ(screen->table->rows.size(), 4uz);
+    if (!screen->table->rows.empty()) {
+        CHECK_EQ(screen->table->rows[0][0], R"("thresholds": [)");
+    }
 }
 
 }
@@ -788,5 +934,10 @@ int main()
     test_up_after_stepping_months();
     test_step_by_month_stops_at_the_activities();
     test_no_year_before_the_first();
+    test_fitness_heading();
+    test_fitness_view();
+    test_fitness_by_year();
+    test_leaving_the_fitness();
+    test_fitness_without_thresholds();
     return Test::test_result();
 }
