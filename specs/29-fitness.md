@@ -1,6 +1,6 @@
 # Fitness, fatigue and form (CTL, ATL, TSB)
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -402,3 +402,19 @@ unchanged. **Failing:** `summaries_screen_test`, in
 `test_fitness_last_week_into_the_new_year` (finding 1) and
 `test_fitness_heading_after_a_long_rest` (finding 3). All the other tests
 pass (`ctest --test-dir build -E oauth`: 48 of 49).
+
+### Resolution
+
+1. Fixed: the days run to the year's last week's Sunday, or today if
+   that's sooner, so a past year's last week has its days in January;
+   the chart and the heading still stop at New Year's Eve.
+   `test_fitness_last_week_into_the_new_year` passes.
+2. Fixed: the app keeps the error, and the fitness view's heading says
+   it, "The thresholds in settings.json can't be read: …", as well as
+   the status line. `test_fitness_heading` and
+   `test_fitness_without_thresholds` check the heading; the app's
+   wiring needs a window.
+3. Fixed: the ramp rate is rounded to a tenth before it's formatted,
+   and a zero is "+0.0". `test_fitness_heading_after_a_long_rest`
+   passes.
+4. The Reviewer's tests are kept, and all pass.
