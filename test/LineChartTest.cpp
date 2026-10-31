@@ -66,6 +66,29 @@ void test_scale()
     CHECK((chart->scale() == ChartScale { .top = 100, .step = 50 }));
 }
 
+// A line below 0, as a balance can go: the scale goes down to it.
+void test_scale_below_zero()
+{
+    Test::ScopedTestApp app;
+    auto                chart = make_chart();
+    chart->series = {
+        { .label = "CTL", .bold = true, .values = { 0, 40, 72 } },
+        { .label = "TSB", .values = { 0, -13, -23 } },
+    };
+    CHECK((chart->scale() == ChartScale { .bottom = -40, .top = 80, .step = 20 }));
+    auto const scale = ChartScale { .bottom = -50, .top = 50, .step = 25 };
+    CHECK_EQ(chart->y_at(-50, scale), 270.0f);
+    CHECK_EQ(chart->y_at(0, scale), 140.0f);
+    CHECK_EQ(chart->y_at(50, scale), 10.0f);
+}
+
+void test_nice_range()
+{
+    CHECK((nice_range(0, 85) == nice_scale(85)));
+    CHECK((nice_range(-23, 85) == ChartScale { .bottom = -50, .top = 100, .step = 50 }));
+    CHECK((nice_range(-23, -5) == ChartScale { .bottom = -25, .top = 0, .step = 5 }));
+}
+
 }
 
 int main()
@@ -73,5 +96,7 @@ int main()
     test_x_at();
     test_y_at();
     test_scale();
+    test_scale_below_zero();
+    test_nice_range();
     return Test::test_result();
 }

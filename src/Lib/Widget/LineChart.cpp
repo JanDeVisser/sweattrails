@@ -28,13 +28,16 @@ Rectangle LineChart::plot_area() const
 
 ChartScale LineChart::scale() const
 {
+    auto min = 0.0;
     auto max = 0.0;
     for (auto const &line : series) {
         if (!line.values.empty()) {
-            max = std::max(max, std::ranges::max(line.values));
+            auto const [lowest, highest] = std::ranges::minmax(line.values);
+            min = std::min(min, lowest);
+            max = std::max(max, highest);
         }
     }
-    return nice_scale(max, Ticks, min_step);
+    return nice_range(min, max, Ticks, min_step);
 }
 
 // The first value at the plot's left edge, the last of `x_count` at its
@@ -51,7 +54,7 @@ float LineChart::x_at(double x) const
 float LineChart::y_at(double value, ChartScale const &s) const
 {
     auto const plot = plot_area();
-    return plot.y + plot.height - static_cast<float>(value / s.top) * plot.height;
+    return plot.y + plot.height - static_cast<float>((value - s.bottom) / (s.top - s.bottom)) * plot.height;
 }
 
 void LineChart::draw()
