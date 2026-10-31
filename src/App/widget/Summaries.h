@@ -74,9 +74,10 @@ struct SummaryView {
 [[nodiscard]] std::vector<TableRow>    volume_rows(std::vector<PeriodTotal> const &totals, Period period);
 
 // "Fitness · CTL 72 · ATL 85 · TSB -13 · +4.2 a week · 2026 · 3 without
-// TSS", on `day`, today or the year's last; or what to set without
-// thresholds.
-[[nodiscard]] std::string fitness_heading(std::vector<FitnessDay> const &days, std::chrono::year_month_day day, size_t without, bool has_thresholds);
+// TSS", on `day`, today or the year's last; or, without thresholds, what's
+// wrong with the ones in the settings, or that there are none.
+[[nodiscard]] std::string fitness_heading(std::vector<FitnessDay> const &days, std::chrono::year_month_day day, size_t without,
+    bool has_thresholds, std::string_view thresholds_error = { });
 
 // The fitness table's: a row per week, its TSS and CTL, ATL and TSB at
 // its end; without thresholds, how to set them.
@@ -100,6 +101,7 @@ struct SummariesScreen : public Layout {
     std::vector<SummaryView>    trail { }; // The views drilled down from
     ActivitySummaries           summaries { };
     ThresholdList               thresholds { };
+    std::string                 thresholds_error { }; // Why the settings' can't be read
     std::chrono::year_month_day today { };
     std::shared_ptr<Label>      heading;
     std::shared_ptr<Label>      keys;

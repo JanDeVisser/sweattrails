@@ -796,6 +796,8 @@ void test_fitness_heading()
     // A day without values, before the first activity.
     CHECK_EQ(fitness_heading(days, chrono::year { 2025 } / chrono::December / 31, 0, true), "Fitness · 2025");
     CHECK_EQ(fitness_heading(days, Today, 0, false), "Set your FTP and LTHR in settings.json to see your fitness");
+    CHECK_EQ(fitness_heading(days, Today, 0, false, "threshold 2's `from` isn't a date, as \"2024-03-01\""),
+        "The thresholds in settings.json can't be read: threshold 2's `from` isn't a date, as \"2024-03-01\"");
 }
 
 // Long after the last activity, CTL still decays, by less than 0.05 a
@@ -901,6 +903,11 @@ void test_fitness_without_thresholds()
     screen->toggle_fitness();
     CHECK_EQ(screen->heading->text, "Set your FTP and LTHR in settings.json to see your fitness");
     CHECK(screen->lines->series.empty());
+    screen->thresholds_error = "`thresholds` isn't a list";
+    screen->toggle_fitness();
+    screen->toggle_fitness();
+    CHECK_EQ(screen->heading->text, "The thresholds in settings.json can't be read: `thresholds` isn't a list");
+    screen->thresholds_error.clear();
     CHECK_EQ(screen->table->rows.size(), 4uz);
     if (!screen->table->rows.empty()) {
         CHECK_EQ(screen->table->rows[0][0], R"("thresholds": [)");

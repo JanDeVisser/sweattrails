@@ -263,8 +263,13 @@ std::vector<TableRow> volume_rows(std::vector<PeriodTotal> const &totals, Period
     return ret;
 }
 
-std::string fitness_heading(std::vector<FitnessDay> const &days, chrono::year_month_day day, size_t without, bool has_thresholds)
+std::string fitness_heading(std::vector<FitnessDay> const &days, chrono::year_month_day day, size_t without,
+    bool has_thresholds, std::string_view thresholds_error)
 {
+    // Here as well as on the status line, which the jobs clear at start.
+    if (!thresholds_error.empty()) {
+        return std::format("The thresholds in settings.json can't be read: {}", thresholds_error);
+    }
     if (!has_thresholds) {
         return "Set your FTP and LTHR in settings.json to see your fitness";
     }
@@ -652,7 +657,7 @@ void SummariesScreen::refresh_fitness()
     auto const last_monday = chrono::sys_days { new_years_eve } - (chrono::weekday { chrono::sys_days { new_years_eve } } - chrono::Monday);
     auto const last_week_until = std::min(chrono::sys_days { today }, last_monday + chrono::days { 6 });
     auto const days = has_thresholds ? fitness_days(summaries, thresholds, last_week_until) : std::vector<FitnessDay> { };
-    heading->text = fitness_heading(days, until, without_stress(summaries, thresholds, view.year), has_thresholds);
+    heading->text = fitness_heading(days, until, without_stress(summaries, thresholds, view.year), has_thresholds, thresholds_error);
     lines->series = {
         ChartSeries { .label = "CTL", .color = SKYBLUE, .bold = true },
         ChartSeries { .label = "ATL", .color = Fade(PINK, 0.7f) },

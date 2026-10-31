@@ -918,6 +918,7 @@ void cmd_summaries(pSweatTrails const &sweattrails, JSONValue const &)
     auto const now = DateTime::from_timestamp(static_cast<i32>(std::time(nullptr)));
     auto const today = std::chrono::year { now.year } / std::chrono::month { static_cast<unsigned>(now.month) + 1 } / std::chrono::day { now.day_of_month };
     sweattrails->summaries_screen->thresholds = sweattrails->storage.thresholds;
+    sweattrails->summaries_screen->thresholds_error = sweattrails->thresholds_error;
     sweattrails->summaries_screen->open(sport, today);
     sweattrails->show_summaries(true);
 }
@@ -1470,7 +1471,8 @@ void SweatTrails::initialize()
     if (auto const thresholds = decode_thresholds(settings.get("thresholds")); thresholds) {
         storage.thresholds = *thresholds;
     } else {
-        set_status(std::format("No TSS: in the settings, {}", thresholds.error()));
+        thresholds_error = thresholds.error();
+        set_status(std::format("No TSS: in the settings, {}", thresholds_error));
     }
 
     bus.add_task<SweatTrails>("st-force-quit", self(), cmd_force_quit)

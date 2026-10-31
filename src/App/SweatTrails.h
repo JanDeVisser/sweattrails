@@ -314,6 +314,7 @@ struct SweatTrails : public Main<Job, Notification> {
     std::shared_ptr<WidgetStack>     widget_stack { nullptr };
     std::shared_ptr<ActivityDisplay> activity_display { nullptr };
     std::shared_ptr<SummariesScreen> summaries_screen { nullptr };
+    std::string                      thresholds_error { }; // Why the settings' thresholds can't be read
     std::shared_ptr<Label>           status { nullptr };
 
     SweatTrails();
