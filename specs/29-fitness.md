@@ -1,6 +1,6 @@
 # Fitness, fatigue and form (CTL, ATL, TSB)
 
-Status: In progress, on branch feature/29-fitness
+Status: In review
 
 <!--
 Status is one of:
@@ -202,7 +202,7 @@ None.
 - **Enter and a click** do nothing in the fitness view, as in the lines.
   Up and Down go through the weeks.
 
-### The scores (`storage/Fitness.*`), pure
+### The scores (`storage/Thresholds.*`, `storage/Fitness.*`), pure
 
 - **`Thresholds`**: `from`, a `year_month_day`, and optional `ftp`,
   `lthr_running` and `lthr_cycling`. **`decode_thresholds(JSONValue)`**
@@ -215,12 +215,14 @@ None.
   `moving × NP² / (FTP² × 36)` if there's an NP and an FTP, else
   `hr_load / (LTHR² × 36)` with the sport's LTHR (cycling's for
   cycling, running's for the rest), else none. Taking the numbers, not a
-  segment, lets the data panel and the summaries share it.
+  segment, lets the data panel and the summaries share it. These are in
+  `Thresholds.*`, which the data panel uses, and what follows in
+  `Fitness.*`.
 - **`FitnessDay { tss, ctl, atl, tsb }`**, and
   **`fitness_days(summaries, thresholds, until)`**: a day each from the
   first activity's to `until`, by `start_day()` as for the volume.
   **`ramp_rate(days, ix)`**: CTL at `ix` less CTL a week before.
-  **`fitness_weeks(days, first_day, year)`** gives the table's rows,
+  **`fitness_weeks(days, year)`** gives the table's rows,
   **`without_stress(summaries, thresholds, year)`** the heading's count.
 
 ### Heart rate in the records (`storage/Activity.*`)
@@ -247,8 +249,10 @@ None.
 ### The chart (`src/Lib/Widget/Chart.*`, `LineChart.*`)
 
 - `ChartScale` gets a **`bottom`**, 0 by default, and
-  **`nice_scale(min, max, ticks, min_step)`**, an overload for a range
-  that may go below 0: the bottom and the top on a step. The bar chart
+  **`nice_range(min, max, ticks, min_step)`** a scale for a range that
+  may go below 0: the bottom and the top on a step. (Not an overload of
+  `nice_scale()`, whose `(max, ticks, min_step)` calls it would make
+  ambiguous.) The bar chart
   stays from 0.
 - `draw_chart_scale()` draws from the bottom; the line at 0 is already
   marked brighter than the others. `LineChart::scale()` takes the
@@ -270,7 +274,7 @@ None.
   settings.json without thresholds, when the chart and the table are
   empty.
 - Left and Right go between the year of the first activity of any
-  sport and this year.
+  sport and this year (`SummaryView::fitness_years`).
 
 ### The app (`SweatTrails.cpp`)
 
