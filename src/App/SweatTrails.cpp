@@ -1603,6 +1603,9 @@ void SweatTrails::initialize()
     auto quiet = JSONValue::object();
     quiet["quiet"] = JSONValue { true };
     bus.submit("st-download", quiet);
+    if (!settings_error.empty()) {
+        message_box(std::format("{}. SweatTrails starts without those settings.", settings_error));
+    }
 }
 
 EError SweatTrails::read_settings()
@@ -1617,18 +1620,19 @@ EError SweatTrails::read_settings()
         auto settings_file = dir / file;
         // std::println("--> {}", settings_file.string());
         if (exists(settings_file)) {
-            auto json_maybe = JSONValue::read_file(settings_file.string());
-            if (!json_maybe) {
-                switch (json_maybe.error().index()) {
-                case 0:
-                    return std::unexpected(STError { std::get<LibCError>(json_maybe.error()) });
-                case 1:
-                    return std::unexpected(STError { std::get<JSONError>(json_maybe.error()) });
-                default:
-                    UNREACHABLE();
-                }
+            // A file that can't be read is left out, and the user told,
+            // rather than the app ending before its window shows why.
+            auto const text = read_file_by_name(settings_file.string());
+            if (!text) {
+                settings_error = std::format("{} can't be read: {}", settings_file.string(), text.error().to_string());
+                return { };
             }
-            settings.merge(json_maybe.value());
+            auto const json = JSONValue::deserialize(*text);
+            if (!json) {
+                settings_error = std::format("{} can't be read: {}", settings_file.string(), json.error().to_string());
+                return { };
+            }
+            settings.merge(*json);
         }
         return { };
     };
