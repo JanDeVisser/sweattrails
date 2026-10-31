@@ -271,8 +271,14 @@ std::string fitness_heading(std::vector<FitnessDay> const &days, chrono::year_mo
     std::string ret { "Fitness" };
     if (auto const ix = fitness_day_at(days, day); ix) {
         auto const &values = days[*ix];
+        // To a tenth first: a CTL decaying by less than 0.05 a week would
+        // be "-0.0".
+        auto ramp = std::round(ramp_rate(days, *ix) * 10) / 10;
+        if (ramp == 0) {
+            ramp = 0;
+        }
         ret += std::format(" · CTL {} · ATL {} · TSB {} · {:+.1f} a week", std::llround(values.ctl), std::llround(values.atl),
-            std::llround(values.tsb), ramp_rate(days, *ix));
+            std::llround(values.tsb), ramp);
     }
     ret += std::format(" · {}", static_cast<int>(day.year()));
     if (without > 0) {

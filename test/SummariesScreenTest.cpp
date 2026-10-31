@@ -1064,6 +1064,7 @@ int main()
     test_no_year_before_the_first();
     test_fitness_last_week_into_the_new_year();
     test_fitness_heading();
+    test_fitness_heading_after_a_long_rest();
     test_fitness_view();
     test_fitness_by_year();
     test_leaving_the_fitness();
