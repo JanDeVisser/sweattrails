@@ -174,8 +174,20 @@ struct TestActivity {
     Storage  storage { };
     Activity activity { storage, ActivityID { } };
 
+    // An FTP of 275 W, and an LTHR of 170 bpm running and 160 riding.
+    static ThresholdList thresholds()
+    {
+        return ThresholdList { Thresholds {
+            .from = std::chrono::year { 2012 } / 1 / 1,
+            .ftp = 275,
+            .lthr_running = 170,
+            .lthr_cycling = 160,
+        } };
+    }
+
     TestActivity(sport the_sport, std::vector<record> records, std::vector<TestLap> const &laps = { })
     {
+        storage.thresholds = thresholds();
         activity.sport = the_sport;
         activity.segment.moving = Duration { 3000 };
         activity.segment.elapsed = Duration { 3100 };
@@ -511,7 +523,7 @@ void test_power()
     CHECK_EQ(t.value("Avg Power"), "200 W");
     CHECK_EQ(t.value("Max Power"), "200 W");
     CHECK_EQ(t.value("NP"), "200 W");
-    // 200 W over the hard-coded FTP of 275 W.
+    // 200 W over the FTP of 275 W.
     CHECK_EQ(t.value("IF"), "0.73");
     CHECK_EQ(t.value("VI"), "1.00");
     CHECK_EQ(t.mark_at("NP"), TestActivity::NoMark);
@@ -522,10 +534,72 @@ void test_power()
 void test_tss_over_moving_time()
 {
     TestActivity t { sport::Cycling, records_with(40, set_power, 0, u16 { 200 }, u16 { 200 }) };
-    CHECK(t.activity.segment.tss.has_value());
-    if (t.activity.segment.tss) {
-        CHECK_EQ(*t.activity.segment.tss, 44.0f);
+    CHECK_EQ(activity_summary(t.activity), "50:00 · TSS 44");
+}
+
+// The FTP in force on the activity's day: 250 W from 2025, which makes
+// 200 W over 3000 s 53.
+void test_tss_with_the_ftp_of_its_day()
+{
+    TestActivity t { sport::Cycling, records_with(40, set_power, 0, u16 { 200 }, u16 { 200 }) };
+    t.storage.thresholds.push_back(Thresholds { .from = std::chrono::year { 2025 } / 1 / 1, .ftp = 250 });
+    t.activity.segment.start_time = DateTime::from_timestamp(1750000000); // June 2025
+    CHECK_EQ(activity_summary(t.activity), "50:00 · TSS 53");
+    CHECK_EQ(t.value("IF"), "0.80");
+}
+
+void test_no_tss_without_thresholds()
+{
+    TestActivity t { sport::Cycling, records_with(40, set_power, 0, u16 { 200 }, u16 { 200 }) };
+    t.storage.thresholds.clear();
+    CHECK_EQ(activity_summary(t.activity), "50:00");
+    CHECK(!t.field("IF"));
+}
+
+// A record a second for 3000 s, at running's LTHR of 170 bpm: 3000 s at
+// threshold is 83, as for power.
+std::vector<record> heart_rate_at(u8 heart_rate, size_t count, u32 every = 1)
+{
+    std::vector<record> records(count);
+    for (auto ix = 0uz; ix < count; ++ix) {
+        records[ix].timestamp = DateTime::from_timestamp(static_cast<i32>(1750000000 + ix * every));
+        records[ix].heart_rate = heart_rate;
     }
+    return records;
+}
+
+void test_hr_tss()
+{
+    TestActivity run { sport::Running, heart_rate_at(170, 3001) };
+    CHECK_EQ(activity_summary(run.activity), "50:00 · hrTSS 83");
+    // Cycling's LTHR for a ride: 170 over 160.
+    TestActivity ride { sport::Cycling, heart_rate_at(160, 3001) };
+    CHECK_EQ(activity_summary(ride.activity), "50:00 · hrTSS 83");
+    // Running's for a walk.
+    TestActivity walk { sport::Walking, heart_rate_at(170, 3001) };
+    CHECK_EQ(activity_summary(walk.activity), "50:00 · hrTSS 83");
+}
+
+void test_hr_load_leaves_out_pauses()
+{
+    TestActivity steady { sport::Running, heart_rate_at(100, 11, 10) };
+    CHECK(steady.activity.segment.hr_load.has_value());
+    if (steady.activity.segment.hr_load) {
+        CHECK_EQ(*steady.activity.segment.hr_load, 100.0 * 100 * 100);
+    }
+    // 11 s apart is a pause, which isn't training.
+    TestActivity paused { sport::Running, heart_rate_at(100, 11, 11) };
+    CHECK(!paused.activity.segment.hr_load.has_value());
+}
+
+void test_power_before_heart_rate()
+{
+    auto records = heart_rate_at(170, 3001);
+    for (auto &rec : records) {
+        rec.power = 200;
+    }
+    TestActivity t { sport::Cycling, records };
+    CHECK(activity_summary(t.activity).ends_with(" · TSS 44"));
 }
 
 // They're in the summary under the title instead.
@@ -971,6 +1045,11 @@ int main()
     test_power();
     test_no_np_with_few_power_samples();
     test_tss_over_moving_time();
+    test_tss_with_the_ftp_of_its_day();
+    test_no_tss_without_thresholds();
+    test_hr_tss();
+    test_hr_load_leaves_out_pauses();
+    test_power_before_heart_rate();
     test_panel_has_no_distance_or_moving_time();
     test_summary();
     test_summary_without_distance_or_tss();

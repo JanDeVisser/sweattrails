@@ -23,6 +23,7 @@
 #include <Expected.h>
 
 #include <storage/Activity.h>
+#include <storage/Thresholds.h>
 #include <storage/Types.h>
 
 namespace ST {
@@ -63,6 +64,9 @@ struct Storage {
     fs::path activity_dir { };
     fs::path tiles_dir { };
     fs::path overlays_dir { }; // The user's overlay layouts
+    // From the settings, set once before any job runs: the scores of the
+    // activities, read from any thread, as the paths are.
+    ThresholdList thresholds { };
 
     // Threading: the paths above don't change after init(), and can be used
     // from any thread. `years` (and `current`) are rebuilt by rescan(), so

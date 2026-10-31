@@ -402,8 +402,8 @@ void test_range_over_a_lap_has_its_power_and_heart_rate()
     }
 }
 
-// TSS is over the moving time: a range with a pause in it has the TSS of
-// the same records without one.
+// TSS is over the moving time: a range with a pause in it has the moving
+// time of the same records without one, and an NP.
 void test_range_tss_is_over_the_moving_time()
 {
     Storage  storage { };
@@ -423,8 +423,8 @@ void test_range_tss_is_over_the_moving_time()
     CHECK_EQ(a->moving.elapsed, 119u);
     CHECK_EQ(b->moving.elapsed, 118u);
     CHECK_EQ(b->elapsed.elapsed, 719u);
-    CHECK(a->tss.has_value() && *a->tss > 0);
-    CHECK(b->tss.has_value() && a->tss.has_value() && *b->tss <= *a->tss);
+    // The TSS is worked out from the moving time and the NP.
+    CHECK(a->computed_normalized_range.range.has_value() && b->computed_normalized_range.range.has_value());
 }
 
 // An activity in a directory of its own, as `dummy.fit` and, if

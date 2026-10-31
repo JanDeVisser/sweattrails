@@ -224,6 +224,7 @@ add_executable(
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Summaries.cpp
+        src/App/storage/Thresholds.cpp
         src/App/storage/Volume.cpp
         src/App/storage/Download.cpp
         src/App/storage/Garmin.cpp
@@ -346,6 +347,8 @@ target_link_libraries(oauth_test PRIVATE OpenSSL::SSL)
 sweattrails_test(
         activity_selector_test
         test/ActivitySelectorTest.cpp
+        src/App/storage/Thresholds.cpp
+        src/App/storage/Volume.cpp
         src/App/widget/ActivitySelector.cpp
         src/App/widget/DataFields.cpp
         src/App/widget/SportIcon.cpp
@@ -390,6 +393,8 @@ target_link_libraries(map_test PRIVATE ${CURL_LIBRARIES})
 sweattrails_test(
         data_fields_test
         test/DataFieldsTest.cpp
+        src/App/storage/Thresholds.cpp
+        src/App/storage/Volume.cpp
         src/App/widget/DataFields.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp

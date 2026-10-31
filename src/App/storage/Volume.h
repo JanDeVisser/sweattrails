@@ -15,6 +15,8 @@
 #include <utility>
 #include <vector>
 
+#include <Date.h>
+
 #include <storage/Summaries.h>
 
 namespace ST {
@@ -70,6 +72,7 @@ std::optional<Metric>      Metric_by_name(std::string_view name);
 // The day an activity starts on, in the computer's time zone, as the store
 // files it.
 [[nodiscard]] std::chrono::year_month_day start_day(ActivitySummary const &summary);
+[[nodiscard]] std::chrono::year_month_day day_of(DateTime const &time);
 
 struct PeriodTotal {
     std::chrono::year_month_day first_day { };
