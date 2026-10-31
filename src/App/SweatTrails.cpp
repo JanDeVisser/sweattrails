@@ -917,6 +917,7 @@ void cmd_summaries(pSweatTrails const &sweattrails, JSONValue const &)
     }
     auto const now = DateTime::from_timestamp(static_cast<i32>(std::time(nullptr)));
     auto const today = std::chrono::year { now.year } / std::chrono::month { static_cast<unsigned>(now.month) + 1 } / std::chrono::day { now.day_of_month };
+    sweattrails->summaries_screen->thresholds = sweattrails->storage.thresholds;
     sweattrails->summaries_screen->open(sport, today);
     sweattrails->show_summaries(true);
 }
@@ -939,6 +940,12 @@ void cmd_summaries_up(pSweatTrails const &sweattrails, JSONValue const &)
 void cmd_summaries_graph(pSweatTrails const &sweattrails, JSONValue const &)
 {
     sweattrails->summaries_screen->toggle_lines();
+}
+
+// F: the fitness, or back to the bars.
+void cmd_summaries_fitness(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    sweattrails->summaries_screen->toggle_fitness();
 }
 
 // Enter: into the selected period.
@@ -1459,6 +1466,12 @@ void SweatTrails::initialize()
     status = add_widget<Label>("");
     status->policy = SizePolicy::Hide;
     status->background = DARKGRAY;
+    // Before any job runs, which reads them from the job thread.
+    if (auto const thresholds = decode_thresholds(settings.get("thresholds")); thresholds) {
+        storage.thresholds = *thresholds;
+    } else {
+        set_status(std::format("No TSS: in the settings, {}", thresholds.error()));
+    }
 
     bus.add_task<SweatTrails>("st-force-quit", self(), cmd_force_quit)
         .bind(KeyCombo { KEY_Q, KModControl | KModShift })
@@ -1491,6 +1504,9 @@ void SweatTrails::initialize()
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-graph", self(), cmd_summaries_graph)
         .bind(KeyCombo { KEY_G, KModNone })
+        .when(on_summaries);
+    bus.add_task<SweatTrails>("st-summaries-fitness", self(), cmd_summaries_fitness)
+        .bind(KeyCombo { KEY_F, KModNone })
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-drill", self(), cmd_summaries_drill)
         .bind(KeyCombo { KEY_ENTER, KModNone })
