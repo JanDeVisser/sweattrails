@@ -1062,6 +1062,7 @@ int main()
     test_up_after_stepping_months();
     test_step_by_month_stops_at_the_activities();
     test_no_year_before_the_first();
+    test_fitness_last_week_into_the_new_year();
     test_fitness_heading();
     test_fitness_view();
     test_fitness_by_year();

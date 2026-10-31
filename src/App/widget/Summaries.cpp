@@ -641,7 +641,11 @@ void SummariesScreen::refresh_fitness()
     auto const has_thresholds = !thresholds.empty();
     auto const new_years_eve = chrono::year { view.year } / chrono::December / 31;
     auto const until = std::min(chrono::sys_days { today }, chrono::sys_days { new_years_eve });
-    auto const days = has_thresholds ? fitness_days(summaries, thresholds, until) : std::vector<FitnessDay> { };
+    // The year's last week runs to its Sunday, in the new year, as on the
+    // bars: the chart and the heading stop at New Year's Eve.
+    auto const last_monday = chrono::sys_days { new_years_eve } - (chrono::weekday { chrono::sys_days { new_years_eve } } - chrono::Monday);
+    auto const last_week_until = std::min(chrono::sys_days { today }, last_monday + chrono::days { 6 });
+    auto const days = has_thresholds ? fitness_days(summaries, thresholds, last_week_until) : std::vector<FitnessDay> { };
     heading->text = fitness_heading(days, until, without_stress(summaries, thresholds, view.year), has_thresholds);
     lines->series = {
         ChartSeries { .label = "CTL", .color = SKYBLUE, .bold = true },
