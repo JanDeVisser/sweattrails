@@ -917,6 +917,8 @@ void cmd_summaries(pSweatTrails const &sweattrails, JSONValue const &)
     }
     auto const now = DateTime::from_timestamp(static_cast<i32>(std::time(nullptr)));
     auto const today = std::chrono::year { now.year } / std::chrono::month { static_cast<unsigned>(now.month) + 1 } / std::chrono::day { now.day_of_month };
+    sweattrails->summaries_screen->thresholds = sweattrails->storage.thresholds;
+    sweattrails->summaries_screen->thresholds_error = sweattrails->thresholds_error;
     sweattrails->summaries_screen->open(sport, today);
     sweattrails->show_summaries(true);
 }
@@ -939,6 +941,12 @@ void cmd_summaries_up(pSweatTrails const &sweattrails, JSONValue const &)
 void cmd_summaries_graph(pSweatTrails const &sweattrails, JSONValue const &)
 {
     sweattrails->summaries_screen->toggle_lines();
+}
+
+// F: the fitness, or back to the bars.
+void cmd_summaries_fitness(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    sweattrails->summaries_screen->toggle_fitness();
 }
 
 // Enter: into the selected period.
@@ -1459,6 +1467,13 @@ void SweatTrails::initialize()
     status = add_widget<Label>("");
     status->policy = SizePolicy::Hide;
     status->background = DARKGRAY;
+    // Before any job runs, which reads them from the job thread.
+    if (auto const thresholds = decode_thresholds(settings.get("thresholds")); thresholds) {
+        storage.thresholds = *thresholds;
+    } else {
+        thresholds_error = thresholds.error();
+        set_status(std::format("No TSS: in the settings, {}", thresholds_error));
+    }
 
     bus.add_task<SweatTrails>("st-force-quit", self(), cmd_force_quit)
         .bind(KeyCombo { KEY_Q, KModControl | KModShift })
@@ -1491,6 +1506,9 @@ void SweatTrails::initialize()
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-graph", self(), cmd_summaries_graph)
         .bind(KeyCombo { KEY_G, KModNone })
+        .when(on_summaries);
+    bus.add_task<SweatTrails>("st-summaries-fitness", self(), cmd_summaries_fitness)
+        .bind(KeyCombo { KEY_F, KModNone })
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-drill", self(), cmd_summaries_drill)
         .bind(KeyCombo { KEY_ENTER, KModNone })
@@ -1585,6 +1603,9 @@ void SweatTrails::initialize()
     auto quiet = JSONValue::object();
     quiet["quiet"] = JSONValue { true };
     bus.submit("st-download", quiet);
+    if (!settings_error.empty()) {
+        message_box(std::format("{}. SweatTrails starts without those settings.", settings_error));
+    }
 }
 
 EError SweatTrails::read_settings()
@@ -1599,18 +1620,19 @@ EError SweatTrails::read_settings()
         auto settings_file = dir / file;
         // std::println("--> {}", settings_file.string());
         if (exists(settings_file)) {
-            auto json_maybe = JSONValue::read_file(settings_file.string());
-            if (!json_maybe) {
-                switch (json_maybe.error().index()) {
-                case 0:
-                    return std::unexpected(STError { std::get<LibCError>(json_maybe.error()) });
-                case 1:
-                    return std::unexpected(STError { std::get<JSONError>(json_maybe.error()) });
-                default:
-                    UNREACHABLE();
-                }
+            // A file that can't be read is left out, and the user told,
+            // rather than the app ending before its window shows why.
+            auto const text = read_file_by_name(settings_file.string());
+            if (!text) {
+                settings_error = std::format("{} can't be read: {}", settings_file.string(), text.error().to_string());
+                return { };
             }
-            settings.merge(json_maybe.value());
+            auto const json = JSONValue::deserialize(*text);
+            if (!json) {
+                settings_error = std::format("{} can't be read: {}", settings_file.string(), json.error().to_string());
+                return { };
+            }
+            settings.merge(*json);
         }
         return { };
     };

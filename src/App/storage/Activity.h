@@ -31,8 +31,6 @@ using namespace ST::FIT;
 
 struct Storage;
 
-constexpr float32 JANS_FTP = 275;
-
 // A rise in altitude only counts as climbing once it's this many meters,
 // so that noise in the altitude doesn't add to the climb.
 constexpr float32 ClimbHysteresis = 3.0f;
@@ -148,10 +146,11 @@ struct Segment {
     Range<i16>                  computed_elevation_range { };
     float32                     computed_climb { 0 }; // Meters climbed; descents don't count
     std::optional<u16>          total_ascent { };     // Meters climbed, as the device worked it out
-    std::optional<float32>      intensity_factor { };
     std::optional<float32>      variability_index { };
-    std::optional<float32>      tss { };
-    std::optional<Box>          box { };
+    // Σ HR² × seconds, over the gaps of RangeMovingGap or less: an hrTSS
+    // against the LTHR, which the segment doesn't know.
+    std::optional<float64> hr_load { };
+    std::optional<Box>     box { };
 
     void analyze(std::span<record> records, bool smooth);
 

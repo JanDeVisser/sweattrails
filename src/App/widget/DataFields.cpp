@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <cmath>
 #include <format>
 #include <functional>
 #include <optional>
@@ -13,6 +14,9 @@
 #include <Date.h>
 
 #include <storage/Activity.h>
+#include <storage/Storage.h>
+#include <storage/Thresholds.h>
+#include <storage/Volume.h>
 #include <widget/DataFields.h>
 
 namespace ST {
@@ -137,7 +141,24 @@ bool has_np(Segment const &segment)
     return has_power(segment) && np && np->normalized > 0;
 }
 
-void add_power_lines(std::vector<DataLine> &lines, Segment const &segment, size_t first)
+// The thresholds in force on the activity's day, if the user set any.
+std::optional<Thresholds> activity_thresholds(Activity const &activity)
+{
+    if (activity.storage == nullptr) {
+        return { };
+    }
+    return thresholds_on(activity.storage->thresholds, day_of(activity.segment.start_time));
+}
+
+std::optional<float64> segment_np(Segment const &segment)
+{
+    if (!has_np(segment)) {
+        return { };
+    }
+    return segment.computed_normalized_range.range->normalized;
+}
+
+void add_power_lines(std::vector<DataLine> &lines, Activity const &activity, Segment const &segment, size_t first)
 {
     if (!has_power(segment)) {
         return;
@@ -153,8 +174,8 @@ void add_power_lines(std::vector<DataLine> &lines, Segment const &segment, size_
     }
     auto const &np = segment.computed_normalized_range.range;
     DataLine    np_line { .left = DataField { "NP", std::format("{} W", np->normalized) } };
-    if (segment.intensity_factor) {
-        np_line.right = DataField { "IF", std::format("{:.2f}", *segment.intensity_factor) };
+    if (auto const intensity = intensity_factor(segment_np(segment), activity_thresholds(activity)); intensity) {
+        np_line.right = DataField { "IF", std::format("{:.2f}", *intensity) };
     }
     lines.push_back(np_line);
     if (segment.variability_index && power->average > 0) {
@@ -212,15 +233,16 @@ void add_elevation_lines(std::vector<DataLine> &lines, Segment const &segment, s
 }
 
 // The summary of any segment, the activity's or a lap's.
-std::string segment_summary(Segment const &segment)
+std::string segment_summary(Activity const &activity, Segment const &segment)
 {
     std::vector<std::string> parts;
     if (segment.distance > 0) {
         parts.push_back(format_distance(segment.distance));
     }
     parts.push_back(format_moving_time(segment.moving));
-    if (has_np(segment) && segment.tss) {
-        parts.push_back(std::format("TSS {:.0f}", *segment.tss));
+    // Over the moving time: the stops weren't training.
+    if (auto const stress = training_stress(segment_np(segment), segment.moving.elapsed, segment.hr_load, activity.sport, activity.sub_sport, activity_thresholds(activity)); stress) {
+        parts.push_back(std::format("{} {:.0f}", stress->heart_rate ? "hrTSS" : "TSS", std::trunc(stress->value)));
     }
     std::string summary;
     for (auto const &part : parts) {
@@ -233,32 +255,32 @@ std::string segment_summary(Segment const &segment)
 
 std::string activity_summary(Activity const &activity)
 {
-    return segment_summary(activity.segment);
+    return segment_summary(activity, activity.segment);
 }
 
 std::string lap_summary(Activity const &activity, size_t lap)
 {
-    return std::format("Lap {} of {} · {}", lap + 1, activity.laps.size(), segment_summary(activity.laps[lap].segment));
+    return std::format("Lap {} of {} · {}", lap + 1, activity.laps.size(), segment_summary(activity, activity.laps[lap].segment));
 }
 
 std::string range_summary(Activity const &activity, size_t first, size_t last, Segment const &segment)
 {
     auto const &records = activity.records;
     if (first > last || last >= records.size()) {
-        return segment_summary(segment);
+        return segment_summary(activity, segment);
     }
     auto const &from = records[first];
     auto const &to = records[last];
     // By whether the records have distance, not whether the range went
     // anywhere: a range at a stop says where it is in km, as the others do.
     if (from.distance && to.distance) {
-        return std::format("{:.1f}–{:.1f} km · {}", *from.distance / 1000.0f, *to.distance / 1000.0f, segment_summary(segment));
+        return std::format("{:.1f}–{:.1f} km · {}", *from.distance / 1000.0f, *to.distance / 1000.0f, segment_summary(activity, segment));
     }
     auto const since_start = [&records](record const &rec) {
         Duration const since { rec.timestamp.timestamp - records.front().timestamp.timestamp };
         return std::format("{}:{:02}:{:02}", since.elapsed / Duration::SECONDS_PER_HOUR, since.minutes, since.seconds);
     };
-    return std::format("{}–{} · {}", since_start(from), since_start(to), segment_summary(segment));
+    return std::format("{}–{} · {}", since_start(from), since_start(to), segment_summary(activity, segment));
 }
 
 std::vector<DataLine> data_fields(Activity const &activity, Segment const &segment, size_t first_record)
@@ -270,7 +292,7 @@ std::vector<DataLine> data_fields(Activity const &activity, Segment const &segme
         add_speed_lines(lines, activity, segment, first_record);
     }
     add_hr_lines(lines, segment, first_record);
-    add_power_lines(lines, segment, first_record);
+    add_power_lines(lines, activity, segment, first_record);
     add_cadence_lines(lines, activity, segment, first_record);
     add_elevation_lines(lines, segment, first_record);
     return lines;

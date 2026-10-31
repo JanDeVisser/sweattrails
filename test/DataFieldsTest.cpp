@@ -174,8 +174,20 @@ struct TestActivity {
     Storage  storage { };
     Activity activity { storage, ActivityID { } };
 
+    // An FTP of 275 W, and an LTHR of 170 bpm running and 160 riding.
+    static ThresholdList thresholds()
+    {
+        return ThresholdList { Thresholds {
+            .from = std::chrono::year { 2012 } / 1 / 1,
+            .ftp = 275,
+            .lthr_running = 170,
+            .lthr_cycling = 160,
+        } };
+    }
+
     TestActivity(sport the_sport, std::vector<record> records, std::vector<TestLap> const &laps = { })
     {
+        storage.thresholds = thresholds();
         activity.sport = the_sport;
         activity.segment.moving = Duration { 3000 };
         activity.segment.elapsed = Duration { 3100 };
@@ -511,7 +523,7 @@ void test_power()
     CHECK_EQ(t.value("Avg Power"), "200 W");
     CHECK_EQ(t.value("Max Power"), "200 W");
     CHECK_EQ(t.value("NP"), "200 W");
-    // 200 W over the hard-coded FTP of 275 W.
+    // 200 W over the FTP of 275 W.
     CHECK_EQ(t.value("IF"), "0.73");
     CHECK_EQ(t.value("VI"), "1.00");
     CHECK_EQ(t.mark_at("NP"), TestActivity::NoMark);
@@ -522,10 +534,72 @@ void test_power()
 void test_tss_over_moving_time()
 {
     TestActivity t { sport::Cycling, records_with(40, set_power, 0, u16 { 200 }, u16 { 200 }) };
-    CHECK(t.activity.segment.tss.has_value());
-    if (t.activity.segment.tss) {
-        CHECK_EQ(*t.activity.segment.tss, 44.0f);
+    CHECK_EQ(activity_summary(t.activity), "50:00 · TSS 44");
+}
+
+// The FTP in force on the activity's day: 250 W from 2025, which makes
+// 200 W over 3000 s 53.
+void test_tss_with_the_ftp_of_its_day()
+{
+    TestActivity t { sport::Cycling, records_with(40, set_power, 0, u16 { 200 }, u16 { 200 }) };
+    t.storage.thresholds.push_back(Thresholds { .from = std::chrono::year { 2025 } / 1 / 1, .ftp = 250 });
+    t.activity.segment.start_time = DateTime::from_timestamp(1750000000); // June 2025
+    CHECK_EQ(activity_summary(t.activity), "50:00 · TSS 53");
+    CHECK_EQ(t.value("IF"), "0.80");
+}
+
+void test_no_tss_without_thresholds()
+{
+    TestActivity t { sport::Cycling, records_with(40, set_power, 0, u16 { 200 }, u16 { 200 }) };
+    t.storage.thresholds.clear();
+    CHECK_EQ(activity_summary(t.activity), "50:00");
+    CHECK(!t.field("IF"));
+}
+
+// A record a second for 3000 s, at running's LTHR of 170 bpm: 3000 s at
+// threshold is 83, as for power.
+std::vector<record> heart_rate_at(u8 heart_rate, size_t count, u32 every = 1)
+{
+    std::vector<record> records(count);
+    for (auto ix = 0uz; ix < count; ++ix) {
+        records[ix].timestamp = DateTime::from_timestamp(static_cast<i32>(1750000000 + ix * every));
+        records[ix].heart_rate = heart_rate;
     }
+    return records;
+}
+
+void test_hr_tss()
+{
+    TestActivity run { sport::Running, heart_rate_at(170, 3001) };
+    CHECK_EQ(activity_summary(run.activity), "50:00 · hrTSS 83");
+    // Cycling's LTHR for a ride: 170 over 160.
+    TestActivity ride { sport::Cycling, heart_rate_at(160, 3001) };
+    CHECK_EQ(activity_summary(ride.activity), "50:00 · hrTSS 83");
+    // Running's for a walk.
+    TestActivity walk { sport::Walking, heart_rate_at(170, 3001) };
+    CHECK_EQ(activity_summary(walk.activity), "50:00 · hrTSS 83");
+}
+
+void test_hr_load_leaves_out_pauses()
+{
+    TestActivity steady { sport::Running, heart_rate_at(100, 11, 10) };
+    CHECK(steady.activity.segment.hr_load.has_value());
+    if (steady.activity.segment.hr_load) {
+        CHECK_EQ(*steady.activity.segment.hr_load, 100.0 * 100 * 100);
+    }
+    // 11 s apart is a pause, which isn't training.
+    TestActivity paused { sport::Running, heart_rate_at(100, 11, 11) };
+    CHECK(!paused.activity.segment.hr_load.has_value());
+}
+
+void test_power_before_heart_rate()
+{
+    auto records = heart_rate_at(170, 3001);
+    for (auto &rec : records) {
+        rec.power = 200;
+    }
+    TestActivity t { sport::Cycling, records };
+    CHECK(activity_summary(t.activity).ends_with(" · TSS 44"));
 }
 
 // They're in the summary under the title instead.
@@ -934,12 +1008,62 @@ void test_range_summary_by_time_past_an_hour()
     CHECK_EQ(range_summary(activity, 2530, 5000, *range), "23:23");
 }
 
+// A lap's TSS and hrTSS, with the thresholds of the activity's day and
+// for its sport. The first lap's 1801 records are 1800 s at 170 bpm,
+// hrTSS 50; the second's 1200, 1199 s.
+void test_lap_tss()
+{
+    TestActivity run { sport::Running, heart_rate_at(170, 3001), { { 0, 1801, 0, 1800 }, { 1801, 3001, 0, 1200 } } };
+    CHECK_EQ(lap_summary(run.activity, 0), "Lap 1 of 2 · 30:00 · hrTSS 50");
+    CHECK_EQ(lap_summary(run.activity, 1), "Lap 2 of 2 · 20:00 · hrTSS 33");
+    // 200 W for 1800 s, at an FTP of 275 W from 2012 and 250 W from 2025.
+    TestActivity ride { sport::Cycling, records_with(80, set_power, 0, u16 { 200 }, u16 { 200 }), { { 0, 40, 0, 1800 }, { 40, 80, 0, 1800 } } };
+    CHECK_EQ(lap_summary(ride.activity, 0), "Lap 1 of 2 · 30:00 · TSS 26");
+    CHECK_EQ(lap_field(ride, 0, "IF").value_or(DataField { "IF", "<none>" }).value, "0.73");
+    ride.storage.thresholds.push_back(Thresholds { .from = std::chrono::year { 2025 } / 1 / 1, .ftp = 250 });
+    ride.activity.segment.start_time = DateTime::from_timestamp(1750000000); // June 2025
+    CHECK_EQ(lap_summary(ride.activity, 0), "Lap 1 of 2 · 30:00 · TSS 32");
+    CHECK_EQ(lap_field(ride, 0, "IF").value_or(DataField { "IF", "<none>" }).value, "0.80");
+}
+
+// A range's hrTSS, with cycling's LTHR of 160 bpm: 79 s at 140 and one at
+// 180 is 1,580,800 bpm² s, 1.7.
+void test_range_hr_tss()
+{
+    RangeActivity t;
+    t.storage.thresholds = TestActivity::thresholds();
+    auto const range = range_segment(t.activity, 20, 100);
+    CHECK(range.has_value());
+    if (!range) {
+        return;
+    }
+    CHECK(range->hr_load == 79.0 * 140 * 140 + 180.0 * 180);
+    CHECK_EQ(range_summary(t.activity, 20, 100, *range), "12.1–12.5 km · 400 m · 01:20 · hrTSS 1");
+}
+
+// The heart rate as recorded, not as smoothed: 100 and 200 bpm by turns
+// for 100 s is 50 × 100² + 50 × 200², where smoothed it'd be near 100 ×
+// 150².
+void test_hr_load_is_of_the_recorded_heart_rate()
+{
+    auto records = heart_rate_at(100, 101);
+    for (auto ix = 1uz; ix < records.size(); ix += 2) {
+        records[ix].heart_rate = 200;
+    }
+    TestActivity t { sport::Running, records, { { 0, 101, 0, 100 } } };
+    CHECK(t.activity.segment.hr_load == 50.0 * 100 * 100 + 50.0 * 200 * 200);
+    CHECK(t.activity.laps[0].segment.hr_load == t.activity.segment.hr_load);
+}
+
 int main()
 {
     test_range_max_at_is_the_index_passed();
     test_range_summary();
     test_range_fields_mark_the_activitys_records();
     test_range_summary_by_time_past_an_hour();
+    test_lap_tss();
+    test_range_hr_tss();
+    test_hr_load_is_of_the_recorded_heart_rate();
     test_range_ties_go_to_the_first_record();
     test_smoothed_range_max_at();
     test_analyze_max_at_is_a_record_index();
@@ -971,6 +1095,11 @@ int main()
     test_power();
     test_no_np_with_few_power_samples();
     test_tss_over_moving_time();
+    test_tss_with_the_ftp_of_its_day();
+    test_no_tss_without_thresholds();
+    test_hr_tss();
+    test_hr_load_leaves_out_pauses();
+    test_power_before_heart_rate();
     test_panel_has_no_distance_or_moving_time();
     test_summary();
     test_summary_without_distance_or_tss();

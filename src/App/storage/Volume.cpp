@@ -112,8 +112,12 @@ std::optional<VolumeSport> volume_sport(std::optional<FIT::sport> sport, std::op
 
 chrono::year_month_day start_day(ActivitySummary const &summary)
 {
-    auto const start = DateTime::from_timestamp(static_cast<i32>(summary.start));
-    return chrono::year { start.year } / chrono::month { static_cast<unsigned>(start.month) + 1 } / chrono::day { start.day_of_month };
+    return day_of(DateTime::from_timestamp(static_cast<i32>(summary.start)));
+}
+
+chrono::year_month_day day_of(DateTime const &time)
+{
+    return chrono::year { time.year } / chrono::month { static_cast<unsigned>(time.month) + 1 } / chrono::day { time.day_of_month };
 }
 
 void PeriodTotal::add(ActivitySummary const &summary)

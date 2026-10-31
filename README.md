@@ -130,6 +130,41 @@ builds in the background the first time, reading every activity, and
 keeps up to date after that. The status line says how far it is.
 Removing the file only means it's built again.
 
+## Fitness
+
+F on the totals screen shows fitness, fatigue and form through the
+year, as TrainingPeaks' Performance Management Chart does:
+
+- Each activity has a training stress score (TSS), where an hour at
+  threshold is 100. With power, it's from the normalized power against
+  your FTP; without, from the heart rate against your lactate threshold
+  heart rate (LTHR), shown as hrTSS. An activity with neither counts as
+  a day of rest.
+- **CTL**, fitness, is the average TSS a day over about the last 42
+  days, weighted to the recent ones; **ATL**, fatigue, the same over 7
+  days. **TSB**, form, is yesterday's CTL less its ATL: below zero
+  you're tired, above it fresh.
+
+The heading has today's values, and how much CTL rose in the last week.
+The table has the year's weeks, their TSS, and CTL, ATL and TSB at
+their end. Left and Right go a year back or on; F again, G, or W, M and
+Y leave it. It counts every sport together.
+
+The scores need your thresholds, in `settings.json`, from the date
+they were right:
+
+```json
+"thresholds": [
+  { "from": "2012-01-01", "ftp": 240, "lthr_running": 170, "lthr_cycling": 162 },
+  { "from": "2024-03-01", "ftp": 275 }
+]
+```
+
+An entry that leaves a threshold out keeps the one before it, and the
+first counts back to your first activity. Rides use the cycling LTHR,
+everything else the running one. The activity's IF and TSS on the main
+screen use them too. Without thresholds there is no TSS.
+
 ## Zwift
 
 A ride in Zwift shows on the map of its Zwift world rather than on

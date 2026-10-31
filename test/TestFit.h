@@ -132,6 +132,24 @@ inline void add_session(FITBuilder &fit, u32 count, u16 total_ascent, u8 sub_spo
     fit.u16_le(total_ascent);
 }
 
+// A record a second for `count` seconds from `start` after Start, at a
+// heart rate and a power.
+inline void add_records(FITBuilder &fit, u32 count, u8 heart_rate, u16 power, u32 start = 0)
+{
+    fit.definition(5, 20,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 3, .size = 1, .base_type = Uint8 },
+            { .num = 7, .size = 2, .base_type = Uint16 },
+        });
+    for (auto at = 0u; at < count; ++at) {
+        fit.message(5);
+        fit.u32_le(Start + start + at);
+        fit.byte(heart_rate);
+        fit.u16_le(power);
+    }
+}
+
 // A workout message with just its name, which becomes the title.
 inline void add_workout(FITBuilder &fit, std::string_view name)
 {

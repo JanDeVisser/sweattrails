@@ -115,6 +115,13 @@ void Segment::analyze(std::span<record> records, bool smooth)
             }
         }
         if (rec.heart_rate) {
+            if (ix > 0) {
+                auto const gap = static_cast<i64>(rec.timestamp.timestamp) - static_cast<i64>(records[ix - 1].timestamp.timestamp);
+                if (gap > 0 && gap <= RangeMovingGap) {
+                    auto const hr = static_cast<float64>(*rec.heart_rate);
+                    hr_load = hr_load.value_or(0) + hr * hr * static_cast<float64>(gap);
+                }
+            }
             auto const smoothed = computed_hr_range.extend(*rec.heart_rate, ix);
             if (smooth) {
                 *rec.heart_rate = smoothed;
@@ -146,11 +153,6 @@ void Segment::analyze(std::span<record> records, bool smooth)
         auto const &np = *computed_normalized_range.range;
         auto const &avg = *computed_power_range.range;
         variability_index = static_cast<float32>(np.normalized) / static_cast<float32>(avg.average);
-        intensity_factor = static_cast<float32>(np.normalized) / JANS_FTP;
-        // Over the moving time: the stops weren't training.
-        tss = std::trunc(
-            (static_cast<float32>(moving.elapsed) * static_cast<float32>(np.normalized) * *intensity_factor)
-            / (JANS_FTP * 36));
     }
 }
 
@@ -177,7 +179,6 @@ std::optional<Segment> range_segment(Activity const &activity, size_t first, siz
             moving += static_cast<u32>(gap);
         }
     }
-    // Before analyze(): TSS is over the moving time.
     ret.moving = Duration { moving };
     ret.analyze(records, false);
     return ret;
