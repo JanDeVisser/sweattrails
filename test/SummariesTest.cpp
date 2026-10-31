@@ -154,6 +154,32 @@ void test_read_records()
     CHECK(ride.hr_load == 150.0 * 150 * 119);
 }
 
+// Without power: no NP. A pause of 41 s between two minutes of records
+// isn't in the heart rate's sum: 59 s and 59 s at 150 bpm.
+void test_read_records_with_a_pause()
+{
+    Test::TempStore  store;
+    Test::FITBuilder fit;
+    Test::add_file_id(fit, 1);
+    Test::add_records(fit, 60, 150, 0);
+    Test::add_records(fit, 60, 150, 0, 100);
+    Test::add_session(fit, 160, 0);
+    auto const unix_start = static_cast<i64>(Test::Start) + DateTime::FIT_TIMESTAMP_OFFSET;
+    auto const date = DateTime::from_timestamp(static_cast<i32>(unix_start));
+    auto const dir = store.storage.activity_dir / std::format("{:04}/{:02}", static_cast<u16>(date.year), static_cast<u8>(date.month) + 1);
+    fs::create_directories(dir);
+    MUST(write_file_by_name((dir / std::format("{}.fit", unix_start)).string(), std::string_view { fit.file() }));
+    auto const files = summary_files(store.storage);
+    if (!files || files->size() != 1) {
+        CHECK_EQ(files ? files->size() : 0uz, 1uz);
+        return;
+    }
+    auto const run = read_summary(store.storage, (*files)[0]);
+    CHECK(run.sport.has_value());
+    CHECK(!run.np);
+    CHECK(run.hr_load == 150.0 * 150 * 118);
+}
+
 void test_read_from_the_store()
 {
     Test::TempStore  store;
@@ -335,6 +361,7 @@ int main()
     test_plan_from_nothing();
     test_merge_summaries();
     test_read_records();
+    test_read_records_with_a_pause();
     test_read_from_the_store();
     test_second_start_reads_nothing();
     test_empty_store();

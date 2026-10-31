@@ -309,4 +309,96 @@ None.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: in a past year's table, the last week stops at the 31st of
+   December, and the days from New Year to that Sunday are in no week
+   at all.** `src/App/widget/Summaries.cpp:642-643`, in
+   `refresh_fitness()`: `until` is the earlier of today and New Year's
+   Eve, and both the chart and `fitness_weeks()` are given those days.
+   The year's last week, whose Monday is in the year, runs into January
+   (as `weeks_of()` in `Volume.cpp` has it on the bars), but has no days
+   past the 31st. What the user sees: a ride on Friday the 2nd of
+   January 2026 isn't in 2025's row "Mon 29 Dec", whose TSS is too low
+   and whose CTL, ATL and TSB are the 31st's rather than Sunday the
+   4th's. Nor is it in 2026's table, whose first week is Monday the 5th.
+   So it's in no row of either year, though the bars count it in 2025's
+   last week. It's the same on the 1st to 4th of January this year:
+   today's training is in no row. `fitness_weeks()` itself is right
+   (`FitnessTest`'s `test_last_week_into_the_new_year` passes); the
+   screen should work out the days up to the last week's Sunday, or
+   today if that's earlier, and keep the chart and the heading at the
+   31st. Failing test: `SummariesScreenTest`'s
+   `test_fitness_last_week_into_the_new_year` (lines 933, 935, 936:
+   TSS 100 where it should be 200, CTL 2 not 4, TSB -9 not -14).
+2. **Bug: a bad `thresholds` in `settings.json` is cleared off the
+   status line straight after start, so the user never sees it.**
+   `src/App/SweatTrails.cpp:1473` sets the status in `initialize()`,
+   but the jobs that `initialize()` schedules next clear it. The inbox
+   job always ends with `notify_latest<ImportingFile>(ImportingFile { })`
+   (`SweatTrails.cpp:201`), which `notif_importing_file()` turns into
+   `set_status("")`. The quiet download at start ends in
+   `notif_download_done()`, which also calls `set_status("")`. And on the
+   first start after this change, rebuilding the summary file writes
+   "Reading activities for the totals" over it. What the user sees: with
+   `"from": "2024-3-1x"`, the status flashes or doesn't show at all.
+   The fitness view then says "Set your FTP and LTHR in settings.json",
+   though they did set them, and nothing says what's wrong. The spec
+   (Architecture, "Bad thresholds") says it's said on the status line at
+   start. There's no test: it needs the app's jobs and notifications,
+   which run only with a window. A fix could keep the message (for
+   example in the fitness view's heading, next to "Set your FTP"), or
+   set it again once the start's jobs are done.
+3. **Bug (small): the heading says "-0.0 a week" when CTL is decaying
+   slowly.** `src/App/widget/Summaries.cpp:274` formats the ramp rate
+   with `{:+.1f}`, which prints a fall of less than 0.05 as "-0.0". This
+   happens in any year long after the last activity. In the screen
+   test's own data, the run of March 2021 leaves 2021 to 2025 at
+   "CTL 0 · ATL 0 · TSB 0 · -0.0 a week". Rounding first (and turning
+   -0 into 0) would print "+0.0". Failing test: `SummariesScreenTest`'s
+   `test_fitness_heading_after_a_long_rest`, line 812.
+4. **Missing test (now added):** the coverage the Test plan asks for is
+   there, and these tests add the cases around it:
+   - `FitnessTest`: two entries from the same day are bad; `[]` and
+     `null` are no thresholds; an entry that sets nothing keeps all of
+     the one before (`test_more_thresholds`). Days across the change to
+     and from summer time in Europe/Amsterdam, with activities at 23:30
+     and 00:30 on their own calendar days (`test_days_across_summer_time`).
+     The year's last week runs into January (`test_last_week_into_the_new_year`).
+   - `DataFieldsTest`: a lap's hrTSS and TSS, and IF with the FTP of the
+     activity's day (`test_lap_tss`). A range's `hr_load` and hrTSS with
+     cycling's LTHR (`test_range_hr_tss`). `hr_load` is of the heart rate
+     as recorded, not as smoothed, for the activity and its lap
+     (`test_hr_load_is_of_the_recorded_heart_rate`).
+   - `SummariesTest`: `read_summary()` of a FIT file without power and
+     with a 41 s pause: no NP, and the pause isn't in `hr_load`
+     (`test_read_records_with_a_pause`).
+   - `LineChartTest`: `nice_range()` in fractions, with 0 on a step, a
+     count's step of 1, and a value just below 0 (`test_nice_range_in_fractions`).
+   - `SummariesScreenTest`: a past year's heading on its last day, with
+     the lines from New Year at 0 before the first activity
+     (`test_fitness_heading_of_a_past_year`). Every key from the
+     fitness view (Y, W, G, R, F, Left and Right) and the year each one
+     leaves on (`test_fitness_keys`). New summaries arriving while the
+     fitness view is open keep the selected week
+     (`test_new_summaries_in_the_fitness`). Plus the two failing tests
+     of findings 1 and 3.
+
+   Not covered by a test: `draw_chart_scale()` and `chart_scale_width()`
+   below zero, which need raylib to draw and measure text. Their loop is
+   by step index from the bottom, and the zero line is found with
+   `|value| < step / 2`, so a bottom of -0.4 in steps of 0.2 does mark
+   0. Also not covered: the app's wiring of F and of the thresholds, in
+   `SweatTrails.cpp`. I read through what the hints asked about and
+   found no other problems: the CTL/ATL/TSB recurrence, the ramp rate,
+   `thresholds_on()`, `hr_load` (raw heart rate, gaps of 1 to 10 s,
+   computed before smoothing), version 2 of the summary file,
+   `read_summary()`'s deep load, and the thresholds being set on
+   `Storage` before `update_summaries()` and the download are scheduled.
+
+**Tests added** (uncommitted): those listed in 4, in
+`test/FitnessTest.cpp`, `test/DataFieldsTest.cpp`, `test/SummariesTest.cpp`,
+`test/LineChartTest.cpp` and `test/SummariesScreenTest.cpp`, all in
+executables that were already registered, so `CMakeLists.txt` is
+unchanged. **Failing:** `summaries_screen_test`, in
+`test_fitness_last_week_into_the_new_year` (finding 1) and
+`test_fitness_heading_after_a_long_rest` (finding 3). All the other tests
+pass (`ctest --test-dir build -E oauth`: 48 of 49).

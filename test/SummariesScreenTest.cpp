@@ -8,7 +8,9 @@
  */
 
 #include <chrono>
+#include <cmath>
 #include <ctime>
+#include <format>
 #include <memory>
 
 #include <widget/Summaries.h>
@@ -796,6 +798,20 @@ void test_fitness_heading()
     CHECK_EQ(fitness_heading(days, Today, 0, false), "Set your FTP and LTHR in settings.json to see your fitness");
 }
 
+// Long after the last activity, CTL still decays, by less than 0.05 a
+// week: the ramp rate is 0.0, not "-0.0".
+void test_fitness_heading_after_a_long_rest()
+{
+    namespace chrono = std::chrono;
+    std::vector<FitnessDay> days;
+    for (auto day = 8u; day <= 15; ++day) {
+        days.push_back(FitnessDay { .day = chrono::year { 2026 } / chrono::June / chrono::day { day } });
+    }
+    days.front().ctl = 0.02;
+    days.back().ctl = 0.01;
+    CHECK_EQ(fitness_heading(days, Today, 0, true), "Fitness · CTL 0 · ATL 0 · TSB 0 · +0.0 a week · 2026");
+}
+
 void test_fitness_view()
 {
     Test::ScopedTestApp app;
@@ -891,6 +907,118 @@ void test_fitness_without_thresholds()
     }
 }
 
+// A past year's last week runs into the next year, as on the bars: 2025's
+// of Monday the 29th of December has the ride of Friday the 2nd of
+// January 2026, and its CTL, ATL and TSB are Sunday the 4th's.
+void test_fitness_last_week_into_the_new_year()
+{
+    Test::ScopedTestApp app;
+    auto                screen = Widget::make<SummariesScreen>(nullptr);
+    screen->viewport = Rect<float> { 0, 0, 1000, 800 };
+    auto december = ride(2025, 12, 29);
+    december.moving = 3600;
+    december.np = 250;
+    screen->thresholds = fitness_thresholds();
+    screen->set_summaries({ december, hard_ride(1, 2) });
+    screen->open(VolumeSport::Cycling, Today);
+    screen->toggle_fitness();
+    screen->step_year(-1);
+    CHECK_EQ(screen->view.year, 2025);
+    auto const &rows = screen->table->rows;
+    CHECK(!rows.empty());
+    if (rows.empty()) {
+        return;
+    }
+    CHECK_EQ(rows.back()[0], "Mon 29 Dec");
+    CHECK_EQ(rows.back()[1], "200");
+    auto const days = fitness_days(screen->summaries, screen->thresholds, std::chrono::year { 2026 } / 1 / 4);
+    CHECK_EQ(rows.back()[2], std::format("{}", std::llround(days.back().ctl)));
+    CHECK_EQ(rows.back()[4], std::format("{}", std::llround(days.back().tsb)));
+}
+
+// The heading of a past year has its last day's values.
+void test_fitness_heading_of_a_past_year()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_fitness_screen();
+    screen->toggle_fitness();
+    screen->step_year(-5); // 2021, the run's
+    CHECK_EQ(screen->view.year, 2021);
+    auto const days = fitness_days(screen->summaries, screen->thresholds, std::chrono::year { 2021 } / 12 / 31);
+    CHECK_EQ(screen->heading->text, fitness_heading(days, std::chrono::year { 2021 } / 12 / 31, 0, true));
+    CHECK(screen->heading->text.ends_with(" a week · 2021"));
+    // From New Year, at 0 before the run of the 1st of March.
+    if (!screen->lines->series.empty()) {
+        CHECK_EQ(screen->lines->series[0].values.size(), 365uz);
+        CHECK_EQ(screen->lines->series[0].values[0], 0.0);
+        CHECK(screen->lines->series[0].values[59] > 0);
+    }
+}
+
+// Each key from the fitness view, and the year it leaves on.
+void test_fitness_keys()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_fitness_screen();
+    // From the years view: Left and Right still go by year.
+    screen->set_period(Period::Year);
+    screen->toggle_fitness();
+    screen->step_year(-1);
+    CHECK_EQ(screen->view.year, 2025);
+    CHECK(screen->heading->text.ends_with(" a week · 2025"));
+    // Y back to the bars, by year.
+    screen->set_period(Period::Year);
+    CHECK(screen->view.graph == Graph::Bars);
+    CHECK(screen->view.period == Period::Year);
+    // W too, on cycling's only year.
+    screen->toggle_fitness();
+    screen->step_year(-5); // 2021
+    CHECK_EQ(screen->view.year, 2021);
+    screen->set_period(Period::Week);
+    CHECK(screen->view.graph == Graph::Bars);
+    CHECK_EQ(screen->view.year, 2026);
+    // G to the lines, among cycling's years.
+    screen->toggle_fitness();
+    screen->step_year(-5);
+    screen->toggle_lines();
+    CHECK(screen->view.graph == Graph::YearToDate);
+    CHECK_EQ(screen->view.year, 2026);
+    CHECK_EQ(screen->heading->text, "Cycling · distance to date · 2026");
+    // R in 2021 keeps the year, and F leaves on running's 2021.
+    screen->toggle_fitness();
+    screen->step_year(-5);
+    screen->set_sport(VolumeSport::Running);
+    CHECK_EQ(screen->view.year, 2021);
+    CHECK(screen->view.graph == Graph::Fitness);
+    screen->toggle_fitness();
+    CHECK(screen->view.graph == Graph::Bars);
+    CHECK_EQ(screen->view.year, 2021);
+    CHECK_EQ(screen->heading->text, "Running · distance by week · 2021");
+    // Right stops at this year.
+    screen->toggle_fitness();
+    for (auto step = 0; step < 10; ++step) {
+        screen->step_year(1);
+    }
+    CHECK_EQ(screen->view.year, 2026);
+}
+
+// New summaries while the fitness is on show: the same week selected.
+void test_new_summaries_in_the_fitness()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_fitness_screen();
+    screen->toggle_fitness();
+    screen->table->select(21);
+    auto summaries = screen->summaries;
+    summaries.push_back(hard_ride(6, 15));
+    screen->set_summaries(summaries);
+    CHECK(screen->view.graph == Graph::Fitness);
+    CHECK(screen->table->selection == 21uz);
+    if (screen->table->rows.size() == 24) {
+        CHECK_EQ(screen->table->rows[23][1], "100");
+    }
+}
+
 }
 
 int main()
@@ -939,5 +1067,8 @@ int main()
     test_fitness_by_year();
     test_leaving_the_fitness();
     test_fitness_without_thresholds();
+    test_fitness_heading_of_a_past_year();
+    test_fitness_keys();
+    test_new_summaries_in_the_fitness();
     return Test::test_result();
 }

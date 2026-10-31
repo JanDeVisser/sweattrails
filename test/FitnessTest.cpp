@@ -9,7 +9,9 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <ctime>
+#include <string>
 
 #include <storage/Fitness.h>
 #include <storage/Thresholds.h>
@@ -268,6 +270,83 @@ void test_fitness_years()
     CHECK((fitness_years({ }, 2026) == std::pair { 2026, 2026 }));
 }
 
+void test_more_thresholds()
+{
+    // Two entries from the same day: which one counts?
+    CHECK(!decode(R"([ { "from": "2024-03-01", "ftp": 250 }, { "from": "2024-03-01", "ftp": 260 } ])"));
+    auto const empty = decode("[]");
+    CHECK(empty.has_value() && empty->empty());
+    auto const null = decode("null");
+    CHECK(null.has_value() && null->empty());
+    // An entry of no thresholds keeps all of the one before.
+    auto const list = decode(R"([ { "from": "2020-01-01", "ftp": 250.5, "lthr_cycling": 160 }, { "from": "2022-01-01" } ])");
+    CHECK(list.has_value());
+    if (list) {
+        auto const later = thresholds_on(*list, date(2023, 1, 1));
+        CHECK(later && later->ftp == 250.5 && later->lthr_cycling == 160.0 && !later->lthr_running);
+    }
+}
+
+// A day is a calendar day across a change to or from summer time: one
+// entry each, and an activity late on the evening before the change, or
+// just after midnight, is on its own day.
+void test_days_across_summer_time()
+{
+    auto const       *old = std::getenv("TZ");
+    std::string const saved = old ? old : "";
+    setenv("TZ", "Europe/Amsterdam", 1);
+    tzset();
+    auto at = [](chrono::year_month_day day, int hour, int minute) {
+        std::tm tm {
+            .tm_sec = 0,
+            .tm_min = minute,
+            .tm_hour = hour,
+            .tm_mday = static_cast<int>(static_cast<unsigned>(day.day())),
+            .tm_mon = static_cast<int>(static_cast<unsigned>(day.month())) - 1,
+            .tm_year = static_cast<int>(day.year()) - 1900,
+            .tm_isdst = -1,
+        };
+        return static_cast<i64>(std::mktime(&tm));
+    };
+    // Summer time started on the 30th of March 2025, and ended on the
+    // 26th of October.
+    auto late = ride(date(2025, 3, 29));
+    late.start = at(date(2025, 3, 29), 23, 30);
+    auto early = ride(date(2025, 3, 31));
+    early.start = at(date(2025, 3, 31), 0, 30);
+    auto autumn = ride(date(2025, 10, 26));
+    autumn.start = at(date(2025, 10, 26), 23, 30);
+    auto const days = fitness_days({ late, early, autumn }, thresholds(), date(2025, 10, 27));
+    CHECK_EQ(days.size(), 213uz);
+    if (days.size() == 213) {
+        CHECK(near(days[0].tss, 100));
+        CHECK(near(days[1].tss, 0));
+        CHECK(near(days[2].tss, 100));
+        CHECK(days[211].day == date(2025, 10, 26));
+        CHECK(near(days[211].tss, 100));
+    }
+    if (old) {
+        setenv("TZ", saved.c_str(), 1);
+    } else {
+        unsetenv("TZ");
+    }
+    tzset();
+}
+
+// The year's last week runs into the next: 2025's of Monday the 29th of
+// December has the ride of Friday the 2nd of January, as on the bars.
+void test_last_week_into_the_new_year()
+{
+    auto const days = fitness_days({ ride(date(2025, 12, 29)), ride(date(2026, 1, 2)) }, thresholds(), date(2026, 1, 10));
+    auto const weeks = fitness_weeks(days, 2025);
+    CHECK_EQ(weeks.size(), 1uz);
+    if (weeks.size() == 1) {
+        CHECK(weeks[0].monday == date(2025, 12, 29));
+        CHECK(near(weeks[0].tss, 200));
+        CHECK(weeks[0].end.day == date(2026, 1, 4));
+    }
+}
+
 }
 
 int main()
@@ -283,5 +362,8 @@ int main()
     test_fitness_weeks();
     test_without_stress();
     test_fitness_years();
+    test_more_thresholds();
+    test_days_across_summer_time();
+    test_last_week_into_the_new_year();
     return Test::test_result();
 }
