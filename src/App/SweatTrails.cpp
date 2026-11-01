@@ -31,6 +31,7 @@
 #include <overlay/OverlayRender.h>
 #include <overlay/Render.h>
 #include <storage/Activity.h>
+#include <storage/Gaps.h>
 #include <storage/Garmin.h>
 #include <storage/Laps.h>
 #include <storage/Storage.h>
@@ -1243,6 +1244,92 @@ void list_month(pSweatTrails const &sweattrails, ActivityID const &shown)
 }
 
 // At the activity on display.
+// Loads the activity on display again, after its FIT file changed.
+void show_again(pSweatTrails const &sweattrails, ActivityID const &id)
+{
+    if (auto loaded = load_to_show(sweattrails->storage, id); loaded) {
+        sweattrails->show_activity(*loaded);
+    } else {
+        sweattrails->set_status(loaded.error());
+    }
+    // The file's size changed: the totals read it again.
+    sweattrails->update_summaries();
+}
+
+// A FIT file dropped on the window, `paths`: fills the gaps of the
+// activity on display that it covers. See specs/30-fill-gaps.md.
+void cmd_fill_gaps(pSweatTrails const &sweattrails, JSONValue const &arguments)
+{
+    auto const paths = arguments.try_get_array<std::string>("paths").value_or(std::vector<std::string> { });
+    auto const displayed = sweattrails->activity_display->activity;
+    auto const showing = !sweattrails->showing_summaries() && sweattrails->modals.empty() && displayed != nullptr;
+    if (auto const problem = drop_problem(paths, showing); problem) {
+        message_box(*problem);
+        return;
+    }
+    Activity other { sweattrails->storage, ActivityID::dummy(ActivityFile::Fit) };
+    other.depth = LoadingDepth::Deep;
+    auto const loaded = other.load_from_file(paths.front());
+    if (!loaded || !*loaded) {
+        message_box(std::format("{} isn't a FIT file of an activity that SweatTrails can read{}", paths.front(),
+            loaded ? std::string { "." } : std::format(": {}", loaded.error().to_string())));
+        return;
+    }
+    auto const &activity = displayed->activity;
+    auto const  gaps = find_gaps(activity.recorded);
+    if (gaps.empty()) {
+        message_box("This activity has no gaps to fill.");
+        return;
+    }
+    auto const fills = plan_fills(activity.recorded, gaps, other.recorded);
+    if (fills.empty()) {
+        message_box("This activity wasn't where you were when the watch stopped.");
+        return;
+    }
+    auto const start = activity.recorded.front().timestamp;
+    auto       fill = [displayed, fills](pSweatTrails const &st, QueryOption selection) {
+        if (selection != QueryOption::QueryOptionYes) {
+            return;
+        }
+        if (auto const filled = fill_gaps(displayed->activity, fills); !filled) {
+            message_box(std::format("Couldn't fill the gaps: {}", filled.error()));
+            return;
+        }
+        auto distance = 0.0;
+        for (auto const &f : fills) {
+            distance += f.distance;
+        }
+        show_again(st, displayed->activity.id);
+        st->set_status(std::format("Filled {}: {:.1f} km", fills.size() == 1 ? std::string { "the gap" } : std::format("{} gaps", fills.size()), distance / 1000));
+    };
+    query_box(sweattrails, fill_question(fills, start), fill, QueryOptionYesNo);
+}
+
+// Ctrl+Shift+F: the activity as the watch recorded it, without the fills.
+void cmd_remove_fills(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    auto const displayed = activity_for_keys(sweattrails);
+    if (!displayed) {
+        return;
+    }
+    if (!std::filesystem::exists(original_path(displayed->activity))) {
+        message_box("This activity has no fills to remove.");
+        return;
+    }
+    auto put_back = [displayed](pSweatTrails const &st, QueryOption selection) {
+        if (selection != QueryOption::QueryOptionYes) {
+            return;
+        }
+        if (auto const removed = remove_fills(displayed->activity); !removed) {
+            message_box(removed.error());
+            return;
+        }
+        show_again(st, displayed->activity.id);
+        st->set_status("The fills are removed");
+    };
+    query_box(sweattrails, "Put back the activity as the watch recorded it?", put_back, QueryOptionYesNo);
+}
+
 void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
 {
     list_month(sweattrails, sweattrails->last_activity);
@@ -1425,6 +1512,17 @@ void SweatTrails::notif_summaries_updated(Notification::Payload const &data)
     }
 }
 
+void SweatTrails::files_dropped(std::vector<std::string> const &paths)
+{
+    auto arguments = JSONValue::object();
+    auto list = JSONValue::array();
+    for (auto const &path : paths) {
+        list.append(JSONValue { path });
+    }
+    arguments.set("paths", list);
+    bus.submit("st-fill-gaps", arguments);
+}
+
 void SweatTrails::show_activity(Activity const &activity)
 {
     trace(ST, "Showing activity {}", activity.id);
@@ -1588,6 +1686,10 @@ void SweatTrails::initialize()
     bus.add_task<SweatTrails>("st-map-zoom-out", self(), cmd_map_zoom_out)
         .bind(KeyCombo { KEY_MINUS, KModNone })
         .bind(KeyCombo { KEY_KP_SUBTRACT, KModNone })
+        .when(on_activity_screen);
+    bus.add_task<SweatTrails>("st-fill-gaps", self(), cmd_fill_gaps);
+    bus.add_task<SweatTrails>("st-remove-fills", self(), cmd_remove_fills)
+        .bind(KeyCombo { KEY_F, KModControl | KModShift })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-map-whole-route", self(), cmd_map_whole_route)
         .bind(KeyCombo { KEY_ZERO, KModNone })
