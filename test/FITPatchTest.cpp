@@ -8,6 +8,8 @@
  */
 
 #include <cmath>
+#include <optional>
+#include <utility>
 
 #include <fit/FITPatch.h>
 #include <storage/Activity.h>
@@ -54,6 +56,31 @@ size_t timer_events(std::string_view bytes)
         return 0;
     }
     return static_cast<size_t>(std::ranges::count_if(scan->messages, [](FITMessage const &message) { return !message.definition && message.global == 21; }));
+}
+
+// A data message's field of 4 bytes, little-endian, if it has one.
+std::optional<u32> u32_of(std::string_view bytes, FITMessage const &message, u8 num)
+{
+    auto const field = message.field(num);
+    if (!field || field->size != 4) {
+        return { };
+    }
+    u32 ret { 0 };
+    for (auto ix = 4uz; ix > 0; --ix) {
+        ret = (ret << 8) | static_cast<u8>(bytes[message.offset + field->offset + ix - 1]);
+    }
+    return ret;
+}
+
+// The data message of global message number `global` at `timestamp`.
+std::optional<FITMessage> message_at(FITScan const &scan, std::string_view bytes, u16 global, u32 timestamp)
+{
+    for (auto const &message : scan.messages) {
+        if (!message.definition && message.global == global && u32_of(bytes, message, 253) == timestamp) {
+            return message;
+        }
+    }
+    return { };
 }
 
 void test_crc()
@@ -220,6 +247,115 @@ void test_patch_two_gaps()
     CHECK_EQ(loaded.activity.segment.moving.elapsed, 200u + 151u + 1u);
 }
 
+// A watch writes its CRCs: the header's is worked out again, the file's
+// isn't copied but written anew at the end, and the data size is the data's.
+void test_patch_with_crcs()
+{
+    auto const bytes = with_crcs(run(), fit_crc);
+    CHECK(scan_fit(bytes).has_value());
+    auto const patched = patch_fit(bytes, { gap() });
+    auto const plain = patch_fit(run(), { gap() });
+    CHECK(patched.has_value() && plain.has_value());
+    if (!patched || !plain) {
+        return;
+    }
+    CHECK_EQ(patched->size(), plain->size());
+    u32 data_size { 0 };
+    for (auto ix = 8uz; ix > 4; --ix) {
+        data_size = (data_size << 8) | static_cast<u8>((*patched)[ix - 1]);
+    }
+    CHECK_EQ(static_cast<size_t>(data_size) + 14 + 2, patched->size());
+    CHECK_EQ(fit_crc(std::string_view { *patched }.substr(0, 14)), u16 { 0 });
+    CHECK_EQ(fit_crc(*patched), u16 { 0 });
+    // A header without a CRC keeps none.
+    CHECK((*plain)[12] == 0 && (*plain)[13] == 0);
+    Loaded const loaded { *patched };
+    CHECK_EQ(loaded.activity.recorded.size(), 500uz);
+    // The patched file can be patched again.
+    CHECK(scan_fit(*patched).has_value());
+}
+
+// Only the timer events in the gap go: the timer's start and stop around
+// the run stay, and so does another event in the gap.
+void test_patch_keeps_other_events()
+{
+    auto const patched = patch_fit(run({ .other_events = true }), { gap() });
+    CHECK(patched.has_value());
+    if (!patched) {
+        return;
+    }
+    auto const scan = scan_fit(*patched);
+    CHECK(scan.has_value());
+    if (!scan) {
+        return;
+    }
+    std::vector<std::pair<u32, u8>> events;
+    for (auto const &message : scan->messages) {
+        if (!message.definition && message.global == 21) {
+            events.emplace_back(u32_of(*patched, message, 253).value_or(0), static_cast<u8>((*patched)[message.offset + message.field(0)->offset]));
+        }
+    }
+    CHECK_EQ(events.size(), 3uz);
+    if (events.size() == 3) {
+        CHECK((events[0] == std::pair { Start, u8 { 0 } }));
+        CHECK((events[1] == std::pair { Start + 200, u8 { 11 } }));
+        CHECK((events[2] == std::pair { Start + 499, u8 { 0 } }));
+    }
+}
+
+// Of two laps, only the one the watch stopped in gets the gap's distance
+// and time.
+void test_patch_only_the_lap_with_the_gap()
+{
+    auto const patched = patch_fit(run({ .two_laps = true }), { gap() });
+    CHECK(patched.has_value());
+    if (!patched) {
+        return;
+    }
+    Loaded const loaded { *patched };
+    auto const  &laps = loaded.activity.device_laps;
+    CHECK_EQ(laps.size(), 2uz);
+    if (laps.size() == 2) {
+        CHECK(std::abs(laps[0].segment.distance - 150.0f) < 0.01f);
+        CHECK_EQ(laps[0].segment.moving.elapsed, 51u);
+        CHECK(std::abs(laps[1].segment.distance - 1350.0f) < 0.01f);
+        CHECK_EQ(laps[1].segment.moving.elapsed, 149u + 301u);
+    }
+    CHECK(std::abs(loaded.activity.segment.distance - 1500.0f) < 0.01f);
+}
+
+// A record after the gap without a distance, all ones, keeps none; the
+// next one is raised.
+void test_patch_keeps_an_invalid_distance()
+{
+    auto       bytes = run();
+    auto const scan = scan_fit(bytes);
+    CHECK(scan.has_value());
+    if (!scan) {
+        return;
+    }
+    auto const record = message_at(*scan, bytes, 20, Start + 450);
+    CHECK(record.has_value());
+    if (!record) {
+        return;
+    }
+    bytes.replace(record->offset + record->field(5)->offset, 4, 4, '\xFF');
+    auto const patched = patch_fit(bytes, { gap() });
+    CHECK(patched.has_value());
+    if (!patched) {
+        return;
+    }
+    auto const patched_scan = scan_fit(*patched);
+    CHECK(patched_scan.has_value());
+    if (!patched_scan) {
+        return;
+    }
+    auto const invalid = message_at(*patched_scan, *patched, 20, Start + 450);
+    auto const next = message_at(*patched_scan, *patched, 20, Start + 451);
+    CHECK(invalid && u32_of(*patched, *invalid, 5) == 0xFFFFFFFFu);
+    CHECK(next && u32_of(*patched, *next, 5) == 135'300u); // 300 + 153 + 900 m
+}
+
 void test_patch_refuses()
 {
     auto const no_distance = patch_fit(run({ .with_distance = false }), { gap() });
@@ -243,5 +379,9 @@ int main()
     test_patch_big_endian();
     test_patch_two_gaps();
     test_patch_refuses();
+    test_patch_with_crcs();
+    test_patch_keeps_other_events();
+    test_patch_only_the_lap_with_the_gap();
+    test_patch_keeps_an_invalid_distance();
     return Test::test_result();
 }

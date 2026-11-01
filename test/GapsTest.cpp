@@ -139,6 +139,109 @@ void test_plan_fills_not_covered()
     CHECK_EQ(plan_fills(records, gaps, friend_run(0, 150)).size(), 1uz);
 }
 
+// The run with two gaps, filled at once, as one drop does: the second
+// gap's records carry on from the distance after the first, and the
+// distance never goes back.
+void test_fill_two_gaps()
+{
+    Storage    storage { };
+    Activity   watched { storage, ActivityID::dummy(ActivityFile::Fit) };
+    auto const bytes = Test::run_two_gaps();
+    watched.depth = LoadingDepth::Deep;
+    MUST(watched.load_from_slice(bytes));
+    auto const gaps = find_gaps(watched.recorded);
+    CHECK_EQ(gaps.size(), 2uz);
+    auto const fills = plan_fills(watched.recorded, gaps, friend_run());
+    CHECK_EQ(fills.size(), 2uz);
+    if (fills.size() != 2) {
+        return;
+    }
+    CHECK(std::abs(fills[0].distance - 303) < 0.01 && std::abs(fills[1].distance - 303) < 0.01);
+    auto const patched = FIT::patch_fit(bytes, fills);
+    CHECK(patched.has_value());
+    if (!patched) {
+        return;
+    }
+    Activity filled { storage, ActivityID::dummy(ActivityFile::Fit) };
+    filled.depth = LoadingDepth::Deep;
+    MUST(filled.load_from_slice(*patched));
+    auto const &records = filled.recorded;
+    CHECK_EQ(records.size(), 500uz);
+    if (records.size() != 500) {
+        return;
+    }
+    for (auto ix = 1uz; ix < records.size(); ++ix) {
+        if (records[ix].distance && records[ix - 1].distance && *records[ix].distance < *records[ix - 1].distance) {
+            CHECK_EQ(std::format("{} m at {} s", *records[ix].distance, ix), std::format("{} m at {} s", *records[ix - 1].distance, ix - 1));
+            break;
+        }
+    }
+    CHECK(records[199].distance && std::abs(*records[199].distance - 597.0f) < 0.01f);
+    CHECK(records[200].distance && std::abs(*records[200].distance - 600.0f) < 0.01f);
+    CHECK(records[299].distance && std::abs(*records[299].distance - 897.0f) < 0.01f);
+    CHECK(records[300].distance && std::abs(*records[300].distance - 900.0f) < 0.01f); // The second gap's first
+    CHECK(records[399].distance && std::abs(*records[399].distance - 1197.0f) < 0.01f);
+    CHECK(records[400].distance && std::abs(*records[400].distance - 1200.0f) < 0.01f);
+    CHECK(records[499].distance && std::abs(*records[499].distance - 1497.0f) < 0.01f);
+    CHECK(std::abs(filled.segment.distance - 1497.0f) < 0.01f);
+}
+
+// The friend's records in the gap without a position or a distance: they
+// go in without them, and the file reads.
+void test_fill_with_records_missing_values()
+{
+    auto const records = watch();
+    auto       other = friend_run();
+    other[200].position.reset();
+    other[201].distance.reset();
+    auto const fills = plan_fills(records, find_gaps(records), other);
+    CHECK_EQ(fills.size(), 1uz);
+    if (fills.size() != 1) {
+        return;
+    }
+    auto const &inserted = fills[0].records;
+    CHECK_EQ(inserted.size(), 300uz);
+    if (inserted.size() != 300) {
+        return;
+    }
+    CHECK(!inserted[100].lat && !inserted[100].lon && inserted[100].distance);
+    CHECK(inserted[101].lat && !inserted[101].distance);
+    auto const patched = FIT::patch_fit(Test::run(), fills);
+    CHECK(patched.has_value());
+    if (!patched) {
+        return;
+    }
+    Storage  storage { };
+    Activity filled { storage, ActivityID::dummy(ActivityFile::Fit) };
+    filled.depth = LoadingDepth::Deep;
+    MUST(filled.load_from_slice(*patched));
+    CHECK_EQ(filled.recorded.size(), 500uz);
+    if (filled.recorded.size() == 500) {
+        CHECK(!filled.recorded[200].position || !filled.recorded[200].position->has_fix());
+        CHECK(!filled.recorded[201].distance);
+        CHECK(filled.recorded[202].distance && std::abs(*filled.recorded[202].distance - 606.0f) < 0.01f);
+    }
+}
+
+// A watch whose records have no distance: the friend's file still covers
+// the gap, in time and place, so that the user hears why it can't be
+// filled ("its records have no distance", from patch_fit()), rather than
+// "This activity wasn't where you were when the watch stopped."
+void test_plan_fills_watch_without_distance()
+{
+    Storage    storage { };
+    Activity   watched { storage, ActivityID::dummy(ActivityFile::Fit) };
+    auto const bytes = Test::run({ .with_distance = false });
+    watched.depth = LoadingDepth::Deep;
+    MUST(watched.load_from_slice(bytes));
+    auto const gaps = find_gaps(watched.recorded);
+    CHECK_EQ(gaps.size(), 1uz);
+    auto const fills = plan_fills(watched.recorded, gaps, friend_run());
+    CHECK_EQ(fills.size(), 1uz);
+    auto const patched = FIT::patch_fit(bytes, fills);
+    CHECK(!patched && patched.error() == "its records have no distance");
+}
+
 void test_fill_question()
 {
     auto const         start = DateTime::from_timestamp(static_cast<i32>(unix_time(0)));
@@ -215,6 +318,7 @@ int main()
     test_not_gaps();
     test_plan_fills();
     test_plan_fills_not_covered();
+    test_fill_with_records_missing_values();
     test_fill_question();
     test_drop_problem();
     test_fill_in_the_store();

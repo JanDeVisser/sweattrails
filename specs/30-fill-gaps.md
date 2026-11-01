@@ -311,4 +311,124 @@ fields are.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: with two gaps filled from one drop, the second gap's
+   distance goes back by the first gap's distance.**
+   `storage/Gaps.cpp:87` and `:108` start each fill's records from the
+   watch's distance at that gap's stop, as `Activity::recorded` has it:
+   the distance in the file, before any gap is added. `patch_fit()`
+   (`fit/FITPatch.cpp:154`) writes those distances as they are. It
+   raises only the watch's own records after a gap (`:326`), not the
+   records it inserts. So every record of the second gap is short by
+   the first gap's distance. On the run in the spec, with two gaps of
+   about 1.5 km, the distance graph drops by 1.4 km at the start of the
+   second gap and jumps back at its end. Splits and anything else that
+   reads record distances are off for that stretch. The totals and the
+   watch's own records are right. Filling the gaps one drop at a time
+   would work, because the second drop reads the patched file, but one
+   drop fills all gaps, and Jan's run has two.
+   Failing test: `GapsTest` `test_fill_two_gaps` (597 m at 300 s after
+   897 m at 299 s; it expects 900 m). Fix: raise the inserted records'
+   distances by the earlier fills' distances, either in `patch_fit()`
+   or in `plan_fills()`.
+
+2. **Bug: an activity whose records have no distance gets the wrong
+   message.** `storage/Gaps.cpp:87-88`: `plan_fills()` skips a gap when
+   the watch's stop record has no distance, so `cmd_fill_gaps`
+   (`SweatTrails.cpp:1284`) says "This activity wasn't where you were
+   when the watch stopped." The user was right there. The spec says
+   such a file is refused "with a message that says why". `patch_fit()`
+   has that message ("its records have no distance"), but the user
+   never sees it. Failing test: `GapsTest`
+   `test_plan_fills_watch_without_distance`. It expects the gap to count
+   as covered, so that `patch_fit()` refuses it with its own message. A
+   check in `cmd_fill_gaps` would fix the message just as well, and the
+   test can be changed to match.
+
+3. **Bug (small): a failed reload after a fill or an undo isn't shown.**
+   `SweatTrails.cpp:1253`: `show_again()` puts the load error on the
+   status line. Then the caller overwrites it at once with "Filled 2
+   gaps: 3.0 km" (`:1303`) or "The fills are removed" (`:1328`). If the
+   patched file doesn't load, the user reads that the fill worked while
+   the old activity is still on screen. `show_again()` could return
+   whether it loaded, and the callers could set their status only if it
+   did. Can't be tested without a window.
+
+4. **Suggestion: check whether the file can be patched before asking.**
+   `cmd_fill_gaps` asks "Fill 2 gaps: ...?" (`SweatTrails.cpp:1305`)
+   and only calls `patch_fit()` after Yes (`:1294`). A file with
+   compressed timestamps, or with no record after a gap, gets "Couldn't
+   fill the gaps: it can't be filled: it has compressed timestamps"
+   only after the user said Yes. Nothing changes, as the spec wants,
+   but patching first (in memory, it's pure) and asking only when it
+   works would spare the user a question that can't be answered with
+   Yes. It would also avoid the doubled wording ("Couldn't fill the
+   gaps: it can't be filled: ...").
+
+5. **Suggestion: the gap's time and distance run from record to record,
+   not from the watch's stop to its restart.** `plan_fills()` uses the
+   last record before the gap and the first after it as the stop and the
+   restart (`Gaps.cpp:94-96`). It also takes the other file's record
+   nearest to each, up to 10 s away (`nearest()`, `:40`). With 1 s
+   recording this makes no difference. A watch on "smart recording"
+   writes records several seconds apart. Then the time from the last
+   record to the button press is counted twice: by the watch's timer
+   and again in the gap's timer time (`patch_fit()` adds `restart -
+   stop`). The distance is counted twice in the same way, by up to
+   about 10 s of running at each end. The timer events in the file give
+   the real stop and restart times, and interpolating the other file's
+   distance at those times would make the fill exact. This isn't wrong
+   by the spec's words, so no test.
+
+6. **Suggestion: messages in the gap are left ahead of the inserted
+   records.** `patch_fit()` inserts the gap's records in front of the
+   first record at or after the restart (`FITPatch.cpp:313-321`). So a
+   non-timer message the watch wrote during the gap, such as a battery
+   event at 200 s, comes before inserted records from 100 s to 399 s.
+   The message is kept, as it should be (`test_patch_keeps_other_events`),
+   but the file is no longer in time order. Readers that assume time
+   order, like other programs the file goes to, may misplace it. Watches
+   write little while stopped, so this is minor.
+
+7. **Suggestion (style): `std::filesystem::exists()` that can throw.**
+   `SweatTrails.cpp:1315` calls the overload without an error code.
+   That throws if the directory can't be read, and the app uses no
+   exceptions (`STYLE.md`). `remove_fills()` already does the same
+   check with an `std::error_code`: let it give "This activity has no
+   fills to remove." before the question, or pass an error code here.
+
+Checked, and found right: `scan_fit()` sizes for definitions with
+developer fields, big-endian definitions, local types redefined
+mid-file, and chained files. The definition of local type 15 is put
+back after the insert. A 0xFFFFFFFF record distance stays invalid.
+Session, activity and lap totals, and only the spanning lap raised.
+Only timer events in the gap dropped. The header data size, the header
+CRC (worked out again only if the watch wrote one), and the file's CRC,
+written anew rather than copied, with or without a trailing CRC in the
+input. The u32 sums can't overflow for real activities. `find_gaps()`
+and `plan_fills()` use strict "more than" for 90 s and 100 m, and
+"within" for 10 s and 200 m. Records in the other file without a
+position or a distance go in with invalid values and read back without
+them. The original is written once. If writing the patched file fails
+after the original was kept, the FIT file is unchanged and the original
+equals it, so an undo is harmless. `cmd_fill_gaps` captures the
+displayed activity's `shared_ptr` when the file is dropped. On Yes it
+fills that activity, even if the user moved to another while the box
+was open, and shows it again. `App::files_dropped` copies the paths
+before `UnloadDroppedFiles()`, and runs while a modal is open, as the
+spec says.
+
+**Tests added** (uncommitted, as asked):
+- `test/TestRun.h`: `RunOptions::other_events` and `two_laps`,
+  `event_fields()`, `lap_fields()`, `run_two_gaps()` (a run with two
+  gaps whose distance carries on from each stop, as a watch's does),
+  and `with_crcs()` (a header CRC and a trailing file CRC).
+- `test/FITPatchTest.cpp`: `test_patch_with_crcs`,
+  `test_patch_keeps_other_events`,
+  `test_patch_only_the_lap_with_the_gap` and
+  `test_patch_keeps_an_invalid_distance`. All pass.
+- `test/GapsTest.cpp`: `test_fill_two_gaps` (**fails**, finding 1),
+  `test_plan_fills_watch_without_distance` (**fails**, finding 2), and
+  `test_fill_with_records_missing_values` (passes).
+
+`ctest --test-dir build -E oauth`: 50 of 51 pass. `gaps_test` fails,
+only on the checks of findings 1 and 2.
