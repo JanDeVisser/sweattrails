@@ -88,7 +88,9 @@ std::vector<FIT::FITFill> plan_fills(std::span<record const> records, std::vecto
         auto const at_stop = nearest(other, gap.stop);
         auto const at_restart = nearest(other, gap.restart);
         auto const stop_distance = records[gap.before].distance;
-        if (!at_stop || !at_restart || !stop_distance
+        // A watch without a distance at the stop is covered too: the patch
+        // says why it can't be filled.
+        if (!at_stop || !at_restart
             || distance_between(*at_stop->position, gap.from) > CoverDistance
             || distance_between(*at_restart->position, gap.to) > CoverDistance) {
             continue;
@@ -107,7 +109,7 @@ std::vector<FIT::FITFill> plan_fills(std::span<record const> records, std::vecto
                 fill_record.lat = to_semicircles(rec.position->lat);
                 fill_record.lon = to_semicircles(rec.position->lon);
             }
-            if (rec.distance) {
+            if (rec.distance && stop_distance) {
                 fill_record.distance = *stop_distance + filled_before + std::max(0.0, static_cast<float64>(*rec.distance) - static_cast<float64>(*at_stop->distance));
             }
             fill.records.push_back(fill_record);
@@ -154,6 +156,19 @@ fs::path fit_path(Activity const &activity)
 fs::path original_path(Activity const &activity)
 {
     return fs::path { activity.sidecar }.replace_extension(".fit.original");
+}
+
+std::expected<void, std::string> check_fills(Activity const &activity, std::vector<FIT::FITFill> const &fills)
+{
+    auto const fit = fit_path(activity);
+    auto const bytes = read_file_by_name(fit.string());
+    if (!bytes) {
+        return std::unexpected(std::format("can't read {}: {}", fit.string(), bytes.error().to_string()));
+    }
+    if (auto const patched = FIT::patch_fit(*bytes, fills); !patched) {
+        return std::unexpected(patched.error());
+    }
+    return { };
 }
 
 std::expected<void, std::string> fill_gaps(Activity const &activity, std::vector<FIT::FITFill> const &fills)

@@ -1286,6 +1286,10 @@ void cmd_fill_gaps(pSweatTrails const &sweattrails, JSONValue const &arguments)
         message_box("This activity wasn't where you were when the watch stopped.");
         return;
     }
+    if (auto const can = check_fills(activity, fills); !can) {
+        message_box(std::format("This activity can't be filled: {}.", can.error()));
+        return;
+    }
     auto const start = activity.recorded.front().timestamp;
     auto       fill = [displayed, fills](pSweatTrails const &st, QueryOption selection) {
         if (selection != QueryOption::QueryOptionYes) {

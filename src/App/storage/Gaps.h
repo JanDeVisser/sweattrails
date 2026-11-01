@@ -61,6 +61,10 @@ struct Gap {
 [[nodiscard]] std::filesystem::path fit_path(Activity const &activity);
 [[nodiscard]] std::filesystem::path original_path(Activity const &activity);
 
+// Whether the fills can be patched into the activity's FIT file, without
+// writing it, and why not: to ask the user only if they can.
+std::expected<void, std::string> check_fills(Activity const &activity, std::vector<FIT::FITFill> const &fills);
+
 // Patches the fills into the activity's FIT file, keeping the original
 // the first time. Why not, if it can't.
 std::expected<void, std::string> fill_gaps(Activity const &activity, std::vector<FIT::FITFill> const &fills);

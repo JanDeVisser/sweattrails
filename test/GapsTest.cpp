@@ -304,6 +304,8 @@ void test_fill_refused()
     MUST(write_file_by_name((dir / std::format("{}.fit", unix_time(0))).string(), std::string_view { fit.file() }));
     Activity activity { store.storage, ActivityID { Month { static_cast<size_t>(start.year), start.month }, std::format("{}", unix_time(0)), FileTypes::one(ActivityFile::Fit) } };
     CHECK(activity.load(LoadingDepth::Deep).value_or(false));
+    auto const checked = check_fills(activity, { FIT::FITFill { .stop = Test::Start, .restart = Test::Start + 100 } });
+    CHECK(!checked && checked.error() == "its records have no distance");
     auto const refused = fill_gaps(activity, { FIT::FITFill { .stop = Test::Start, .restart = Test::Start + 100 } });
     CHECK(!refused && refused.error() == "it can't be filled: its records have no distance");
     CHECK(!fs::exists(original_path(activity)));
@@ -319,6 +321,7 @@ int main()
     test_plan_fills();
     test_fill_two_gaps();
     test_plan_fills_not_covered();
+    test_plan_fills_watch_without_distance();
     test_fill_with_records_missing_values();
     test_fill_question();
     test_drop_problem();
