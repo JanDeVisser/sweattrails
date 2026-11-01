@@ -171,6 +171,50 @@ size_t main_recording(std::vector<RecordingInfo> const &recordings, std::vector<
     return *std::ranges::max_element(candidates, { }, [&recordings](size_t ix) { return recordings[ix].elapsed; });
 }
 
+std::expected<std::vector<FIT::manufacturer>, std::string> decode_prefer(std::optional<JSONValue> const &recordings)
+{
+    if (!recordings || recordings->is_null()) {
+        return std::vector<FIT::manufacturer> { };
+    }
+    if (!recordings->is_object()) {
+        return std::unexpected(std::string { "`recordings` isn't an object" });
+    }
+    if (!recordings->has("prefer")) {
+        return std::vector<FIT::manufacturer> { };
+    }
+    auto const names = recordings->try_get_array<std::string>("prefer");
+    if (!names) {
+        return std::unexpected(std::string { "`recordings.prefer` isn't a list of names" });
+    }
+    std::vector<FIT::manufacturer> ret;
+    for (auto const &name : *names) {
+        auto const m = FIT::manufacturer_by_name(name);
+        if (!m) {
+            return std::unexpected(std::format("`recordings.prefer` has \"{}\", which isn't a device maker FIT knows", name));
+        }
+        ret.push_back(*m);
+    }
+    return ret;
+}
+
+std::optional<ActivityID> activity_id_of(fs::path const &fit)
+{
+    auto const number = [](std::string const &s) -> std::optional<size_t> {
+        size_t n { 0 };
+        auto const [end, ec] = std::from_chars(s.data(), s.data() + s.size(), n);
+        if (ec != std::errc { } || end != s.data() + s.size()) {
+            return { };
+        }
+        return n;
+    };
+    auto const month = number(fit.parent_path().filename().string());
+    auto const year = number(fit.parent_path().parent_path().filename().string());
+    if (fit.extension() != ".fit" || !month || !year || *month < 1 || *month > 12) {
+        return { };
+    }
+    return ActivityID { Month { *year, static_cast<DateTime::Month>(*month - 1) }, fit.stem().string(), FileTypes::one(ActivityFile::Fit) };
+}
+
 StorageResult<Grouped> group_recordings(Storage &storage, std::vector<RecordingInfo> const &recordings)
 {
     auto const main_ix = main_recording(recordings, storage.prefer);

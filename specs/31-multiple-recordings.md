@@ -169,6 +169,9 @@ None.
 - **The once over the store** is done month by month, each with the
   months before and after, as a chunked job like the summary file's, and
   a file `recordings-grouped` in the data directory says it's done.
+- **The preferred devices** in the settings that FIT doesn't know are an
+  error on the status line, as a bad `thresholds` is, and the app starts
+  without preferred devices.
 - **Splitting** is a job too, as moving files rebuilds the store's
   index, which only jobs may do (`Storage`'s threading note).
 
@@ -217,7 +220,8 @@ None.
   a chunk of months per job, its progress on the status line, and the
   count at the end; then it updates the summary file.
 - `JobType::SplitRecordings`, from `st-split-recordings` (Ctrl+Shift+R,
-  `.when(on_activity_screen)`), after "Split the 2 recordings into
+  `.when(on_activity_screen)`; Ctrl+Alt+R off macOS, where Ctrl+Shift+R
+  renames), after "Split the 2 recordings into
   separate activities?". When it's done, the activity is shown again and
   the summary file updated.
 - A notification after grouping, from the inbox or the once over the

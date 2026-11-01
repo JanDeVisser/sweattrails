@@ -10,10 +10,13 @@
 
 #pragma once
 
+#include <expected>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include <JSON.h>
 
 #include <fit/FIT.h>
 #include <fit/Profile.h>
@@ -54,6 +57,14 @@ struct RecordingInfo {
 // The main one of `recordings`: from the first of the preferred devices any
 // is from, else, or among several from one, the longest.
 [[nodiscard]] size_t main_recording(std::vector<RecordingInfo> const &recordings, std::vector<FIT::manufacturer> const &prefer);
+
+// The settings' `"recordings": { "prefer": [...] }`, FIT's manufacturer
+// names, or what's wrong with it. None without it.
+[[nodiscard]] std::expected<std::vector<FIT::manufacturer>, std::string> decode_prefer(std::optional<JSONValue> const &recordings);
+
+// The activity whose FIT file in the store is `fit`,
+// `<year>/<month>/<start>.fit`. None for a path that isn't one.
+[[nodiscard]] std::optional<ActivityID> activity_id_of(fs::path const &fit);
 
 // What grouping did: the main recording, and the start times of the
 // activities that were listed and now are recordings of it.

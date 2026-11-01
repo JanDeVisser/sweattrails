@@ -120,6 +120,30 @@ next to it, as `<start>.fit.original`, and Ctrl+Shift+F puts it back,
 undoing all the fills. Their file isn't copied anywhere. A FIT file
 with compressed timestamps can't be filled.
 
+## One activity, several recordings
+
+If you record a ride on two devices at once, a Garmin and a Wahoo say,
+to compare their power meters, both recordings come into the store.
+SweatTrails keeps them as one activity: two recordings of the same
+sport that overlap for at least 80% of the shorter one are one
+activity. It's listed, counted in the totals and the fitness, and shown
+once, as its main recording, and the summary line under its title says
+"2 recordings". The others are kept in a folder next to it,
+`<start>.recordings/`. The first time SweatTrails starts with this, it
+looks through the whole store once, in the background.
+
+The main recording is the one from the first device in the settings'
+list that any of them is from, by FIT's names for the makers, and
+otherwise the longest:
+
+```json
+"recordings": { "prefer": ["garmin", "wahoo_fitness"] }
+```
+
+If two activities were grouped that aren't one, Ctrl+Shift+R (Ctrl+Alt+R
+off macOS) splits them into separate activities again, and they aren't
+grouped again.
+
 ## Totals
 
 Ctrl+T shows how far and how long you've run or ridden, per week, month

@@ -235,6 +235,32 @@ void test_group_month()
     CHECK_EQ(listed(store), 2uz);
 }
 
+void test_decode_prefer()
+{
+    CHECK(decode_prefer({ }).value_or(std::vector<manufacturer> { manufacturer::zwift }).empty());
+    auto const prefer = decode_prefer(JSONValue::deserialize(R"({ "prefer": ["garmin", "wahoo_fitness"] })").value());
+    CHECK(prefer.has_value() && *prefer == (std::vector { manufacturer::garmin, manufacturer::wahoo_fitness }));
+    auto const unknown = decode_prefer(JSONValue::deserialize(R"({ "prefer": ["garmin", "acme"] })").value());
+    CHECK(!unknown.has_value() && unknown.error().contains("acme"));
+    CHECK(!decode_prefer(JSONValue::deserialize(R"({ "prefer": "garmin" })").value()).has_value());
+    CHECK(!decode_prefer(JSONValue::deserialize(R"(["garmin"])").value()).has_value());
+}
+
+void test_activity_id_of()
+{
+    auto const id = activity_id_of("/store/activity/2026/03/1773000000.fit");
+    CHECK(id.has_value());
+    if (id) {
+        CHECK_EQ(id->month.year, 2026uz);
+        CHECK(id->month.month == DateTime::Month::March);
+        CHECK_EQ(id->name, "1773000000");
+    }
+    CHECK(!activity_id_of("/store/activity/2026/13/1773000000.fit"));
+    // A recording in a folder isn't listed.
+    CHECK(!activity_id_of("/store/activity/2026/03/1773000000.recordings/1773000060.fit"));
+    CHECK(!activity_id_of("/store/activity/2026/03/1773000000.json"));
+}
+
 // A recording whose main one is filed in the next month.
 void test_has_activity_across_months()
 {
@@ -259,5 +285,7 @@ int main()
     test_split();
     test_group_month();
     test_has_activity_across_months();
+    test_decode_prefer();
+    test_activity_id_of();
     return Test::test_result();
 }
