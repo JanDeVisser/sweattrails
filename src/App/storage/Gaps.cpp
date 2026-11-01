@@ -81,6 +81,9 @@ std::vector<Gap> find_gaps(std::span<record const> records)
 std::vector<FIT::FITFill> plan_fills(std::span<record const> records, std::vector<Gap> const &gaps, std::span<record const> other)
 {
     std::vector<FIT::FITFill> ret;
+    // The watch's distance at a later stop doesn't have the earlier fills
+    // in it, which the patch adds to its records after them.
+    auto filled_before = 0.0;
     for (auto const &gap : gaps) {
         auto const at_stop = nearest(other, gap.stop);
         auto const at_restart = nearest(other, gap.restart);
@@ -105,10 +108,11 @@ std::vector<FIT::FITFill> plan_fills(std::span<record const> records, std::vecto
                 fill_record.lon = to_semicircles(rec.position->lon);
             }
             if (rec.distance) {
-                fill_record.distance = *stop_distance + std::max(0.0, static_cast<float64>(*rec.distance) - static_cast<float64>(*at_stop->distance));
+                fill_record.distance = *stop_distance + filled_before + std::max(0.0, static_cast<float64>(*rec.distance) - static_cast<float64>(*at_stop->distance));
             }
             fill.records.push_back(fill_record);
         }
+        filled_before += fill.distance;
         ret.push_back(std::move(fill));
     }
     return ret;

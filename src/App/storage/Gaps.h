@@ -45,7 +45,8 @@ struct Gap {
 [[nodiscard]] std::vector<Gap> find_gaps(std::span<record const> records);
 
 // A fill for each gap that `other`, the records of another activity,
-// covers. The fills' distances go on from the activity's at the stop.
+// covers. The fills' distances go on from the activity's at the stop, and
+// the earlier fills'.
 [[nodiscard]] std::vector<FIT::FITFill> plan_fills(std::span<record const> records, std::vector<Gap> const &gaps, std::span<record const> other);
 
 // "Fill 2 gaps: 1.4 km at 0:23:10, 1.6 km at 0:41:05?", the times since

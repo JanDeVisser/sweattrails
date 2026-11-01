@@ -317,6 +317,7 @@ int main()
     test_find_gaps();
     test_not_gaps();
     test_plan_fills();
+    test_fill_two_gaps();
     test_plan_fills_not_covered();
     test_fill_with_records_missing_values();
     test_fill_question();
