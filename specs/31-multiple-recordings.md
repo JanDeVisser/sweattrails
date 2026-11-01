@@ -1,6 +1,6 @@
 # One activity, several recordings
 
-Status: In progress, on branch feature/31-multiple-recordings
+Status: In review, on branch feature/31-multiple-recordings
 
 <!--
 Status is one of:
