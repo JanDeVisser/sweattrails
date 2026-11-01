@@ -1,6 +1,6 @@
 # One activity, several recordings
 
-Status: Ready
+Status: In progress, on branch feature/31-multiple-recordings
 
 <!--
 Status is one of:
@@ -155,11 +155,94 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### Where the spec leaves a gap
+
+- **Elapsed time** is the session's, and an activity's span is from its
+  start to its start plus that.
+- **Candidates for a new activity** are the activities starting from a
+  day before it to its end: anything that can overlap it. A candidate
+  that is the main one of a group brings its recordings along, so the
+  new one joins the group.
+- **"Separate"** is the sidecar key `"recordings": "separate"`. An
+  activity marked so is never a candidate, and a new one that matches
+  only marked ones stays on its own.
+- **The once over the store** is done month by month, each with the
+  months before and after, as a chunked job like the summary file's, and
+  a file `recordings-grouped` in the data directory says it's done.
+- **Splitting** is a job too, as moving files rebuilds the store's
+  index, which only jobs may do (`Storage`'s threading note).
+
+### Recordings (`storage/Recordings.*`)
+
+- **`RecordingInfo`**: a FIT file's path, start, elapsed time, sport and
+  sub-sport, manufacturer, and whether its sidecar says separate.
+  **`recording_info(storage, path)`** reads it with a shallow load, which
+  only reads the session.
+- **`same_activity(a, b)`**: same `volume_sport()`, or the same FIT sport
+  for sports the totals don't count, and overlapping for 80% of the
+  shorter's elapsed time. Pure.
+- **`main_recording(infos, prefer)`**: the index of the main one, by the
+  preferred devices and then the longest. Pure.
+- **`recordings_dir(main_fit)`**: `<start>.recordings/` next to it, and
+  **`recordings_of(main_fit)`**: the FIT files in it.
+- **`group_recordings(storage, infos)`**: chooses the main one, moves
+  the others (`.fit`, `.json`, `.fit.original`) into its folder, with a
+  former main one's folder's recordings, and moves the user's title to
+  the new main one if it has none. Says what moved, so the app can show
+  the main one if it was showing a recording that moved.
+- **`group_new(storage, start)`**: for the inbox, after it files an
+  activity: the candidates that are the same activity, grouped.
+- **`group_month(storage, month)`**: for the once over the store: the
+  month's activities, with the months around it as candidates, grouped.
+- **`split_recordings(storage, main_fit)`**: moves the recordings back
+  where the inbox would file them, and marks them all separate.
+- **`manufacturer_by_name(name)`** in `fit/FIT.*`, next to `tag()`.
+
+### The store (`storage/Storage.*`)
+
+- `has_activity(start)` also looks in the recordings folders of its
+  month and the months before and after it; `organize_fit_file()` uses
+  it for duplicates, instead of looking only for its own path.
+- `process_inbox()` calls `group_new()` for each activity it files.
+- `Storage::prefer`, the preferred devices, set from the settings at
+  start, as the thresholds are, before any job runs.
+- `Activity::recordings`, how many recordings the activity has: 1, plus
+  the FIT files in its folder, counted on a deep load. `activity_summary()`
+  adds "· 2 recordings" for more than one.
+
+### The app (`SweatTrails.cpp`)
+
+- `JobType::GroupRecordings`, scheduled at start after the inbox and
+  before the summary file's update if `recordings-grouped` isn't there:
+  a chunk of months per job, its progress on the status line, and the
+  count at the end; then it updates the summary file.
+- `JobType::SplitRecordings`, from `st-split-recordings` (Ctrl+Shift+R,
+  `.when(on_activity_screen)`), after "Split the 2 recordings into
+  separate activities?". When it's done, the activity is shown again and
+  the summary file updated.
+- A notification after grouping, from the inbox or the once over the
+  store, with the main ones of what moved: if the activity on display
+  was moved into a folder, its main one is shown.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `RecordingsTest`, pure: `same_activity()` with a device started a
+  minute late (same), a warm-up before a race (not), a run and a ride
+  (not), a treadmill run and a run (same); `main_recording()` by the
+  preferred devices, by the longest, and for two from one device.
+- `RecordingsTest` with a temp store, of FIT files from `TestFit.h`
+  with their manufacturers: filing two recordings groups them, the
+  preferred one main, whichever came first; a third joins the group;
+  `has_activity()` finds a recording, also across a month's end; the
+  inbox takes a recording's file again as a duplicate; the month's
+  starts list only the main one; the user's title goes to a new main
+  one; `.fit.original` and sidecars move along; `split_recordings()`
+  puts them back and marks them, and filing a fourth that overlaps
+  doesn't group them again; `group_month()` over a store filed before
+  this feature.
+- `DataFieldsTest`: "· 2 recordings" in the summary line.
+- By hand: the first start on Jan's store, the count it reports, a
+  compare ride listed once, and Ctrl+Shift+R.
 
 ## Review notes
 
