@@ -1243,14 +1243,15 @@ void list_month(pSweatTrails const &sweattrails, ActivityID const &shown)
     selector->select(shown);
 }
 
-// At the activity on display.
-// Loads the activity on display again, after its FIT file changed.
-void show_again(pSweatTrails const &sweattrails, ActivityID const &id)
+// Loads the activity on display again, after its FIT file changed, and
+// says `done` on the status line, or that it can't be shown.
+void show_again(pSweatTrails const &sweattrails, ActivityID const &id, std::string const &done)
 {
     if (auto loaded = load_to_show(sweattrails->storage, id); loaded) {
         sweattrails->show_activity(*loaded);
+        sweattrails->set_status(done);
     } else {
-        sweattrails->set_status(loaded.error());
+        sweattrails->set_status(std::format("{}, but {}", done, loaded.error()));
     }
     // The file's size changed: the totals read it again.
     sweattrails->update_summaries();
@@ -1303,8 +1304,8 @@ void cmd_fill_gaps(pSweatTrails const &sweattrails, JSONValue const &arguments)
         for (auto const &f : fills) {
             distance += f.distance;
         }
-        show_again(st, displayed->activity.id);
-        st->set_status(std::format("Filled {}: {:.1f} km", fills.size() == 1 ? std::string { "the gap" } : std::format("{} gaps", fills.size()), distance / 1000));
+        show_again(st, displayed->activity.id,
+            std::format("Filled {}: {:.1f} km", fills.size() == 1 ? std::string { "the gap" } : std::format("{} gaps", fills.size()), distance / 1000));
     };
     query_box(sweattrails, fill_question(fills, start), fill, QueryOptionYesNo);
 }
@@ -1316,7 +1317,7 @@ void cmd_remove_fills(pSweatTrails const &sweattrails, JSONValue const &)
     if (!displayed) {
         return;
     }
-    if (!std::filesystem::exists(original_path(displayed->activity))) {
+    if (std::error_code ec { }; !std::filesystem::exists(original_path(displayed->activity), ec)) {
         message_box("This activity has no fills to remove.");
         return;
     }
@@ -1328,12 +1329,12 @@ void cmd_remove_fills(pSweatTrails const &sweattrails, JSONValue const &)
             message_box(removed.error());
             return;
         }
-        show_again(st, displayed->activity.id);
-        st->set_status("The fills are removed");
+        show_again(st, displayed->activity.id, "The fills are removed");
     };
     query_box(sweattrails, "Put back the activity as the watch recorded it?", put_back, QueryOptionYesNo);
 }
 
+// At the activity on display.
 void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
 {
     list_month(sweattrails, sweattrails->last_activity);
