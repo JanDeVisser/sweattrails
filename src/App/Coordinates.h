@@ -27,6 +27,9 @@ struct Coordinates {
     bool operator==(Coordinates const &) const = default;
 };
 
+// How far apart two places are, in metres, on a round Earth.
+[[nodiscard]] float64 distance_between(Coordinates const &from, Coordinates const &to);
+
 struct Box {
     Coordinates sw { };
     Coordinates ne { };

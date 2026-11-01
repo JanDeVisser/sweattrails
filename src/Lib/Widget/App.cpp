@@ -159,6 +159,15 @@ void App::handle_keyboard(pWidget const &focus)
 void App::process_input()
 {
     start_frame();
+    if (IsWindowReady() && IsFileDropped()) {
+        auto const               dropped = LoadDroppedFiles();
+        std::vector<std::string> paths;
+        for (auto ix = 0u; ix < dropped.count; ++ix) {
+            paths.emplace_back(dropped.paths[ix]);
+        }
+        UnloadDroppedFiles(dropped);
+        files_dropped(paths);
+    }
     m_new_keys.clear();
     m_requested_cursor = default_cursor;
     KeyboardModifier modifier = modifier_current();

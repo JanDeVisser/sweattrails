@@ -327,6 +327,7 @@ struct SweatTrails : public Main<Job, Notification> {
     void   on_start() override;
     void   on_resize() override;
     void   on_terminate() override;
+    void   files_dropped(std::vector<std::string> const &paths) override;
     EError read_settings();
     void   load_font();
     // The font file of this name in the font directories, if there is one.

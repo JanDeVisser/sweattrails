@@ -100,6 +100,26 @@ the one selected, and Escape closes the list. Left and Right go to the
 month before or after that has activities, and Shift+Left and
 Shift+Right a year back or on.
 
+## Filling a gap
+
+If you stopped your watch, at a traffic light say, and forgot to start
+it again, the activity has a gap: more than 90 seconds and 100 m
+between two records. If someone ran that stretch with you, drop their
+FIT file from the Finder on the window while your activity is on
+display. SweatTrails finds the gaps their file covers, where it was
+within 200 m of you when your watch stopped and started again, asks
+"Fill 2 gaps: 1.4 km at 0:23:10, 1.6 km at 0:41:05?", and on Yes fills
+them with their track: positions, altitude, distance and speed. Their
+heart rate, cadence and power aren't yours, so the gap has none. The
+distance after the gap, and the activity's and lap's distance and
+moving time, go up by the gap's.
+
+This changes the activity's FIT file, so that the totals, the overlay
+and other programs get the whole activity too. The original is kept
+next to it, as `<start>.fit.original`, and Ctrl+Shift+F puts it back,
+undoing all the fills. Their file isn't copied anywhere. A FIT file
+with compressed timestamps can't be filled.
+
 ## Totals
 
 Ctrl+T shows how far and how long you've run or ridden, per week, month

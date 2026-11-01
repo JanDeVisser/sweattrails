@@ -68,8 +68,11 @@ struct App : public Layout {
     explicit App(std::string_view const &app_name);
     ~App();
 
-    virtual void        on_start() { };
-    virtual void        on_terminate() { };
+    virtual void on_start() { };
+    virtual void on_terminate() { };
+    // Files dropped on the window, from the Finder, by their paths: also
+    // while a modal is open, which the app can check.
+    virtual void        files_dropped(std::vector<std::string> const &) { }
     virtual char const *window_title() const
     {
         return title_string.c_str();
