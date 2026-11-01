@@ -1,6 +1,6 @@
 # Filling a gap from another activity
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -432,3 +432,28 @@ spec says.
 
 `ctest --test-dir build -E oauth`: 50 of 51 pass. `gaps_test` fails,
 only on the checks of findings 1 and 2.
+
+### Resolution
+
+1. Fixed: `plan_fills()` adds the earlier fills' distances to a later
+   gap's records. `test_fill_two_gaps` passes.
+2. and 4. Fixed: `plan_fills()` keeps a gap without a distance at the
+   stop, and the app patches in memory with `check_fills()` before
+   asking, so a file that can't be filled says why first: "This
+   activity can't be filled: its records have no distance." (or "it has
+   compressed timestamps"). `test_plan_fills_watch_without_distance`
+   passes, and `test_fill_refused` checks `check_fills()`.
+3. Fixed: the status says what was done only if the activity loads
+   again, and that it can't be shown if it doesn't. Needs a window.
+5. Deferred *(deferred)*: measuring a gap from the watch's timer events,
+   and interpolating the other file's distance, would make a fill exact
+   for watches that record every few seconds. Jan's records every
+   second, where the difference is a second and a few metres.
+6. Left as it is: messages the watch wrote during a gap stay where the
+   watch put them, ahead of the added records. Moving the device's
+   messages is riskier than a file slightly out of time order, which
+   SweatTrails doesn't mind.
+7. Fixed: the `exists()` that doesn't throw.
+
+The Reviewer's tests are kept, and all pass.
+
