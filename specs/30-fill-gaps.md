@@ -1,6 +1,6 @@
 # Filling a gap from another activity
 
-Status: Ready
+Status: In progress, on branch feature/30-fill-gaps
 
 <!--
 Status is one of:
@@ -181,11 +181,128 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### Where the spec leaves a gap
+
+- **The gap's time counts as moving**: the session's and the lap's timer
+  time, and their moving time if the watch wrote one, go up by the time
+  from the stop to the restart. So does the activity message's timer
+  time.
+- **The lap the watch stopped in** is the lap message whose start time
+  is at or before the stop and whose end is at or after the restart. A
+  gap that no lap message spans patches no lap.
+- **The stop and start events** left out are the timer events (event 0)
+  from the stop's time to the restart's, inclusive.
+- **The totals screen** is told: after a fill or its undo, the summary
+  file is updated, as after the inbox, since the file's size changed.
+- **The original** goes along if the store ever moves or removes the
+  activity's files; it doesn't now (nothing removes activities).
+
+### The FIT patch (`fit/FITPatch.*`), on bytes, pure
+
+The reader (`fit/FIT.*`) turns messages into values and forgets where
+they were, so the patch has a small scanner of its own, which knows
+only what it needs: where each message starts and ends, and where its
+fields are.
+
+- **`FITMessage`**: its offset and size in the file, whether it's a
+  definition, its local type, and, for a data message, its global
+  message number and its definition's fields, each with its number,
+  offset in the message, size and byte order. **`scan_fit(bytes)`**
+  reads the header and the messages, developer fields' sizes included,
+  and refuses a file with compressed timestamp headers, a truncated
+  one, or one whose header doesn't say FIT.
+- **`FITFill`**: what to put in one gap. The stop's and the restart's
+  times (FIT timestamps), the records to insert (timestamp, position in
+  semicircles, altitude, distance and speed, each optional), and the
+  gap's distance (m) and time (s).
+- **`patch_fit(bytes, fills)`** gives the new file's bytes, or why it
+  can't:
+  - The header and every message are copied as they are, except the
+    following.
+  - Before the first record message at or after a restart, it inserts a
+    definition message of its own, the gap's records, and then the
+    definition that had that local type before, copied, so that the
+    messages after it read as they did. Local type 15 is used, which
+    watches rarely use; any one would do, because of the copy.
+  - A record message after a gap gets its distance field (5) raised by
+    the gaps' distances before it, in place, in the field's byte order.
+    An invalid value (all ones) stays.
+  - The session (18) and activity (34) messages' total distance (9),
+    timer time (8, activity 0) and moving time (59) are raised by all
+    the gaps; a lap's (19: 9, 8, 52) by the gaps it spans.
+  - Timer events in a gap are left out.
+  - The header's data size is set, its CRC worked out again if it has
+    one, and the file's CRC at the end.
+  - A file with fills whose records have no distance field is refused.
+  - **`fit_crc(bytes)`**, FIT's CRC-16, as the SDK gives it.
+
+### Gaps (`storage/Gaps.*`)
+
+- **`Gap`**: the index of the record before it in `Activity::recorded`,
+  the stop's and the restart's times, and the positions there.
+  **`find_gaps(records)`**: records in a row more than `GapTime` (90 s)
+  and `GapDistance` (100 m) apart, by position. Pure.
+- **`distance_between(Coordinates, Coordinates)`** in `Coordinates.*`,
+  haversine, in metres: there's none yet.
+- **`plan_fills(records, gaps, other_records)`** gives a `FITFill` per
+  gap the other activity's records cover, from before the stop to after
+  the restart, with its positions at those times, the nearest record's,
+  within `CoverDistance` (200 m) of the activity's. The inserted
+  records' distances go on from the activity's at the stop. Pure.
+- **`fill_gaps(storage, activity, fills)`**: copies the FIT file to
+  `<start>.fit.original` if there isn't one, patches the FIT file, and
+  writes it with `write_file_atomically()`. **`remove_fills(storage,
+  activity)`** moves the original back. Both say why if they can't.
+- The other file is read as `read_summary()` reads one, an `Activity`
+  loaded from its path, deeply, from outside the store; its `recorded`
+  are the records as the watch wrote them.
+
+### Dropped files (`src/Lib/Widget/App.*`)
+
+- `App::process_input()` asks raylib whether files were dropped, and
+  calls a virtual **`files_dropped(paths)`**, which does nothing unless
+  the app overrides it. Nothing in it is SweatTrails': it belongs in the
+  widget library.
+
+### The app (`SweatTrails.cpp`)
+
+- `files_dropped()` submits **`st-fill-gaps`** with the paths. The task
+  checks the drop (one file, on the activity screen, no box open), reads
+  the file, finds and plans the fills, and asks "Fill 2 gaps: 1.4 km at
+  0:23:10, 1.6 km at 0:41:05?" (`fill_question()`, pure). On Yes it
+  fills, loads the activity again, sets the status line, and updates
+  the summary file.
+- **`st-remove-fills`**, Ctrl+Shift+F, `.when(on_activity_screen)`, asks
+  and moves the original back, and loads the activity again.
+- The work is done on the UI thread: two FIT files of a run read and
+  one written take a fraction of a second, and the confirm box is
+  there anyway.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `FITPatchTest`, on files built with `test/TestFit.h` (which gets
+  records with positions, distance and a timer event, and a lap):
+  `scan_fit()` finds every message and the fields' offsets, including
+  developer fields, and refuses compressed timestamps and truncated
+  files; `fit_crc()` against a known value; `patch_fit()` gives a file
+  the reader (`FITFile`) reads back with the gap's records in order,
+  the distances after the gap raised, the session's and the lap's
+  totals raised, the timer events in the gap gone, the messages after
+  the insert still read with their own definition, and a correct CRC;
+  two gaps; a big-endian file; a file without a distance field refused.
+- `GapsTest`: `find_gaps()` with a stop that didn't move (no gap), one
+  short in time (no gap), and two gaps; `plan_fills()` with a file that
+  covers both, one that starts too late, and one 500 m away;
+  `distance_between()` against a known distance.
+- `GapsTest` with a temp store: `fill_gaps()` writes the original once,
+  a second fill keeps it, and `remove_fills()` puts it back; the
+  activity loads again with the filled distance.
+- `SweatTrails` tests don't exist: the drop's checks and the question's
+  text are pure functions, tested in `GapsTest`; the wiring, the drop
+  and the box are tried by hand.
+- By hand: dropping the friend's file on the run with the two gaps, the
+  map and the distance after, Ctrl+Shift+F, and the file opening in
+  another program (Garmin's FIT SDK `FitCSVTool`, if at hand).
 
 ## Review notes
 
