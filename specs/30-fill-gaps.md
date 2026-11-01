@@ -1,6 +1,6 @@
 # Filling a gap from another activity
 
-Status: In progress, on branch feature/30-fill-gaps
+Status: In review
 
 <!--
 Status is one of:
@@ -210,7 +210,8 @@ fields are.
   offset in the message, size and byte order. **`scan_fit(bytes)`**
   reads the header and the messages, developer fields' sizes included,
   and refuses a file with compressed timestamp headers, a truncated
-  one, or one whose header doesn't say FIT.
+  one, one whose header doesn't say FIT, or one with more after its
+  CRC, which would be a second FIT file chained to it.
 - **`FITFill`**: what to put in one gap. The stop's and the restart's
   times (FIT timestamps), the records to insert (timestamp, position in
   semicircles, altitude, distance and speed, each optional), and the
@@ -245,9 +246,11 @@ fields are.
 - **`distance_between(Coordinates, Coordinates)`** in `Coordinates.*`,
   haversine, in metres: there's none yet.
 - **`plan_fills(records, gaps, other_records)`** gives a `FITFill` per
-  gap the other activity's records cover, from before the stop to after
-  the restart, with its positions at those times, the nearest record's,
-  within `CoverDistance` (200 m) of the activity's. The inserted
+  gap the other activity's records cover: it has a record within
+  `CoverTime` (10 s) of the stop and of the restart, with a position and
+  a distance, and those positions are within `CoverDistance` (200 m) of
+  the activity's. The gap's distance is how far the other activity's
+  distance went up between those two records. The inserted
   records' distances go on from the activity's at the stop. Pure.
 - **`fill_gaps(storage, activity, fills)`**: copies the FIT file to
   `<start>.fit.original` if there isn't one, patches the FIT file, and
@@ -260,14 +263,16 @@ fields are.
 ### Dropped files (`src/Lib/Widget/App.*`)
 
 - `App::process_input()` asks raylib whether files were dropped, and
-  calls a virtual **`files_dropped(paths)`**, which does nothing unless
-  the app overrides it. Nothing in it is SweatTrails': it belongs in the
+  calls a virtual **`files_dropped(paths)`**, also while a modal is
+  open, which the app checks, and which does nothing unless the app
+  overrides it. Nothing in it is SweatTrails': it belongs in the
   widget library.
 
 ### The app (`SweatTrails.cpp`)
 
 - `files_dropped()` submits **`st-fill-gaps`** with the paths. The task
-  checks the drop (one file, on the activity screen, no box open), reads
+  checks the drop (`drop_problem()`, pure: one file, on the activity
+  screen, no box open), reads
   the file, finds and plans the fills, and asks "Fill 2 gaps: 1.4 km at
   0:23:10, 1.6 km at 0:41:05?" (`fill_question()`, pure). On Yes it
   fills, loads the activity again, sets the status line, and updates
