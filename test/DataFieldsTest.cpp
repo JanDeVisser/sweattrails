@@ -622,6 +622,8 @@ void test_summary()
     TestActivity t { sport::Cycling, records_with(40, set_power, 0, u16 { 200 }, u16 { 200 }) };
     t.activity.segment.distance = 30000;
     CHECK_EQ(activity_summary(t.activity), "30.0 km · 50:00 · TSS 44");
+    t.activity.recordings = 2;
+    CHECK_EQ(activity_summary(t.activity), "30.0 km · 50:00 · TSS 44 · 2 recordings");
 }
 
 void test_summary_without_distance_or_tss()

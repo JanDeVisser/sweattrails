@@ -255,7 +255,11 @@ std::string segment_summary(Activity const &activity, Segment const &segment)
 
 std::string activity_summary(Activity const &activity)
 {
-    return segment_summary(activity, activity.segment);
+    auto ret = segment_summary(activity, activity.segment);
+    if (activity.recordings > 1) {
+        ret += std::format(" · {} recordings", activity.recordings);
+    }
+    return ret;
 }
 
 std::string lap_summary(Activity const &activity, size_t lap)

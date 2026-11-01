@@ -1,0 +1,85 @@
+/*
+ * Copyright (c) 2026, Jan de Visser <jan@finiandarcy.com>
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * One activity recorded on several devices: the recordings are kept
+ * together, the others in a folder next to the main one, so that the
+ * activity is listed and counted once. See specs/31-multiple-recordings.md.
+ */
+
+#pragma once
+
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include <fit/FIT.h>
+#include <fit/Profile.h>
+#include <storage/Types.h>
+
+namespace ST {
+
+namespace fs = std::filesystem;
+
+struct Storage;
+
+// Recordings overlap for at least this much of the shorter one's time.
+constexpr double SameActivityOverlap = 0.8;
+
+struct RecordingInfo {
+    fs::path                         fit { };
+    i64                              start { 0 };   // A Unix time
+    u32                              elapsed { 0 }; // s
+    FIT::sport                       sport { FIT::sport::Generic };
+    std::optional<FIT::sub_sport>    sub_sport { };
+    std::optional<FIT::manufacturer> manufacturer { };
+    bool                             separate { false }; // Split by the user: never grouped again
+};
+
+// What the session of a FIT file in the store says, and its sidecar. None
+// if it can't be read.
+[[nodiscard]] std::optional<RecordingInfo> recording_info(Storage &storage, fs::path const &fit);
+
+// Whether two recordings are of one activity: the same sport, as the
+// totals count it, overlapping for most of the shorter one's time.
+[[nodiscard]] bool same_activity(RecordingInfo const &a, RecordingInfo const &b);
+
+// The folder of a main recording's others, `<start>.recordings/` next to
+// it, and the FIT files in it.
+[[nodiscard]] fs::path              recordings_dir(fs::path const &main_fit);
+[[nodiscard]] std::vector<fs::path> recordings_of(fs::path const &main_fit);
+
+// The main one of `recordings`: from the first of the preferred devices any
+// is from, else, or among several from one, the longest.
+[[nodiscard]] size_t main_recording(std::vector<RecordingInfo> const &recordings, std::vector<FIT::manufacturer> const &prefer);
+
+// What grouping did: the main recording, and the start times of the
+// activities that were listed and now are recordings of it.
+struct Grouped {
+    fs::path         main { };
+    std::vector<i64> hidden { };
+};
+
+// Groups the recordings of one activity: the main one listed, where the
+// inbox would file it, and the others in its folder, with their sidecars
+// and originals, and those of a former main one's folder. The user's own
+// title goes to the main one, if it has none.
+StorageResult<Grouped> group_recordings(Storage &storage, std::vector<RecordingInfo> const &recordings);
+
+// Groups the activity starting at `start`, just filed, with the listed
+// activities it's a recording of the same activity as, and their
+// recordings. None if there are none.
+StorageResult<std::optional<Grouped>> group_new(Storage &storage, i64 start);
+
+// group_new() for each of the month's activities, for the once over the
+// store. The groups it made.
+StorageResult<std::vector<Grouped>> group_month(Storage &storage, Month const &month);
+
+// Moves the main recording's others back to where the inbox would file
+// them, as activities of their own, and marks them all as separate. How
+// many it moved.
+StorageResult<size_t> split_recordings(Storage &storage, fs::path const &main_fit);
+
+}

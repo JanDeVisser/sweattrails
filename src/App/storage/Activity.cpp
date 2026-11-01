@@ -208,6 +208,13 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
     // After analyze(): the laps' stats come from the records as recorded,
     // which only a deep load, not a month's list, has.
     if (!sidecar.empty() && depth == LoadingDepth::Deep) {
+        recordings = 1;
+        std::error_code ec { };
+        for (fs::directory_iterator it { dir / std::format("{}.recordings", id.name), ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
+            if (it->path().extension() == ".fit") {
+                ++recordings;
+            }
+        }
         user_lap_starts = sidecar_laps(sidecar);
         if (user_lap_starts) {
             laps = laps_at(*this, *user_lap_starts);

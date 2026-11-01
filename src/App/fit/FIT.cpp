@@ -46,6 +46,18 @@ char const *tag(file_type t)
     return "Unknown";
 }
 
+std::optional<manufacturer> manufacturer_by_name(std::string_view name)
+{
+#undef S
+#define S(M, N)                 \
+    if (name == #M) {           \
+        return manufacturer::M; \
+    }
+    FIT_MANUFACTURER(S)
+#undef S
+    return { };
+}
+
 char const *tag(manufacturer m)
 {
     switch (m) {

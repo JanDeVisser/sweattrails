@@ -191,6 +191,9 @@ struct Activity {
     std::vector<record>              recorded { }; // As recorded, for a range's stats
     std::vector<Lap>                 laps { };
     std::vector<Lap>                 device_laps { }; // The FIT file's, which the user's laps replace
+    // This one, and the others of the activity, in its `.recordings`
+    // folder (specs/31-multiple-recordings.md), on a deep load.
+    size_t recordings { 1 };
     // The starts of the laps the user made, after the first: nothing for
     // the device's laps.
     std::optional<std::vector<i64>> user_lap_starts { };

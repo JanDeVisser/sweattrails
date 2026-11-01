@@ -224,6 +224,7 @@ add_executable(
         src/App/widget/Summaries.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Gaps.cpp
+        src/App/storage/Recordings.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Summaries.cpp
         src/App/storage/Fitness.cpp
@@ -726,6 +727,23 @@ sweattrails_test(
 )
 target_include_directories(fit_patch_test PRIVATE src/App)
 target_link_libraries(fit_patch_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        recordings_test
+        test/RecordingsTest.cpp
+        src/App/storage/Recordings.cpp
+        src/App/storage/Volume.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(recordings_test PRIVATE src/App)
+target_link_libraries(recordings_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         gaps_test
