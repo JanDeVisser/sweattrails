@@ -448,6 +448,25 @@ void test_navigator_keeps_the_view()
     CHECK(middle.lat >= 44.6f);
 }
 
+// Zoomed out as far as the route allows, then Tab to a recording whose
+// route is much smaller, as one that stopped early: the zoom is the
+// smallest the new route allows, and the middle is on it.
+void test_navigator_keep_clamps_the_zoom()
+{
+    Box const small { .sw = { .lat = 43.640f, .lon = -79.400f }, .ne = { .lat = 43.641f, .lon = -79.399f } };
+    auto      navigator = started();
+    CHECK(navigator.zoom_by(-static_cast<int>(ZoomOutPastFit)));
+    auto const before = navigator.view;
+    CHECK(navigator.start(small, MapArea.width, MapArea.height));
+    CHECK(before.zoom < navigator.min_zoom());
+    CHECK(navigator.keep(before, true));
+    CHECK_EQ(navigator.view.zoom, navigator.min_zoom());
+    auto const middle = world_coordinates(navigator.view.center, navigator.view.zoom);
+    CHECK(middle.lat >= 43.6399f && middle.lat <= 43.6411f);
+    CHECK(middle.lon >= -79.4001f && middle.lon <= -79.3989f);
+    CHECK(navigator.moved);
+}
+
 void test_navigator_wheel_zooms_around_mouse()
 {
     auto       navigator = started();
@@ -910,6 +929,7 @@ int main()
     test_cover_with_ancestors();
     test_cover_with_children();
     test_navigator_keeps_the_view();
+    test_navigator_keep_clamps_the_zoom();
     test_navigator_wheel_zooms_around_mouse();
     test_navigator_zoom_limits();
     test_navigator_drag_pans();

@@ -207,4 +207,55 @@ None.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug.** The title isn't the main one's on every recording when
+   nobody has named the activity. `load_from_dir()`
+   (`storage/Activity.cpp:223`) sets `fit_title` from the recording's own
+   FIT file, and `read_names()` starts from it. Only the names in the
+   sidecar come from `activity_sidecar`. If one device ran a workout
+   (`wkt_name`, "Sweet Spot") and the other didn't, Tab changes the title
+   from "Sweet Spot" to the start time, or the other way round. F2 with
+   an empty name also puts back the recording's `original_title`, not the
+   activity's. Test: `test_recording_has_the_activitys_title` in
+   `test/RecordingsTest.cpp`. It fails now, for both directions.
+2. **Suggestion.** With a lap selected, Tab keeps the lap, and the
+   summary line shows `lap_summary()` ("Lap 3 of 8 · ...")
+   (`widget/Activity.cpp:71`). Nothing on screen then says which
+   recording is shown. That's exactly the case lap-keeping is for:
+   flipping between devices on the same lap. The spec only puts
+   "Recording 2 of 2: Wahoo" in place of "· 2 recordings". Consider
+   adding it to the lap and range lines too, or say in the spec that it
+   isn't shown there.
+3. **Suggestion.** Tab can't get past a recording that doesn't load.
+   `show_recording_next_to()` (`SweatTrails.cpp:1493`) shows an error
+   and stays where it is, so with recordings 1, 2 and 3, and 2 broken,
+   Tab from 1 never reaches 3 (only Shift+Tab does). Left and Right pass
+   over an activity that doesn't load, and name it. The count in the
+   summary line ("of 3") also counts the broken one.
+4. **Suggestion.** If Ctrl+J or Ctrl+Shift+R fails on a recording, the
+   jobs send `RecordingsChanged` with `request.id`
+   (`SweatTrails.cpp:474` and `:493`), the recording. If the failure came
+   after it moved (`group_recordings()` fails partway, or the split moved
+   it), `show_again()` can't load it. The status line then says "...,
+   but `<name>` can't be loaded", and the old activity stays on display
+   with paths that are gone. `request.id.main()`, or `split_shown()`
+   for the split, would show what's there.
+5. **Missing test.** The test plan promises `switch_recording()` with
+   `ScopedTestApp`. There's only `DisplayedActivity::keep_lap()`. The
+   rest, `ActivityMap::set_activity(keep_view)` with its
+   `navigator.moved && has_map`, can't be tested without a window as it
+   stands: `choose_source()` needs `SweatTrails::the()`. Not added.
+6. **Suggestion.** `device_name()` (`widget/DataFields.cpp:284`) says
+   "Unknown" for a maker number that FIT's profile doesn't have, because
+   `FIT::tag()` falls back to that: "Recording 2 of 2: Unknown". Leaving
+   the device out, as for no maker, reads better.
+
+Tests added by the Reviewer: `test/RecordingsTest.cpp`:
+`test_recording_has_the_activitys_title` (note 1, fails),
+`test_recording_numbers_follow_tabs_order`, `test_load_a_gone_recording`,
+`test_make_main_after_ctrl_j` (a former main's "main" mark is cleared, and
+laps go with the new main one), `test_make_main_keeps_its_own_title`,
+`test_make_main_unmarkable_unchanged`, `test_make_main_across_month_end`
+(the job's `activity_id_of(grouped.main)` across months), and
+`test_product_name` (FIT's `file_id` product name, end to end).
+`test/MapTest.cpp`: `test_navigator_keep_clamps_the_zoom`. All of them
+pass except the one for note 1.

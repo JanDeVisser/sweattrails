@@ -841,6 +841,232 @@ void test_group_month_twice()
     CHECK_EQ(recordings_of(fit_of(store, 0)).size(), 2uz);
 }
 
+// A recording made with a workout on the device, which names it, in the
+// inbox.
+void record_workout(Test::TempStore const &store, u16 device, u32 offset, u32 seconds, std::string_view workout)
+{
+    Test::FITBuilder fit;
+    Test::add_file_id(fit, device);
+    Test::add_workout(fit, workout);
+    Test::add_session(fit, seconds, 0, Test::NoSubSport, offset);
+    MUST(write_file_by_name((store.storage.inbox_dir / std::format("{}-{}.fit", device, offset)).string(), std::string_view { fit.file() }));
+}
+
+std::optional<Activity> load_deep(Test::TempStore &store, ActivityID const &id)
+{
+    auto const loaded = id.load(store.storage, LoadingDepth::Deep);
+    if (!loaded || !*loaded) {
+        return { };
+    }
+    return **loaded;
+}
+
+ActivityID recording_id(Test::TempStore const &store, u32 main_offset, u32 offset)
+{
+    auto ret = id_of(store, main_offset);
+    ret.recording = std::format("{}", unix_start(offset));
+    return ret;
+}
+
+// Review note 1: the title is the main one's on every recording (spec 32,
+// "Which recording is shown"). Without a name from the user or a service,
+// it's the FIT file's, and the recording's FIT file is read for it: a
+// workout's name on one device and not the other changes the title on
+// Tab. Fails now.
+void test_recording_has_the_activitys_title()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record_workout(store, Wahoo, 0, 3600, "Sweet Spot");
+    record(store, Garmin, 60, 3540);
+    file(store);
+    auto const main = load_deep(store, id_of(store, 60));
+    auto const wahoo = load_deep(store, recording_id(store, 60, 0));
+    CHECK(main.has_value() && wahoo.has_value());
+    if (main && wahoo) {
+        CHECK_EQ(wahoo->title, main->title);
+    }
+
+    // And the other way around: the main one's workout names the activity.
+    Test::TempStore other;
+    other.storage.prefer = { manufacturer::garmin };
+    record(other, Wahoo, 0, 3600);
+    record_workout(other, Garmin, 60, 3540, "Sweet Spot");
+    file(other);
+    auto const named = load_deep(other, recording_id(other, 60, 0));
+    CHECK(named.has_value());
+    if (named) {
+        CHECK_EQ(named->title, "Sweet Spot");
+    }
+}
+
+// The number the summary line says is the place in Tab's order, for each
+// of three recordings.
+void test_recording_numbers_follow_tabs_order()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 30, 3600);
+    record(store, Zwift, 0, 3500);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    auto const order = recordings_in_order(store.storage, id_of(store, 60));
+    CHECK_EQ(order.size(), 3uz);
+    for (auto ix = 0uz; ix < order.size(); ++ix) {
+        auto const loaded = load_deep(store, order[ix]);
+        CHECK(loaded.has_value());
+        if (loaded) {
+            CHECK_EQ(loaded->recording_number, ix + 1);
+            CHECK_EQ(loaded->recordings, 3uz);
+            CHECK(loaded->id == order[ix]);
+        }
+    }
+}
+
+// A recording that isn't there any more, as after a split: it doesn't load,
+// and doesn't load as the main one either.
+void test_load_a_gone_recording()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    auto const gone = recording_id(store, 60, 0);
+    CHECK(split_recordings(store.storage, fit_of(store, 60)).has_value());
+    auto const loaded = gone.load(store.storage, LoadingDepth::Deep);
+    CHECK(!loaded.has_value() || !loaded->has_value());
+    CHECK(recordings_in_order(store.storage, gone) == std::vector { id_of(store, 60) });
+}
+
+// Ctrl+J on the Garmin's earlier, then on the Wahoo's recording: the
+// Garmin's "main" goes, the Wahoo's laps go with it, and each loads with
+// its new number.
+void test_make_main_after_ctrl_j()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    auto const garmin = fit_of(store, 60);
+    CHECK(group_with_main(store.storage, garmin).has_value());
+    CHECK_EQ(sidecar_value(garmin, "recordings"), "main");
+    auto before = load_deep(store, recording_id(store, 60, 0));
+    CHECK(before.has_value());
+    if (before) {
+        CHECK(before->set_lap_starts(std::vector<i64> { unix_start(600) }).has_value());
+    }
+
+    CHECK(make_main(store.storage, recordings_dir(garmin) / std::format("{}.fit", unix_start(0))).has_value());
+    auto const wahoo = fit_of(store, 0);
+    auto const moved = recordings_dir(wahoo) / std::format("{}.fit", unix_start(60));
+    CHECK(fs::exists(moved));
+    CHECK_EQ(sidecar_value(moved, "recordings"), "");
+    CHECK_EQ(sidecar_value(wahoo, "recordings"), "main");
+    auto const main = load_deep(store, id_of(store, 0));
+    CHECK(main.has_value());
+    if (main) {
+        CHECK_EQ(main->recording_number, 1uz);
+        CHECK_EQ(main->recordings, 2uz);
+        CHECK(main->user_lap_starts == std::optional { std::vector<i64> { unix_start(600) } });
+    }
+    auto const former = load_deep(store, recording_id(store, 0, 60));
+    CHECK(former.has_value() && former->recording_number == 2);
+}
+
+// A recording with a title of its own keeps it when it becomes the main
+// one (spec 31, "The name goes with the activity").
+void test_make_main_keeps_its_own_title()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    file(store);
+    MUST(write_file_by_name(fs::path { fit_of(store, 0) }.replace_extension(".json").string(), std::string_view { R"({ "title": "Wahoo's" })" }));
+    record(store, Garmin, 60, 3540);
+    MUST(write_file_by_name((store.storage.inbox_dir / std::format("{}-{}.json", Garmin, 60)).string(), std::string_view { R"({ "title": "Garmin's" })" }));
+    file(store);
+    CHECK(make_main(store.storage, recordings_dir(fit_of(store, 60)) / std::format("{}.fit", unix_start(0))).has_value());
+    CHECK_EQ(sidecar_value(fit_of(store, 0), "title"), "Wahoo's");
+}
+
+// Ctrl+J on a recording whose sidecar can't be marked: an error, and
+// nothing has changed.
+void test_make_main_unmarkable_unchanged()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    auto const garmin = fit_of(store, 60);
+    auto const recording = recordings_dir(garmin) / std::format("{}.fit", unix_start(0));
+    MUST(write_file_by_name(fs::path { recording }.replace_extension(".json").string(), std::string_view { "not JSON" }));
+    CHECK(!make_main(store.storage, recording).has_value());
+    CHECK(fs::exists(garmin));
+    CHECK(fs::exists(recording));
+    CHECK_EQ(listed(store), 1uz);
+}
+
+// A recording from just after midnight at the end of the month becomes the
+// main one: it's listed in the month after, where the job's ID for it
+// finds it.
+void test_make_main_across_month_end()
+{
+    Test::TempStore store;
+    auto const      before = local_offset(2021, 9, 30, 23, 50);
+    auto const      after = local_offset(2021, 10, 1, 0, 1);
+    record(store, Wahoo, before, 3600);
+    record(store, Garmin, after, 3000);
+    file(store);
+    auto const main = fit_of(store, before);
+    auto const made = make_main(store.storage, recordings_dir(main) / std::format("{}.fit", unix_start(after)));
+    CHECK(made.has_value());
+    CHECK(fs::exists(fit_of(store, after)));
+    CHECK(!fs::exists(main));
+    CHECK(fs::exists(recordings_dir(fit_of(store, after)) / std::format("{}.fit", unix_start(before))));
+    if (made) {
+        auto const id = activity_id_of(made->main);
+        CHECK(id.has_value() && id->month == month_of(after));
+        if (id) {
+            auto const loaded = load_deep(store, *id);
+            CHECK(loaded.has_value() && loaded->recording_number == 1 && loaded->recordings == 2);
+        }
+    }
+}
+
+// The FIT file's product name, which the summary line names the device
+// by, from its file_id.
+void test_product_name()
+{
+    Test::TempStore  store;
+    Test::FITBuilder fit;
+    std::string_view product = "ELEMNT ROAM";
+    fit.definition(4, 0,
+        {
+            { .num = 0, .size = 1, .base_type = Test::Enum },
+            { .num = 1, .size = 2, .base_type = Test::Uint16 },
+            { .num = 4, .size = 4, .base_type = Test::Uint32 },
+            { .num = 8, .size = static_cast<u8>(product.size() + 1), .base_type = Test::String },
+        });
+    fit.message(4);
+    fit.byte(4);
+    fit.u16_le(Wahoo);
+    fit.u32_le(Test::Start);
+    fit.data += product;
+    fit.byte(0);
+    Test::add_session(fit, 3600, 0);
+    MUST(write_file_by_name((store.storage.inbox_dir / "wahoo.fit").string(), std::string_view { fit.file() }));
+    file(store);
+    auto const loaded = load_deep(store, id_of(store, 0));
+    CHECK(loaded.has_value());
+    if (loaded) {
+        CHECK_EQ(loaded->product_name, "ELEMNT ROAM");
+        CHECK(loaded->manufacturer == manufacturer::wahoo_fitness);
+    }
+}
+
 }
 
 int main()
@@ -877,5 +1103,12 @@ int main()
     test_across_month_end();
     test_split_place_taken();
     test_group_month_twice();
+    test_recording_numbers_follow_tabs_order();
+    test_load_a_gone_recording();
+    test_make_main_after_ctrl_j();
+    test_make_main_keeps_its_own_title();
+    test_make_main_unmarkable_unchanged();
+    test_make_main_across_month_end();
+    test_product_name();
     return Test::test_result();
 }
