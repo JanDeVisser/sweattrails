@@ -501,7 +501,8 @@ void ActivityGraph::set_activity(std::shared_ptr<DisplayedActivity> const &activ
 
 namespace {
 
-// One line of the graph, drawn a pixel column at a time.
+// One line of the graph, drawn a pixel column at a time. A column without
+// a value breaks it: a dropout shows as a gap.
 struct GraphLine {
     Color                  color;
     std::optional<Vector2> previous { };
@@ -509,6 +510,7 @@ struct GraphLine {
     void to(Image &image, float x, std::optional<float> y)
     {
         if (!y) {
+            previous.reset();
             return;
         }
         Vector2 const point { .x = x, .y = std::ceilf(*y) };
@@ -576,13 +578,13 @@ void ActivityGraph::draw_compared(int width, int height)
             continue;
         }
         prev_x = x;
-        auto const &rec = shown.records[ix];
-        if (ix < compared.pairs.size() && compared.pairs[ix] && *compared.pairs[ix] < other.records.size()) {
-            auto const &o = other.records[*compared.pairs[ix]];
-            theirs[0].to(image, x, from_zero(cadence, o.cadence));
-            theirs[1].to(image, x, over_range(hr, real_heart_rate(o)));
-            theirs[2].to(image, x, from_zero(power, o.power));
-        }
+        auto const              &rec = shown.records[ix];
+        static FIT::record const none { };
+        auto const               paired = ix < compared.pairs.size() && compared.pairs[ix] && *compared.pairs[ix] < other.records.size();
+        auto const              &o = paired ? other.records[*compared.pairs[ix]] : none;
+        theirs[0].to(image, x, from_zero(cadence, o.cadence));
+        theirs[1].to(image, x, over_range(hr, real_heart_rate(o)));
+        theirs[2].to(image, x, from_zero(power, o.power));
         ours[0].to(image, x, from_zero(cadence, rec.cadence));
         ours[1].to(image, x, over_range(hr, real_heart_rate(rec)));
         ours[2].to(image, x, from_zero(power, rec.power));
