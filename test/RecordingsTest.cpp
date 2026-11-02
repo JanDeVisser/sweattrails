@@ -17,6 +17,7 @@
 
 #include <storage/Recordings.h>
 #include <storage/Storage.h>
+#include <storage/Summaries.h>
 
 #include <TempStore.h>
 #include <TestApp.h>
@@ -545,6 +546,52 @@ void test_split_from_a_recording()
     if (found && found->size() == 1) {
         CHECK(fs::path { found->front().sidecar }.replace_extension(".fit") == fit_of(store, 0));
     }
+}
+
+// The summary file, brought up to date as the app does after grouping or
+// splitting.
+ActivitySummaries totals(Test::TempStore &store)
+{
+    while (true) {
+        auto done = update_summaries(store.storage);
+        CHECK(done.error.empty());
+        if (done.left == 0 || !done.error.empty()) {
+            return done.summaries;
+        }
+    }
+}
+
+std::vector<i64> starts(ActivitySummaries const &summaries)
+{
+    std::vector<i64> ret;
+    for (auto const &summary : summaries) {
+        ret.push_back(summary.start);
+    }
+    return ret;
+}
+
+// The totals count an activity recorded twice once, by its main
+// recording, whichever that is, and twice again once it's split.
+void test_totals_follow_the_groups()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    file(store);
+    CHECK(starts(totals(store)) == std::vector { unix_start(0) });
+
+    record(store, Garmin, 60, 3540);
+    file(store);
+    CHECK(starts(totals(store)) == std::vector { unix_start(60) });
+
+    // Ctrl+J on the Wahoo's recording.
+    auto const wahoo = recordings_dir(fit_of(store, 60)) / std::format("{}.fit", unix_start(0));
+    CHECK(make_main(store.storage, wahoo).has_value());
+    CHECK(starts(totals(store)) == std::vector { unix_start(0) });
+
+    // Ctrl+Shift+R.
+    CHECK(split_recordings(store.storage, fit_of(store, 0)).has_value());
+    CHECK(starts(totals(store)) == (std::vector { unix_start(0), unix_start(60) }));
 }
 
 // A store filed before there were groups, once over.
@@ -1095,6 +1142,7 @@ int main()
     test_recording_has_the_activitys_title();
     test_make_main();
     test_split_from_a_recording();
+    test_totals_follow_the_groups();
     test_group_month_filed_elsewhere();
     test_inbox_candidate_filed_elsewhere();
     test_former_main_with_folder();

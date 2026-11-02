@@ -744,6 +744,7 @@ sweattrails_test(
         recordings_test
         test/RecordingsTest.cpp
         src/App/storage/Recordings.cpp
+        src/App/storage/Summaries.cpp
         src/App/storage/Volume.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
