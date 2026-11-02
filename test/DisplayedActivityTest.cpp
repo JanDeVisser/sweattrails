@@ -72,6 +72,43 @@ void test_keep_lap()
     CHECK_EQ(lap(t.displayed->lap), -1);
 }
 
+// Comparing with another recording: the whole activity, a lap, and a
+// dragged range, each over its own records.
+void test_comparison()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    CHECK(!d.comparison().has_value());
+    for (auto ix = 0uz; ix < d.activity.recorded.size(); ++ix) {
+        d.activity.recorded[ix].power = static_cast<u16>(ix < 10 ? 100 : 200);
+    }
+    auto other = d.activity;
+    for (auto &rec : other.recorded) {
+        rec.power = static_cast<u16>(*rec.power - 10);
+    }
+    d.compare_with(other);
+    auto const whole = d.comparison();
+    CHECK(whole.has_value() && whole->avg_power.shown == 190.0 && whole->avg_power.other == 180.0);
+
+    d.select_lap(0);
+    auto const lap = d.comparison();
+    CHECK(lap.has_value() && lap->avg_power.shown == 100.0 && lap->avg_power.other == 90.0);
+    CHECK(d.lap_comparison(1).has_value() && d.lap_comparison(1)->avg_power.shown == 200.0);
+    CHECK(!d.lap_comparison(3).has_value());
+
+    // A range of records 5 to 24, once the drag has ended: 5 at 100 W
+    // and 15 at 200 W.
+    d.whole_activity();
+    d.start_segment(5);
+    d.set_segment(24);
+    d.end_segment();
+    auto const range = d.comparison();
+    CHECK(range.has_value() && range->avg_power.shown == 175.0 && range->avg_power.other == 165.0);
+
+    d.compare_with(std::nullopt);
+    CHECK(!d.comparison().has_value());
+}
+
 // A drag in the graph clears the mark, and selects a range up to where the
 // mouse is: the preview follows that, rather than jumping to the start.
 void test_current_record()
@@ -411,6 +448,7 @@ int main()
 {
     test_current_record();
     test_keep_lap();
+    test_comparison();
     test_drag_either_way();
     test_end_segment();
     test_range_stats_cleared();

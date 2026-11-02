@@ -356,6 +356,7 @@ sweattrails_test(
         src/App/storage/Volume.cpp
         src/App/widget/ActivitySelector.cpp
         src/App/widget/DataFields.cpp
+        src/App/storage/Comparison.cpp
         src/App/widget/SportIcon.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
@@ -401,6 +402,7 @@ sweattrails_test(
         src/App/storage/Thresholds.cpp
         src/App/storage/Volume.cpp
         src/App/widget/DataFields.cpp
+        src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -618,6 +620,7 @@ sweattrails_test(
         src/App/overlay/Template.cpp
         src/App/overlay/TrackMap.cpp
         src/App/widget/DisplayedActivity.cpp
+        src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -660,6 +663,7 @@ sweattrails_test(
         displayed_activity_test
         test/DisplayedActivityTest.cpp
         src/App/widget/DisplayedActivity.cpp
+        src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp

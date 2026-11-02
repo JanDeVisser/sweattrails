@@ -180,4 +180,40 @@ std::optional<size_t> lap_at(std::vector<LapSpan> const &spans, float x)
     return { };
 }
 
+void DisplayedActivity::compare_with(std::optional<Activity> const &other)
+{
+    if (!other) {
+        compared.reset();
+        return;
+    }
+    compared = ComparedRecording { .activity = *other, .pairs = pair_records(activity.recorded, other->recorded) };
+}
+
+std::optional<Comparison> DisplayedActivity::comparison_of(size_t first, size_t end) const
+{
+    if (!compared) {
+        return { };
+    }
+    return compare(activity.recorded, compared->activity.recorded, compared->pairs, first, end);
+}
+
+std::optional<Comparison> DisplayedActivity::comparison() const
+{
+    if (lap && *lap < activity.laps.size()) {
+        return lap_comparison(*lap);
+    }
+    if (segment && range_stats) {
+        return comparison_of(segment->min, segment->max + 1);
+    }
+    return comparison_of(0, activity.recorded.size());
+}
+
+std::optional<Comparison> DisplayedActivity::lap_comparison(size_t ix) const
+{
+    if (ix >= activity.laps.size()) {
+        return { };
+    }
+    return comparison_of(activity.laps[ix].first_record, activity.laps[ix].end_record);
+}
+
 }
