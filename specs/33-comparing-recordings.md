@@ -1,6 +1,6 @@
 # Comparing the recordings of an activity
 
-Status: In progress, on branch feature/33-comparing-recordings
+Status: In review, on branch feature/33-comparing-recordings
 
 <!--
 Status is one of:
