@@ -143,6 +143,8 @@ The feature is split in three, each useful on its own:
   "Group 2 other recordings with this one as the main one?". Activities
   that were split are grouped too, and are no longer marked separate.
   With none to group, it says "This activity has no other recordings."
+  With all of them grouped with it already, it asks "Keep this as the
+  main one of its 2 recordings?", and on Yes it stays the main one.
   *(Added after the review, as a change request: a split couldn't be
   undone.)*
 

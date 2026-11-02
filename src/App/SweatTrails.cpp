@@ -1499,8 +1499,15 @@ void cmd_group_recordings(pSweatTrails const &sweattrails, JSONValue const &)
             st->schedule<JobType::GroupWithMain>(request);
         }
     };
-    auto const count = others->size();
-    query_box(sweattrails, std::format("Group {} other {} with this one as the main one?", count, count == 1 ? "recording" : "recordings"), group, QueryOptionYesNo);
+    // With all of them in its folder already, Yes only keeps it the main one.
+    auto const folder = recordings_dir(fit);
+    auto const count = static_cast<size_t>(std::ranges::count_if(*others, [&folder](RecordingInfo const &other) {
+        return other.fit.parent_path() != folder;
+    }));
+    auto const question = count == 0
+        ? std::format("Keep this as the main one of its {} recordings?", others->size() + 1)
+        : std::format("Group {} other {} with this one as the main one?", count, count == 1 ? "recording" : "recordings");
+    query_box(sweattrails, question, group, QueryOptionYesNo);
 }
 
 // If grouping moved the activity on display into a folder, its main
