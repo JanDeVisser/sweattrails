@@ -226,8 +226,25 @@ StorageResult<std::optional<Activity>> Storage::load_activity(ActivityID const &
 bool Storage::has_activity(i64 start_time) const
 {
     auto const      start = DateTime::from_timestamp(static_cast<i32>(start_time));
+    auto const      file = std::format("{}.fit", start_time);
     std::error_code ec { };
-    return fs::exists(activity_dir / month_dir_name(start) / std::format("{}.fit", start_time), ec);
+    // Filed in another time zone, it may be in the month before or after,
+    // and so may a recording's main one.
+    Month const month { static_cast<size_t>(start.year), start.month };
+    for (auto const step : { -1, 0, 1 }) {
+        auto const dir = activity_dir / month.plus(step).dir_name();
+        if (fs::exists(dir / file, ec)) {
+            return true;
+        }
+        for (fs::directory_iterator it { dir, ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
+            std::error_code entry_ec { };
+            if (it->path().filename().string().ends_with(".recordings") && fs::exists(it->path() / file, entry_ec)) {
+                return true;
+            }
+        }
+        ec.clear();
+    }
+    return false;
 }
 
 fs::path Storage::sidecar_of(i64 start_time) const
@@ -298,7 +315,7 @@ StorageResult<std::vector<StoredStart>> Storage::month_starts(Month const &month
     return ret;
 }
 
-StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
+StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file, InboxFiled const &on_filed)
 {
     // Collect the file names first: organizing a file moves it out of the
     // inbox, and it's unspecified whether a directory_iterator sees that.
@@ -338,8 +355,11 @@ StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
             warning(Storage, "Error organizing inbox file {}: {}", file_name, res.error().to_string());
             continue;
         }
-        if (*res == InboxOutcome::Organized) {
+        if (res->outcome == InboxOutcome::Organized) {
             processed += 1;
+            if (on_filed) {
+                on_filed(res->start);
+            }
         }
     }
     if (processed > 0) {
@@ -348,7 +368,7 @@ StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file)
     return processed;
 }
 
-StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view const &file_name)
+StorageResult<Storage::InboxFiling> Storage::organize_fit_file(std::string_view const &file_name)
 {
     auto const stem = fs::path { file_name }.stem().string();
     Activity   activity {
@@ -363,13 +383,13 @@ StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view
     activity.depth = LoadingDepth::Shallow;
     // Load the file by its own name: process_inbox() also accepts e.g. `.FIT`.
     if (!TRY_EVAL(activity.load_from_file(inbox_dir / file_name))) {
-        return InboxOutcome::Skipped;
+        return InboxFiling { };
     }
     assert(activity.segment.start_time.timestamp > 0);
     auto const dest_dir_name = month_dir_name(activity.segment.start_time);
     auto const dest_dir = TRY_EVAL(ensure_directory(activity_dir / dest_dir_name));
     auto const dest_stem = std::format("{}", activity.segment.start_time.timestamp);
-    if (TRY_EVAL(path_exists(dest_dir / (dest_stem + ".fit")))) {
+    if (has_activity(activity.segment.start_time.timestamp)) {
         // renamePreserve: never clobber an existing file. Set the duplicate
         // aside so it isn't processed again on every start. The same file can
         // arrive more than once, so number the copies.
@@ -380,10 +400,10 @@ StorageResult<Storage::InboxOutcome> Storage::organize_fit_file(std::string_view
         }
         info(Storage, "File `{}` already exists at `{}`; moving it to `duplicates/{}.fit`", file_name, dest_dir_name, duplicate_stem);
         TRY(move_with_sidecar(file_name, duplicates_dir, duplicate_stem));
-        return InboxOutcome::Duplicate;
+        return InboxFiling { .outcome = InboxOutcome::Duplicate };
     }
     TRY(move_with_sidecar(file_name, dest_dir, dest_stem));
-    return InboxOutcome::Organized;
+    return InboxFiling { .outcome = InboxOutcome::Organized, .start = activity.segment.start_time.timestamp };
 }
 
 // Moves inbox file `file_name` to `<dest_dir>/<dest_stem>.fit`. The Garmin

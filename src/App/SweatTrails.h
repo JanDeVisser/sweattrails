@@ -7,6 +7,7 @@
 #pragma once
 
 #include <atomic>
+#include <filesystem>
 #include <set>
 #include <string_view>
 #include <thread>
@@ -23,6 +24,7 @@
 #include <storage/Activity.h>
 #include <storage/Download.h>
 #include <storage/Garmin.h>
+#include <storage/Recordings.h>
 #include <storage/Storage.h>
 #include <storage/Strava.h>
 #include <storage/Summaries.h>
@@ -98,6 +100,22 @@ struct SummaryProgress {
     size_t done { 0 };
 };
 
+// The GroupRecordings job, a chunk of months at a time, newest first:
+// the months, once the first chunk has read them, how many the chunks
+// before it did, and how many groups they made.
+struct GroupingProgress {
+    std::optional<std::vector<Month>> months { };
+    size_t                            done { 0 };
+    size_t                            grouped { 0 };
+};
+
+// Ctrl+Shift+R and Ctrl+J: the activity whose recordings to split or
+// group, and its FIT file.
+struct RecordingsRequest {
+    ActivityID            id { };
+    std::filesystem::path fit { };
+};
+
 #define JOBTYPE(S)                        \
     S(FindCurrentFolder, std::monostate)  \
     S(FindNewestActivity, std::monostate) \
@@ -108,7 +126,10 @@ struct SummaryProgress {
     S(StravaTitles, StravaTitlesRequest)  \
     S(StravaLogin, StravaLogin)           \
     S(PrepareZwiftWorld, ZwiftWorld)      \
-    S(UpdateSummaries, SummaryProgress)
+    S(UpdateSummaries, SummaryProgress)   \
+    S(GroupRecordings, GroupingProgress)  \
+    S(SplitRecordings, RecordingsRequest) \
+    S(GroupWithMain, RecordingsRequest)
 
 enum class JobType {
     JOBTYPE(ENUMVALUE2)
@@ -162,19 +183,41 @@ struct SummariesUpdated {
     std::string       error { }; // Why it stopped early, for the status line
 };
 
-#define NOTIFICATIONTYPE(S)             \
-    S(Message, std::string)             \
-    S(ActivityList, Activities)         \
-    S(Activity, Activity)               \
-    S(ImportingFile, ImportingFile)     \
-    S(MapTile, MapTile)                 \
-    S(MapTilesDone, MapTilesDone)       \
-    S(Downloading, Downloading)         \
-    S(DownloadDone, DownloadReport)     \
-    S(LoginEnded, LoginEnded)           \
-    S(TitlesChanged, TitlesChanged)     \
-    S(ZwiftWorldReady, ZwiftWorldReady) \
-    S(SummariesUpdated, SummariesUpdated)
+// Sent when the inbox, or a chunk of the once over the store, grouped
+// recordings: what it grouped, and for the once over, how far it is, how
+// many groups it made so far, and what went wrong, if anything did.
+struct RecordingsGrouped {
+    std::vector<Grouped> groups { };
+    bool                 once_over { false };
+    size_t               done { 0 };
+    size_t               total { 0 };
+    size_t               grouped { 0 };
+    std::string          error { };
+};
+
+// Sent when Ctrl+Shift+R's or Ctrl+J's job is done: what it did, for the
+// status line, or why it couldn't.
+struct RecordingsChanged {
+    ActivityID  id { };
+    std::string done { };
+    std::string error { };
+};
+
+#define NOTIFICATIONTYPE(S)                 \
+    S(Message, std::string)                 \
+    S(ActivityList, Activities)             \
+    S(Activity, Activity)                   \
+    S(ImportingFile, ImportingFile)         \
+    S(MapTile, MapTile)                     \
+    S(MapTilesDone, MapTilesDone)           \
+    S(Downloading, Downloading)             \
+    S(DownloadDone, DownloadReport)         \
+    S(LoginEnded, LoginEnded)               \
+    S(TitlesChanged, TitlesChanged)         \
+    S(ZwiftWorldReady, ZwiftWorldReady)     \
+    S(SummariesUpdated, SummariesUpdated)   \
+    S(RecordingsGrouped, RecordingsGrouped) \
+    S(RecordingsChanged, RecordingsChanged)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -201,6 +244,9 @@ struct SweatTrails : public Main<Job, Notification> {
     static void job_strava_login(Job::Payload const &data);
     static void job_prepare_zwift_world(Job::Payload const &data);
     static void job_update_summaries(Job::Payload const &data);
+    static void job_group_recordings(Job::Payload const &data);
+    static void job_split_recordings(Job::Payload const &data);
+    static void job_group_with_main(Job::Payload const &data);
 
     // The payload variant starts with a std::monostate, so a job type's
     // payload comes one after its value.
@@ -220,6 +266,9 @@ struct SweatTrails : public Main<Job, Notification> {
                 job_strava_login,
                 job_prepare_zwift_world,
                 job_update_summaries,
+                job_group_recordings,
+                job_split_recordings,
+                job_group_with_main,
             });
     }
 
@@ -241,6 +290,8 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_titles_changed(Notification::Payload const &data);
     static void notif_zwift_world_ready(Notification::Payload const &data);
     static void notif_summaries_updated(Notification::Payload const &data);
+    static void notif_recordings_grouped(Notification::Payload const &data);
+    static void notif_recordings_changed(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -260,6 +311,8 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_titles_changed,
                 notif_zwift_world_ready,
                 notif_summaries_updated,
+                notif_recordings_grouped,
+                notif_recordings_changed,
             });
     }
 
@@ -310,6 +363,10 @@ struct SweatTrails : public Main<Job, Notification> {
     std::atomic<bool> updating_summaries { false };
     // The status line says how far it is.
     bool reading_summaries { false };
+    // From scheduling the once over the store for recordings until its last
+    // chunk, which updates the summaries: until then they'd read files
+    // that are about to move. Used by jobs and the UI.
+    std::atomic<bool> grouping_recordings { false };
 
     std::shared_ptr<WidgetStack>     widget_stack { nullptr };
     std::shared_ptr<ActivityDisplay> activity_display { nullptr };

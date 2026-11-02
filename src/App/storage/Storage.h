@@ -52,6 +52,8 @@ struct Storage {
     // Called with the name of each inbox file before it's processed, its index
     // and the number of files.
     using InboxProgress = std::function<void(std::string_view const &file_name, size_t index, size_t count)>;
+    // Called with the start time of each activity the inbox files.
+    using InboxFiled = std::function<void(i64 start)>;
 
     enum class InboxOutcome {
         Organized, // Moved into the activity store.
@@ -67,6 +69,9 @@ struct Storage {
     // From the settings, set once before any job runs: the scores of the
     // activities, read from any thread, as the paths are.
     ThresholdList thresholds { };
+    // From the settings, set once as the thresholds are: the devices whose
+    // recording of an activity is its main one, the first first.
+    std::vector<FIT::manufacturer> prefer { };
 
     // Threading: the paths above don't change after init(), and can be used
     // from any thread. `years` (and `current`) are rebuilt by rescan(), so
@@ -96,10 +101,18 @@ struct Storage {
     StorageResult<std::optional<Activity>>   find_newest();
     StorageResult<Activities>                set_current_folder(Month const &month);
     StorageResult<std::optional<Activity>>   load_activity(ActivityID const &id);
-    StorageResult<u32>                       process_inbox(InboxProgress const &on_file = { });
-    StorageResult<InboxOutcome>              organize_fit_file(std::string_view const &file_name);
+    StorageResult<u32>                       process_inbox(InboxProgress const &on_file = { }, InboxFiled const &on_filed = { });
+    // What the inbox did with a file, and the start time it filed it by.
+    struct InboxFiling {
+        InboxOutcome outcome { InboxOutcome::Skipped };
+        i64          start { 0 };
+    };
+    StorageResult<InboxFiling> organize_fit_file(std::string_view const &file_name);
     // Whether the store has an activity that starts at `start_time`, a Unix
-    // time: the inbox files activities by their start time.
+    // time: the inbox files activities by their start time. Also one that's
+    // a recording of another (specs/31-multiple-recordings.md), in the
+    // folders. Both in its month and the months around it, as one filed in
+    // another time zone can be.
     [[nodiscard]] bool has_activity(i64 start_time) const;
     // The sidecar of the activity that starts at `start_time`, as the inbox
     // would file it now, whether it's there or not. An activity filed in
@@ -114,10 +127,10 @@ struct Storage {
     // sees them.
     StorageResult<std::optional<i64>> oldest_start() const;
 
-    Error<StorageError> move_with_sidecar(std::string_view const &file_name, fs::path const &dest_dir, std::string_view const &dest_stem) const;
-
-private:
+    // The activities filed in `month`'s directory, in no order.
     StorageResult<std::vector<StoredStart>> month_starts(Month const &month) const;
+
+    Error<StorageError> move_with_sidecar(std::string_view const &file_name, fs::path const &dest_dir, std::string_view const &dest_stem) const;
 };
 
 }

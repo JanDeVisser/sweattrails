@@ -1,6 +1,6 @@
 # One activity, several recordings
 
-Status: Ready
+Status: Done
 
 <!--
 Status is one of:
@@ -78,7 +78,11 @@ The feature is split in three, each useful on its own:
   any of them is from. If none is, or two are from the same device, it's
   the longest of those, by elapsed time, which covers most of the
   activity. Without the setting, it's the longest.
-- Choosing another by hand is in `32-switching-recordings.md`.
+- A main one the user chose with Ctrl+J (below) stays the main one: a
+  recording from a preferred device that comes in later joins the group
+  without taking its place.
+- Choosing another by hand, among the recordings, is in
+  `32-switching-recordings.md`.
 
 ### Keeping them together
 
@@ -133,6 +137,16 @@ The feature is split in three, each useful on its own:
   filing doesn't group them back. An activity of one recording says so.
 - The main one keeps its title, laps and fills; each recording keeps its
   own sidecar.
+- **Ctrl+J** groups the activity on display with the activities that
+  are recordings of the same one, by the rule above, with it as the main
+  one: to group again what was split, with another main one. It asks
+  "Group 2 other recordings with this one as the main one?". Activities
+  that were split are grouped too, and are no longer marked separate.
+  With none to group, it says "This activity has no other recordings."
+  With all of them grouped with it already, it asks "Keep this as the
+  main one of its 2 recordings?", and on Yes it stays the main one.
+  *(Added after the review, as a change request: a split couldn't be
+  undone.)*
 
 ### README
 
@@ -155,12 +169,276 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### Where the spec leaves a gap
+
+- **Elapsed time** is the session's, and an activity's span is from its
+  start to its start plus that.
+- **Candidates for a new activity** are the activities starting from a
+  day before it to its end: anything that can overlap it. A candidate
+  that is the main one of a group brings its recordings along, so the
+  new one joins the group.
+- **"Separate"** is the sidecar key `"recordings": "separate"`. An
+  activity marked so is never a candidate, and a new one that matches
+  only marked ones stays on its own.
+- **The once over the store** is done month by month, each with the
+  months before and after, as a chunked job like the summary file's, and
+  a file `recordings-grouped` in the data directory says it's done.
+- **The preferred devices** in the settings that FIT doesn't know are an
+  error in a message box at start, as an unreadable settings file is, and
+  the app starts without preferred devices. Not on the status line: the
+  once over the store would replace it there.
+- **The main one chosen by hand** is the sidecar key
+  `"recordings": "main"`. `main_recording()` chooses it before the
+  preferred devices. Ctrl+J clears the keys of all the recordings it
+  groups, and sets it on the one on display.
+- **Splitting** is a job too, as moving files rebuilds the store's
+  index, which only jobs may do (`Storage`'s threading note).
+
+### Recordings (`storage/Recordings.*`)
+
+- **`RecordingInfo`**: a FIT file's path, start, elapsed time, sport and
+  sub-sport, manufacturer, and whether its sidecar says separate.
+  **`recording_info(storage, path)`** reads it with a shallow load, which
+  only reads the session.
+- **`same_activity(a, b)`**: same `volume_sport()`, or the same FIT sport
+  for sports the totals don't count, and overlapping for 80% of the
+  shorter's elapsed time. Pure.
+- **`main_recording(infos, prefer)`**: the index of the main one, by the
+  preferred devices and then the longest. Pure.
+- **`recordings_dir(main_fit)`**: `<start>.recordings/` next to it, and
+  **`recordings_of(main_fit)`**: the FIT files in it.
+- **`group_recordings(storage, infos)`**: chooses the main one, moves
+  the others (`.fit`, `.json`, `.fit.original`, and the old app's
+  `.strava`) into its folder, with a
+  former main one's folder's recordings, and moves the user's title to
+  the new main one if it has none. Says what moved, so the app can show
+  the main one if it was showing a recording that moved.
+- **`group_new(storage, start)`**: for the inbox, after it files an
+  activity: the candidates that are the same activity, grouped.
+- **`group_month(storage, month)`**: for the once over the store: the
+  month's activities, with the months around it as candidates, grouped.
+- **`split_recordings(storage, main_fit)`**: moves the recordings back
+  where the inbox would file them, and marks them all separate.
+- **`recordings_to_group(storage, main_fit)`**: for Ctrl+J's question,
+  the recordings it would group with the activity: the listed activities
+  that are the same one, separate or not, their recordings, and its own.
+  **`group_with_main(storage, main_fit)`** groups them, with it as the
+  main one.
+- **`manufacturer_by_name(name)`** in `fit/FIT.*`, next to `tag()`.
+
+### The store (`storage/Storage.*`)
+
+- `has_activity(start)` also looks in the recordings folders of its
+  month and the months before and after it; `organize_fit_file()` uses
+  it for duplicates, instead of looking only for its own path.
+- `process_inbox()` calls `group_new()` for each activity it files.
+- `Storage::prefer`, the preferred devices, set from the settings at
+  start, as the thresholds are, before any job runs.
+- `Activity::recordings`, how many recordings the activity has: 1, plus
+  the FIT files in its folder, counted on a deep load. `activity_summary()`
+  adds "· 2 recordings" for more than one.
+
+### The app (`SweatTrails.cpp`)
+
+- `JobType::GroupRecordings`, scheduled at start after the inbox and
+  before the summary file's update if `recordings-grouped` isn't there:
+  a chunk of months per job, its progress on the status line, and the
+  count at the end; then it updates the summary file.
+- `JobType::SplitRecordings`, from `st-split-recordings` (Ctrl+Shift+R,
+  `.when(on_activity_screen)`; Ctrl+Alt+R off macOS, where Ctrl+Shift+R
+  renames), after "Split the 2 recordings into
+  separate activities?". When it's done, the activity is shown again and
+  the summary file updated.
+- `JobType::GroupWithMain`, from `st-group-recordings` (Ctrl+J,
+  `.when(on_activity_screen)`), after its question, the same way.
+- A notification after grouping, from the inbox or the once over the
+  store, with the main ones of what moved: if the activity on display
+  was moved into a folder, its main one is shown.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `RecordingsTest`, pure: `same_activity()` with a device started a
+  minute late (same), a warm-up before a race (not), a run and a ride
+  (not), a treadmill run and a run (same); `main_recording()` by the
+  preferred devices, by the longest, and for two from one device.
+- `RecordingsTest` with a temp store, of FIT files from `TestFit.h`
+  with their manufacturers: filing two recordings groups them, the
+  preferred one main, whichever came first; a third joins the group;
+  `has_activity()` finds a recording, also across a month's end; the
+  inbox takes a recording's file again as a duplicate; the month's
+  starts list only the main one; the user's title goes to a new main
+  one; `.fit.original` and sidecars move along; `split_recordings()`
+  puts them back and marks them, and filing a fourth that overlaps
+  doesn't group them again; `group_month()` over a store filed before
+  this feature.
+- `RecordingsTest`: `main_recording()` with one chosen by hand;
+  `group_with_main()` after a split, with the other one as the main one,
+  the marks cleared and set; a preferred recording coming in after it
+  joins without taking its place; none to group.
+- `DataFieldsTest`: "· 2 recordings" in the summary line.
+- By hand: the first start on Jan's store, the count it reports, a
+  compare ride listed once, and Ctrl+Shift+R.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug.** The once over the store doesn't group activities filed in
+   another time zone. `group_month()` finds an activity where it sits
+   (`month_starts()`), but `group_new()` (`storage/Recordings.cpp:274`)
+   reads it again at `filed_path(storage, start)`, the month the inbox
+   would file it in now. For an activity filed in the month after or
+   before, which `Storage.h` says happens, that file isn't there,
+   `recording_info()` returns none, and the activity isn't grouped. Two
+   recordings of a ride on the last or first day of a month, filed while
+   travelling, both stay listed and count twice. `group_new()` could take
+   the activity's path instead of its start. Test:
+   `test_group_month_filed_elsewhere` in `test/RecordingsTest.cpp`,
+   which fails now. (The inbox's own `group_new()` call isn't affected:
+   the file was just filed by `filed_path()`'s time zone, and candidates
+   come from `activity_starts()`, which looks where they are:
+   `test_inbox_candidate_filed_elsewhere` passes.)
+2. **Bug.** The old app's `<start>.strava` file doesn't go along with its
+   recording. `move_recording()` (`storage/Recordings.cpp:77`) moves only
+   `.fit`, `.json` and `.fit.original`, and `read_names()` reads the name
+   and the description from `<start>.strava` next to the FIT file. A
+   recording that becomes the main one from a folder loses that name and
+   description, and a recording that goes into a folder leaves its
+   `.strava` behind in the month's directory, which
+   `Month::has_activities()` counts as an activity there. Test:
+   `test_strava_file_moves_along`, which fails now.
+3. **Suggestion.** The activity on display isn't loaded again when it
+   stays the main one and gets a recording (`show_main_if_moved()`,
+   `SweatTrails.cpp:1449`, only looks at what was hidden). Look at a
+   Garmin ride as it comes in, then let the Wahoo's come in: the summary
+   line has no "· 2 recordings", and Ctrl+Shift+R says "This activity has
+   one recording." until the activity is shown again. The spec only asks
+   for a moved activity to be shown again, but loading the main one again
+   when it's on display would be cheap.
+4. **Suggestion.** Commands that wait in a query box hold on to the
+   activity's path while a job can move it. Ctrl+Shift+R with its
+   question open while a download's inbox makes another recording the
+   main one: on Yes, `split_recordings()` looks for the folder of a FIT
+   file that's now in a folder itself, moves nothing, reports no error,
+   and the status says "Split into 1 activities, but ..." as
+   `show_again()` can't load it. The fills' question (`cmd_fill_gaps`)
+   and renaming hold the old path the same way. Rare, as both recordings
+   usually come in together, but checking that the file is still there
+   on Yes would make it say why.
+5. **Suggestion.** On the first start, when the once over runs, a bad
+   `recordings.prefer` setting's error ("No preferred devices: ...",
+   `SweatTrails.cpp:1751`) is replaced on the status line by the
+   grouping's progress, and cleared with `set_status("")` at the end if
+   nothing was grouped (`SweatTrails.cpp:1674`). The once over then
+   chooses the main ones by the longest, and isn't done again, so the user
+   may never know the setting was ignored. The same goes for the "No TSS"
+   error, as it did before with the summary file's build.
+6. **Suggestion.** `has_activity()` (`storage/Storage.cpp:236`) now
+   lists the month before and after for recordings' folders, but still
+   only looks for a listed activity in the month of the current time
+   zone. Looking for `<start>.fit` in those two months too would cost
+   nothing more, and keep the downloads from fetching again an activity
+   filed in another time zone (this was so before the branch).
+
+Reviewer's tests added to `test/RecordingsTest.cpp`: the two above that
+fail (1 and 2), and, passing, a preferred recording joining a group whose
+former main one has a folder (the folder merged and removed, the title
+moved, `hidden` right), a new main one coming out of a folder with its
+sidecar, a new main one keeping a name of its own, recordings either side
+of a month's end (grouped, found by `has_activity()`, a duplicate in the
+inbox, split back into the next month), splitting when the place is taken
+(an error, nothing overwritten), and the once over run twice.
+
+### Resolution
+
+All six findings were fixed, each in its own commit, with its test:
+
+1. `group_month()` groups each activity by the path where it found it,
+   so activities filed in another time zone's month are grouped too.
+   `test_group_month_filed_elsewhere` runs again.
+2. `move_recording()` moves the old app's `.strava` file too.
+   `test_strava_file_moves_along` runs again.
+3. When the activity on display is the main one of a new group, it's
+   loaded again, so the summary line and Ctrl+Shift+R count the new
+   recording. This is app code, so it's checked by hand.
+4. `split_recordings()` gives an error for a FIT file that has gone or
+   is in a folder, and the app shows it.
+   `test_split_after_another_became_main`.
+5. A bad `recordings.prefer` setting goes in a message box at start,
+   rather than on the status line.
+6. `has_activity()` looks for a listed `<start>.fit` in the months
+   before and after as well. `test_has_activity_filed_elsewhere`.
+
+While building, Ctrl+Shift+R turned out to be rename off macOS, so the
+split key is Ctrl+Alt+R there. The README and the Architecture say so.
+
+### Ctrl+J
+
+Review of the change request (commit "Group recordings again with Ctrl+J,
+with the one on display as main").
+
+1. **Bug** (minor). A Ctrl+J that fails can still change things.
+   `group_with_main()` (`storage/Recordings.cpp:386`) first clears the
+   "separate" mark of every other recording, and only then marks the main
+   one (`:395`) and moves anything. If marking the main one fails, it
+   reports the error, but nothing is grouped and the others have lost
+   their marks already. That happens when the main one's sidecar isn't a
+   JSON object: `recording_info()` reads it as unmarked, and
+   `update_sidecar()` won't write it. Split a Wahoo's and a Garmin's
+   recordings, break the Wahoo's sidecar, press Ctrl+J on the Wahoo's
+   activity. The message box says it couldn't group them, and both
+   activities are still listed, but the Garmin's is no longer separate, so
+   the next recording of that ride that comes in groups it again, with
+   the preferred Garmin as the main one, which is what the split was for.
+   Marking the main one first (or checking all the sidecars can be
+   updated before changing any) would leave things as they were. Test:
+   `test_group_with_main_fails_unchanged`, which fails now.
+2. **Suggestion.** Ctrl+J on an activity that's already grouped with all
+   its recordings, and has none to group, asks "Group 1 other recording
+   with this one as the main one?" (`SweatTrails.cpp:1503`), as
+   `recordings_to_group()` counts its own folder's recordings
+   (`storage/Recordings.cpp:368`). On Yes nothing moves: it marks it main,
+   so a preferred device's recording that comes in later won't take its
+   place, and says "This is the main recording now". The spec has
+   Ctrl+J say "This activity has no other recordings." with none to
+   group. That isn't true here either, but the question is misleading:
+   it asks to group what is grouped. If pinning the main one is wanted,
+   the question could say so ("Keep this as the main one of its 2
+   recordings?"); otherwise count only what's listed. The Developer's
+   `test_group_with_main` checks the count of 2 as it is now.
+3. **Suggestion.** `cmd_group_recordings()` (`SweatTrails.cpp:1488`) reads
+   FIT files on the UI thread for the question: `recordings_to_group()`
+   lists the directories of the activity's month and the months around
+   it, and reads in full (`FITFile::read()` and `analyze()`, a shallow
+   load still parses the whole file) every activity that starts from a
+   day before it to its end, and every recording in its folder. The
+   Storage threading note allows it, as it doesn't use `years`, but for a
+   day with a few long rides that's a few full FIT parses in one frame.
+   It works, and the job computes the list again, so a count that's
+   wrong because the inbox moved something meanwhile does no harm. If it
+   shows as a stall, the question could be asked from a job's
+   notification.
+
+Checked and fine: a candidate that's the main one of another group, also
+one chosen with Ctrl+J (its folder's recordings join, its folder goes,
+its "main" mark is cleared, its name moves to a main one without one);
+duplicates in the list (`same_activities()` skips the activity itself and
+`group_recordings()` skips recordings already moved with a former main
+one's folder); Ctrl+J on the main one from before a split; splitting a
+group made with Ctrl+J (the "main" mark becomes "separate", and a new
+recording isn't grouped with them); `group_new()` and `group_month()`
+keeping a chosen main one; `recordings_request<>()` by index matching the
+payload order; the job and notification tables in order.
+
+Reviewer's tests added to `test/RecordingsTest.cpp`: the one above that
+fails (1), and, passing, `test_group_with_main_takes_a_group`,
+`test_group_with_main_former_main` and `test_split_after_group_with_main`.
+
+#### Resolution of Ctrl+J
+
+1. Fixed: `group_with_main()` marks the main one first, so a sidecar
+   that can't be written stops it before any other mark is cleared.
+   `test_group_with_main_fails_unchanged` runs again.
+2. Fixed: with all its recordings in its folder already, Ctrl+J asks
+   "Keep this as the main one of its 2 recordings?".
+3. Left as it is: the question reads a few FIT files on the UI thread,
+   as dropping a file to fill a gap does. Moving it to a job is for when
+   it shows as a stall.

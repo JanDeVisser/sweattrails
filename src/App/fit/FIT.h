@@ -447,7 +447,9 @@ enum class FITArchitecture : uint8_t {
 char const *tag(mesg_num m);
 char const *tag(file_type t);
 char const *tag(manufacturer m);
-char const *tag(FITArchitecture a);
+// By the name tag() gives it, as the settings name devices.
+std::optional<manufacturer> manufacturer_by_name(std::string_view name);
+char const                 *tag(FITArchitecture a);
 
 template<typename T>
 T fit_read(FITArchitecture, std::string_view)

@@ -34,6 +34,7 @@
 #include <storage/Gaps.h>
 #include <storage/Garmin.h>
 #include <storage/Laps.h>
+#include <storage/Recordings.h>
 #include <storage/Storage.h>
 #include <storage/Strava.h>
 #include <storage/StravaTitles.h>
@@ -198,8 +199,21 @@ void process_inbox(pSweatTrails const &the)
         trace(ST, "Processing inbox file {}", file_name);
         the->notify_latest<NotificationType::ImportingFile>(ImportingFile { std::string { file_name }, index, count });
     };
-    auto res = the->storage.process_inbox(on_file);
+    // A recording of an activity in the store goes with it.
+    std::vector<Grouped> groups;
+    auto const           on_filed = [&the, &groups](i64 start) {
+        auto grouped = group_new(the->storage, start);
+        if (!grouped) {
+            warning(ST, "Can't group the activity starting at {} with its recordings: {}", start, grouped.error().to_string());
+        } else if (*grouped) {
+            groups.push_back(std::move(**grouped));
+        }
+    };
+    auto res = the->storage.process_inbox(on_file, on_filed);
     the->notify_latest<NotificationType::ImportingFile>(ImportingFile { });
+    if (!groups.empty()) {
+        the->notify<NotificationType::RecordingsGrouped>(RecordingsGrouped { .groups = std::move(groups) });
+    }
     if (!res) {
         the->notify<NotificationType::Message>(std::format("Error processing inbox: {}", res.error().to_string()));
         return;
@@ -230,6 +244,60 @@ void update_summaries_chunk(pSweatTrails const &the, SummaryProgress progress)
         return;
     }
     the->updating_summaries = false;
+}
+
+// Says the once over the store for recordings is done, so that it isn't
+// done again.
+std::filesystem::path recordings_grouped_marker(Storage const &storage)
+{
+    return storage.data_dir / "recordings-grouped";
+}
+
+// One chunk of the once over the store for recordings, which schedules
+// the next, and tells the UI. Newest first, so that what's shown first is
+// grouped first. Stopped by an error, it's done again at the next start.
+void group_recordings_chunk(pSweatTrails const &the, GroupingProgress progress)
+{
+    constexpr size_t  MonthsPerChunk = 6;
+    RecordingsGrouped grouped { .once_over = true };
+    if (!progress.months) {
+        auto months = the->storage.months_with_activities();
+        if (months) {
+            std::ranges::reverse(*months);
+            progress.months = std::move(*months);
+        } else {
+            grouped.error = std::format("Can't group the activities recorded more than once: {}", months.error().to_string());
+            progress.months = std::vector<Month> { };
+        }
+    }
+    for (auto chunk = 0uz; grouped.error.empty() && chunk < MonthsPerChunk && progress.done < progress.months->size(); ++chunk, ++progress.done) {
+        auto groups = group_month(the->storage, (*progress.months)[progress.done]);
+        if (!groups) {
+            grouped.error = std::format("Can't group the activities recorded more than once: {}", groups.error().to_string());
+            break;
+        }
+        progress.grouped += groups->size();
+        std::ranges::move(*groups, std::back_inserter(grouped.groups));
+    }
+    grouped.done = progress.done;
+    grouped.total = progress.months->size();
+    grouped.grouped = progress.grouped;
+    auto const more = grouped.error.empty() && progress.done < progress.months->size();
+    if (grouped.error.empty() && !more) {
+        if (auto const written = write_file_by_name(recordings_grouped_marker(the->storage).string(), std::string_view { "" }); !written) {
+            warning(ST, "Can't write {}: {}", recordings_grouped_marker(the->storage).string(), written.error().to_string());
+        }
+    }
+    if (!grouped.error.empty()) {
+        warning(ST, "{}", grouped.error);
+    }
+    the->notify<NotificationType::RecordingsGrouped>(std::move(grouped));
+    if (more) {
+        the->schedule<JobType::GroupRecordings>(std::move(progress));
+        return;
+    }
+    the->grouping_recordings = false;
+    the->update_summaries();
 }
 
 // Downloads from the sources the request asks for, one after the other,
@@ -361,6 +429,57 @@ void SweatTrails::job_prepare_zwift_world(Job::Payload const &data)
 void SweatTrails::job_update_summaries(Job::Payload const &data)
 {
     update_summaries_chunk(SweatTrails::the(), std::get<SummaryProgress>(data));
+}
+
+void SweatTrails::job_group_recordings(Job::Payload const &data)
+{
+    group_recordings_chunk(SweatTrails::the(), std::get<GroupingProgress>(data));
+}
+
+// Both jobs carry a RecordingsRequest: theirs is by its index, a job
+// type's payload one after its value.
+template<JobType Type>
+RecordingsRequest const &recordings_request(Job::Payload const &data)
+{
+    return std::get<static_cast<size_t>(Type) + 1>(data);
+}
+
+void SweatTrails::job_split_recordings(Job::Payload const &data)
+{
+    auto const &request = recordings_request<JobType::SplitRecordings>(data);
+    auto const  the = SweatTrails::the();
+    auto const  moved = split_recordings(the->storage, request.fit);
+    if (auto const rescanned = the->storage.rescan(); !rescanned) {
+        warning(ST, "Can't read the store after splitting: {}", rescanned.error().to_string());
+    }
+    if (!moved) {
+        the->notify<NotificationType::RecordingsChanged>(RecordingsChanged {
+            .id = request.id,
+            .done = "Not all the recordings were split",
+            .error = std::format("Couldn't split the recordings: {}", moved.error().to_string()),
+        });
+        return;
+    }
+    the->notify<NotificationType::RecordingsChanged>(RecordingsChanged { .id = request.id, .done = std::format("Split into {} activities", *moved + 1) });
+}
+
+void SweatTrails::job_group_with_main(Job::Payload const &data)
+{
+    auto const &request = recordings_request<JobType::GroupWithMain>(data);
+    auto const  the = SweatTrails::the();
+    auto const  grouped = group_with_main(the->storage, request.fit);
+    if (auto const rescanned = the->storage.rescan(); !rescanned) {
+        warning(ST, "Can't read the store after grouping: {}", rescanned.error().to_string());
+    }
+    if (!grouped) {
+        the->notify<NotificationType::RecordingsChanged>(RecordingsChanged {
+            .id = request.id,
+            .done = "Not all the recordings were grouped",
+            .error = std::format("Couldn't group the recordings: {}", grouped.error().to_string()),
+        });
+        return;
+    }
+    the->notify<NotificationType::RecordingsChanged>(RecordingsChanged { .id = request.id, .done = "This is the main recording now" });
 }
 
 void SweatTrails::job_download(Job::Payload const &data)
@@ -1334,6 +1453,90 @@ void cmd_remove_fills(pSweatTrails const &sweattrails, JSONValue const &)
     query_box(sweattrails, "Put back the activity as the watch recorded it?", put_back, QueryOptionYesNo);
 }
 
+// Ctrl+Shift+R: the activity on display's recordings as activities of
+// their own. See specs/31-multiple-recordings.md.
+void cmd_split_recordings(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    auto const displayed = activity_for_keys(sweattrails);
+    if (!displayed) {
+        return;
+    }
+    auto const &activity = displayed->activity;
+    if (activity.recordings < 2) {
+        message_box("This activity has one recording.");
+        return;
+    }
+    auto split = [request = RecordingsRequest { .id = activity.id, .fit = fit_path(activity) }](pSweatTrails const &st, QueryOption selection) {
+        if (selection == QueryOption::QueryOptionYes) {
+            st->schedule<JobType::SplitRecordings>(request);
+        }
+    };
+    query_box(sweattrails, std::format("Split the {} recordings into separate activities?", activity.recordings), split, QueryOptionYesNo);
+}
+
+// Ctrl+J: groups the activity on display with the activities that are
+// recordings of the same one, those split before too, with it as the main
+// one.
+void cmd_group_recordings(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    auto const displayed = activity_for_keys(sweattrails);
+    if (!displayed) {
+        return;
+    }
+    auto const &activity = displayed->activity;
+    auto const  fit = fit_path(activity);
+    auto const  others = recordings_to_group(sweattrails->storage, fit);
+    if (!others) {
+        message_box(std::format("Can't group this activity's recordings: {}", others.error().to_string()));
+        return;
+    }
+    if (others->empty()) {
+        message_box("This activity has no other recordings.");
+        return;
+    }
+    auto group = [request = RecordingsRequest { .id = activity.id, .fit = fit }](pSweatTrails const &st, QueryOption selection) {
+        if (selection == QueryOption::QueryOptionYes) {
+            st->schedule<JobType::GroupWithMain>(request);
+        }
+    };
+    // With all of them in its folder already, Yes only keeps it the main one.
+    auto const folder = recordings_dir(fit);
+    auto const count = static_cast<size_t>(std::ranges::count_if(*others, [&folder](RecordingInfo const &other) {
+        return other.fit.parent_path() != folder;
+    }));
+    auto const question = count == 0
+        ? std::format("Keep this as the main one of its {} recordings?", others->size() + 1)
+        : std::format("Group {} other {} with this one as the main one?", count, count == 1 ? "recording" : "recordings");
+    query_box(sweattrails, question, group, QueryOptionYesNo);
+}
+
+// If grouping moved the activity on display into a folder, its main
+// recording is shown instead, on the activity screen even if it's behind
+// the totals. If it's the main one, it's loaded again, as it has more
+// recordings now.
+void show_main_again(pSweatTrails const &the, std::vector<Grouped> const &groups)
+{
+    for (auto const &group : groups) {
+        auto const moved = std::ranges::any_of(group.hidden, [&the](i64 start) {
+            return the->last_activity.name == std::format("{}", start);
+        });
+        auto const id = activity_id_of(group.main);
+        if (!id || !(moved || id->name == the->last_activity.name)) {
+            continue;
+        }
+        auto loaded = load_to_show(the->storage, *id);
+        if (!loaded) {
+            the->set_status(loaded.error());
+        } else if (the->showing_summaries()) {
+            the->last_activity = *id;
+            the->activity_display->set_activity(*loaded);
+        } else {
+            the->show_activity(*loaded);
+        }
+        return;
+    }
+}
+
 // At the activity on display.
 void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
 {
@@ -1480,6 +1683,10 @@ void SweatTrails::prepare_zwift_world(ZwiftWorld const &world)
 
 void SweatTrails::update_summaries()
 {
+    // The once over for recordings updates them when it's done.
+    if (grouping_recordings) {
+        return;
+    }
     if (!updating_summaries.exchange(true)) {
         schedule<JobType::UpdateSummaries>(SummaryProgress { });
     }
@@ -1515,6 +1722,34 @@ void SweatTrails::notif_summaries_updated(Notification::Payload const &data)
         the->reading_summaries = false;
         the->set_status("");
     }
+}
+
+void SweatTrails::notif_recordings_grouped(Notification::Payload const &data)
+{
+    auto const &grouped = std::get<RecordingsGrouped>(data);
+    auto const  the = SweatTrails::the();
+    show_main_again(the, grouped.groups);
+    if (!grouped.once_over) {
+        return;
+    }
+    if (!grouped.error.empty()) {
+        the->set_status(grouped.error);
+    } else if (grouped.done < grouped.total) {
+        the->set_status(std::format("Looking for activities recorded more than once: {} of {} months", grouped.done, grouped.total));
+    } else if (grouped.grouped > 0) {
+        the->set_status(std::format("Grouped {} {} recorded more than once", grouped.grouped, grouped.grouped == 1 ? "activity" : "activities"));
+    } else {
+        the->set_status("");
+    }
+}
+
+void SweatTrails::notif_recordings_changed(Notification::Payload const &data)
+{
+    auto const &changed = std::get<RecordingsChanged>(data);
+    if (!changed.error.empty()) {
+        message_box(changed.error);
+    }
+    show_again(SweatTrails::the(), changed.id, changed.done);
 }
 
 void SweatTrails::files_dropped(std::vector<std::string> const &paths)
@@ -1576,6 +1811,14 @@ void SweatTrails::initialize()
     } else {
         thresholds_error = thresholds.error();
         set_status(std::format("No TSS: in the settings, {}", thresholds_error));
+    }
+    // In a message box, not on the status line: the once over the store
+    // would replace it there, and choose the main recordings without it.
+    std::string prefer_error { };
+    if (auto const prefer = decode_prefer(settings.get("recordings")); prefer) {
+        storage.prefer = *prefer;
+    } else {
+        prefer_error = prefer.error();
     }
 
     bus.add_task<SweatTrails>("st-force-quit", self(), cmd_force_quit)
@@ -1673,6 +1916,18 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_F2, KModNone })
         .bind(KeyCombo { KEY_R, command | KModShift })
         .when(on_activity_screen);
+    // Off macOS, Ctrl+Shift+R renames.
+#ifdef __APPLE__
+    auto const split_recordings_key = KeyCombo { KEY_R, KModControl | KModShift };
+#else
+    auto const split_recordings_key = KeyCombo { KEY_R, KModControl | KModAlt };
+#endif
+    bus.add_task<SweatTrails>("st-split-recordings", self(), cmd_split_recordings)
+        .bind(split_recordings_key)
+        .when(on_activity_screen);
+    bus.add_task<SweatTrails>("st-group-recordings", self(), cmd_group_recordings)
+        .bind(KeyCombo { KEY_J, KModControl })
+        .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-overlay-preview", self(), cmd_overlay_preview)
         .bind(KeyCombo { KEY_O, KModControl })
         .when(on_activity_screen);
@@ -1703,8 +1958,14 @@ void SweatTrails::initialize()
     // Jobs run one at a time in the order they're scheduled: the newest
     // activity shows before Garmin Connect or Wahoo is asked for anything,
     // which can take a while, and again after the download if it brought
-    // anything.
+    // anything. The once over the store for recordings comes before the
+    // summaries' update, and does it when it's done.
+    std::error_code ec { };
+    grouping_recordings = !std::filesystem::exists(recordings_grouped_marker(storage), ec);
     bus.schedule(make_job<JobType::ProcessInbox>(std::monostate { }));
+    if (grouping_recordings) {
+        schedule<JobType::GroupRecordings>(GroupingProgress { });
+    }
     bus.schedule(make_job<JobType::FindNewestActivity>(std::monostate { }));
     update_summaries();
     auto quiet = JSONValue::object();
@@ -1712,6 +1973,9 @@ void SweatTrails::initialize()
     bus.submit("st-download", quiet);
     if (!settings_error.empty()) {
         message_box(std::format("{}. SweatTrails starts without those settings.", settings_error));
+    }
+    if (!prefer_error.empty()) {
+        message_box(std::format("In the settings, {}. SweatTrails chooses the longest recording of an activity as its main one.", prefer_error));
     }
 }
 
