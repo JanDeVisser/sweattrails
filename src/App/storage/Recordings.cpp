@@ -269,12 +269,18 @@ StorageResult<Grouped> group_recordings(Storage &storage, std::vector<RecordingI
     return ret;
 }
 
-StorageResult<std::optional<Grouped>> group_new(Storage &storage, i64 start)
+namespace {
+
+// group_new() for the activity whose FIT file is `fit`, wherever it's
+// filed: the once over the store finds activities filed in another time
+// zone's month too.
+StorageResult<std::optional<Grouped>> group_listed(Storage &storage, fs::path const &fit)
 {
-    auto const filed = recording_info(storage, filed_path(storage, start));
+    auto const filed = recording_info(storage, fit);
     if (!filed || filed->separate) {
         return std::optional<Grouped> { };
     }
+    auto const                 start = filed->start;
     std::vector<RecordingInfo> group { *filed };
     constexpr i64              Day = 24 * 60 * 60;
     for (auto const &stored : TRY_EVAL(storage.activity_starts(start - Day, start + filed->elapsed))) {
@@ -299,16 +305,24 @@ StorageResult<std::optional<Grouped>> group_new(Storage &storage, i64 start)
     return std::optional { TRY_EVAL(group_recordings(storage, group)) };
 }
 
+}
+
+StorageResult<std::optional<Grouped>> group_new(Storage &storage, i64 start)
+{
+    return group_listed(storage, filed_path(storage, start));
+}
+
 StorageResult<std::vector<Grouped>> group_month(Storage &storage, Month const &month)
 {
     std::vector<Grouped> ret;
     for (auto const &stored : TRY_EVAL(storage.month_starts(month))) {
         // Grouped with one before it in this month: no longer listed.
+        auto const      fit = fs::path { stored.sidecar }.replace_extension(".fit");
         std::error_code ec { };
-        if (!fs::exists(fs::path { stored.sidecar }.replace_extension(".fit"), ec)) {
+        if (!fs::exists(fit, ec)) {
             continue;
         }
-        if (auto grouped = TRY_EVAL(group_new(storage, stored.start)); grouped) {
+        if (auto grouped = TRY_EVAL(group_listed(storage, fit)); grouped) {
             ret.push_back(std::move(*grouped));
         }
     }

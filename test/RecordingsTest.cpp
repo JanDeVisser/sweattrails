@@ -509,6 +509,7 @@ int main()
     test_has_activity_across_months();
     test_decode_prefer();
     test_activity_id_of();
+    test_group_month_filed_elsewhere();
     test_inbox_candidate_filed_elsewhere();
     test_former_main_with_folder();
     test_main_from_folder();
