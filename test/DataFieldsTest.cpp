@@ -1180,6 +1180,10 @@ void test_compare_banner()
     auto const alone = compare_banner(t.activity, shown, std::nullopt);
     CHECK(!alone.empty() && alone[0].text == "Pwr 245 / – W");
     CHECK(compare_banner(t.activity, record { }, std::nullopt).empty());
+    // The smoothing's 0 at the start of the other's heart rate isn't one.
+    other.heart_rate = 0;
+    auto const starting = compare_banner(t.activity, shown, other);
+    CHECK(starting.size() == 3 && starting[1].text == "HR 142 / – bpm");
 }
 
 // Review finding 1: a difference that rounds to 0 from below comes out as

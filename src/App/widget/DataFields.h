@@ -81,6 +81,10 @@ struct GraphLabel {
     Color       color { };
 };
 
+// A heart rate of 0 isn't one: the smoothing for the graph writes it into
+// the first records.
+[[nodiscard]] std::optional<u8> real_heart_rate(record const &rec);
+
 // The banner under the cursor while comparing: "Pwr 245 / 238 W",
 // "HR 142 / 145 bpm", "Cad 88 / 87 rpm", for what either one has.
 std::vector<GraphLabel> compare_banner(Activity const &activity, record const &shown, std::optional<record> const &other);

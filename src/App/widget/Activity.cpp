@@ -580,11 +580,11 @@ void ActivityGraph::draw_compared(int width, int height)
         if (ix < compared.pairs.size() && compared.pairs[ix] && *compared.pairs[ix] < other.records.size()) {
             auto const &o = other.records[*compared.pairs[ix]];
             theirs[0].to(image, x, from_zero(cadence, o.cadence));
-            theirs[1].to(image, x, over_range(hr, o.heart_rate));
+            theirs[1].to(image, x, over_range(hr, real_heart_rate(o)));
             theirs[2].to(image, x, from_zero(power, o.power));
         }
         ours[0].to(image, x, from_zero(cadence, rec.cadence));
-        ours[1].to(image, x, over_range(hr, rec.heart_rate));
+        ours[1].to(image, x, over_range(hr, real_heart_rate(rec)));
         ours[2].to(image, x, from_zero(power, rec.power));
     }
     texture = LoadTextureFromImage(image);

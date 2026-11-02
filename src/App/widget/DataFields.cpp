@@ -408,6 +408,11 @@ void add_compared_lines(std::vector<DataLine> &lines, Activity const &activity, 
 
 }
 
+std::optional<u8> real_heart_rate(record const &rec)
+{
+    return rec.heart_rate && *rec.heart_rate > 0 ? rec.heart_rate : std::nullopt;
+}
+
 std::vector<GraphLabel> compare_banner(Activity const &activity, record const &shown, std::optional<record> const &other)
 {
     std::vector<GraphLabel> ret;
@@ -429,7 +434,7 @@ std::vector<GraphLabel> compare_banner(Activity const &activity, record const &s
     auto const  nothing = std::optional<record> { };
     auto const &o = other ? other : nothing;
     add("Pwr", both(shown.power, o ? o->power : std::nullopt), "W", PowerColor);
-    add("HR", both(shown.heart_rate, o ? o->heart_rate : std::nullopt), "bpm", HeartRateColor);
+    add("HR", both(real_heart_rate(shown), o ? real_heart_rate(*o) : std::nullopt), "bpm", HeartRateColor);
     auto const cadence = cadence_unit(activity);
     add("Cad", both(shown.cadence, o ? o->cadence : std::nullopt), cadence.unit, CadenceColor, cadence.scale);
     return ret;
