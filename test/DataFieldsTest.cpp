@@ -642,6 +642,11 @@ void test_device_name()
     CHECK_EQ(device_name(t.activity), "favero electronics Assioma");
     t.activity.manufacturer = { };
     CHECK_EQ(device_name(t.activity), "Assioma");
+    // A maker FIT's profile doesn't have isn't named "Unknown".
+    t.activity.manufacturer = static_cast<FIT::manufacturer>(65000);
+    CHECK_EQ(device_name(t.activity), "Assioma");
+    t.activity.product_name.clear();
+    CHECK_EQ(device_name(t.activity), "");
 }
 
 void test_summary_without_distance_or_tss()

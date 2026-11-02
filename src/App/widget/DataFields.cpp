@@ -280,8 +280,9 @@ std::string device_name(Activity const &activity)
     if (activity.manufacturer) {
         if (auto const known = makers.find(*activity.manufacturer); known != makers.end()) {
             maker = known->second;
-        } else {
-            maker = FIT::tag(*activity.manufacturer);
+        } else if (std::string_view const tag = FIT::tag(*activity.manufacturer); FIT::manufacturer_by_name(tag) == activity.manufacturer) {
+            // FIT's name, if its profile has the maker: not "Unknown".
+            maker = tag;
             std::ranges::replace(maker, '_', ' ');
         }
     }

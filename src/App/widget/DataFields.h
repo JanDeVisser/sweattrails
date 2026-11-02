@@ -39,7 +39,7 @@ std::string format_moving_time(Duration const &moving);
 
 // The device that recorded the activity: its maker, with the product name
 // if the FIT file has one, e.g. "Wahoo ELEMNT ROAM". Empty if the file
-// doesn't say.
+// doesn't say, or names a maker FIT doesn't know.
 std::string device_name(Activity const &activity);
 
 // The line under the activity's title: the distance, the active time and
