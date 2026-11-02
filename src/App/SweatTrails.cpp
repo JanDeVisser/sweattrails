@@ -1445,15 +1445,16 @@ void cmd_split_recordings(pSweatTrails const &sweattrails, JSONValue const &)
 
 // If grouping moved the activity on display into a folder, its main
 // recording is shown instead, on the activity screen even if it's behind
-// the totals.
-void show_main_if_moved(pSweatTrails const &the, std::vector<Grouped> const &groups)
+// the totals. If it's the main one, it's loaded again, as it has more
+// recordings now.
+void show_main_again(pSweatTrails const &the, std::vector<Grouped> const &groups)
 {
     for (auto const &group : groups) {
         auto const moved = std::ranges::any_of(group.hidden, [&the](i64 start) {
             return the->last_activity.name == std::format("{}", start);
         });
         auto const id = activity_id_of(group.main);
-        if (!moved || !id) {
+        if (!id || !(moved || id->name == the->last_activity.name)) {
             continue;
         }
         auto loaded = load_to_show(the->storage, *id);
@@ -1660,7 +1661,7 @@ void SweatTrails::notif_recordings_grouped(Notification::Payload const &data)
 {
     auto const &grouped = std::get<RecordingsGrouped>(data);
     auto const  the = SweatTrails::the();
-    show_main_if_moved(the, grouped.groups);
+    show_main_again(the, grouped.groups);
     if (!grouped.once_over) {
         return;
     }
