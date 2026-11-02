@@ -436,19 +436,50 @@ void SweatTrails::job_group_recordings(Job::Payload const &data)
     group_recordings_chunk(SweatTrails::the(), std::get<GroupingProgress>(data));
 }
 
+// Both jobs carry a RecordingsRequest: theirs is by its index, a job
+// type's payload one after its value.
+template<JobType Type>
+RecordingsRequest const &recordings_request(Job::Payload const &data)
+{
+    return std::get<static_cast<size_t>(Type) + 1>(data);
+}
+
 void SweatTrails::job_split_recordings(Job::Payload const &data)
 {
-    auto const &request = std::get<SplitRequest>(data);
+    auto const &request = recordings_request<JobType::SplitRecordings>(data);
     auto const  the = SweatTrails::the();
     auto const  moved = split_recordings(the->storage, request.fit);
     if (auto const rescanned = the->storage.rescan(); !rescanned) {
         warning(ST, "Can't read the store after splitting: {}", rescanned.error().to_string());
     }
-    the->notify<NotificationType::RecordingsSplit>(RecordingsSplit {
-        .id = request.id,
-        .moved = moved.value_or(0),
-        .error = moved ? std::string { } : moved.error().to_string(),
-    });
+    if (!moved) {
+        the->notify<NotificationType::RecordingsChanged>(RecordingsChanged {
+            .id = request.id,
+            .done = "Not all the recordings were split",
+            .error = std::format("Couldn't split the recordings: {}", moved.error().to_string()),
+        });
+        return;
+    }
+    the->notify<NotificationType::RecordingsChanged>(RecordingsChanged { .id = request.id, .done = std::format("Split into {} activities", *moved + 1) });
+}
+
+void SweatTrails::job_group_with_main(Job::Payload const &data)
+{
+    auto const &request = recordings_request<JobType::GroupWithMain>(data);
+    auto const  the = SweatTrails::the();
+    auto const  grouped = group_with_main(the->storage, request.fit);
+    if (auto const rescanned = the->storage.rescan(); !rescanned) {
+        warning(ST, "Can't read the store after grouping: {}", rescanned.error().to_string());
+    }
+    if (!grouped) {
+        the->notify<NotificationType::RecordingsChanged>(RecordingsChanged {
+            .id = request.id,
+            .done = "Not all the recordings were grouped",
+            .error = std::format("Couldn't group the recordings: {}", grouped.error().to_string()),
+        });
+        return;
+    }
+    the->notify<NotificationType::RecordingsChanged>(RecordingsChanged { .id = request.id, .done = "This is the main recording now" });
 }
 
 void SweatTrails::job_download(Job::Payload const &data)
@@ -1435,12 +1466,41 @@ void cmd_split_recordings(pSweatTrails const &sweattrails, JSONValue const &)
         message_box("This activity has one recording.");
         return;
     }
-    auto split = [request = SplitRequest { .id = activity.id, .fit = fit_path(activity) }](pSweatTrails const &st, QueryOption selection) {
+    auto split = [request = RecordingsRequest { .id = activity.id, .fit = fit_path(activity) }](pSweatTrails const &st, QueryOption selection) {
         if (selection == QueryOption::QueryOptionYes) {
             st->schedule<JobType::SplitRecordings>(request);
         }
     };
     query_box(sweattrails, std::format("Split the {} recordings into separate activities?", activity.recordings), split, QueryOptionYesNo);
+}
+
+// Ctrl+J: groups the activity on display with the activities that are
+// recordings of the same one, those split before too, with it as the main
+// one.
+void cmd_group_recordings(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    auto const displayed = activity_for_keys(sweattrails);
+    if (!displayed) {
+        return;
+    }
+    auto const &activity = displayed->activity;
+    auto const  fit = fit_path(activity);
+    auto const  others = recordings_to_group(sweattrails->storage, fit);
+    if (!others) {
+        message_box(std::format("Can't group this activity's recordings: {}", others.error().to_string()));
+        return;
+    }
+    if (others->empty()) {
+        message_box("This activity has no other recordings.");
+        return;
+    }
+    auto group = [request = RecordingsRequest { .id = activity.id, .fit = fit }](pSweatTrails const &st, QueryOption selection) {
+        if (selection == QueryOption::QueryOptionYes) {
+            st->schedule<JobType::GroupWithMain>(request);
+        }
+    };
+    auto const count = others->size();
+    query_box(sweattrails, std::format("Group {} other {} with this one as the main one?", count, count == 1 ? "recording" : "recordings"), group, QueryOptionYesNo);
 }
 
 // If grouping moved the activity on display into a folder, its main
@@ -1676,14 +1736,13 @@ void SweatTrails::notif_recordings_grouped(Notification::Payload const &data)
     }
 }
 
-void SweatTrails::notif_recordings_split(Notification::Payload const &data)
+void SweatTrails::notif_recordings_changed(Notification::Payload const &data)
 {
-    auto const &split = std::get<RecordingsSplit>(data);
-    if (!split.error.empty()) {
-        message_box(std::format("Couldn't split the recordings: {}", split.error));
+    auto const &changed = std::get<RecordingsChanged>(data);
+    if (!changed.error.empty()) {
+        message_box(changed.error);
     }
-    show_again(SweatTrails::the(), split.id,
-        split.error.empty() ? std::format("Split into {} activities", split.moved + 1) : std::string { "Not all the recordings were split" });
+    show_again(SweatTrails::the(), changed.id, changed.done);
 }
 
 void SweatTrails::files_dropped(std::vector<std::string> const &paths)
@@ -1858,6 +1917,9 @@ void SweatTrails::initialize()
 #endif
     bus.add_task<SweatTrails>("st-split-recordings", self(), cmd_split_recordings)
         .bind(split_recordings_key)
+        .when(on_activity_screen);
+    bus.add_task<SweatTrails>("st-group-recordings", self(), cmd_group_recordings)
+        .bind(KeyCombo { KEY_J, KModControl })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-overlay-preview", self(), cmd_overlay_preview)
         .bind(KeyCombo { KEY_O, KModControl })

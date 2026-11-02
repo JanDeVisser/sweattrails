@@ -1,6 +1,6 @@
 # One activity, several recordings
 
-Status: Done
+Status: In progress, on branch feature/31-multiple-recordings
 
 <!--
 Status is one of:
@@ -78,7 +78,11 @@ The feature is split in three, each useful on its own:
   any of them is from. If none is, or two are from the same device, it's
   the longest of those, by elapsed time, which covers most of the
   activity. Without the setting, it's the longest.
-- Choosing another by hand is in `32-switching-recordings.md`.
+- A main one the user chose with Ctrl+J (below) stays the main one: a
+  recording from a preferred device that comes in later joins the group
+  without taking its place.
+- Choosing another by hand, among the recordings, is in
+  `32-switching-recordings.md`.
 
 ### Keeping them together
 
@@ -133,6 +137,14 @@ The feature is split in three, each useful on its own:
   filing doesn't group them back. An activity of one recording says so.
 - The main one keeps its title, laps and fills; each recording keeps its
   own sidecar.
+- **Ctrl+J** groups the activity on display with the activities that
+  are recordings of the same one, by the rule above, with it as the main
+  one: to group again what was split, with another main one. It asks
+  "Group 2 other recordings with this one as the main one?". Activities
+  that were split are grouped too, and are no longer marked separate.
+  With none to group, it says "This activity has no other recordings."
+  *(Added after the review, as a change request: a split couldn't be
+  undone.)*
 
 ### README
 
@@ -173,6 +185,10 @@ None.
   error in a message box at start, as an unreadable settings file is, and
   the app starts without preferred devices. Not on the status line: the
   once over the store would replace it there.
+- **The main one chosen by hand** is the sidecar key
+  `"recordings": "main"`. `main_recording()` chooses it before the
+  preferred devices. Ctrl+J clears the keys of all the recordings it
+  groups, and sets it on the one on display.
 - **Splitting** is a job too, as moving files rebuilds the store's
   index, which only jobs may do (`Storage`'s threading note).
 
@@ -201,6 +217,11 @@ None.
   month's activities, with the months around it as candidates, grouped.
 - **`split_recordings(storage, main_fit)`**: moves the recordings back
   where the inbox would file them, and marks them all separate.
+- **`recordings_to_group(storage, main_fit)`**: for Ctrl+J's question,
+  the recordings it would group with the activity: the listed activities
+  that are the same one, separate or not, their recordings, and its own.
+  **`group_with_main(storage, main_fit)`** groups them, with it as the
+  main one.
 - **`manufacturer_by_name(name)`** in `fit/FIT.*`, next to `tag()`.
 
 ### The store (`storage/Storage.*`)
@@ -226,6 +247,8 @@ None.
   renames), after "Split the 2 recordings into
   separate activities?". When it's done, the activity is shown again and
   the summary file updated.
+- `JobType::GroupWithMain`, from `st-group-recordings` (Ctrl+J,
+  `.when(on_activity_screen)`), after its question, the same way.
 - A notification after grouping, from the inbox or the once over the
   store, with the main ones of what moved: if the activity on display
   was moved into a folder, its main one is shown.
@@ -246,6 +269,10 @@ None.
   puts them back and marks them, and filing a fourth that overlaps
   doesn't group them again; `group_month()` over a store filed before
   this feature.
+- `RecordingsTest`: `main_recording()` with one chosen by hand;
+  `group_with_main()` after a split, with the other one as the main one,
+  the marks cleared and set; a preferred recording coming in after it
+  joins without taking its place; none to group.
 - `DataFieldsTest`: "· 2 recordings" in the summary line.
 - By hand: the first start on Jan's store, the count it reports, a
   compare ride listed once, and Ctrl+Shift+R.

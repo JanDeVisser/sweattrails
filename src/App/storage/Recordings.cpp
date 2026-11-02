@@ -23,6 +23,7 @@ namespace {
 
 constexpr std::string_view RecordingsKey = "recordings";
 constexpr std::string_view Separate = "separate";
+constexpr std::string_view Chosen = "main";
 constexpr std::string_view TitleKey = "title";
 constexpr std::string_view FolderSuffix = ".recordings";
 
@@ -93,6 +94,18 @@ std::expected<void, LibCError> mark_separate(fs::path const &fit)
     return update_sidecar(sidecar_of(fit), [](JSONValue &json) { json.set(RecordingsKey, JSONValue { std::string { Separate } }); });
 }
 
+// Sets the sidecar's "recordings" to `value`, or removes it for none.
+std::expected<void, LibCError> mark(fs::path const &fit, std::optional<std::string_view> value)
+{
+    return update_sidecar(sidecar_of(fit), [value](JSONValue &json) {
+        if (value) {
+            json.set(RecordingsKey, JSONValue { std::string { *value } });
+        } else {
+            json.erase(RecordingsKey);
+        }
+    });
+}
+
 }
 
 std::optional<RecordingInfo> recording_info(Storage &storage, fs::path const &fit)
@@ -112,7 +125,9 @@ std::optional<RecordingInfo> recording_info(Storage &storage, fs::path const &fi
         .manufacturer = activity.manufacturer,
     };
     if (auto const sidecar = read_sidecar(fit); sidecar) {
-        ret.separate = sidecar->try_get<std::string>(RecordingsKey).value_or("") == Separate;
+        auto const marked = sidecar->try_get<std::string>(RecordingsKey).value_or("");
+        ret.separate = marked == Separate;
+        ret.chosen = marked == Chosen;
     }
     return ret;
 }
@@ -152,6 +167,9 @@ size_t main_recording(std::vector<RecordingInfo> const &recordings, std::vector<
 {
     if (recordings.empty()) {
         return 0;
+    }
+    if (auto const chosen = std::ranges::find_if(recordings, &RecordingInfo::chosen); chosen != recordings.end()) {
+        return static_cast<size_t>(chosen - recordings.begin());
     }
     std::vector<size_t> candidates;
     for (auto const device : prefer) {
@@ -272,6 +290,33 @@ StorageResult<Grouped> group_recordings(Storage &storage, std::vector<RecordingI
 
 namespace {
 
+// The listed activities that are recordings of the same activity as
+// `info`, with their recordings: anything starting from a day before it
+// to its end can overlap it. Those split by the user only if
+// `with_separate`.
+StorageResult<std::vector<RecordingInfo>> same_activities(Storage &storage, RecordingInfo const &info, bool with_separate)
+{
+    std::vector<RecordingInfo> ret;
+    constexpr i64              Day = 24 * 60 * 60;
+    for (auto const &stored : TRY_EVAL(storage.activity_starts(info.start - Day, info.start + info.elapsed))) {
+        if (stored.start == info.start) {
+            continue;
+        }
+        auto const fit = fs::path { stored.sidecar }.replace_extension(".fit");
+        auto const other = recording_info(storage, fit);
+        if (!other || (other->separate && !with_separate) || !same_activity(info, *other)) {
+            continue;
+        }
+        ret.push_back(*other);
+        for (auto const &recording : recordings_of(fit)) {
+            if (auto const recorded = recording_info(storage, recording); recorded) {
+                ret.push_back(*recorded);
+            }
+        }
+    }
+    return ret;
+}
+
 // group_new() for the activity whose FIT file is `fit`, wherever it's
 // filed: the once over the store finds activities filed in another time
 // zone's month too.
@@ -281,25 +326,8 @@ StorageResult<std::optional<Grouped>> group_listed(Storage &storage, fs::path co
     if (!filed || filed->separate) {
         return std::optional<Grouped> { };
     }
-    auto const                 start = filed->start;
     std::vector<RecordingInfo> group { *filed };
-    constexpr i64              Day = 24 * 60 * 60;
-    for (auto const &stored : TRY_EVAL(storage.activity_starts(start - Day, start + filed->elapsed))) {
-        if (stored.start == start) {
-            continue;
-        }
-        auto const fit = fs::path { stored.sidecar }.replace_extension(".fit");
-        auto const other = recording_info(storage, fit);
-        if (!other || other->separate || !same_activity(*filed, *other)) {
-            continue;
-        }
-        group.push_back(*other);
-        for (auto const &recording : recordings_of(fit)) {
-            if (auto const info = recording_info(storage, recording); info) {
-                group.push_back(*info);
-            }
-        }
-    }
+    std::ranges::move(TRY_EVAL(same_activities(storage, *filed, false)), std::back_inserter(group));
     if (group.size() == 1) {
         return std::optional<Grouped> { };
     }
@@ -328,6 +356,50 @@ StorageResult<std::vector<Grouped>> group_month(Storage &storage, Month const &m
         }
     }
     return ret;
+}
+
+StorageResult<std::vector<RecordingInfo>> recordings_to_group(Storage &storage, fs::path const &main_fit)
+{
+    auto const main = recording_info(storage, main_fit);
+    if (in_folder(main_fit) || !main) {
+        return std::unexpected(StorageError { LibCError { "`{}` isn't the main recording of an activity", main_fit.filename().string() } });
+    }
+    auto ret = TRY_EVAL(same_activities(storage, *main, true));
+    for (auto const &recording : recordings_of(main_fit)) {
+        if (auto const info = recording_info(storage, recording); info) {
+            ret.push_back(*info);
+        }
+    }
+    return ret;
+}
+
+StorageResult<Grouped> group_with_main(Storage &storage, fs::path const &main_fit)
+{
+    auto       others = TRY_EVAL(recordings_to_group(storage, main_fit));
+    auto const main = recording_info(storage, main_fit);
+    if (!main) {
+        return std::unexpected(StorageError { LibCError { "`{}` can't be read", main_fit.filename().string() } });
+    }
+    if (others.empty()) {
+        return Grouped { .main = main_fit };
+    }
+    // Before they move: the sidecars go along.
+    for (auto &other : others) {
+        if (other.separate || other.chosen) {
+            if (auto const cleared = mark(other.fit, { }); !cleared) {
+                return std::unexpected(StorageError { cleared.error() });
+            }
+        }
+        other.separate = other.chosen = false;
+    }
+    if (auto const marked = mark(main_fit, Chosen); !marked) {
+        return std::unexpected(StorageError { marked.error() });
+    }
+    std::vector<RecordingInfo> group { *main };
+    group.front().separate = false;
+    group.front().chosen = true;
+    std::ranges::move(others, std::back_inserter(group));
+    return group_recordings(storage, group);
 }
 
 StorageResult<size_t> split_recordings(Storage &storage, fs::path const &main_fit)

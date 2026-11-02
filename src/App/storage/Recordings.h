@@ -39,6 +39,7 @@ struct RecordingInfo {
     std::optional<FIT::sub_sport>    sub_sport { };
     std::optional<FIT::manufacturer> manufacturer { };
     bool                             separate { false }; // Split by the user: never grouped again
+    bool                             chosen { false };   // Made the main one by the user, with Ctrl+J
 };
 
 // What the session of a FIT file in the store says, and its sidecar. None
@@ -54,8 +55,9 @@ struct RecordingInfo {
 [[nodiscard]] fs::path              recordings_dir(fs::path const &main_fit);
 [[nodiscard]] std::vector<fs::path> recordings_of(fs::path const &main_fit);
 
-// The main one of `recordings`: from the first of the preferred devices any
-// is from, else, or among several from one, the longest.
+// The main one of `recordings`: the one the user chose, else the one from
+// the first of the preferred devices any is from, else, or among several
+// from one, the longest.
 [[nodiscard]] size_t main_recording(std::vector<RecordingInfo> const &recordings, std::vector<FIT::manufacturer> const &prefer);
 
 // The settings' `"recordings": { "prefer": [...] }`, FIT's manufacturer
@@ -87,6 +89,17 @@ StorageResult<std::optional<Grouped>> group_new(Storage &storage, i64 start);
 // group_new() for each of the month's activities, for the once over the
 // store. The groups it made.
 StorageResult<std::vector<Grouped>> group_month(Storage &storage, Month const &month);
+
+// For Ctrl+J: the recordings group_with_main() would group with the
+// listed activity `main_fit`. The listed activities that are recordings
+// of the same activity, also those split by the user, their recordings,
+// and its own. An error if `main_fit` isn't a listed activity's.
+StorageResult<std::vector<RecordingInfo>> recordings_to_group(Storage &storage, fs::path const &main_fit);
+
+// Groups recordings_to_group() with `main_fit` as the main one, chosen by
+// the user, so that it stays the main one. None of them is separate any
+// more.
+StorageResult<Grouped> group_with_main(Storage &storage, fs::path const &main_fit);
 
 // Moves the main recording's others back to where the inbox would file
 // them, as activities of their own, and marks them all as separate. How

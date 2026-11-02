@@ -133,6 +133,10 @@ void test_main_recording()
     // Two from the preferred device: the longer of them.
     std::vector<RecordingInfo> const three { ride(1000, 4000, manufacturer::wahoo_fitness), ride(1000, 3000, manufacturer::garmin), ride(1000, 3500, manufacturer::garmin) };
     CHECK_EQ(main_recording(three, { manufacturer::garmin }), 2uz);
+    // One chosen by the user, before the preferred devices and the longest.
+    auto chosen = three;
+    chosen[0].chosen = true;
+    CHECK_EQ(main_recording(chosen, { manufacturer::garmin }), 0uz);
 }
 
 // The Wahoo's recording comes in first, the Garmin's a minute later
@@ -231,6 +235,71 @@ void test_split_after_another_became_main()
     CHECK(!split.has_value());
     CHECK_EQ(recordings_of(fit_of(store, 60)).size(), 2uz);
     CHECK_EQ(listed(store), 1uz);
+}
+
+// Split, then grouped again with Ctrl+J with the other one as the main
+// one: it stays the main one when a preferred recording comes in.
+void test_group_with_main()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    CHECK(split_recordings(store.storage, fit_of(store, 60)).has_value());
+    CHECK_EQ(listed(store), 2uz);
+
+    auto const wahoo = fit_of(store, 0);
+    auto const to_group = recordings_to_group(store.storage, wahoo);
+    CHECK(to_group.has_value() && to_group->size() == 1);
+    auto const grouped = group_with_main(store.storage, wahoo);
+    CHECK(grouped.has_value());
+    if (grouped) {
+        CHECK(grouped->main == wahoo);
+        CHECK(grouped->hidden == std::vector { unix_start(60) });
+    }
+    CHECK_EQ(listed(store), 1uz);
+    CHECK_EQ(sidecar_value(wahoo, "recordings"), "main");
+    auto const garmin = recordings_dir(wahoo) / std::format("{}.fit", unix_start(60));
+    CHECK(fs::exists(garmin));
+    CHECK_EQ(sidecar_value(garmin, "recordings"), "");
+
+    // A Garmin recording that comes in later joins without taking its
+    // place.
+    record(store, Garmin, 30, 3500);
+    file(store);
+    CHECK_EQ(listed(store), 1uz);
+    CHECK(fs::exists(wahoo));
+    CHECK_EQ(recordings_of(wahoo).size(), 2uz);
+
+    // Nothing left to group: its own recordings are already with it.
+    auto const again = recordings_to_group(store.storage, wahoo);
+    CHECK(again.has_value() && again->size() == 2);
+    CHECK(group_with_main(store.storage, wahoo).has_value());
+    CHECK_EQ(recordings_of(wahoo).size(), 2uz);
+    CHECK_EQ(listed(store), 1uz);
+}
+
+// Ctrl+J on an activity nothing else is a recording of, or on one in a
+// folder.
+void test_group_with_main_nothing_to_group()
+{
+    Test::TempStore store;
+    record(store, Wahoo, 0, 3600);
+    record(store, Garmin, 10, 3600, 1); // A run
+    file(store);
+    auto const to_group = recordings_to_group(store.storage, fit_of(store, 0));
+    CHECK(to_group.has_value() && to_group->empty());
+    auto const grouped = group_with_main(store.storage, fit_of(store, 0));
+    CHECK(grouped.has_value() && grouped->hidden.empty());
+    CHECK_EQ(sidecar_value(fit_of(store, 0), "recordings"), "");
+    CHECK_EQ(listed(store), 2uz);
+
+    record(store, Zwift, 30, 3500);
+    file(store);
+    auto const in_folder = recordings_dir(fit_of(store, 0)) / std::format("{}.fit", unix_start(30));
+    CHECK(fs::exists(in_folder));
+    CHECK(!recordings_to_group(store.storage, in_folder).has_value());
 }
 
 // A store filed before there were groups, once over.
@@ -538,6 +607,8 @@ int main()
     test_filing_by_the_longest();
     test_split();
     test_split_after_another_became_main();
+    test_group_with_main();
+    test_group_with_main_nothing_to_group();
     test_group_month();
     test_has_activity_across_months();
     test_has_activity_filed_elsewhere();

@@ -142,7 +142,9 @@ otherwise the longest:
 
 If two activities were grouped that aren't one, Ctrl+Shift+R (Ctrl+Alt+R
 off macOS) splits them into separate activities again, and they aren't
-grouped again.
+grouped again. Ctrl+J groups the activity on display with its other
+recordings, those split before too, with it as the main one. It stays
+the main one when a recording from a preferred device comes in later.
 
 ## Totals
 

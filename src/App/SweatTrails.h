@@ -109,8 +109,9 @@ struct GroupingProgress {
     size_t                            grouped { 0 };
 };
 
-// Ctrl+Shift+R: the activity whose recordings to split, and its FIT file.
-struct SplitRequest {
+// Ctrl+Shift+R and Ctrl+J: the activity whose recordings to split or
+// group, and its FIT file.
+struct RecordingsRequest {
     ActivityID            id { };
     std::filesystem::path fit { };
 };
@@ -127,7 +128,8 @@ struct SplitRequest {
     S(PrepareZwiftWorld, ZwiftWorld)      \
     S(UpdateSummaries, SummaryProgress)   \
     S(GroupRecordings, GroupingProgress)  \
-    S(SplitRecordings, SplitRequest)
+    S(SplitRecordings, RecordingsRequest) \
+    S(GroupWithMain, RecordingsRequest)
 
 enum class JobType {
     JOBTYPE(ENUMVALUE2)
@@ -193,11 +195,11 @@ struct RecordingsGrouped {
     std::string          error { };
 };
 
-// Sent when Ctrl+Shift+R's job is done: how many recordings it moved out,
-// or why it couldn't.
-struct RecordingsSplit {
+// Sent when Ctrl+Shift+R's or Ctrl+J's job is done: what it did, for the
+// status line, or why it couldn't.
+struct RecordingsChanged {
     ActivityID  id { };
-    size_t      moved { 0 };
+    std::string done { };
     std::string error { };
 };
 
@@ -215,7 +217,7 @@ struct RecordingsSplit {
     S(ZwiftWorldReady, ZwiftWorldReady)     \
     S(SummariesUpdated, SummariesUpdated)   \
     S(RecordingsGrouped, RecordingsGrouped) \
-    S(RecordingsSplit, RecordingsSplit)
+    S(RecordingsChanged, RecordingsChanged)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -244,6 +246,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void job_update_summaries(Job::Payload const &data);
     static void job_group_recordings(Job::Payload const &data);
     static void job_split_recordings(Job::Payload const &data);
+    static void job_group_with_main(Job::Payload const &data);
 
     // The payload variant starts with a std::monostate, so a job type's
     // payload comes one after its value.
@@ -265,6 +268,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 job_update_summaries,
                 job_group_recordings,
                 job_split_recordings,
+                job_group_with_main,
             });
     }
 
@@ -287,7 +291,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_zwift_world_ready(Notification::Payload const &data);
     static void notif_summaries_updated(Notification::Payload const &data);
     static void notif_recordings_grouped(Notification::Payload const &data);
-    static void notif_recordings_split(Notification::Payload const &data);
+    static void notif_recordings_changed(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -308,7 +312,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_zwift_world_ready,
                 notif_summaries_updated,
                 notif_recordings_grouped,
-                notif_recordings_split,
+                notif_recordings_changed,
             });
     }
 
