@@ -1,6 +1,6 @@
 # Comparing the recordings of an activity
 
-Status: In review, on branch feature/33-comparing-recordings
+Status: Done
 
 <!--
 Status is one of:
@@ -322,3 +322,27 @@ Tests added by the Reviewer:
 - `DataFieldsTest.cpp`: `test_format_compared_zero` (1, fails),
   `test_compared_cadence_on_foot`, `test_data_fields_compared_without_values`.
 - `DisplayedActivityTest.cpp`: `test_comparison_of_a_lap_by_the_clock`.
+
+### Resolution
+
+1. Fixed: a rounded difference of zero prints as "+0", in the panel and
+   the lap table. `test_format_compared_zero` runs again.
+2. Fixed: a `Compared` of values never recorded at the same time is
+   marked `together = false`, and has no difference: "150 / 140 bpm".
+   `test_compare_never_together_has_no_difference` runs again.
+3. Fixed: compared cadence leaves out the records under
+   `PedalingCadence` or `PedalingPower`, as the activity's own does.
+   `test_compare_cadence_as_the_activity_does` runs again.
+4. Fixed: a heart rate of 0 counts as none on the compared graph and in
+   the banner (`real_heart_rate()`). The banner's part is tested in
+   `DataFieldsTest`; the graph is checked by hand.
+5. Fixed: `pair_records()` finds each record's pair with a binary search
+   and a signed difference. `test_pair_clock_set_back` runs again.
+6. Fixed: a column without a value breaks the graph's line, so a dropout
+   is a gap. Drawing: checked by hand.
+7. Left as it is, and documented: the compared maxima are of single
+   seconds both recorded. The Feature and the README say so.
+8. Fixed: `DisplayedActivity` keeps the last comparison until the lap or
+   range changes (tested in `DisplayedActivityTest`), and
+   `compare_if_on()` uses the recording shown before, or the one it was
+   compared with, rather than loading it again.
