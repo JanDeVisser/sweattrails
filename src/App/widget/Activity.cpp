@@ -495,10 +495,22 @@ ActivityDisplay::ActivityDisplay(pWidget const &parent)
 // size when the layout resizes it.
 void ActivityDisplay::set_activity(Activity const &activity)
 {
+    show(activity, false);
+}
+
+void ActivityDisplay::switch_recording(Activity const &recording)
+{
+    auto const lap = activity ? activity->lap : std::nullopt;
+    show(recording, true);
+    activity->keep_lap(lap);
+}
+
+void ActivityDisplay::show(Activity const &activity, bool keep_view)
+{
     this->activity = std::make_shared<DisplayedActivity>(activity);
     show_laps();
     data_display->set_activity(this->activity);
-    map->set_activity(this->activity);
+    map->set_activity(this->activity, keep_view);
     preview->set_activity(this->activity);
     graph->set_activity(this->activity);
     resize();

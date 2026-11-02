@@ -547,6 +547,20 @@ bool MapNavigator::resize(float width, float height)
     return true;
 }
 
+bool MapNavigator::keep(MapView const &before, bool was_moved)
+{
+    if (!was_moved) {
+        return false;
+    }
+    auto const zoom = std::clamp(before.zoom, min_zoom(), max_zoom());
+    auto const scale = world_size(zoom) / world_size(before.zoom);
+    view.zoom = zoom;
+    view.center = WorldPoint { .x = before.center.x * scale, .y = before.center.y * scale };
+    moved = true;
+    clamp_center();
+    return true;
+}
+
 u8 MapNavigator::min_zoom() const
 {
     return (fit_zoom > ZoomOutPastFit) ? static_cast<u8>(fit_zoom - ZoomOutPastFit) : u8 { 0 };

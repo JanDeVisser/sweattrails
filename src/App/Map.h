@@ -196,6 +196,11 @@ struct MapNavigator {
     // Zooms around `around`, relative to the viewport, or its middle.
     bool zoom_by(int steps, std::optional<Vector2> around = { });
     bool whole_route();
+    // After start() on another recording of the activity: the view the
+    // user had moved to before, `before`, at a zoom the new route allows,
+    // its middle on the new route. The whole new route if they hadn't
+    // moved it. Returns whether the view changed.
+    bool keep(MapView const &before, bool was_moved);
     // The whole route again at the new size, unless the user moved the
     // map: then the same center and zoom.
     bool resize(float width, float height);

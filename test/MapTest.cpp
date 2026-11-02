@@ -417,6 +417,37 @@ MapNavigator started()
     return navigator;
 }
 
+// Tab to another recording of the activity: a route a little to the east.
+void test_navigator_keeps_the_view()
+{
+    Box const other { .sw = { .lat = 43.62f, .lon = -79.449f }, .ne = { .lat = 43.67f, .lon = -79.349f } };
+    auto      navigator = started();
+    CHECK(navigator.zoom_by(2));
+    auto const before = navigator.view;
+    CHECK(navigator.start(other, MapArea.width, MapArea.height));
+    CHECK(navigator.keep(before, true));
+    CHECK_EQ(navigator.view.zoom, before.zoom);
+    CHECK(near(navigator.view.center.x, before.center.x, 1e-6) && near(navigator.view.center.y, before.center.y, 1e-6));
+    CHECK(navigator.moved);
+
+    // Not moved: the whole new route.
+    auto       fresh = started();
+    auto const whole = fresh.view;
+    CHECK(fresh.start(other, MapArea.width, MapArea.height));
+    CHECK(!fresh.keep(whole, false));
+    CHECK(!fresh.moved);
+
+    // Off the new route: its middle is put back on it.
+    Box const far { .sw = { .lat = 44.62f, .lon = -79.45f }, .ne = { .lat = 44.67f, .lon = -79.35f } };
+    auto      zoomed = started();
+    CHECK(zoomed.zoom_by(2));
+    auto const near_toronto = zoomed.view;
+    CHECK(zoomed.start(far, MapArea.width, MapArea.height));
+    CHECK(zoomed.keep(near_toronto, true));
+    auto const middle = world_coordinates(zoomed.view.center, zoomed.view.zoom);
+    CHECK(middle.lat >= 44.6f);
+}
+
 void test_navigator_wheel_zooms_around_mouse()
 {
     auto       navigator = started();
@@ -878,6 +909,7 @@ int main()
     test_next_download();
     test_cover_with_ancestors();
     test_cover_with_children();
+    test_navigator_keeps_the_view();
     test_navigator_wheel_zooms_around_mouse();
     test_navigator_zoom_limits();
     test_navigator_drag_pans();
