@@ -53,7 +53,9 @@ struct Comparison {
 // The comparison over `shown`'s records [first, end), as recorded, with
 // `other`'s paired with them by `pairs`. Each number only counts the
 // records where both have its value. Cadence leaves out the seconds where
-// either one isn't pedaling. NP takes more than 30 of those seconds.
+// either one isn't pedaling. NP takes more than 30 of those seconds. A
+// value they never both have is each one's own, where it has it, over the
+// other's records paired with [first, end): the line then says "245 / –".
 [[nodiscard]] Comparison compare(std::span<FIT::record const> shown, std::span<FIT::record const> other, std::span<std::optional<size_t> const> pairs, size_t first, size_t end);
 
 }

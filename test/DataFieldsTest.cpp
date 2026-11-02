@@ -1088,6 +1088,100 @@ void test_hr_load_is_of_the_recorded_heart_rate()
     CHECK(t.activity.laps[0].segment.hr_load == t.activity.segment.hr_load);
 }
 
+void test_format_compared()
+{
+    CHECK_EQ(format_compared(Compared { .shown = 245, .other = 238 }, "W"), "245 / 238 W · +7 W (+3%)");
+    CHECK_EQ(format_compared(Compared { .shown = 230, .other = 240 }, "W"), "230 / 240 W · -10 W (-4%)");
+    CHECK_EQ(format_compared(Compared { .shown = 245 }, "W"), "245 / – W");
+    CHECK_EQ(format_compared(Compared { .other = 140 }, "bpm"), "– / 140 bpm");
+    // A run's cadence is per leg in FIT.
+    CHECK_EQ(format_compared(Compared { .shown = 85, .other = 86 }, "spm", 2), "170 / 172 spm · -2 spm (-1%)");
+    CHECK_EQ(compared_suffix("Garmin"), ", compared with Garmin");
+    CHECK_EQ(compared_suffix(""), ", compared with another recording");
+}
+
+// While comparing, the comparison's lines take the place of the HR, power
+// and cadence lines.
+void test_data_fields_compared()
+{
+    auto records = records_with(60, set_power, 0, u16 { 200 }, u16 { 200 });
+    for (auto &rec : records) {
+        rec.heart_rate = 140;
+        rec.cadence = 85;
+    }
+    TestActivity t { sport::Cycling, records };
+    t.activity.segment.distance = 30000;
+    Comparison const comparison {
+        .avg_power = { .shown = 200, .other = 190 },
+        .max_power = { .shown = 200, .other = 195 },
+        .avg_cadence = { .shown = 85, .other = 85 },
+        .avg_hr = { .shown = 140 },
+    };
+    auto const               lines = data_fields(t.activity, t.activity.segment, 0, comparison);
+    std::vector<std::string> labels;
+    std::string              avg_power;
+    for (auto const &line : lines) {
+        for (auto const &field : { line.left, line.right }) {
+            if (field) {
+                labels.push_back(field->label);
+                if (field->label == "Avg Power") {
+                    avg_power = field->value;
+                }
+            }
+        }
+    }
+    CHECK(std::ranges::find(labels, "Avg Power") != labels.end());
+    CHECK(std::ranges::find(labels, "Avg HR") != labels.end());
+    CHECK(std::ranges::find(labels, "Avg Cadence") != labels.end());
+    // Not compared: no NP, no Max HR; and the panel's own power lines are gone.
+    CHECK(std::ranges::find(labels, "NP") == labels.end());
+    CHECK(std::ranges::find(labels, "Max HR") == labels.end());
+    CHECK(std::ranges::find(labels, "IF") == labels.end());
+    CHECK(std::ranges::find(labels, "Elapsed Time") != labels.end());
+    CHECK_EQ(avg_power, "200 / 190 W · +10 W (+5%)");
+}
+
+void test_lap_table_compared()
+{
+    auto         records = records_with(60, set_power, 0, u16 { 200 }, u16 { 200 });
+    TestActivity t { sport::Cycling, records, { { 0, 30, 10000, 1200 }, { 30, 60, 10000, 1200 } } };
+    t.activity.segment.distance = 20000;
+    std::vector<std::optional<Comparison>> const laps {
+        Comparison { .avg_power = { .shown = 200, .other = 193 } },
+        Comparison { .avg_power = { .shown = 200 } },
+    };
+    auto const table = lap_table(t.activity, laps);
+    CHECK(headers(table).back() == "Δ Power");
+    if (table.rows.size() == 2) {
+        CHECK_EQ(table.rows[0].back(), "+7 W");
+        CHECK_EQ(table.rows[1].back(), "");
+    }
+    CHECK(headers(lap_table(t.activity)).back() != "Δ Power");
+}
+
+void test_compare_banner()
+{
+    TestActivity t { sport::Cycling, std::vector<record>(1) };
+    record       shown { };
+    shown.power = 245;
+    shown.heart_rate = 142;
+    shown.cadence = 88;
+    record other { };
+    other.power = 238;
+    other.heart_rate = 145;
+    auto const banner = compare_banner(t.activity, shown, other);
+    CHECK_EQ(banner.size(), 3uz);
+    if (banner.size() == 3) {
+        CHECK_EQ(banner[0].text, "Pwr 245 / 238 W");
+        CHECK_EQ(banner[1].text, "HR 142 / 145 bpm");
+        CHECK_EQ(banner[2].text, "Cad 88 / – rpm");
+    }
+    // No record of the other's at that time.
+    auto const alone = compare_banner(t.activity, shown, std::nullopt);
+    CHECK(!alone.empty() && alone[0].text == "Pwr 245 / – W");
+    CHECK(compare_banner(t.activity, record { }, std::nullopt).empty());
+}
+
 int main()
 {
     test_range_max_at_is_the_index_passed();
@@ -1136,6 +1230,10 @@ int main()
     test_panel_has_no_distance_or_moving_time();
     test_summary();
     test_device_name();
+    test_format_compared();
+    test_data_fields_compared();
+    test_lap_table_compared();
+    test_compare_banner();
     test_summary_without_distance_or_tss();
     test_unrealistic_maxima_are_not_shown();
     test_only_times_without_data();

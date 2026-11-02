@@ -340,7 +340,90 @@ std::string range_summary(Activity const &activity, size_t first, size_t last, S
     return std::format("{}–{} · {}{}", since_start(from), since_start(to), segment_summary(activity, segment), recording_suffix(activity));
 }
 
-std::vector<DataLine> data_fields(Activity const &activity, Segment const &segment, size_t first_record)
+std::string format_compared(Compared const &compared, std::string_view unit, float64 scale)
+{
+    auto const value = [scale](std::optional<float64> const &v) {
+        return v ? std::format("{:.0f}", *v * scale) : std::string { "–" };
+    };
+    auto ret = std::format("{} / {} {}", value(compared.shown), value(compared.other), unit);
+    if (auto const difference = compared.difference(); difference) {
+        ret += std::format(" · {:+.0f} {}", std::round(*difference * scale), unit);
+        if (auto const percent = compared.percent(); percent) {
+            ret += std::format(" ({:+.0f}%)", std::round(*percent));
+        }
+    }
+    return ret;
+}
+
+std::string compared_suffix(std::string_view device)
+{
+    return std::format(", compared with {}", device.empty() ? std::string_view { "another recording" } : device);
+}
+
+namespace {
+
+struct CadenceUnit {
+    std::string_view unit;
+    float64          scale;
+};
+
+CadenceUnit cadence_unit(Activity const &activity)
+{
+    if (is_ride(activity)) {
+        return { "rpm", 1 };
+    }
+    if (is_on_foot(activity)) {
+        return { "spm", 2 };
+    }
+    return { "/min", 1 };
+}
+
+void add_compared_lines(std::vector<DataLine> &lines, Activity const &activity, Comparison const &comparison)
+{
+    auto const add = [&lines](std::string const &label, Compared const &compared, std::string_view unit, float64 scale = 1) {
+        if (compared.shown || compared.other) {
+            lines.push_back(DataLine { .left = DataField { label, format_compared(compared, unit, scale) } });
+        }
+    };
+    add("Avg Power", comparison.avg_power, "W");
+    add("Max Power", comparison.max_power, "W");
+    add("NP", comparison.np, "W");
+    auto const cadence = cadence_unit(activity);
+    add("Avg Cadence", comparison.avg_cadence, cadence.unit, cadence.scale);
+    add("Avg HR", comparison.avg_hr, "bpm");
+    add("Max HR", comparison.max_hr, "bpm");
+}
+
+}
+
+std::vector<GraphLabel> compare_banner(Activity const &activity, record const &shown, std::optional<record> const &other)
+{
+    std::vector<GraphLabel> ret;
+    auto const              both = [](auto const &a, auto const &b) {
+        return Compared {
+            .shown = a ? std::optional<float64> { static_cast<float64>(*a) } : std::nullopt,
+            .other = b ? std::optional<float64> { static_cast<float64>(*b) } : std::nullopt,
+        };
+    };
+    auto const add = [&ret](std::string_view label, Compared const &compared, std::string_view unit, Color color, float64 scale = 1) {
+        if (!compared.shown && !compared.other) {
+            return;
+        }
+        auto const value = [scale](std::optional<float64> const &v) {
+            return v ? std::format("{:.0f}", *v * scale) : std::string { "–" };
+        };
+        ret.push_back(GraphLabel { std::format("{} {} / {} {}", label, value(compared.shown), value(compared.other), unit), color });
+    };
+    auto const  nothing = std::optional<record> { };
+    auto const &o = other ? other : nothing;
+    add("Pwr", both(shown.power, o ? o->power : std::nullopt), "W", PowerColor);
+    add("HR", both(shown.heart_rate, o ? o->heart_rate : std::nullopt), "bpm", HeartRateColor);
+    auto const cadence = cadence_unit(activity);
+    add("Cad", both(shown.cadence, o ? o->cadence : std::nullopt), cadence.unit, CadenceColor, cadence.scale);
+    return ret;
+}
+
+std::vector<DataLine> data_fields(Activity const &activity, Segment const &segment, size_t first_record, std::optional<Comparison> const &comparison)
 {
     std::vector<DataLine> lines;
     // The distance and the moving time are in the summary.
@@ -348,9 +431,13 @@ std::vector<DataLine> data_fields(Activity const &activity, Segment const &segme
     if (segment.distance > 0) {
         add_speed_lines(lines, activity, segment, first_record);
     }
-    add_hr_lines(lines, segment, first_record);
-    add_power_lines(lines, activity, segment, first_record);
-    add_cadence_lines(lines, activity, segment, first_record);
+    if (comparison) {
+        add_compared_lines(lines, activity, *comparison);
+    } else {
+        add_hr_lines(lines, segment, first_record);
+        add_power_lines(lines, activity, segment, first_record);
+        add_cadence_lines(lines, activity, segment, first_record);
+    }
     add_elevation_lines(lines, segment, first_record);
     return lines;
 }
@@ -362,7 +449,7 @@ std::vector<DataLine> data_fields(Activity const &activity)
 
 // A column for each kind of data the activity has. The activity's segment
 // decides, so that a column doesn't come and go with the laps on screen.
-LapTable lap_table(Activity const &activity)
+LapTable lap_table(Activity const &activity, std::vector<std::optional<Comparison>> const &laps_compared)
 {
     using Cell = std::function<std::string(Segment const &)>;
     struct Column {
@@ -420,6 +507,13 @@ LapTable lap_table(Activity const &activity)
             row.push_back(column.cell(activity.laps[ix].segment));
         }
         table.rows.push_back(std::move(row));
+    }
+    if (!laps_compared.empty()) {
+        table.columns.push_back({ .header = "Δ Power", .right_aligned = true });
+        for (auto ix = 0uz; ix < table.rows.size(); ++ix) {
+            auto const difference = ix < laps_compared.size() && laps_compared[ix] ? laps_compared[ix]->avg_power.difference() : std::nullopt;
+            table.rows[ix].push_back(difference ? std::format("{:+.0f} W", std::round(*difference)) : std::string { });
+        }
     }
     return table;
 }

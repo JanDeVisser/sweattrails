@@ -146,7 +146,8 @@ void test_compare_np()
     CHECK(!short_one.np.shown && !short_one.np.other);
 }
 
-// A value only one of them has: there's nothing to compare.
+// A value only one of them has is that one's, with nothing to compare it
+// with: "250 / – W".
 void test_compare_one_sided()
 {
     auto shown = records(1000, 10);
@@ -156,12 +157,18 @@ void test_compare_one_sided()
         other[ix].heart_rate = 140;
     }
     auto const both = compare(shown, other, pair_records(shown, other), 0, 10);
-    CHECK(!both.avg_power.shown && !both.avg_power.other);
+    CHECK(near(both.avg_power.shown, 250) && !both.avg_power.other);
     CHECK(!both.avg_power.difference() && !both.avg_power.percent());
-    CHECK(!both.avg_hr.shown);
+    CHECK(!both.avg_hr.shown && near(both.avg_hr.other, 140));
+    CHECK(!both.np.shown && !both.np.other);
     // Not in time with each other at all.
     auto const apart = records(50000, 10);
-    CHECK(!compare(shown, apart, pair_records(shown, apart), 0, 10).avg_power.shown);
+    auto const alone = compare(shown, apart, pair_records(shown, apart), 0, 10);
+    CHECK(near(alone.avg_power.shown, 250) && !alone.avg_power.other);
+    // Once they both have it for one second, only that second counts.
+    other[3].power = 240;
+    auto const one = compare(shown, other, pair_records(shown, other), 0, 10);
+    CHECK(near(one.avg_power.shown, 250) && near(one.avg_power.other, 240));
 }
 
 void test_compared_sign()

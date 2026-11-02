@@ -13,6 +13,7 @@
 #include <Table.h>
 
 #include <storage/Activity.h>
+#include <storage/Comparison.h>
 
 namespace ST {
 
@@ -59,6 +60,31 @@ std::string lap_summary(Activity const &activity, size_t lap);
 // e.g. "0:42:10–1:05:33 · 23:23".
 std::string range_summary(Activity const &activity, size_t first, size_t last, Segment const &segment);
 
+// While comparing recordings (specs/33-comparing-recordings.md): one
+// number of both, e.g. "245 / 238 W · +7 W (+3%)", the one on display's
+// first. One that's missing is "–", with no difference. `scale` is for a
+// cadence on foot, which FIT has per leg.
+std::string format_compared(Compared const &compared, std::string_view unit, float64 scale = 1);
+
+// What the line under the title adds while comparing, after which
+// recording is shown: ", compared with Garmin".
+std::string compared_suffix(std::string_view device);
+
+// The graph's colors, which the banner under the cursor uses too. The
+// other recording's lines are a lighter shade of them.
+constexpr Color PowerColor = DARKBLUE;
+constexpr Color HeartRateColor = RED;
+constexpr Color CadenceColor = PURPLE;
+
+struct GraphLabel {
+    std::string text { };
+    Color       color { };
+};
+
+// The banner under the cursor while comparing: "Pwr 245 / 238 W",
+// "HR 142 / 145 bpm", "Cad 88 / 87 rpm", for what either one has.
+std::vector<GraphLabel> compare_banner(Activity const &activity, record const &shown, std::optional<record> const &other);
+
 // The lines of the activity's data panel, in two columns. Fields without
 // data in the activity are left out, and so are lines without fields.
 std::vector<DataLine> data_fields(Activity const &activity);
@@ -67,7 +93,9 @@ std::vector<DataLine> data_fields(Activity const &activity);
 // record `first_record`. The fields are chosen by the activity's sport, and
 // by the data the segment has. A field's mark_at is an index into the
 // activity's records.
-std::vector<DataLine> data_fields(Activity const &activity, Segment const &segment, size_t first_record);
+// While comparing, `comparison`'s lines take the place of the HR, power
+// and cadence lines.
+std::vector<DataLine> data_fields(Activity const &activity, Segment const &segment, size_t first_record, std::optional<Comparison> const &comparison = { });
 
 // The lap table's columns and rows: Lap and Time, and Distance, Pace or
 // Speed, Avg HR, Avg Power, Cadence and Climb if the activity has that
@@ -77,6 +105,7 @@ struct LapTable {
     std::vector<TableRow>    rows { };
 };
 
-LapTable lap_table(Activity const &activity);
+// While comparing, with the laps' comparisons, a "Δ Power" column: "+7 W".
+LapTable lap_table(Activity const &activity, std::vector<std::optional<Comparison>> const &laps_compared = { });
 
 }

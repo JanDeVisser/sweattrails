@@ -14,39 +14,82 @@ namespace ST {
 
 namespace {
 
-// Averages and maxima of one value over the paired records.
-struct Both {
-    float64 shown_sum { 0 };
-    float64 other_sum { 0 };
-    float64 shown_max { 0 };
-    float64 other_max { 0 };
+// The average and the maximum of a value.
+struct Stats {
+    float64 sum { 0 };
+    float64 max { 0 };
     size_t  count { 0 };
 
-    void add(float64 shown, float64 other)
+    void add(float64 value)
     {
-        shown_sum += shown;
-        other_sum += other;
-        shown_max = std::max(shown_max, shown);
-        other_max = std::max(other_max, other);
+        sum += value;
+        max = std::max(max, value);
         ++count;
+    }
+
+    [[nodiscard]] std::optional<float64> average() const
+    {
+        return count > 0 ? std::optional { sum / static_cast<float64>(count) } : std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<float64> maximum() const
+    {
+        return count > 0 ? std::optional { max } : std::nullopt;
+    }
+};
+
+// A value of both, over the paired records where both have it. Where they
+// never both have it, each one's own, so that a value only one recording
+// has shows as that one's, with nothing to compare it with.
+struct Both {
+    Stats shown { };
+    Stats other { };
+    Stats shown_alone { };
+    Stats other_alone { };
+
+    void add(std::optional<float64> a, std::optional<float64> b)
+    {
+        if (a && b) {
+            shown.add(*a);
+            other.add(*b);
+            return;
+        }
+        if (a) {
+            shown_alone.add(*a);
+        }
+        if (b) {
+            other_alone.add(*b);
+        }
     }
 
     [[nodiscard]] Compared average() const
     {
-        if (count == 0) {
-            return { };
+        if (shown.count > 0) {
+            return Compared { .shown = shown.average(), .other = other.average() };
         }
-        return Compared { .shown = shown_sum / static_cast<float64>(count), .other = other_sum / static_cast<float64>(count) };
+        return Compared { .shown = shown_alone.average(), .other = other_alone.average() };
     }
 
     [[nodiscard]] Compared maximum() const
     {
-        if (count == 0) {
-            return { };
+        if (shown.count > 0) {
+            return Compared { .shown = shown.maximum(), .other = other.maximum() };
         }
-        return Compared { .shown = shown_max, .other = other_max };
+        return Compared { .shown = shown_alone.maximum(), .other = other_alone.maximum() };
     }
 };
+
+template<typename T>
+std::optional<float64> value(std::optional<T> const &v)
+{
+    return v ? std::optional { static_cast<float64>(*v) } : std::nullopt;
+}
+
+// Coasting, or standing still, isn't a cadence to average.
+std::optional<float64> pedaling(std::optional<u8> const &cadence)
+{
+    return cadence && *cadence > 0 ? value(cadence) : std::nullopt;
+}
 
 }
 
@@ -94,22 +137,16 @@ Comparison compare(std::span<FIT::record const> shown, std::span<FIT::record con
     NormalizedRange<u16, 30> other_np;
     end = std::min({ end, shown.size(), pairs.size() });
     for (auto ix = first; ix < end; ++ix) {
-        if (!pairs[ix] || *pairs[ix] >= other.size()) {
-            continue;
-        }
-        auto const &a = shown[ix];
-        auto const &b = other[*pairs[ix]];
+        static FIT::record const none { };
+        auto const              &a = shown[ix];
+        auto const              &b = pairs[ix] && *pairs[ix] < other.size() ? other[*pairs[ix]] : none;
+        power.add(value(a.power), value(b.power));
         if (a.power && b.power) {
-            power.add(*a.power, *b.power);
             shown_np.extend(*a.power);
             other_np.extend(*b.power);
         }
-        if (a.cadence && b.cadence && *a.cadence > 0 && *b.cadence > 0) {
-            cadence.add(*a.cadence, *b.cadence);
-        }
-        if (a.heart_rate && b.heart_rate) {
-            hr.add(*a.heart_rate, *b.heart_rate);
-        }
+        cadence.add(pedaling(a.cadence), pedaling(b.cadence));
+        hr.add(value(a.heart_rate), value(b.heart_rate));
     }
     Comparison ret {
         .avg_power = power.average(),
