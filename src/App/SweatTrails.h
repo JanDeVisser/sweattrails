@@ -403,8 +403,10 @@ struct SweatTrails : public Main<Job, Notification> {
     // Another recording of the activity on display, keeping the view.
     void show_recording(Activity const &recording);
     // While comparing, the activity on display is compared with another
-    // recording of it: the main one, or recording 2 on the main one.
-    void compare_if_on();
+    // recording of it: the main one, or recording 2 on the main one. The
+    // one shown `before`, or the one it was compared with, is used rather
+    // than loaded again if it's that one, as with Tab.
+    void compare_if_on(std::shared_ptr<DisplayedActivity> const &before = nullptr);
     // Has the job read what's new in the store for the summaries, unless
     // it's doing that already.
     void               update_summaries();

@@ -1868,8 +1868,9 @@ void SweatTrails::show_activity(Activity const &activity)
     last_activity = activity.id;
     auto display = widget_stack->activate<ActivityDisplay>();
     assert(display != nullptr);
+    auto const before = display->activity;
     display->set_activity(activity);
-    compare_if_on();
+    compare_if_on(before);
 }
 
 void SweatTrails::show_recording(Activity const &recording)
@@ -1878,11 +1879,12 @@ void SweatTrails::show_recording(Activity const &recording)
     last_activity = recording.id;
     auto display = widget_stack->activate<ActivityDisplay>();
     assert(display != nullptr);
+    auto const before = display->activity;
     display->switch_recording(recording);
-    compare_if_on();
+    compare_if_on(before);
 }
 
-void SweatTrails::compare_if_on()
+void SweatTrails::compare_if_on(std::shared_ptr<DisplayedActivity> const &before)
 {
     auto const displayed = activity_display->activity;
     if (!comparing || !displayed || displayed->activity.recordings < 2) {
@@ -1893,7 +1895,16 @@ void SweatTrails::compare_if_on()
     if (order.size() < 2) {
         return;
     }
-    auto const other = load_to_show(storage, id.recording.empty() ? order[1] : order[0]);
+    auto const &wanted = id.recording.empty() ? order[1] : order[0];
+    if (before && before->activity.id == wanted) {
+        activity_display->compare_with(before->activity);
+        return;
+    }
+    if (before && before->compared && before->compared->activity.id == wanted) {
+        activity_display->compare_with(before->compared->activity);
+        return;
+    }
+    auto const other = load_to_show(storage, wanted);
     if (!other) {
         set_status(std::format("Can't compare: {}", other.error()));
         return;

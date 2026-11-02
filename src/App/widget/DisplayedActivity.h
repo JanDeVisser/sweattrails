@@ -96,6 +96,14 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
 
 private:
     [[nodiscard]] std::optional<Comparison> comparison_of(size_t first, size_t end) const;
+
+    // The last comparison_of(): the data panel asks for it every frame.
+    struct CachedComparison {
+        size_t     first;
+        size_t     end;
+        Comparison comparison;
+    };
+    mutable std::optional<CachedComparison> cached { };
 };
 
 // A lap's part of the strip under the graph, from x0 up to x1. The graph's

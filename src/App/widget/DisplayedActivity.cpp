@@ -182,6 +182,7 @@ std::optional<size_t> lap_at(std::vector<LapSpan> const &spans, float x)
 
 void DisplayedActivity::compare_with(std::optional<Activity> const &other)
 {
+    cached.reset();
     if (!other) {
         compared.reset();
         return;
@@ -194,7 +195,10 @@ std::optional<Comparison> DisplayedActivity::comparison_of(size_t first, size_t 
     if (!compared) {
         return { };
     }
-    return compare(activity.recorded, compared->activity.recorded, compared->pairs, first, end);
+    if (!cached || cached->first != first || cached->end != end) {
+        cached = CachedComparison { first, end, compare(activity.recorded, compared->activity.recorded, compared->pairs, first, end) };
+    }
+    return cached->comparison;
 }
 
 std::optional<Comparison> DisplayedActivity::comparison() const

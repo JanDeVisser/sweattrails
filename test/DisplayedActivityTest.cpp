@@ -105,6 +105,15 @@ void test_comparison()
     auto const range = d.comparison();
     CHECK(range.has_value() && range->avg_power.shown == 175.0 && range->avg_power.other == 165.0);
 
+    // Another one to compare with: the comparison isn't the one before's.
+    d.whole_activity();
+    CHECK(d.comparison()->avg_power.other == 180.0);
+    for (auto &rec : other.recorded) {
+        rec.power = static_cast<u16>(*rec.power - 10);
+    }
+    d.compare_with(other);
+    CHECK(d.comparison()->avg_power.other == 170.0);
+
     d.compare_with(std::nullopt);
     CHECK(!d.comparison().has_value());
 }
