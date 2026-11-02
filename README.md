@@ -127,10 +127,17 @@ to compare their power meters, both recordings come into the store.
 SweatTrails keeps them as one activity: two recordings of the same
 sport that overlap for at least 80% of the shorter one are one
 activity. It's listed, counted in the totals and the fitness, and shown
-once, as its main recording, and the summary line under its title says
-"2 recordings". The others are kept in a folder next to it,
-`<start>.recordings/`. The first time SweatTrails starts with this, it
-looks through the whole store once, in the background.
+once, as its main recording. The others are kept in a folder next to
+it, `<start>.recordings/`. The first time SweatTrails starts with this,
+it looks through the whole store once, in the background.
+
+The summary line under the title says which recording is on display,
+and on which device: "Recording 1 of 2: Garmin". Tab shows the next
+recording, and Shift+Tab the one before. The map stays where it is, and
+so does the selected lap, so you can flip between them to compare.
+Laps, fills and the overlay work on the recording on display, while the
+name (F2) is the activity's. Ctrl+J on a recording that isn't the main
+one makes it the main one.
 
 The main recording is the one from the first device in the settings'
 list that any of them is from, by FIT's names for the makers, and
