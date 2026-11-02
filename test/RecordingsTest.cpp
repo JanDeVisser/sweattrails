@@ -487,6 +487,46 @@ void test_load_a_recording()
     CHECK(listed.has_value() && listed->has_value() && (*listed)->recording_number == 1);
 }
 
+// Ctrl+J on the Wahoo's recording of a group the Garmin's is the main one
+// of: the Wahoo's is listed and stays the main one, with the activity's
+// title, and the Garmin's and the Zwift's are in its folder.
+void test_make_main()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    record(store, Zwift, 30, 3500);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    auto const garmin = fit_of(store, 60);
+    MUST(write_file_by_name(fs::path { garmin }.replace_extension(".json").string(), std::string_view { R"({ "title": "Comparing" })" }));
+    auto const recording = recordings_dir(garmin) / std::format("{}.fit", unix_start(0));
+    CHECK(!make_main(store.storage, garmin).has_value());
+
+    auto const made = make_main(store.storage, recording);
+    CHECK(made.has_value());
+    auto const wahoo = fit_of(store, 0);
+    if (made) {
+        CHECK(made->main == wahoo);
+        CHECK(made->hidden == std::vector { unix_start(60) });
+    }
+    CHECK_EQ(listed(store), 1uz);
+    CHECK(fs::exists(wahoo));
+    CHECK(!fs::exists(recordings_dir(garmin)));
+    auto const others = recordings_of(wahoo);
+    CHECK(others == (std::vector { recordings_dir(wahoo) / std::format("{}.fit", unix_start(30)), recordings_dir(wahoo) / std::format("{}.fit", unix_start(60)) }));
+    CHECK_EQ(sidecar_value(wahoo, "recordings"), "main");
+    CHECK_EQ(sidecar_value(wahoo, "title"), "Comparing");
+
+    // A preferred recording coming in after it joins without taking its
+    // place.
+    record(store, Garmin, 45, 3500);
+    file(store);
+    CHECK_EQ(listed(store), 1uz);
+    CHECK(fs::exists(wahoo));
+    CHECK_EQ(recordings_of(wahoo).size(), 3uz);
+}
+
 // A store filed before there were groups, once over.
 void test_group_month()
 {
@@ -806,6 +846,7 @@ int main()
     test_recordings_in_order();
     test_main_of();
     test_load_a_recording();
+    test_make_main();
     test_group_month_filed_elsewhere();
     test_inbox_candidate_filed_elsewhere();
     test_former_main_with_folder();

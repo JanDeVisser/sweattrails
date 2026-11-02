@@ -105,6 +105,11 @@ StorageResult<std::vector<RecordingInfo>> recordings_to_group(Storage &storage, 
 // more.
 StorageResult<Grouped> group_with_main(Storage &storage, fs::path const &main_fit);
 
+// Ctrl+J on a recording in a main one's folder: makes it the main one,
+// chosen by the user, with its main one and the folder's others as its
+// recordings. An error for a FIT file that isn't in a folder.
+StorageResult<Grouped> make_main(Storage &storage, fs::path const &recording_fit);
+
 // Moves the main recording's others back to where the inbox would file
 // them, as activities of their own, and marks them all as separate. How
 // many it moved. An error if `main_fit` isn't a listed activity's.

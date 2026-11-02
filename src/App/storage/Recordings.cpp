@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <charconv>
 #include <format>
+#include <ranges>
 
 #include <IO.h>
 #include <JSON.h>
@@ -407,6 +408,43 @@ StorageResult<Grouped> group_with_main(Storage &storage, fs::path const &main_fi
     group.front().separate = false;
     group.front().chosen = true;
     std::ranges::move(others, std::back_inserter(group));
+    return group_recordings(storage, group);
+}
+
+StorageResult<Grouped> make_main(Storage &storage, fs::path const &recording_fit)
+{
+    auto const chosen = recording_info(storage, recording_fit);
+    if (!in_folder(recording_fit) || !chosen) {
+        return std::unexpected(StorageError { LibCError { "`{}` isn't another recording of an activity", recording_fit.filename().string() } });
+    }
+    auto const former = main_of(recording_fit);
+    auto const former_info = recording_info(storage, former);
+    if (!former_info) {
+        return std::unexpected(StorageError { LibCError { "`{}` can't be read", former.filename().string() } });
+    }
+    // This one first, as group_with_main() does: if its sidecar can't be
+    // marked, nothing has changed.
+    if (auto const marked = mark(recording_fit, Chosen); !marked) {
+        return std::unexpected(StorageError { marked.error() });
+    }
+    std::vector<RecordingInfo> group { *chosen, *former_info };
+    group[0].chosen = true;
+    for (auto const &other : recordings_of(former)) {
+        if (other == recording_fit) {
+            continue;
+        }
+        if (auto const info = recording_info(storage, other); info) {
+            group.push_back(*info);
+        }
+    }
+    for (auto &other : group | std::views::drop(1)) {
+        if (other.separate || other.chosen) {
+            if (auto const cleared = mark(other.fit, { }); !cleared) {
+                return std::unexpected(StorageError { cleared.error() });
+            }
+        }
+        other.separate = other.chosen = false;
+    }
     return group_recordings(storage, group);
 }
 
