@@ -221,6 +221,15 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
             return false;
         }
         fit_title = title;
+        // The activity's name, whichever recording is shown, starts from
+        // the main one's FIT file: a workout one device ran names it.
+        if (!id.recording.empty()) {
+            Activity main { *storage, id.main() };
+            main.depth = LoadingDepth::Shallow;
+            if (TRY_EVAL(main.load_fit_file_by_name(main_fit))) {
+                fit_title = main.title;
+            }
+        }
         sidecar = fs::path { fit }.replace_extension(".json");
         activity_sidecar = fs::path { main_fit }.replace_extension(".json");
         read_names();

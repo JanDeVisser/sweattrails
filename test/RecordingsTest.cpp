@@ -1092,6 +1092,7 @@ int main()
     test_recordings_in_order();
     test_main_of();
     test_load_a_recording();
+    test_recording_has_the_activitys_title();
     test_make_main();
     test_split_from_a_recording();
     test_group_month_filed_elsewhere();
