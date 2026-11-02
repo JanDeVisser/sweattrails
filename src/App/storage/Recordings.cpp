@@ -25,7 +25,7 @@ constexpr std::string_view RecordingsKey = "recordings";
 constexpr std::string_view Separate = "separate";
 constexpr std::string_view Chosen = "main";
 constexpr std::string_view TitleKey = "title";
-constexpr std::string_view FolderSuffix = ".recordings";
+constexpr std::string_view FolderSuffix = RecordingsSuffix;
 
 fs::path sidecar_of(fs::path const &fit)
 {
@@ -132,24 +132,6 @@ std::optional<RecordingInfo> recording_info(Storage &storage, fs::path const &fi
     return ret;
 }
 
-fs::path recordings_dir(fs::path const &main_fit)
-{
-    return main_fit.parent_path() / std::format("{}{}", main_fit.stem().string(), FolderSuffix);
-}
-
-std::vector<fs::path> recordings_of(fs::path const &main_fit)
-{
-    std::vector<fs::path> ret;
-    std::error_code       ec { };
-    for (fs::directory_iterator it { recordings_dir(main_fit), ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
-        if (it->path().extension() == ".fit") {
-            ret.push_back(it->path());
-        }
-    }
-    std::ranges::sort(ret);
-    return ret;
-}
-
 bool same_activity(RecordingInfo const &a, RecordingInfo const &b)
 {
     auto const a_kind = volume_sport(a.sport, a.sub_sport);
@@ -161,6 +143,30 @@ bool same_activity(RecordingInfo const &a, RecordingInfo const &b)
     auto const to = std::min(a.start + a.elapsed, b.start + b.elapsed);
     auto const shorter = std::min(a.elapsed, b.elapsed);
     return shorter > 0 && to > from && static_cast<double>(to - from) >= SameActivityOverlap * shorter;
+}
+
+fs::path main_of(fs::path const &fit)
+{
+    if (!in_folder(fit)) {
+        return fit;
+    }
+    auto const folder = fit.parent_path().filename().string();
+    return fit.parent_path().parent_path() / std::format("{}.fit", folder.substr(0, folder.size() - FolderSuffix.size()));
+}
+
+std::vector<ActivityID> recordings_in_order(Storage const &storage, ActivityID const &id)
+{
+    std::vector<ActivityID> ret { id.main() };
+    auto const              dir = id.month.dir(storage);
+    if (!dir) {
+        return ret;
+    }
+    for (auto const &recording : recordings_of(*dir / std::format("{}.fit", id.name))) {
+        auto other = id.main();
+        other.recording = recording.stem().string();
+        ret.push_back(std::move(other));
+    }
+    return ret;
 }
 
 size_t main_recording(std::vector<RecordingInfo> const &recordings, std::vector<FIT::manufacturer> const &prefer)

@@ -172,6 +172,12 @@ struct Lap {
     Segment     segment { };
 };
 
+// The folder of a main recording's others, `<start>.recordings/` next to
+// it, and the FIT files in it, by name, which is by start.
+constexpr std::string_view          RecordingsSuffix = ".recordings";
+[[nodiscard]] fs::path              recordings_dir(fs::path const &main_fit);
+[[nodiscard]] std::vector<fs::path> recordings_of(fs::path const &main_fit);
+
 struct Activity {
     Storage                      *storage { nullptr };
     LoadingDepth                  depth { LoadingDepth::None };
@@ -182,6 +188,7 @@ struct Activity {
     std::optional<FIT::sub_sport> sub_sport { };
     // Who made the FIT file: Zwift, for a ride in one of its worlds.
     std::optional<FIT::manufacturer> manufacturer { };
+    std::string                      product_name { }; // The device's, if the FIT file has it
     std::string                      title { };
     std::string                      original_title { }; // Without the name the user gave it
     std::string                      fit_title { };      // The FIT file's: the workout's, or the start time
@@ -192,8 +199,10 @@ struct Activity {
     std::vector<Lap>                 laps { };
     std::vector<Lap>                 device_laps { }; // The FIT file's, which the user's laps replace
     // This one, and the others of the activity, in its `.recordings`
-    // folder (specs/31-multiple-recordings.md), on a deep load.
+    // folder (specs/31-multiple-recordings.md), on a deep load. Which of
+    // them this is: 1 for the main one, then the others by their start.
     size_t recordings { 1 };
+    size_t recording_number { 1 };
     // The starts of the laps the user made, after the first: nothing for
     // the device's laps.
     std::optional<std::vector<i64>> user_lap_starts { };
@@ -202,10 +211,14 @@ struct Activity {
     // if the file doesn't record the local time.
     std::optional<i32> utc_offset { };
 
-    // `<name>.json` next to the FIT file, which load_from_dir() reads the
-    // names from, whether it's there or not. Empty for an activity loaded
-    // otherwise, which can't be renamed.
+    // `<name>.json` next to the FIT file, whether it's there or not, with
+    // the laps. Empty for an activity loaded otherwise, which can't be
+    // renamed.
     fs::path sidecar { };
+    // The main recording's sidecar, which the names are read from and
+    // saved in: the title is the activity's, whichever recording is shown.
+    // The same as `sidecar` for the main one.
+    fs::path activity_sidecar { };
 
     Activity(Storage &the_storage, ActivityID the_id)
         : storage(&the_storage)

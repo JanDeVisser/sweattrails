@@ -50,10 +50,14 @@ struct RecordingInfo {
 // totals count it, overlapping for most of the shorter one's time.
 [[nodiscard]] bool same_activity(RecordingInfo const &a, RecordingInfo const &b);
 
-// The folder of a main recording's others, `<start>.recordings/` next to
-// it, and the FIT files in it.
-[[nodiscard]] fs::path              recordings_dir(fs::path const &main_fit);
-[[nodiscard]] std::vector<fs::path> recordings_of(fs::path const &main_fit);
+// The FIT file of the main recording of the one at `fit`: its own for a
+// listed activity, else the one whose folder it's in.
+[[nodiscard]] fs::path main_of(fs::path const &fit);
+
+// The IDs of the recordings of the activity `id` is a recording of, as
+// Tab steps through them: the main one first, then the others by their
+// start. Just the main one's for an activity of one recording.
+[[nodiscard]] std::vector<ActivityID> recordings_in_order(Storage const &storage, ActivityID const &id);
 
 // The main one of `recordings`: the one the user chose, else the one from
 // the first of the preferred devices any is from, else, or among several

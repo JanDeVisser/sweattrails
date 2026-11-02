@@ -184,6 +184,24 @@ std::optional<Segment> range_segment(Activity const &activity, size_t first, siz
     return ret;
 }
 
+fs::path recordings_dir(fs::path const &main_fit)
+{
+    return main_fit.parent_path() / std::format("{}{}", main_fit.stem().string(), RecordingsSuffix);
+}
+
+std::vector<fs::path> recordings_of(fs::path const &main_fit)
+{
+    std::vector<fs::path> ret;
+    std::error_code       ec { };
+    for (fs::directory_iterator it { recordings_dir(main_fit), ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
+        if (it->path().extension() == ".fit") {
+            ret.push_back(it->path());
+        }
+    }
+    std::ranges::sort(ret);
+    return ret;
+}
+
 StorageResult<bool> Activity::load(LoadingDepth the_depth)
 {
     trace(Storage, "Loading activity {}", id.name);
@@ -196,25 +214,25 @@ StorageResult<bool> Activity::load(LoadingDepth the_depth)
 
 StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
 {
+    auto const main_fit = dir / std::format("{}.fit", id.name);
     if (id.files.contains(ActivityFile::Fit)) {
-        if (!TRY_EVAL(load_fit_file_by_name(dir / std::format("{}.fit", id.name)))) {
+        auto const fit = id.recording.empty() ? main_fit : recordings_dir(main_fit) / std::format("{}.fit", id.recording);
+        if (!TRY_EVAL(load_fit_file_by_name(fit))) {
             return false;
         }
         fit_title = title;
-        sidecar = dir / std::format("{}.json", id.name);
+        sidecar = fs::path { fit }.replace_extension(".json");
+        activity_sidecar = fs::path { main_fit }.replace_extension(".json");
         read_names();
     }
     TRY(analyze());
     // After analyze(): the laps' stats come from the records as recorded,
     // which only a deep load, not a month's list, has.
     if (!sidecar.empty() && depth == LoadingDepth::Deep) {
-        recordings = 1;
-        std::error_code ec { };
-        for (fs::directory_iterator it { dir / std::format("{}.recordings", id.name), ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
-            if (it->path().extension() == ".fit") {
-                ++recordings;
-            }
-        }
+        auto const others = recordings_of(main_fit);
+        recordings = 1 + others.size();
+        auto const here = std::ranges::find(others, sidecar, [](fs::path const &other) { return fs::path { other }.replace_extension(".json"); });
+        recording_number = here == others.end() ? 1 : 2 + static_cast<size_t>(here - others.begin());
         user_lap_starts = sidecar_laps(sidecar);
         if (user_lap_starts) {
             laps = laps_at(*this, *user_lap_starts);
@@ -244,14 +262,14 @@ std::expected<void, LibCError> Activity::set_lap_starts(std::optional<std::vecto
 
 void Activity::read_names()
 {
-    if (sidecar.empty()) {
+    if (activity_sidecar.empty()) {
         return;
     }
     // Each name wins over the ones before: the FIT file's, the service's,
     // the old app's `.strava` file's, Strava's in the sidecar, and the
     // user's. See specs/24-strava-titles.md.
-    auto const names = sidecar_titles(sidecar);
-    auto const old_strava = read_strava_file(fs::path { sidecar }.replace_extension(".strava"));
+    auto const names = sidecar_titles(activity_sidecar);
+    auto const old_strava = read_strava_file(fs::path { activity_sidecar }.replace_extension(".strava"));
     title = fit_title;
     auto const take = [this](std::optional<std::string> const &name) {
         if (name && !name->empty()) {
@@ -469,10 +487,10 @@ std::expected<void, LibCError> Activity::rename(std::string_view name)
     if (new_title == title) {
         return { };
     }
-    if (sidecar.empty()) {
+    if (activity_sidecar.empty()) {
         return std::unexpected(LibCError { "`{}` can't be renamed: it wasn't loaded from the store", id.name });
     }
-    TRY(save_sidecar_title(sidecar, trimmed));
+    TRY(save_sidecar_title(activity_sidecar, trimmed));
     title = new_title;
     return { };
 }
@@ -561,6 +579,7 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
         number = f->number.value_or(0);
         serial = f->serial_number.value_or(0);
         manufacturer = f->manufacturer;
+        product_name = std::string { f->product_name.value_or("") };
     } break;
     case mesg_num::activity: {
         auto a = make_from_rec<ST::activity>(rec);

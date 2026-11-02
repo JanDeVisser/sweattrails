@@ -406,6 +406,87 @@ void test_group_with_main_fails_unchanged()
     CHECK_EQ(sidecar_value(fit_of(store, 60), "recordings"), "separate");
 }
 
+ActivityID id_of(Test::TempStore const &store, u32 offset)
+{
+    return activity_id_of(fit_of(store, offset)).value_or(ActivityID { });
+}
+
+std::string file_contents(fs::path const &path)
+{
+    return read_file_by_name(path.string()).value_or("");
+}
+
+// Tab's order: the main one, then the others by start.
+void test_recordings_in_order()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 30, 3600);
+    record(store, Zwift, 0, 3500);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    auto const order = recordings_in_order(store.storage, id_of(store, 60));
+    CHECK_EQ(order.size(), 3uz);
+    if (order.size() == 3) {
+        CHECK(order[0] == id_of(store, 60));
+        CHECK_EQ(order[1].recording, std::format("{}", unix_start(0)));
+        CHECK_EQ(order[2].recording, std::format("{}", unix_start(30)));
+        CHECK_EQ(order[2].name, id_of(store, 60).name);
+        // The same from a recording.
+        CHECK(recordings_in_order(store.storage, order[2]) == order);
+    }
+
+    Test::TempStore one;
+    record(one, Wahoo, 0, 3600);
+    file(one);
+    CHECK(recordings_in_order(one.storage, id_of(one, 0)) == std::vector { id_of(one, 0) });
+}
+
+void test_main_of()
+{
+    CHECK(main_of("/a/2026/03/1773000000.fit") == fs::path { "/a/2026/03/1773000000.fit" });
+    CHECK(main_of("/a/2026/03/1773000000.recordings/1773000060.fit") == fs::path { "/a/2026/03/1773000000.fit" });
+}
+
+// A recording loads from the folder, with its own sidecar for its laps,
+// and the activity's title, which F2 changes in the main one's sidecar.
+void test_load_a_recording()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    auto const main = fit_of(store, 60);
+    MUST(write_file_by_name(fs::path { main }.replace_extension(".json").string(), std::string_view { R"({ "title": "Comparing" })" }));
+    auto id = id_of(store, 60);
+    id.recording = std::format("{}", unix_start(0));
+    auto const loaded = id.load(store.storage, LoadingDepth::Deep);
+    CHECK(loaded.has_value() && loaded->has_value());
+    if (!loaded || !*loaded) {
+        return;
+    }
+    auto       activity = **loaded;
+    auto const recording = recordings_dir(main) / std::format("{}.fit", unix_start(0));
+    CHECK(activity.sidecar == fs::path { recording }.replace_extension(".json"));
+    CHECK(activity.activity_sidecar == fs::path { main }.replace_extension(".json"));
+    CHECK_EQ(activity.title, "Comparing");
+    CHECK(activity.manufacturer == manufacturer::wahoo_fitness);
+    CHECK_EQ(activity.segment.start_time.timestamp, unix_start(0));
+    CHECK_EQ(activity.recordings, 2uz);
+    CHECK_EQ(activity.recording_number, 2uz);
+
+    CHECK(activity.set_lap_starts(std::vector<i64> { unix_start(600) }).has_value());
+    CHECK(file_contents(activity.sidecar).contains("laps"));
+    CHECK(!file_contents(activity.activity_sidecar).contains("laps"));
+    CHECK(activity.rename("Two power meters").has_value());
+    CHECK_EQ(sidecar_value(main, "title"), "Two power meters");
+    CHECK_EQ(sidecar_value(recording, "title"), "");
+
+    auto const listed = id_of(store, 60).load(store.storage, LoadingDepth::Deep);
+    CHECK(listed.has_value() && listed->has_value() && (*listed)->recording_number == 1);
+}
+
 // A store filed before there were groups, once over.
 void test_group_month()
 {
@@ -722,6 +803,9 @@ int main()
     test_has_activity_filed_elsewhere();
     test_decode_prefer();
     test_activity_id_of();
+    test_recordings_in_order();
+    test_main_of();
+    test_load_a_recording();
     test_group_month_filed_elsewhere();
     test_inbox_candidate_filed_elsewhere();
     test_former_main_with_folder();
