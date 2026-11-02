@@ -302,6 +302,110 @@ void test_group_with_main_nothing_to_group()
     CHECK(!recordings_to_group(store.storage, in_folder).has_value());
 }
 
+// Ctrl+J on a recording that was split off, with a group of two others
+// listed next to it, whose main one was chosen with Ctrl+J: the group's
+// main one and its folder's recording join this one's folder, the group's
+// folder goes, its name moves, and it's no longer marked main.
+void test_group_with_main_takes_a_group()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    CHECK(split_recordings(store.storage, fit_of(store, 60)).has_value());
+    // Two more come in: they only match each other, as the first two are
+    // separate.
+    record(store, Zwift, 30, 3500);
+    record(store, Wahoo, 45, 3400);
+    file(store);
+    CHECK_EQ(listed(store), 3uz);
+    auto const group = fit_of(store, 30);
+    CHECK_EQ(recordings_of(group).size(), 1uz);
+    MUST(write_file_by_name(fs::path { group }.replace_extension(".json").string(), std::string_view { R"({ "title": "Comparing", "recordings": "main" })" }));
+
+    auto const wahoo = fit_of(store, 0);
+    auto const to_group = recordings_to_group(store.storage, wahoo);
+    CHECK(to_group.has_value() && to_group->size() == 3);
+    auto const grouped = group_with_main(store.storage, wahoo);
+    CHECK(grouped.has_value());
+    if (grouped) {
+        CHECK(grouped->main == wahoo);
+        CHECK(std::ranges::contains(grouped->hidden, unix_start(60)));
+        CHECK(std::ranges::contains(grouped->hidden, unix_start(30)));
+        CHECK(!std::ranges::contains(grouped->hidden, unix_start(45)));
+    }
+    CHECK_EQ(listed(store), 1uz);
+    CHECK(!fs::exists(recordings_dir(group)));
+    CHECK_EQ(recordings_of(wahoo).size(), 3uz);
+    CHECK_EQ(sidecar_value(wahoo, "recordings"), "main");
+    CHECK_EQ(sidecar_value(wahoo, "title"), "Comparing");
+    for (auto const &recording : recordings_of(wahoo)) {
+        CHECK_EQ(sidecar_value(recording, "recordings"), "");
+    }
+    Activity activity { store.storage, *activity_id_of(wahoo) };
+    CHECK(activity.load(LoadingDepth::Deep).value_or(false));
+    CHECK_EQ(activity.recordings, 4uz);
+}
+
+// Ctrl+J on the one that was the main one before the split: grouped as
+// it was, and now chosen.
+void test_group_with_main_former_main()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    auto const garmin = fit_of(store, 60);
+    CHECK(split_recordings(store.storage, garmin).has_value());
+    CHECK(group_with_main(store.storage, garmin).has_value());
+    CHECK_EQ(listed(store), 1uz);
+    CHECK_EQ(sidecar_value(garmin, "recordings"), "main");
+    CHECK_EQ(sidecar_value(recordings_dir(garmin) / std::format("{}.fit", unix_start(0)), "recordings"), "");
+}
+
+// A group made with Ctrl+J split again: the chosen one is separate, not
+// main, and a recording that comes in after isn't grouped with either.
+void test_split_after_group_with_main()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    CHECK(split_recordings(store.storage, fit_of(store, 60)).has_value());
+    auto const wahoo = fit_of(store, 0);
+    CHECK(group_with_main(store.storage, wahoo).has_value());
+    auto const split = split_recordings(store.storage, wahoo);
+    CHECK(split.has_value() && *split == 1);
+    CHECK_EQ(listed(store), 2uz);
+    CHECK_EQ(sidecar_value(wahoo, "recordings"), "separate");
+    CHECK_EQ(sidecar_value(fit_of(store, 60), "recordings"), "separate");
+    record(store, Garmin, 30, 3500);
+    file(store);
+    CHECK_EQ(listed(store), 3uz);
+}
+
+// Review note Ctrl+J 1: Ctrl+J that fails, as the main one's sidecar
+// can't be read, reports an error, but has cleared the other one's
+// "separate" already, so the next recording to come in groups it again.
+void test_group_with_main_fails_unchanged()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    CHECK(split_recordings(store.storage, fit_of(store, 60)).has_value());
+    auto const wahoo = fit_of(store, 0);
+    MUST(write_file_by_name(fs::path { wahoo }.replace_extension(".json").string(), std::string_view { "not JSON" }));
+    CHECK(!group_with_main(store.storage, wahoo).has_value());
+    CHECK_EQ(listed(store), 2uz);
+    // Fails now: the Garmin's sidecar lost its mark.
+    CHECK_EQ(sidecar_value(fit_of(store, 60), "recordings"), "separate");
+}
+
 // A store filed before there were groups, once over.
 void test_group_month()
 {
@@ -609,6 +713,9 @@ int main()
     test_split_after_another_became_main();
     test_group_with_main();
     test_group_with_main_nothing_to_group();
+    test_group_with_main_takes_a_group();
+    test_group_with_main_former_main();
+    test_split_after_group_with_main();
     test_group_month();
     test_has_activity_across_months();
     test_has_activity_filed_elsewhere();

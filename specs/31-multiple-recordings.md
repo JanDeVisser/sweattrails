@@ -367,3 +367,65 @@ All six findings were fixed, each in its own commit, with its test:
 
 While building, Ctrl+Shift+R turned out to be rename off macOS, so the
 split key is Ctrl+Alt+R there. The README and the Architecture say so.
+
+### Ctrl+J
+
+Review of the change request (commit "Group recordings again with Ctrl+J,
+with the one on display as main").
+
+1. **Bug** (minor). A Ctrl+J that fails can still change things.
+   `group_with_main()` (`storage/Recordings.cpp:386`) first clears the
+   "separate" mark of every other recording, and only then marks the main
+   one (`:395`) and moves anything. If marking the main one fails, it
+   reports the error, but nothing is grouped and the others have lost
+   their marks already. That happens when the main one's sidecar isn't a
+   JSON object: `recording_info()` reads it as unmarked, and
+   `update_sidecar()` won't write it. Split a Wahoo's and a Garmin's
+   recordings, break the Wahoo's sidecar, press Ctrl+J on the Wahoo's
+   activity. The message box says it couldn't group them, and both
+   activities are still listed, but the Garmin's is no longer separate, so
+   the next recording of that ride that comes in groups it again, with
+   the preferred Garmin as the main one, which is what the split was for.
+   Marking the main one first (or checking all the sidecars can be
+   updated before changing any) would leave things as they were. Test:
+   `test_group_with_main_fails_unchanged`, which fails now.
+2. **Suggestion.** Ctrl+J on an activity that's already grouped with all
+   its recordings, and has none to group, asks "Group 1 other recording
+   with this one as the main one?" (`SweatTrails.cpp:1503`), as
+   `recordings_to_group()` counts its own folder's recordings
+   (`storage/Recordings.cpp:368`). On Yes nothing moves: it marks it main,
+   so a preferred device's recording that comes in later won't take its
+   place, and says "This is the main recording now". The spec has
+   Ctrl+J say "This activity has no other recordings." with none to
+   group. That isn't true here either, but the question is misleading:
+   it asks to group what is grouped. If pinning the main one is wanted,
+   the question could say so ("Keep this as the main one of its 2
+   recordings?"); otherwise count only what's listed. The Developer's
+   `test_group_with_main` checks the count of 2 as it is now.
+3. **Suggestion.** `cmd_group_recordings()` (`SweatTrails.cpp:1488`) reads
+   FIT files on the UI thread for the question: `recordings_to_group()`
+   lists the directories of the activity's month and the months around
+   it, and reads in full (`FITFile::read()` and `analyze()`, a shallow
+   load still parses the whole file) every activity that starts from a
+   day before it to its end, and every recording in its folder. The
+   Storage threading note allows it, as it doesn't use `years`, but for a
+   day with a few long rides that's a few full FIT parses in one frame.
+   It works, and the job computes the list again, so a count that's
+   wrong because the inbox moved something meanwhile does no harm. If it
+   shows as a stall, the question could be asked from a job's
+   notification.
+
+Checked and fine: a candidate that's the main one of another group, also
+one chosen with Ctrl+J (its folder's recordings join, its folder goes,
+its "main" mark is cleared, its name moves to a main one without one);
+duplicates in the list (`same_activities()` skips the activity itself and
+`group_recordings()` skips recordings already moved with a former main
+one's folder); Ctrl+J on the main one from before a split; splitting a
+group made with Ctrl+J (the "main" mark becomes "separate", and a new
+recording isn't grouped with them); `group_new()` and `group_month()`
+keeping a chosen main one; `recordings_request<>()` by index matching the
+payload order; the job and notification tables in order.
+
+Reviewer's tests added to `test/RecordingsTest.cpp`: the one above that
+fails (1), and, passing, `test_group_with_main_takes_a_group`,
+`test_group_with_main_former_main` and `test_split_after_group_with_main`.
