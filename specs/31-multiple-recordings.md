@@ -1,6 +1,6 @@
 # One activity, several recordings
 
-Status: In review, on branch feature/31-multiple-recordings
+Status: Done
 
 <!--
 Status is one of:
@@ -317,3 +317,26 @@ sidecar, a new main one keeping a name of its own, recordings either side
 of a month's end (grouped, found by `has_activity()`, a duplicate in the
 inbox, split back into the next month), splitting when the place is taken
 (an error, nothing overwritten), and the once over run twice.
+
+### Resolution
+
+All six findings were fixed, each in its own commit, with its test:
+
+1. `group_month()` groups each activity by the path where it found it,
+   so activities filed in another time zone's month are grouped too.
+   `test_group_month_filed_elsewhere` runs again.
+2. `move_recording()` moves the old app's `.strava` file too.
+   `test_strava_file_moves_along` runs again.
+3. When the activity on display is the main one of a new group, it's
+   loaded again, so the summary line and Ctrl+Shift+R count the new
+   recording. This is app code, so it's checked by hand.
+4. `split_recordings()` gives an error for a FIT file that has gone or
+   is in a folder, and the app shows it.
+   `test_split_after_another_became_main`.
+5. A bad `recordings.prefer` setting goes in a message box at start,
+   rather than on the status line.
+6. `has_activity()` looks for a listed `<start>.fit` in the months
+   before and after as well. `test_has_activity_filed_elsewhere`.
+
+While building, Ctrl+Shift+R turned out to be rename off macOS, so the
+split key is Ctrl+Alt+R there. The README and the Architecture say so.
