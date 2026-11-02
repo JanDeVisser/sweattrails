@@ -126,6 +126,9 @@ struct ActivityGraph : public Widget {
 private:
     // The lap strip under the graph, half a character high: none without
     // laps.
+    // While comparing: power, heart rate and cadence of both recordings
+    // into `image`, the other's lighter, on one scale for both.
+    void                    draw_compared(int width, int height);
     [[nodiscard]] float     strip_height() const;
     [[nodiscard]] Rectangle strip_area() const; // In screen coordinates
     void                    draw_strip() const;
@@ -148,6 +151,9 @@ struct ActivityDisplay : public Layout {
     // Another recording of the activity on display: as set_activity(), but
     // the map's view and the selected lap stay as they were.
     void switch_recording(Activity const &recording);
+    // Compares the activity on display with `other`, another recording of
+    // it, or stops comparing.
+    void compare_with(std::optional<Activity> const &other);
     void clear_activity();
     // The activity's laps changed: the table shows them again.
     void               laps_changed();

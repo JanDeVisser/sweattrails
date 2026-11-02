@@ -75,7 +75,7 @@ void ActivityDataDisplay::draw()
             return range_summary(a, activity->segment->min, activity->segment->max, *activity->range_stats);
         }
         return activity_summary(a);
-    }();
+    }() + (activity->compared ? compared_suffix(device_name(activity->compared->activity)) : std::string { });
     render_text(116, summary_y, summary, FontSize::Large, RAYWHITE);
 
     // The fields start below the icon, which is 96 high, or below the
@@ -111,13 +111,14 @@ void ActivityDataDisplay::draw_fields(float y)
 {
     auto const &a = activity->activity;
     auto const  lines = [this, &a] {
+        auto const comparison = activity->comparison();
         if (activity->lap) {
-            return data_fields(a, a.laps[*activity->lap].segment, a.laps[*activity->lap].first_record);
+            return data_fields(a, a.laps[*activity->lap].segment, a.laps[*activity->lap].first_record, comparison);
         }
         if (activity->range_stats && activity->segment) {
-            return data_fields(a, *activity->range_stats, activity->segment->min);
+            return data_fields(a, *activity->range_stats, activity->segment->min, comparison);
         }
-        return data_fields(a);
+        return data_fields(a, a.segment, 0, comparison);
     }();
     auto const gap = App::the()->char_size(FontSize::Medium).x;
     auto const line_height = 6.0f * App::measure_text("Mg", FontSize::Medium).y / 5.0f;
@@ -299,21 +300,30 @@ void ActivityGraph::draw()
         draw_line(x, 50, x, 50 + texture.height, BLACK);
         std::vector<Text> banner;
         size_t            sz = 0;
-        if (record.altitude) {
-            banner.push_back({ std::format("Alt {} m", std::truncf(*record.altitude)), LIGHTGRAY });
-            sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
-        }
-        if (record.power) {
-            banner.push_back({ std::format("Pwr {} W", *record.power), DARKBLUE });
-            sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
-        }
-        if (record.speed) {
-            banner.push_back({ std::format("Spd {:.1f} km/h", *record.speed * 3.6), DARKGREEN });
-            sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
-        }
-        if (record.heart_rate) {
-            banner.push_back({ std::format("HR {} bpm", *record.heart_rate), RED });
-            sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
+        if (auto const &compared = activity->compared; compared) {
+            auto const pair = *activity->mark < compared->pairs.size() ? compared->pairs[*activity->mark] : std::nullopt;
+            auto const other = pair && *pair < compared->activity.records.size() ? std::optional { compared->activity.records[*pair] } : std::nullopt;
+            for (auto const &label : compare_banner(activity->activity, record, other)) {
+                banner.push_back({ label.text, label.color });
+                sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
+            }
+        } else {
+            if (record.altitude) {
+                banner.push_back({ std::format("Alt {} m", std::truncf(*record.altitude)), LIGHTGRAY });
+                sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
+            }
+            if (record.power) {
+                banner.push_back({ std::format("Pwr {} W", *record.power), PowerColor });
+                sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
+            }
+            if (record.speed) {
+                banner.push_back({ std::format("Spd {:.1f} km/h", *record.speed * 3.6), DARKGREEN });
+                sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
+            }
+            if (record.heart_rate) {
+                banner.push_back({ std::format("HR {} bpm", *record.heart_rate), HeartRateColor });
+                sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
+            }
         }
         if (!banner.empty()) {
             draw_line(x, 30, x, 50, RAYWHITE);
@@ -411,9 +421,13 @@ void ActivityGraph::set_activity(std::shared_ptr<DisplayedActivity> const &activ
         return;
     }
 
-    auto const          &seg = activity->activity.segment;
-    auto const           width = this->viewport.width - 20;
-    auto const           height = this->viewport.height - 50 - strip_height();
+    auto const &seg = activity->activity.segment;
+    auto const  width = this->viewport.width - 20;
+    auto const  height = this->viewport.height - 50 - strip_height();
+    if (activity->compared) {
+        draw_compared(static_cast<int>(width), static_cast<int>(height));
+        return;
+    }
     float                prev_x = 0.0;
     float                prev_speed = 0.0;
     float                prev_power = 0.0;
@@ -485,6 +499,99 @@ void ActivityGraph::set_activity(std::shared_ptr<DisplayedActivity> const &activ
     texture = LoadTextureFromImage(image);
 }
 
+namespace {
+
+// One line of the graph, drawn a pixel column at a time. A column without
+// a value breaks it: a dropout shows as a gap.
+struct GraphLine {
+    Color                  color;
+    std::optional<Vector2> previous { };
+
+    void to(Image &image, float x, std::optional<float> y)
+    {
+        if (!y) {
+            previous.reset();
+            return;
+        }
+        Vector2 const point { .x = x, .y = std::ceilf(*y) };
+        if (previous) {
+            ImageDrawLineV(&image, *previous, point, color);
+        }
+        previous = point;
+    }
+};
+
+// A value's range over both recordings' segments.
+template<typename Range>
+std::optional<std::pair<float, float>> both_ranges(Range const &a, Range const &b)
+{
+    if (!a.range && !b.range) {
+        return { };
+    }
+    auto lo = std::numeric_limits<float>::max();
+    auto hi = std::numeric_limits<float>::lowest();
+    for (auto const *r : { &a, &b }) {
+        if (r->range) {
+            lo = std::min(lo, static_cast<float>(r->range->min));
+            hi = std::max(hi, static_cast<float>(r->range->max));
+        }
+    }
+    return std::pair { lo, hi };
+}
+
+}
+
+void ActivityGraph::draw_compared(int width, int height)
+{
+    auto const &shown = activity->activity;
+    auto const &compared = *activity->compared;
+    auto const &other = compared.activity;
+    auto const  power = both_ranges(shown.segment.computed_power_range, other.segment.computed_power_range);
+    auto const  hr = both_ranges(shown.segment.computed_hr_range, other.segment.computed_hr_range);
+    auto const  cadence = both_ranges(shown.segment.computed_cadence_range, other.segment.computed_cadence_range);
+    if (!power && !hr && !cadence) {
+        return;
+    }
+    auto const h = static_cast<float>(height);
+    // Power and cadence from 0, heart rate over its range.
+    auto const from_zero = [h](std::optional<std::pair<float, float>> const &range, auto const &value) -> std::optional<float> {
+        if (!range || !value || range->second <= 0) {
+            return { };
+        }
+        return h - static_cast<float>(*value) * h / range->second;
+    };
+    auto const over_range = [h](std::optional<std::pair<float, float>> const &range, auto const &value) -> std::optional<float> {
+        if (!range || !value || range->second <= range->first) {
+            return { };
+        }
+        return h - (static_cast<float>(*value) - range->first) * h / (range->second - range->first);
+    };
+    std::array<GraphLine, 3> theirs { GraphLine { ColorBrightness(CadenceColor, 0.5f) }, GraphLine { ColorBrightness(HeartRateColor, 0.5f) }, GraphLine { ColorBrightness(PowerColor, 0.5f) } };
+    std::array<GraphLine, 3> ours { GraphLine { CadenceColor }, GraphLine { HeartRateColor }, GraphLine { PowerColor } };
+
+    image = GenImageColor(width, height, BLANK);
+    auto const dt = static_cast<float>(width) / static_cast<float>(shown.records.size());
+    auto       prev_x = -2.0f;
+    for (auto ix = 0uz; ix < shown.records.size(); ++ix) {
+        auto const x = dt * static_cast<float>(ix);
+        if (x - prev_x <= 1.0f) {
+            continue;
+        }
+        prev_x = x;
+        auto const              &rec = shown.records[ix];
+        static FIT::record const none { };
+        auto const               paired = ix < compared.pairs.size() && compared.pairs[ix] && *compared.pairs[ix] < other.records.size();
+        auto const              &o = paired ? other.records[*compared.pairs[ix]] : none;
+        theirs[0].to(image, x, from_zero(cadence, o.cadence));
+        theirs[1].to(image, x, over_range(hr, real_heart_rate(o)));
+        theirs[2].to(image, x, from_zero(power, o.power));
+        ours[0].to(image, x, from_zero(cadence, rec.cadence));
+        ours[1].to(image, x, over_range(hr, real_heart_rate(rec)));
+        ours[2].to(image, x, from_zero(power, rec.power));
+    }
+    texture = LoadTextureFromImage(image);
+}
+
 ActivityDisplay::ActivityDisplay(pWidget const &parent)
     : Layout(parent, ContainerOrientation::Vertical)
 {
@@ -496,6 +603,16 @@ ActivityDisplay::ActivityDisplay(pWidget const &parent)
 void ActivityDisplay::set_activity(Activity const &activity)
 {
     show(activity, false);
+}
+
+void ActivityDisplay::compare_with(std::optional<Activity> const &other)
+{
+    if (!activity) {
+        return;
+    }
+    activity->compare_with(other);
+    show_laps();
+    graph->set_activity(activity);
 }
 
 void ActivityDisplay::switch_recording(Activity const &recording)
@@ -525,7 +642,13 @@ void ActivityDisplay::laps_changed()
 void ActivityDisplay::show_laps()
 {
     if (activity && activity->has_laps()) {
-        auto [columns, rows] = lap_table(activity->activity);
+        std::vector<std::optional<Comparison>> compared;
+        if (activity->compared) {
+            for (auto ix = 0uz; ix < activity->activity.laps.size(); ++ix) {
+                compared.push_back(activity->lap_comparison(ix));
+            }
+        }
+        auto [columns, rows] = lap_table(activity->activity, compared);
         laps->set_rows(std::move(columns), std::move(rows));
         laps->policy = SizePolicy::Characters;
     } else {

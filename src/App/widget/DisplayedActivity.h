@@ -15,6 +15,7 @@
 #include <vector>
 
 #include <storage/Activity.h>
+#include <storage/Comparison.h>
 
 namespace ST {
 
@@ -28,6 +29,14 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
         size_t max;
     };
 
+    // While comparing (specs/33-comparing-recordings.md): the other
+    // recording of the activity, and its records paired with this one's,
+    // by pair_records().
+    struct ComparedRecording {
+        Activity                           activity;
+        std::vector<std::optional<size_t>> pairs { };
+    };
+
     Activity                   activity;
     std::optional<size_t>      mark { };
     std::optional<RecordRange> segment;
@@ -35,7 +44,8 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     // A dragged range's stats, for the data panel, once the drag has ended.
     std::optional<Segment> range_stats { };
     // Where a drag in the graph started, while it goes on.
-    std::optional<size_t> anchor { };
+    std::optional<size_t>            anchor { };
+    std::optional<ComparedRecording> compared { };
 
     explicit DisplayedActivity(Activity const &activity);
     void clear_segment();
@@ -74,6 +84,26 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     // The previous lap, or the last if none is selected. Stays on the first.
     void previous_lap();
     void whole_activity();
+
+    // Compares the activity with `other`, another recording of it, or stops.
+    void compare_with(std::optional<Activity> const &other);
+    // The comparison of what's selected: the lap, the dragged range once
+    // the drag has ended, or else the whole activity. None while not
+    // comparing.
+    [[nodiscard]] std::optional<Comparison> comparison() const;
+    // The comparison of lap `ix`, for the lap table.
+    [[nodiscard]] std::optional<Comparison> lap_comparison(size_t ix) const;
+
+private:
+    [[nodiscard]] std::optional<Comparison> comparison_of(size_t first, size_t end) const;
+
+    // The last comparison_of(): the data panel asks for it every frame.
+    struct CachedComparison {
+        size_t     first;
+        size_t     end;
+        Comparison comparison;
+    };
+    mutable std::optional<CachedComparison> cached { };
 };
 
 // A lap's part of the strip under the graph, from x0 up to x1. The graph's

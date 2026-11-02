@@ -72,6 +72,95 @@ void test_keep_lap()
     CHECK_EQ(lap(t.displayed->lap), -1);
 }
 
+// Comparing with another recording: the whole activity, a lap, and a
+// dragged range, each over its own records.
+void test_comparison()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    CHECK(!d.comparison().has_value());
+    for (auto ix = 0uz; ix < d.activity.recorded.size(); ++ix) {
+        d.activity.recorded[ix].power = static_cast<u16>(ix < 10 ? 100 : 200);
+    }
+    auto other = d.activity;
+    for (auto &rec : other.recorded) {
+        rec.power = static_cast<u16>(*rec.power - 10);
+    }
+    d.compare_with(other);
+    auto const whole = d.comparison();
+    CHECK(whole.has_value() && whole->avg_power.shown == 190.0 && whole->avg_power.other == 180.0);
+
+    d.select_lap(0);
+    auto const lap = d.comparison();
+    CHECK(lap.has_value() && lap->avg_power.shown == 100.0 && lap->avg_power.other == 90.0);
+    CHECK(d.lap_comparison(1).has_value() && d.lap_comparison(1)->avg_power.shown == 200.0);
+    CHECK(!d.lap_comparison(3).has_value());
+
+    // A range of records 5 to 24, once the drag has ended: 5 at 100 W
+    // and 15 at 200 W.
+    d.whole_activity();
+    d.start_segment(5);
+    d.set_segment(24);
+    d.end_segment();
+    auto const range = d.comparison();
+    CHECK(range.has_value() && range->avg_power.shown == 175.0 && range->avg_power.other == 165.0);
+
+    // Another one to compare with: the comparison isn't the one before's.
+    d.whole_activity();
+    CHECK(d.comparison()->avg_power.other == 180.0);
+    for (auto &rec : other.recorded) {
+        rec.power = static_cast<u16>(*rec.power - 10);
+    }
+    d.compare_with(other);
+    CHECK(d.comparison()->avg_power.other == 170.0);
+
+    d.compare_with(std::nullopt);
+    CHECK(!d.comparison().has_value());
+}
+
+// Reviewer: the other recording started 20 s late, at a lower rate: a lap
+// compares over the lap's clock times, so lap 0 (records 0 to 9) has
+// nothing of the other's, and lap 1 (10 to 39) only its last 20 seconds.
+// The pairs index `records` as well as `recorded`, for the graph.
+void test_comparison_of_a_lap_by_the_clock()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    for (auto &rec : d.activity.recorded) {
+        rec.power = 200;
+    }
+    Activity other { d.activity };
+    other.records.clear();
+    for (auto ix = 0uz; ix < 40; ++ix) {
+        record rec { };
+        rec.timestamp.timestamp = 1'000'020 + 2 * static_cast<u32>(ix); // Every 2 s from record 20's time
+        rec.power = 190;
+        other.records.push_back(rec);
+    }
+    other.recorded = other.records;
+    d.compare_with(other);
+    CHECK(d.compared.has_value());
+    if (!d.compared) {
+        return;
+    }
+    CHECK_EQ(d.compared->pairs.size(), d.activity.records.size());
+    CHECK(!d.compared->pairs[19].has_value());
+    CHECK(d.compared->pairs[20] == std::optional<size_t> { 0 });
+    CHECK(d.compared->pairs[21] == std::optional<size_t> { 0 });
+    CHECK(d.compared->pairs[22] == std::optional<size_t> { 1 });
+    CHECK(d.compared->pairs[99] == std::optional<size_t> { 39 });
+
+    auto const first = d.lap_comparison(0);
+    CHECK(first.has_value() && first->avg_power.shown == 200.0 && !first->avg_power.other);
+    auto const second = d.lap_comparison(1);
+    CHECK(second.has_value() && second->avg_power.shown == 200.0 && second->avg_power.other == 190.0);
+
+    // A new DisplayedActivity, as Tab and Left and Right make, compares
+    // with nothing until compare_if_on() sets it again.
+    DisplayedActivity const next { d.activity };
+    CHECK(!next.compared.has_value() && !next.comparison().has_value());
+}
+
 // A drag in the graph clears the mark, and selects a range up to where the
 // mouse is: the preview follows that, rather than jumping to the start.
 void test_current_record()
@@ -411,6 +500,8 @@ int main()
 {
     test_current_record();
     test_keep_lap();
+    test_comparison();
+    test_comparison_of_a_lap_by_the_clock();
     test_drag_either_way();
     test_end_segment();
     test_range_stats_cleared();

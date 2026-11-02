@@ -224,6 +224,7 @@ add_executable(
         src/App/widget/Summaries.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Gaps.cpp
+        src/App/storage/Comparison.cpp
         src/App/storage/Recordings.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Summaries.cpp
@@ -355,6 +356,7 @@ sweattrails_test(
         src/App/storage/Volume.cpp
         src/App/widget/ActivitySelector.cpp
         src/App/widget/DataFields.cpp
+        src/App/storage/Comparison.cpp
         src/App/widget/SportIcon.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
@@ -400,6 +402,7 @@ sweattrails_test(
         src/App/storage/Thresholds.cpp
         src/App/storage/Volume.cpp
         src/App/widget/DataFields.cpp
+        src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -617,6 +620,7 @@ sweattrails_test(
         src/App/overlay/Template.cpp
         src/App/overlay/TrackMap.cpp
         src/App/widget/DisplayedActivity.cpp
+        src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -659,6 +663,7 @@ sweattrails_test(
         displayed_activity_test
         test/DisplayedActivityTest.cpp
         src/App/widget/DisplayedActivity.cpp
+        src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -727,6 +732,13 @@ sweattrails_test(
 )
 target_include_directories(fit_patch_test PRIVATE src/App)
 target_link_libraries(fit_patch_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        comparison_test
+        test/ComparisonTest.cpp
+        src/App/storage/Comparison.cpp
+)
+target_include_directories(comparison_test PRIVATE src/App)
 
 sweattrails_test(
         recordings_test
