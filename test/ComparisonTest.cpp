@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include <storage/Comparison.h>
@@ -77,6 +78,40 @@ void test_pair_nothing_in_common()
     }
     CHECK(pair_records(morning, { }).size() == 10);
     CHECK(pair_records({ }, morning).empty());
+}
+
+// Reviewer: a timestamp that repeats in the other pairs with the last
+// record of that second, and one in the recording on display pairs both.
+void test_pair_repeated_timestamps()
+{
+    Records other = records(1000, 4);          // 1000, 1001, 1002, 1003
+    other.insert(other.begin() + 2, other[1]); // 1000, 1001, 1001, 1002, 1003
+    auto const shown = records(1000, 4);
+    CHECK((pair_records(shown, other) == Pairs { 0, 2, 3, 4 }));
+    Records twice = records(1000, 3);
+    twice.insert(twice.begin() + 1, twice[1]); // 1000, 1001, 1001, 1002
+    CHECK((pair_records(twice, records(1000, 3)) == Pairs { 0, 1, 1, 2 }));
+}
+
+// Review finding 5: the watch on display sets its clock back 2 s, as
+// watches do (DisplayedActivity::end_segment() allows for it). Its
+// record at 1004 the second time has the other's at the same second, but
+// pair_records() has moved past it to 1005, and the u32 subtraction
+// t - other[next - 1] wraps around, so it gets no pair.
+void test_pair_clock_set_back()
+{
+    Records shown = records(1000, 6); // 1000 to 1005
+    for (auto const &rec : records(1004, 4)) {
+        shown.push_back(rec); // 1004 to 1007
+    }
+    auto const other = records(1000, 8); // 1000 to 1007
+    auto const pairs = pair_records(shown, other);
+    CHECK_EQ(pairs.size(), 10uz);
+    if (pairs.size() == 10) {
+        CHECK_EQ(index(pairs[6]), 4);
+        CHECK_EQ(index(pairs[7]), 5);
+        CHECK_EQ(index(pairs[9]), 7);
+    }
 }
 
 // Two power meters, 250 and 240 W, with a dropout on the other: those
@@ -171,6 +206,103 @@ void test_compare_one_sided()
     CHECK(near(one.avg_power.shown, 250) && near(one.avg_power.other, 240));
 }
 
+// Review finding 2: two heart rate straps that never recorded the same
+// second, one in the first half and one in the second. No second counts
+// for both, so there's nothing to take a difference of; but the fallback
+// to each one's own values gives both, and difference() subtracts one
+// half's average from the other's: "150 / 140 bpm · +10 bpm (+7%)".
+void test_compare_never_together_has_no_difference()
+{
+    auto shown = records(1000, 10);
+    auto other = records(1000, 10);
+    for (auto ix = 0uz; ix < 10; ++ix) {
+        if (ix < 5) {
+            shown[ix].heart_rate = 150;
+        } else {
+            other[ix].heart_rate = 140;
+        }
+    }
+    auto const both = compare(shown, other, pair_records(shown, other), 0, 10);
+    CHECK(!both.avg_hr.difference());
+    CHECK(!both.max_hr.difference());
+}
+
+// Review finding 3: the activity's own cadence (cadence_stats() in
+// storage/Activity.cpp) leaves out records under PedalingCadence (20 rpm)
+// or under PedalingPower (20 W), not only the zeros. Ten seconds at
+// 10 rpm and 10 W and ten at 90 rpm: the panel says 90 rpm without
+// comparing, and 50 rpm for the same recording with Ctrl+K.
+void test_compare_cadence_as_the_activity_does()
+{
+    auto shown = records(1000, 20);
+    for (auto ix = 0uz; ix < 20; ++ix) {
+        shown[ix].cadence = static_cast<u8>(ix < 10 ? 10 : 90);
+        shown[ix].power = static_cast<u16>(ix < 10 ? 10 : 200);
+    }
+    auto const other = shown;
+    auto const both = compare(shown, other, pair_records(shown, other), 0, 20);
+    CHECK(near(both.avg_cadence.shown, 90));
+    CHECK(near(both.avg_cadence.other, 90));
+}
+
+// Reviewer: [first, end) at the ends: an end past the records, an empty
+// range, and a first past the end.
+void test_compare_ranges_at_the_ends()
+{
+    auto shown = records(1000, 10);
+    auto other = records(1000, 10);
+    for (auto ix = 0uz; ix < 10; ++ix) {
+        shown[ix].power = static_cast<u16>(100 + ix);
+        other[ix].power = 100;
+    }
+    auto const pairs = pair_records(shown, other);
+    auto const past = compare(shown, other, pairs, 5, 1000);
+    CHECK(near(past.avg_power.shown, 107) && near(past.max_power.shown, 109));
+    auto const last = compare(shown, other, pairs, 9, 10);
+    CHECK(near(last.avg_power.shown, 109) && near(last.avg_power.other, 100));
+    auto const empty = compare(shown, other, pairs, 4, 4);
+    CHECK(!empty.avg_power.shown && !empty.avg_power.other && !empty.max_power.shown);
+    auto const backwards = compare(shown, other, pairs, 8, 3);
+    CHECK(!backwards.avg_power.shown && !backwards.avg_power.other);
+    // Pairs shorter than the records: the records past them don't count.
+    auto const fewer = compare(shown, other, std::span { pairs }.first(5), 0, 10);
+    CHECK(near(fewer.max_power.shown, 104));
+}
+
+// Reviewer: NP only over the seconds both have power: the other's first
+// five seconds are missing, so 35 of 40 count, and a spike in them on the
+// shown one doesn't.
+void test_compare_np_over_paired_seconds()
+{
+    auto shown = records(1000, 40);
+    auto other = records(1000, 40);
+    for (auto ix = 0uz; ix < 40; ++ix) {
+        shown[ix].power = static_cast<u16>(ix < 5 ? 1000 : 250);
+        if (ix >= 5) {
+            other[ix].power = 240;
+        }
+    }
+    auto const both = compare(shown, other, pair_records(shown, other), 0, 40);
+    CHECK(near(both.np.shown, 250) && near(both.np.other, 240));
+    CHECK(near(both.max_power.shown, 250));
+}
+
+// Reviewer: smart recording on the other: its record holds for two
+// seconds, so its values count for each of the shown one's seconds.
+void test_compare_holds_the_others_values()
+{
+    auto shown = records(1000, 6);
+    auto other = records(1000, 2, 3); // 1000, 1003
+    for (auto &rec : shown) {
+        rec.power = 200;
+    }
+    other[0].power = 180;
+    other[1].power = 210;
+    auto const both = compare(shown, other, pair_records(shown, other), 0, 6);
+    CHECK(near(both.avg_power.other, 195));
+    CHECK(near(both.avg_power.shown, 200));
+}
+
 void test_compared_sign()
 {
     Compared const lower { .shown = 230, .other = 240 };
@@ -188,10 +320,14 @@ int main()
     test_pair_started_late();
     test_pair_smart_recording();
     test_pair_nothing_in_common();
+    test_pair_repeated_timestamps();
     test_compare_paired_seconds_only();
     test_compare_cadence_leaves_out_zeros();
     test_compare_np();
     test_compare_one_sided();
+    test_compare_ranges_at_the_ends();
+    test_compare_np_over_paired_seconds();
+    test_compare_holds_the_others_values();
     test_compared_sign();
     return Test::test_result();
 }

@@ -1182,6 +1182,86 @@ void test_compare_banner()
     CHECK(compare_banner(t.activity, record { }, std::nullopt).empty());
 }
 
+// Review finding 1: a difference that rounds to 0 from below comes out as
+// "-0": std::round(-0.2) is -0.0, which std::format writes with its sign.
+// The same in the lap table's Δ Power column.
+void test_format_compared_zero()
+{
+    CHECK_EQ(format_compared(Compared { .shown = 240.2, .other = 240.4 }, "W"), "240 / 240 W · +0 W (+0%)");
+    CHECK_EQ(format_compared(Compared { .shown = 240.4, .other = 240.2 }, "W"), "240 / 240 W · +0 W (+0%)");
+    CHECK_EQ(format_compared(Compared { .shown = 240, .other = 240 }, "W"), "240 / 240 W · +0 W (+0%)");
+
+    auto         records = records_with(60, set_power, 0, u16 { 200 }, u16 { 200 });
+    TestActivity t { sport::Cycling, records, { { 0, 30, 10000, 1200 }, { 30, 60, 10000, 1200 } } };
+    t.activity.segment.distance = 20000;
+    std::vector<std::optional<Comparison>> const laps {
+        Comparison { .avg_power = { .shown = 200.1, .other = 200.3 } },
+        Comparison { .avg_power = { .shown = 200, .other = 200 } },
+    };
+    auto const table = lap_table(t.activity, laps);
+    if (table.rows.size() == 2) {
+        CHECK_EQ(table.rows[0].back(), "+0 W");
+        CHECK_EQ(table.rows[1].back(), "+0 W");
+    }
+}
+
+// Reviewer: a run's cadence, which FIT has per leg, is doubled in the
+// panel and in the banner, and so is its difference; the percentage isn't.
+void test_compared_cadence_on_foot()
+{
+    auto records = records_with(60, set_hr, 0, u8 { 150 }, u8 { 150 });
+    for (auto &rec : records) {
+        rec.cadence = 85;
+    }
+    TestActivity     t { sport::Running, records };
+    Comparison const comparison {
+        .avg_cadence = { .shown = 85, .other = 86 },
+        .avg_hr = { .shown = 150, .other = 148 },
+    };
+    std::string cadence;
+    std::string hr;
+    for (auto const &line : data_fields(t.activity, t.activity.segment, 0, comparison)) {
+        for (auto const &field : { line.left, line.right }) {
+            if (field && field->label == "Avg Cadence") {
+                cadence = field->value;
+            }
+            if (field && field->label == "Avg HR") {
+                hr = field->value;
+            }
+        }
+    }
+    CHECK_EQ(cadence, "170 / 172 spm · -2 spm (-1%)");
+    CHECK_EQ(hr, "150 / 148 bpm · +2 bpm (+1%)");
+
+    record shown { };
+    shown.cadence = 85;
+    record other { };
+    other.cadence = 87;
+    auto const banner = compare_banner(t.activity, shown, other);
+    CHECK_EQ(banner.size(), 1uz);
+    if (banner.size() == 1) {
+        CHECK_EQ(banner[0].text, "Cad 170 / 174 spm");
+    }
+}
+
+// Reviewer: a comparison without a value at all leaves its line out, and
+// one where only the other has it still shows.
+void test_data_fields_compared_without_values()
+{
+    TestActivity             t { sport::Cycling, records_with(60, set_power, 0, u16 { 200 }, u16 { 200 }) };
+    auto const               lines = data_fields(t.activity, t.activity.segment, 0, Comparison { .max_hr = { .other = 160 } });
+    std::vector<std::string> labels;
+    for (auto const &line : lines) {
+        for (auto const &field : { line.left, line.right }) {
+            if (field) {
+                labels.push_back(field->label);
+            }
+        }
+    }
+    CHECK(std::ranges::find(labels, "Avg Power") == labels.end());
+    CHECK(std::ranges::find(labels, "Max HR") != labels.end());
+}
+
 int main()
 {
     test_range_max_at_is_the_index_passed();
@@ -1234,6 +1314,8 @@ int main()
     test_data_fields_compared();
     test_lap_table_compared();
     test_compare_banner();
+    test_compared_cadence_on_foot();
+    test_data_fields_compared_without_values();
     test_summary_without_distance_or_tss();
     test_unrealistic_maxima_are_not_shown();
     test_only_times_without_data();
