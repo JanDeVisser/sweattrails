@@ -527,6 +527,26 @@ void test_make_main()
     CHECK_EQ(recordings_of(wahoo).size(), 3uz);
 }
 
+// Ctrl+Shift+R with the Wahoo's recording on display splits the group its
+// main one heads, and the Wahoo's is then listed where the inbox files it.
+void test_split_from_a_recording()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    auto const recording = recordings_dir(fit_of(store, 60)) / std::format("{}.fit", unix_start(0));
+    auto const split = split_recordings(store.storage, main_of(recording));
+    CHECK(split.has_value() && *split == 1);
+    CHECK_EQ(listed(store), 2uz);
+    auto const found = store.storage.activity_starts(unix_start(0), unix_start(0));
+    CHECK(found.has_value() && found->size() == 1);
+    if (found && found->size() == 1) {
+        CHECK(fs::path { found->front().sidecar }.replace_extension(".fit") == fit_of(store, 0));
+    }
+}
+
 // A store filed before there were groups, once over.
 void test_group_month()
 {
@@ -847,6 +867,7 @@ int main()
     test_main_of();
     test_load_a_recording();
     test_make_main();
+    test_split_from_a_recording();
     test_group_month_filed_elsewhere();
     test_inbox_candidate_filed_elsewhere();
     test_former_main_with_folder();
