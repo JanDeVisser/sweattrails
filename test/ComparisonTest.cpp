@@ -325,6 +325,7 @@ int main()
     test_compare_cadence_leaves_out_zeros();
     test_compare_np();
     test_compare_one_sided();
+    test_compare_never_together_has_no_difference();
     test_compare_ranges_at_the_ends();
     test_compare_np_over_paired_seconds();
     test_compare_holds_the_others_values();

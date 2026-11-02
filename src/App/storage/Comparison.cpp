@@ -67,7 +67,7 @@ struct Both {
         if (shown.count > 0) {
             return Compared { .shown = shown.average(), .other = other.average() };
         }
-        return Compared { .shown = shown_alone.average(), .other = other_alone.average() };
+        return Compared { .shown = shown_alone.average(), .other = other_alone.average(), .together = false };
     }
 
     [[nodiscard]] Compared maximum() const
@@ -75,7 +75,7 @@ struct Both {
         if (shown.count > 0) {
             return Compared { .shown = shown.maximum(), .other = other.maximum() };
         }
-        return Compared { .shown = shown_alone.maximum(), .other = other_alone.maximum() };
+        return Compared { .shown = shown_alone.maximum(), .other = other_alone.maximum(), .together = false };
     }
 };
 
@@ -114,7 +114,7 @@ std::vector<std::optional<size_t>> pair_records(std::span<FIT::record const> sho
 
 std::optional<float64> Compared::difference() const
 {
-    if (!shown || !other) {
+    if (!shown || !other || !together) {
         return { };
     }
     return *shown - *other;
@@ -122,7 +122,7 @@ std::optional<float64> Compared::difference() const
 
 std::optional<float64> Compared::percent() const
 {
-    if (!shown || !other || *other == 0) {
+    if (!difference() || *other == 0) {
         return { };
     }
     return (*shown - *other) / *other * 100.0;

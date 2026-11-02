@@ -34,9 +34,13 @@ constexpr u32 PairHoldSeconds = 2;
 struct Compared {
     std::optional<float64> shown { };
     std::optional<float64> other { };
+    // Over seconds both recorded. Not if they never had the value at the
+    // same time: then each is over its own, and there's no difference.
+    bool together { true };
 
     // The one on display minus the other, and that as a percentage of the
-    // other's. None unless both are there, or for a percentage of 0.
+    // other's. None unless both are there together, or for a percentage of
+    // 0.
     [[nodiscard]] std::optional<float64> difference() const;
     [[nodiscard]] std::optional<float64> percent() const;
 };
