@@ -1,6 +1,6 @@
 # One activity, several recordings
 
-Status: In review, on branch feature/31-multiple-recordings
+Status: Done
 
 <!--
 Status is one of:
@@ -431,3 +431,14 @@ payload order; the job and notification tables in order.
 Reviewer's tests added to `test/RecordingsTest.cpp`: the one above that
 fails (1), and, passing, `test_group_with_main_takes_a_group`,
 `test_group_with_main_former_main` and `test_split_after_group_with_main`.
+
+#### Resolution of Ctrl+J
+
+1. Fixed: `group_with_main()` marks the main one first, so a sidecar
+   that can't be written stops it before any other mark is cleared.
+   `test_group_with_main_fails_unchanged` runs again.
+2. Fixed: with all its recordings in its folder already, Ctrl+J asks
+   "Keep this as the main one of its 2 recordings?".
+3. Left as it is: the question reads a few FIT files on the UI thread,
+   as dropping a file to fill a gap does. Moving it to a job is for when
+   it shows as a stall.
