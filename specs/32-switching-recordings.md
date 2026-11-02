@@ -1,6 +1,6 @@
 # Switching between the recordings of an activity
 
-Status: In review, on branch feature/32-switching-recordings
+Status: Done
 
 <!--
 Status is one of:
@@ -199,9 +199,12 @@ None.
   on a recording.
 - `MapTest`: `MapNavigator::keep()` keeps a view on the new route, and
   clamps one off it.
-- `ActivityDisplayTest` or `DisplayedActivityTest` with `ScopedTestApp`:
-  `switch_recording()` keeps lap 3 when the other recording has it, and
-  drops it when it hasn't.
+- `DisplayedActivityTest`: `keep_lap()` keeps lap 3 when the other
+  recording has it, and drops it when it hasn't.
+  `ActivityDisplay::switch_recording()` itself isn't tested
+  automatically: setting an activity on the map needs the app
+  (`choose_source()` uses `SweatTrails::the()`). It's checked by hand,
+  with `keep_lap()` and `MapNavigator::keep()` tested on their own.
 - By hand: Tab and Shift+Tab on a compare ride, the summary line, the
   map staying put, laps and a fill on the other recording, Ctrl+J on it,
   and Ctrl+Shift+R from it.
@@ -260,3 +263,23 @@ laps go with the new main one), `test_make_main_keeps_its_own_title`,
 `test_product_name` (FIT's `file_id` product name, end to end).
 `test/MapTest.cpp`: `test_navigator_keep_clamps_the_zoom`. All of them
 pass except the one for note 1.
+
+### Resolution
+
+1. Fixed: a recording starts its name from the main one's FIT file, read
+   with a shallow load, so the title stays the same on Tab, and F2 with
+   an empty name puts back the activity's name.
+   `test_recording_has_the_activitys_title` runs again.
+2. Fixed: the lap's and the range's lines end with the recording, as
+   the activity's line does (`recording_suffix()`), and the Feature says
+   so. Tested in `DataFieldsTest`.
+3. Fixed: Tab and Shift+Tab pass over a recording that doesn't load and
+   name it in a message, as Left and Right do. `load_to_show()`'s
+   messages name the recording. App code: checked by hand.
+4. Fixed: a failed Ctrl+J shows the activity's main one, and a failed
+   split shows the recording where it's filed now, or the main one.
+   App code: checked by hand.
+5. Left as it is: the Test plan says `switch_recording()` is checked by
+   hand, and why.
+6. Fixed: `device_name()` leaves out a maker that FIT's profile doesn't
+   have, and keeps the product name. Tested in `DataFieldsTest`.
