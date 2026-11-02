@@ -712,6 +712,7 @@ int main()
     test_split();
     test_split_after_another_became_main();
     test_group_with_main();
+    test_group_with_main_fails_unchanged();
     test_group_with_main_nothing_to_group();
     test_group_with_main_takes_a_group();
     test_group_with_main_former_main();

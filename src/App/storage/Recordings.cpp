@@ -383,7 +383,12 @@ StorageResult<Grouped> group_with_main(Storage &storage, fs::path const &main_fi
     if (others.empty()) {
         return Grouped { .main = main_fit };
     }
-    // Before they move: the sidecars go along.
+    // The main one first: if its sidecar can't be marked, the others keep
+    // theirs, and nothing has changed. Before they move, as the sidecars
+    // go along.
+    if (auto const marked = mark(main_fit, Chosen); !marked) {
+        return std::unexpected(StorageError { marked.error() });
+    }
     for (auto &other : others) {
         if (other.separate || other.chosen) {
             if (auto const cleared = mark(other.fit, { }); !cleared) {
@@ -391,9 +396,6 @@ StorageResult<Grouped> group_with_main(Storage &storage, fs::path const &main_fi
             }
         }
         other.separate = other.chosen = false;
-    }
-    if (auto const marked = mark(main_fit, Chosen); !marked) {
-        return std::unexpected(StorageError { marked.error() });
     }
     std::vector<RecordingInfo> group { *main };
     group.front().separate = false;
