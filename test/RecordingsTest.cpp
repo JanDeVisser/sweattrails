@@ -7,6 +7,8 @@
  * one, and keeping them together in a store.
  */
 
+#include <algorithm>
+#include <ctime>
 #include <filesystem>
 #include <format>
 
@@ -273,6 +275,226 @@ void test_has_activity_across_months()
     CHECK(store.storage.has_activity(unix_start(0)));
 }
 
+// Reviewer's tests, below.
+
+// A recording written straight into `dir`, as a store filed before this
+// feature, or in another time zone, has it.
+fs::path put(fs::path const &dir, u16 device, u32 offset, u32 seconds)
+{
+    Test::FITBuilder fit;
+    Test::add_file_id(fit, device);
+    Test::add_session(fit, seconds, 0, Test::NoSubSport, offset);
+    fs::create_directories(dir);
+    auto const path = dir / std::format("{}.fit", unix_start(offset));
+    MUST(write_file_by_name(path.string(), std::string_view { fit.file() }));
+    return path;
+}
+
+Month month_of(u32 offset)
+{
+    auto const date = DateTime::from_timestamp(static_cast<i32>(unix_start(offset)));
+    return Month { static_cast<size_t>(date.year), date.month };
+}
+
+// The offset from Test::Start of a local time.
+u32 local_offset(int year, int month, int day, int hour, int minute)
+{
+    std::tm tm { };
+    tm.tm_year = year - 1900;
+    tm.tm_mon = month - 1;
+    tm.tm_mday = day;
+    tm.tm_hour = hour;
+    tm.tm_min = minute;
+    tm.tm_isdst = -1;
+    return static_cast<u32>(static_cast<i64>(std::mktime(&tm)) - unix_start(0));
+}
+
+// Review note 1: two recordings filed in another time zone, in the month
+// after the one the inbox would file them in now. The once over the store
+// should group them.
+void test_group_month_filed_elsewhere()
+{
+    Test::TempStore store;
+    auto const      dir = store.storage.activity_dir / month_of(0).plus(1).dir_name();
+    put(dir, Wahoo, 0, 3600);
+    put(dir, Garmin, 60, 3540);
+    auto const groups = group_month(store.storage, month_of(0).plus(1));
+    CHECK(groups.has_value());
+    CHECK_EQ(groups.value_or(std::vector<Grouped> { }).size(), 1uz);
+    CHECK_EQ(store.storage.month_starts(month_of(0).plus(1)).value_or(std::vector<StoredStart> { }).size(), 1uz);
+}
+
+// A recording from the inbox whose candidate was filed in another time
+// zone, in the month after: it joins it there.
+void test_inbox_candidate_filed_elsewhere()
+{
+    Test::TempStore store;
+    auto const      dir = store.storage.activity_dir / month_of(0).plus(1).dir_name();
+    auto const      main = put(dir, Wahoo, 0, 3600);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    CHECK(fs::exists(main));
+    CHECK(fs::exists(recordings_dir(main) / std::format("{}.fit", unix_start(60))));
+    CHECK_EQ(listed(store), 0uz);
+}
+
+// A preferred recording comes in for a group that has one already: the
+// former main one and its folder's recordings go into the new one's
+// folder, the former's folder goes, and its name moves.
+void test_former_main_with_folder()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    record(store, Zwift, 30, 3500);
+    file(store);
+    auto const former = fit_of(store, 0);
+    CHECK_EQ(recordings_of(former).size(), 1uz);
+    MUST(write_file_by_name(fs::path { former }.replace_extension(".json").string(), std::string_view { R"({ "title": "Comparing" })" }));
+
+    record(store, Garmin, 60, 3540);
+    std::vector<Grouped> groups;
+    auto const           filed = store.storage.process_inbox({ }, [&store, &groups](i64 start) {
+        if (auto grouped = group_new(store.storage, start); grouped && *grouped) {
+            groups.push_back(**grouped);
+        }
+    });
+    CHECK(filed.has_value());
+    auto const main = fit_of(store, 60);
+    CHECK_EQ(listed(store), 1uz);
+    CHECK(fs::exists(main));
+    CHECK(!fs::exists(recordings_dir(former)));
+    CHECK_EQ(recordings_of(main).size(), 2uz);
+    CHECK(fs::exists(recordings_dir(main) / std::format("{}.fit", unix_start(0))));
+    CHECK(fs::exists(recordings_dir(main) / std::format("{}.fit", unix_start(30))));
+    CHECK_EQ(sidecar_value(main, "title"), "Comparing");
+    CHECK_EQ(groups.size(), 1uz);
+    if (!groups.empty()) {
+        CHECK_EQ(groups[0].main.string(), main.string());
+        // The Wahoo's was listed, and the Garmin's for a moment; not the Zwift's.
+        CHECK(std::ranges::contains(groups[0].hidden, unix_start(0)));
+        CHECK(!std::ranges::contains(groups[0].hidden, unix_start(30)));
+        CHECK(!std::ranges::contains(groups[0].hidden, unix_start(60)));
+    }
+}
+
+// The new main one comes from a former main one's folder: it's listed
+// again, where the inbox would file it, with its sidecar.
+void test_main_from_folder()
+{
+    Test::TempStore store;
+    record(store, Wahoo, 0, 3600);
+    record(store, Zwift, 30, 3500);
+    file(store);
+    auto const former = fit_of(store, 0);
+    MUST(write_file_by_name((recordings_dir(former) / std::format("{}.json", unix_start(30))).string(), std::string_view { R"({ "laps": [] })" }));
+    store.storage.prefer = { manufacturer::zwift };
+    record(store, Garmin, 60, 3540);
+    file(store);
+    auto const main = fit_of(store, 30);
+    CHECK_EQ(listed(store), 1uz);
+    CHECK(fs::exists(main));
+    CHECK(fs::exists(fs::path { main }.replace_extension(".json")));
+    CHECK(!fs::exists(recordings_dir(former)));
+    CHECK_EQ(recordings_of(main).size(), 2uz);
+    Activity activity { store.storage, *activity_id_of(main) };
+    CHECK(activity.load(LoadingDepth::Deep).value_or(false));
+    CHECK_EQ(activity.recordings, 3uz);
+}
+
+// A new main one with a name of its own keeps it.
+void test_title_of_its_own()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    file(store);
+    MUST(write_file_by_name(fs::path { fit_of(store, 0) }.replace_extension(".json").string(), std::string_view { R"({ "title": "Wahoo's" })" }));
+    record(store, Garmin, 60, 3540);
+    MUST(write_file_by_name((store.storage.inbox_dir / std::format("{}-{}.json", Garmin, 60)).string(), std::string_view { R"({ "title": "Garmin's" })" }));
+    file(store);
+    CHECK_EQ(sidecar_value(fit_of(store, 60), "title"), "Garmin's");
+    CHECK_EQ(sidecar_value(recordings_dir(fit_of(store, 60)) / std::format("{}.fit", unix_start(0)), "title"), "Wahoo's");
+}
+
+// Review note 2: the old app's `.strava` file is the recording's too, and
+// goes with it.
+void test_strava_file_moves_along()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    file(store);
+    MUST(write_file_by_name(fs::path { fit_of(store, 0) }.replace_extension(".strava").string(), std::string_view { R"({ "name": "Old app's" })" }));
+    record(store, Garmin, 60, 3540);
+    file(store);
+    CHECK(!fs::exists(fs::path { fit_of(store, 0) }.replace_extension(".strava")));
+    CHECK(fs::exists(recordings_dir(fit_of(store, 60)) / std::format("{}.strava", unix_start(0))));
+}
+
+// One recording starts just before midnight at the end of a month, the
+// other just after: grouped in the first month, found there from the
+// second, a duplicate in the inbox, and split back into the second.
+void test_across_month_end()
+{
+    Test::TempStore store;
+    auto const      before = local_offset(2021, 9, 30, 23, 50);
+    auto const      after = local_offset(2021, 10, 1, 0, 1);
+    CHECK(month_of(before) != month_of(after));
+    record(store, Wahoo, before, 3600);
+    record(store, Garmin, after, 3000);
+    file(store);
+    auto const main = fit_of(store, before);
+    CHECK(fs::exists(main));
+    CHECK(fs::exists(recordings_dir(main) / std::format("{}.fit", unix_start(after))));
+    CHECK(!fs::exists(fit_of(store, after)));
+    CHECK(store.storage.has_activity(unix_start(after)));
+
+    record(store, Garmin, after, 3000);
+    file(store);
+    CHECK(fs::exists(store.storage.inbox_dir / "duplicates"));
+    CHECK(!fs::exists(fit_of(store, after)));
+
+    auto const split = split_recordings(store.storage, main);
+    CHECK(split.has_value() && *split == 1);
+    CHECK(fs::exists(fit_of(store, after)));
+    CHECK_EQ(sidecar_value(fit_of(store, after), "recordings"), "separate");
+    CHECK(store.storage.has_activity(unix_start(after)));
+}
+
+// Splitting a recording whose place is taken fails, and doesn't overwrite
+// what's there; the recording stays in the folder.
+void test_split_place_taken()
+{
+    Test::TempStore store;
+    record(store, Wahoo, 0, 3600);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    auto const main = fit_of(store, 0);
+    MUST(write_file_by_name(fit_of(store, 60).string(), std::string_view { "in the way" }));
+    auto const split = split_recordings(store.storage, main);
+    CHECK(!split.has_value());
+    CHECK_EQ(read_file_by_name(fit_of(store, 60).string()).value_or(""), "in the way");
+    CHECK(fs::exists(recordings_dir(main) / std::format("{}.fit", unix_start(60))));
+}
+
+// The once over the store, run again, groups nothing more.
+void test_group_month_twice()
+{
+    Test::TempStore store;
+    put(month_dir(store), Wahoo, 0, 3600);
+    put(month_dir(store), Garmin, 60, 3540);
+    put(month_dir(store), Zwift, 30, 3500);
+    auto const first = group_month(store.storage, month_of(0));
+    CHECK_EQ(first.value_or(std::vector<Grouped> { }).size(), 1uz);
+    CHECK_EQ(listed(store), 1uz);
+    CHECK_EQ(recordings_of(fit_of(store, 0)).size(), 2uz);
+    auto const second = group_month(store.storage, month_of(0));
+    CHECK(second.has_value());
+    CHECK_EQ(second.value_or(std::vector<Grouped> { { } }).size(), 0uz);
+    CHECK_EQ(recordings_of(fit_of(store, 0)).size(), 2uz);
+}
+
 }
 
 int main()
@@ -287,5 +509,12 @@ int main()
     test_has_activity_across_months();
     test_decode_prefer();
     test_activity_id_of();
+    test_inbox_candidate_filed_elsewhere();
+    test_former_main_with_folder();
+    test_main_from_folder();
+    test_title_of_its_own();
+    test_across_month_end();
+    test_split_place_taken();
+    test_group_month_twice();
     return Test::test_result();
 }

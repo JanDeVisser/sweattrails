@@ -250,4 +250,68 @@ None.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug.** The once over the store doesn't group activities filed in
+   another time zone. `group_month()` finds an activity where it sits
+   (`month_starts()`), but `group_new()` (`storage/Recordings.cpp:274`)
+   reads it again at `filed_path(storage, start)`, the month the inbox
+   would file it in now. For an activity filed in the month after or
+   before, which `Storage.h` says happens, that file isn't there,
+   `recording_info()` returns none, and the activity isn't grouped. Two
+   recordings of a ride on the last or first day of a month, filed while
+   travelling, both stay listed and count twice. `group_new()` could take
+   the activity's path instead of its start. Test:
+   `test_group_month_filed_elsewhere` in `test/RecordingsTest.cpp`,
+   which fails now. (The inbox's own `group_new()` call isn't affected:
+   the file was just filed by `filed_path()`'s time zone, and candidates
+   come from `activity_starts()`, which looks where they are:
+   `test_inbox_candidate_filed_elsewhere` passes.)
+2. **Bug.** The old app's `<start>.strava` file doesn't go along with its
+   recording. `move_recording()` (`storage/Recordings.cpp:77`) moves only
+   `.fit`, `.json` and `.fit.original`, and `read_names()` reads the name
+   and the description from `<start>.strava` next to the FIT file. A
+   recording that becomes the main one from a folder loses that name and
+   description, and a recording that goes into a folder leaves its
+   `.strava` behind in the month's directory, which
+   `Month::has_activities()` counts as an activity there. Test:
+   `test_strava_file_moves_along`, which fails now.
+3. **Suggestion.** The activity on display isn't loaded again when it
+   stays the main one and gets a recording (`show_main_if_moved()`,
+   `SweatTrails.cpp:1449`, only looks at what was hidden). Look at a
+   Garmin ride as it comes in, then let the Wahoo's come in: the summary
+   line has no "· 2 recordings", and Ctrl+Shift+R says "This activity has
+   one recording." until the activity is shown again. The spec only asks
+   for a moved activity to be shown again, but loading the main one again
+   when it's on display would be cheap.
+4. **Suggestion.** Commands that wait in a query box hold on to the
+   activity's path while a job can move it. Ctrl+Shift+R with its
+   question open while a download's inbox makes another recording the
+   main one: on Yes, `split_recordings()` looks for the folder of a FIT
+   file that's now in a folder itself, moves nothing, reports no error,
+   and the status says "Split into 1 activities, but ..." as
+   `show_again()` can't load it. The fills' question (`cmd_fill_gaps`)
+   and renaming hold the old path the same way. Rare, as both recordings
+   usually come in together, but checking that the file is still there
+   on Yes would make it say why.
+5. **Suggestion.** On the first start, when the once over runs, a bad
+   `recordings.prefer` setting's error ("No preferred devices: ...",
+   `SweatTrails.cpp:1751`) is replaced on the status line by the
+   grouping's progress, and cleared with `set_status("")` at the end if
+   nothing was grouped (`SweatTrails.cpp:1674`). The once over then
+   chooses the main ones by the longest, and isn't done again, so the user
+   may never know the setting was ignored. The same goes for the "No TSS"
+   error, as it did before with the summary file's build.
+6. **Suggestion.** `has_activity()` (`storage/Storage.cpp:236`) now
+   lists the month before and after for recordings' folders, but still
+   only looks for a listed activity in the month of the current time
+   zone. Looking for `<start>.fit` in those two months too would cost
+   nothing more, and keep the downloads from fetching again an activity
+   filed in another time zone (this was so before the branch).
+
+Reviewer's tests added to `test/RecordingsTest.cpp`: the two above that
+fail (1 and 2), and, passing, a preferred recording joining a group whose
+former main one has a folder (the folder merged and removed, the title
+moved, `hidden` right), a new main one coming out of a folder with its
+sidecar, a new main one keeping a name of its own, recordings either side
+of a month's end (grouped, found by `has_activity()`, a duplicate in the
+inbox, split back into the next month), splitting when the place is taken
+(an error, nothing overwritten), and the once over run twice.
