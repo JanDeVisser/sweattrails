@@ -111,7 +111,8 @@ struct Storage {
     // Whether the store has an activity that starts at `start_time`, a Unix
     // time: the inbox files activities by their start time. Also one that's
     // a recording of another (specs/31-multiple-recordings.md), in the
-    // folders of its month and the months around it.
+    // folders. Both in its month and the months around it, as one filed in
+    // another time zone can be.
     [[nodiscard]] bool has_activity(i64 start_time) const;
     // The sidecar of the activity that starts at `start_time`, as the inbox
     // would file it now, whether it's there or not. An activity filed in

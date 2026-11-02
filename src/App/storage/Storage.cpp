@@ -228,13 +228,14 @@ bool Storage::has_activity(i64 start_time) const
     auto const      start = DateTime::from_timestamp(static_cast<i32>(start_time));
     auto const      file = std::format("{}.fit", start_time);
     std::error_code ec { };
-    if (fs::exists(activity_dir / month_dir_name(start) / file, ec)) {
-        return true;
-    }
-    // A recording's main one may have started in the month before or after.
+    // Filed in another time zone, it may be in the month before or after,
+    // and so may a recording's main one.
     Month const month { static_cast<size_t>(start.year), start.month };
     for (auto const step : { -1, 0, 1 }) {
         auto const dir = activity_dir / month.plus(step).dir_name();
+        if (fs::exists(dir / file, ec)) {
+            return true;
+        }
         for (fs::directory_iterator it { dir, ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
             std::error_code entry_ec { };
             if (it->path().filename().string().ends_with(".recordings") && fs::exists(it->path() / file, entry_ec)) {

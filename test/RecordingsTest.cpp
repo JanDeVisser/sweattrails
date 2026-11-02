@@ -294,6 +294,19 @@ void test_has_activity_across_months()
     CHECK(store.storage.has_activity(unix_start(0)));
 }
 
+// An activity filed in the next month, in another time zone, is found:
+// it isn't downloaded and filed again (review finding 6).
+void test_has_activity_filed_elsewhere()
+{
+    Test::TempStore store;
+    auto const      date = DateTime::from_timestamp(static_cast<i32>(unix_start(0)));
+    auto const      next = store.storage.activity_dir / Month { static_cast<size_t>(date.year), date.month }.plus(1).dir_name();
+    fs::create_directories(next);
+    MUST(write_file_by_name((next / std::format("{}.fit", unix_start(0))).string(), std::string_view { "an activity" }));
+    CHECK(store.storage.has_activity(unix_start(0)));
+    CHECK(!store.storage.has_activity(unix_start(1)));
+}
+
 // Reviewer's tests, below.
 
 // A recording written straight into `dir`, as a store filed before this
@@ -527,6 +540,7 @@ int main()
     test_split_after_another_became_main();
     test_group_month();
     test_has_activity_across_months();
+    test_has_activity_filed_elsewhere();
     test_decode_prefer();
     test_activity_id_of();
     test_group_month_filed_elsewhere();
