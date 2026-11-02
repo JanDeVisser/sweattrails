@@ -514,6 +514,7 @@ int main()
     test_former_main_with_folder();
     test_main_from_folder();
     test_title_of_its_own();
+    test_strava_file_moves_along();
     test_across_month_end();
     test_split_place_taken();
     test_group_month_twice();

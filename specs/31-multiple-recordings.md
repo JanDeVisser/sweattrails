@@ -189,7 +189,8 @@ None.
 - **`recordings_dir(main_fit)`**: `<start>.recordings/` next to it, and
   **`recordings_of(main_fit)`**: the FIT files in it.
 - **`group_recordings(storage, infos)`**: chooses the main one, moves
-  the others (`.fit`, `.json`, `.fit.original`) into its folder, with a
+  the others (`.fit`, `.json`, `.fit.original`, and the old app's
+  `.strava`) into its folder, with a
   former main one's folder's recordings, and moves the user's title to
   the new main one if it has none. Says what moved, so the app can show
   the main one if it was showing a recording that moved.
