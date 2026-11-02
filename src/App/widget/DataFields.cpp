@@ -4,9 +4,11 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -253,11 +255,50 @@ std::string segment_summary(Activity const &activity, Segment const &segment)
 
 }
 
+std::string device_name(Activity const &activity)
+{
+    using FIT::manufacturer;
+    // The makers of devices that record rides and runs, as they call
+    // themselves, rather than as FIT does.
+    static std::map<manufacturer, std::string_view> const makers {
+        { manufacturer::garmin, "Garmin" },
+        { manufacturer::wahoo_fitness, "Wahoo" },
+        { manufacturer::zwift, "Zwift" },
+        { manufacturer::zwift_byte, "Zwift" },
+        { manufacturer::hammerhead, "Hammerhead" },
+        { manufacturer::stages_cycling, "Stages" },
+        { manufacturer::srm, "SRM" },
+        { manufacturer::coros, "Coros" },
+        { manufacturer::coros_byte, "Coros" },
+        { manufacturer::polar_electro, "Polar" },
+        { manufacturer::suunto, "Suunto" },
+        { manufacturer::bryton, "Bryton" },
+        { manufacturer::sigmasport, "Sigma" },
+        { manufacturer::lezyne, "Lezyne" },
+    };
+    std::string maker;
+    if (activity.manufacturer) {
+        if (auto const known = makers.find(*activity.manufacturer); known != makers.end()) {
+            maker = known->second;
+        } else {
+            maker = FIT::tag(*activity.manufacturer);
+            std::ranges::replace(maker, '_', ' ');
+        }
+    }
+    if (activity.product_name.empty()) {
+        return maker;
+    }
+    return maker.empty() ? activity.product_name : std::format("{} {}", maker, activity.product_name);
+}
+
 std::string activity_summary(Activity const &activity)
 {
     auto ret = segment_summary(activity, activity.segment);
     if (activity.recordings > 1) {
-        ret += std::format(" · {} recordings", activity.recordings);
+        ret += std::format(" · Recording {} of {}", activity.recording_number, activity.recordings);
+        if (auto const device = device_name(activity); !device.empty()) {
+            ret += std::format(": {}", device);
+        }
     }
     return ret;
 }
