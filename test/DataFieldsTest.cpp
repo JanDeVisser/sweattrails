@@ -851,6 +851,11 @@ void test_lap_summary()
 {
     TestActivity t { sport::Running, std::vector<record>(20), { { 0, 10, 1000, 300 }, { 10, 20, 1500, 450 } } };
     CHECK_EQ(lap_summary(t.activity, 1), "Lap 2 of 2 · 1.50 km · 07:30");
+    // Tab keeps the lap: the line says which recording it's of.
+    t.activity.recordings = 2;
+    t.activity.recording_number = 2;
+    t.activity.manufacturer = FIT::manufacturer::wahoo_fitness;
+    CHECK_EQ(lap_summary(t.activity, 1), "Lap 2 of 2 · 1.50 km · 07:30 · Recording 2 of 2: Wahoo");
 }
 
 std::vector<std::string> headers(LapTable const &table)
@@ -970,6 +975,9 @@ void test_range_summary()
         return;
     }
     CHECK_EQ(range_summary(t.activity, 20, 100, *range), "12.1–12.5 km · 400 m · 01:20");
+    t.activity.recordings = 2;
+    CHECK_EQ(range_summary(t.activity, 20, 100, *range), "12.1–12.5 km · 400 m · 01:20 · Recording 1 of 2");
+    t.activity.recordings = 1;
     // At a stop, in a ride with distance: still where it is in km.
     for (auto ix = 30uz; ix <= 50; ++ix) {
         t.activity.records[ix].distance = 12'160.0f;

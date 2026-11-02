@@ -61,7 +61,8 @@ Comparing the recordings side by side is `33-comparing-recordings.md`.
 - The summary line says which, where it now says "· 2 recordings":
   "42.3 km · 1:25:10 · TSS 87 · Recording 2 of 2: Wahoo". The main one
   says "Recording 1 of 2: Garmin". Its distance, time and TSS are the
-  recording's.
+  recording's. With a lap or a range selected, their line says it too:
+  "Lap 3 of 8 · 1.00 km · 4:52 · Recording 2 of 2: Wahoo".
 - A **device** is named by FIT's maker, "Garmin", "Wahoo", with the
   product name after it when the FIT file has one: "Wahoo ELEMNT
   ROAM". Garmin's product numbers, which would give "Garmin Edge 840",

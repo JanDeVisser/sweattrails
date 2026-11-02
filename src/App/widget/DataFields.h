@@ -45,7 +45,7 @@ std::string device_name(Activity const &activity);
 // The line under the activity's title: the distance, the active time and
 // the TSS, as far as the activity has them, e.g. "42.3 km · 1:32:10 · TSS 87".
 // For one of several recordings, which it is, e.g. "· Recording 2 of 2:
-// Wahoo".
+// Wahoo", as the lap's and the range's lines say too.
 std::string activity_summary(Activity const &activity);
 
 // The line under the title while lap `lap` is selected: which lap it is,
