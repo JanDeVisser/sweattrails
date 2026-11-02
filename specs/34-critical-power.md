@@ -1,6 +1,6 @@
 # Critical power
 
-Status: In progress, on branch feature/34-critical-power
+Status: In review
 
 <!--
 Status is one of:
