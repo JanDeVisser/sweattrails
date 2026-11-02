@@ -332,6 +332,11 @@ StorageResult<std::vector<Grouped>> group_month(Storage &storage, Month const &m
 
 StorageResult<size_t> split_recordings(Storage &storage, fs::path const &main_fit)
 {
+    // The inbox may have made another recording the main one since the
+    // user was asked.
+    if (std::error_code ec { }; in_folder(main_fit) || !fs::exists(main_fit, ec)) {
+        return std::unexpected(StorageError { LibCError { "`{}` isn't the main recording of an activity any more", main_fit.filename().string() } });
+    }
     size_t ret { 0 };
     for (auto const &recording : recordings_of(main_fit)) {
         i64        start { 0 };

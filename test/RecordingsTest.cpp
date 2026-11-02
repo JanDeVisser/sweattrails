@@ -214,6 +214,25 @@ void test_split()
     CHECK(none.has_value() && *none == 0);
 }
 
+// Asked to split an activity that a new recording has since made one of
+// its others: it says so, and moves nothing (review finding 4).
+void test_split_after_another_became_main()
+{
+    Test::TempStore store;
+    store.storage.prefer = { manufacturer::garmin };
+    record(store, Wahoo, 0, 3600);
+    record(store, Zwift, 30, 3500);
+    file(store);
+    auto const asked = fit_of(store, 0);
+    CHECK_EQ(recordings_of(asked).size(), 1uz);
+    record(store, Garmin, 60, 3540);
+    file(store);
+    auto const split = split_recordings(store.storage, asked);
+    CHECK(!split.has_value());
+    CHECK_EQ(recordings_of(fit_of(store, 60)).size(), 2uz);
+    CHECK_EQ(listed(store), 1uz);
+}
+
 // A store filed before there were groups, once over.
 void test_group_month()
 {
@@ -505,6 +524,7 @@ int main()
     test_filing_groups();
     test_filing_by_the_longest();
     test_split();
+    test_split_after_another_became_main();
     test_group_month();
     test_has_activity_across_months();
     test_decode_prefer();

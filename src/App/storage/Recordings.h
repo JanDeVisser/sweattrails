@@ -90,7 +90,7 @@ StorageResult<std::vector<Grouped>> group_month(Storage &storage, Month const &m
 
 // Moves the main recording's others back to where the inbox would file
 // them, as activities of their own, and marks them all as separate. How
-// many it moved.
+// many it moved. An error if `main_fit` isn't a listed activity's.
 StorageResult<size_t> split_recordings(Storage &storage, fs::path const &main_fit);
 
 }
