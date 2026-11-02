@@ -323,6 +323,7 @@ int main()
     test_pair_repeated_timestamps();
     test_compare_paired_seconds_only();
     test_compare_cadence_leaves_out_zeros();
+    test_compare_cadence_as_the_activity_does();
     test_compare_np();
     test_compare_one_sided();
     test_compare_never_together_has_no_difference();

@@ -8,6 +8,7 @@
 #include <functional>
 
 #include <Range.h>
+#include <storage/Activity.h>
 #include <storage/Comparison.h>
 
 namespace ST {
@@ -85,10 +86,14 @@ std::optional<float64> value(std::optional<T> const &v)
     return v ? std::optional { static_cast<float64>(*v) } : std::nullopt;
 }
 
-// Coasting, or standing still, isn't a cadence to average.
-std::optional<float64> pedaling(std::optional<u8> const &cadence)
+// The cadence of a record that counts as pedaling, as the activity's own
+// cadence counts it (cadence_stats()): coasting isn't a cadence to average.
+std::optional<float64> pedaling(FIT::record const &rec)
 {
-    return cadence && *cadence > 0 ? value(cadence) : std::nullopt;
+    if (!rec.cadence || *rec.cadence < PedalingCadence || rec.power.value_or(PedalingPower) < PedalingPower) {
+        return { };
+    }
+    return value(rec.cadence);
 }
 
 }
@@ -145,7 +150,7 @@ Comparison compare(std::span<FIT::record const> shown, std::span<FIT::record con
             shown_np.extend(*a.power);
             other_np.extend(*b.power);
         }
-        cadence.add(pedaling(a.cadence), pedaling(b.cadence));
+        cadence.add(pedaling(a), pedaling(b));
         hr.add(value(a.heart_rate), value(b.heart_rate));
     }
     Comparison ret {
