@@ -170,8 +170,9 @@ None.
   months before and after, as a chunked job like the summary file's, and
   a file `recordings-grouped` in the data directory says it's done.
 - **The preferred devices** in the settings that FIT doesn't know are an
-  error on the status line, as a bad `thresholds` is, and the app starts
-  without preferred devices.
+  error in a message box at start, as an unreadable settings file is, and
+  the app starts without preferred devices. Not on the status line: the
+  once over the store would replace it there.
 - **Splitting** is a job too, as moving files rebuilds the store's
   index, which only jobs may do (`Storage`'s threading note).
 

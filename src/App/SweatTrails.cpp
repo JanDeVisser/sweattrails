@@ -1746,10 +1746,13 @@ void SweatTrails::initialize()
         thresholds_error = thresholds.error();
         set_status(std::format("No TSS: in the settings, {}", thresholds_error));
     }
+    // In a message box, not on the status line: the once over the store
+    // would replace it there, and choose the main recordings without it.
+    std::string prefer_error { };
     if (auto const prefer = decode_prefer(settings.get("recordings")); prefer) {
         storage.prefer = *prefer;
     } else {
-        set_status(std::format("No preferred devices: in the settings, {}", prefer.error()));
+        prefer_error = prefer.error();
     }
 
     bus.add_task<SweatTrails>("st-force-quit", self(), cmd_force_quit)
@@ -1901,6 +1904,9 @@ void SweatTrails::initialize()
     bus.submit("st-download", quiet);
     if (!settings_error.empty()) {
         message_box(std::format("{}. SweatTrails starts without those settings.", settings_error));
+    }
+    if (!prefer_error.empty()) {
+        message_box(std::format("In the settings, {}. SweatTrails chooses the longest recording of an activity as its main one.", prefer_error));
     }
 }
 
