@@ -1,6 +1,6 @@
 # Critical power
 
-Status: Ready
+Status: In progress, on branch feature/34-critical-power
 
 <!--
 Status is one of:
@@ -155,11 +155,105 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### Where the spec leaves a gap
+
+- **Gaps between records.** Garmin's smart recording writes a record
+  every few seconds while riding, not every second, so a gap isn't a
+  pause. A gap of up to `RangeMovingGap` (10 s), the moving gap of
+  ranges and `hr_load`, takes the power of the record after it, as if
+  held; a longer gap is a pause, at zero.
+- **The durations** are a fixed list, `PowerDurations`: 1, 2, 3, 5, 8,
+  10, 15, 20, 30, 45 s, 1, 1.5, 2, 3, 4, 5, 7, 10, 12, 15, 20, 25, 30,
+  40, 50, 60, 75, 90 min, 2, 2.5, 3, 4, 5, 6, 8 and 10 h. Roughly
+  geometric, so the chart and the fit have points at every scale, and
+  they include the table's.
+- **The fit** is least squares of `W = P × t` against `t` over the
+  window's bests at 3, 4, 5, 7, 10, 12, 15 and 20 minutes. "Best efforts
+  across 3 to 20 minutes" means the window has a best for all of them,
+  that is, a ride of 20 minutes or more.
+- **Left and Right**: the window's last day moves 4 weeks, forward up to
+  today, and back as long as the window still ends on or after the first
+  ride with power; a step that would go past either does nothing. P
+  opens on the window up to today.
+- **The table's rows** for durations no ride in the window lasted are
+  left out.
+- **A ride's name** is read from its FIT file and sidecar, as on the
+  activity screen, through a callback the app sets, and kept by file
+  while the screen is open: the table is refreshed after each chunk of
+  the summary job, and on each Left and Right.
+
+### The curve (`storage/PowerCurve.*`), pure
+
+- **`PowerDurations`**, the list above, and **`MaxPower = 1500`**.
+- **`power_curve(std::span<record const>)`**: a ride's best average
+  power for each duration it lasts, `std::vector<u16>`, as long as the
+  durations shorter than the ride. It lays the records out a second
+  each from the first to the last, with the gaps held or at zero as
+  above, readings over `MaxPower` and records without power at zero,
+  and slides a window of each duration over the running sums. Empty for
+  records without any power. About 40 durations over 36,000 seconds for
+  a 10-hour ride: fast enough to run in `read_summary()`.
+- **`PowerBest { watts, summary }`**, the best and the index of the
+  summary that set it, and **`best_curve(summaries, first, last)`**: the
+  best for each duration over the cycling summaries (`volume_sport()`)
+  that start between those days, by `start_day()`. Both the window's
+  curve and the all-time curve are this, with other days.
+- **`CriticalPower { cp, w_prime }`**, and
+  **`critical_power(bests)`**: the fit above, none if it isn't sound.
+
+### The summary file (`storage/Summaries.*`)
+
+- `ActivitySummary` gets **`power`**, `std::vector<u16>`, the ride's
+  curve; empty without power. It's in the file as an array, `"power"`,
+  left out when it's empty.
+- `read_summary()` works it out from `activity.recorded`, the records
+  as recorded, not smoothed, for any activity with power: the pace spec
+  can use the runs' power later if it wants.
+- `SummariesVersion` goes to 3, so the file is built again.
+
+### The screen (`widget/Summaries.*`)
+
+- `Graph` gets **`Power`**, and `SummaryView` **`power_end`**, the
+  window's last day. **`toggle_power()`** (P), as `toggle_fitness()`.
+  `step_year()` moves the window in the power view.
+- **`power_heading(window_bests, cp, ftp, end)`**, and
+  **`power_columns()`** and **`power_rows(bests, summaries, name_of)`**,
+  pure as the fitness's: "5 s · 812 W · 12 Oct 2026 · Morning ride".
+- **The log scale** without changing `LineChart`: the curves are
+  sampled at evenly spaced logarithms of the duration, interpolated
+  between `PowerDurations`, so that x is the log of the time.
+  **`curve_line(bests, points, longest)`** does this, pure, and the
+  ticks are at 1 s, 10 s, 1, 5, 20 min, 1 h and so on, at their own
+  logarithms. A ride's curve that stops before the all-time one stops
+  partway, as this year's year-to-date line does.
+- **Enter** in the power view calls **`on_ride(summary)`**, which the
+  app sets to load the ride and show it, as `on_week` lists a week.
+  **`ride_name(summary)`** is the app's too.
+
+### The app (`SweatTrails.cpp`)
+
+- Task `st-summaries-power`, P, `.when(on_summaries)`. The callbacks
+  above. The README.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `PowerCurveTest` (new): `power_curve()` of steady power, of an effort
+  in the middle of a ride, a pause longer than 10 s at zero, a gap of 5
+  s held, a spike over 1500 W at zero, a ride without power, a ride
+  shorter than a duration; `best_curve()` over rides inside and outside
+  the window, runs left out, the index of the summary that set each
+  best; `critical_power()` of bests made from a known CP and W', none
+  without a 20-minute best, none for a W' at or below zero.
+- `SummariesTest`: version 3 round trip with `power`; a version 2 file
+  is read as none; `read_summary()` of a FIT file with power has the
+  curve.
+- `SummariesScreenTest`: P and back, F, G and W from the power view;
+  the heading with CP and FTP, without a sound CP, and without rides;
+  Left and Right and their limits; R doesn't change it; the rows, with
+  the durations no ride lasted left out; Enter calls `on_ride` with the
+  row's ride; `curve_line()`'s samples at the durations themselves.
+- By hand: the chart on Jan's rides, after the summary file is built
+  again, and Enter opening a ride.
 
 ## Review notes
 
