@@ -1,6 +1,6 @@
 # Comparing the recordings of an activity
 
-Status: Ready
+Status: In progress, on branch feature/33-comparing-recordings
 
 <!--
 Status is one of:
@@ -128,11 +128,86 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### Pairing and the numbers (`storage/Comparison.*`, new)
+
+Pure functions on records, so that they're tested without a window.
+
+- **`pair_records(shown, other)`**: for each record of the recording on
+  display, the index of the other's record at its time, or none. "At its
+  time" is the other's record at the same second, or the last one before
+  it if that's at most `PairHoldSeconds` (2 s) earlier, as a FIT record's
+  values hold until the next one: smart recording writes a record every
+  few seconds. One pass over both, as both are in time order. The pairs
+  index both `records` (smoothed, for the graph) and `recorded` (as
+  recorded, for the numbers), which have the same records.
+- **`Compared`**: one number of both, `std::optional<float64> shown,
+  other`, and `difference()` and `percent()` when both are there.
+- **`Comparison`**: average and maximum power, NP, average cadence, and
+  average and maximum heart rate, each a `Compared`.
+- **`compare(shown, other, pairs, first, end)`**: the `Comparison` over
+  the shown records `[first, end)`, from `recorded`. Each number goes
+  over the records where both have that value: power over those where
+  both have power, and so on. Cadence leaves out the seconds where
+  either is 0, as the activity's own cadence does. NP is a
+  `NormalizedRange<u16, 30>` of each over the paired seconds, as the
+  segments' NP is, and none under 30 of them.
+
+### The recording compared with (`widget/DisplayedActivity.*`)
+
+- **`DisplayedActivity::compared`**: `std::optional<ComparedRecording>`,
+  the other recording (`Activity`), its device's name, and the pairs.
+  Set while comparing; none otherwise.
+- **`DisplayedActivity::comparison()`**: the `Comparison` of what's
+  selected: the lap, the dragged range, or the whole activity.
+
+### The screen
+
+- **`SweatTrails::comparing`**, on the UI thread, toggled by
+  `st-compare-recordings` (Ctrl+K, `.when(on_activity_screen)`). Turning
+  it on for an activity of one recording says so, and leaves it off.
+- **Loading the other**: `show_activity()` and `show_recording()` call
+  `compare_if_on()`, which, while comparing and for an activity of more
+  than one recording, loads the other one (the main one, or recording 2
+  on the main one, from `recordings_in_order()`) with a deep load, and
+  sets it on the display with `ActivityDisplay::compare_with()`. Ctrl+K
+  does it for the activity on display, or clears it. Loading on the UI
+  thread is as Ctrl+M's list and Left and Right do it.
+- **The data panel**: `data_fields(activity, segment, first_record,
+  comparison)` takes an optional `Comparison`; with one, its lines take
+  the place of the HR, power and cadence lines: "Avg Power  245 / 238 W
+  · +7 W (+3%)". `format_compared()` formats one.
+- **The summary lines**: `compared_suffix(device)` gives ", compared
+  with Garmin", which the panel adds after the activity's, lap's or
+  range's line.
+- **The lap table**: `lap_table(activity, lap_comparisons)`, with the
+  laps' `Comparison`s while comparing, adds a "Δ Power" column, "+7 W".
+- **The graph**: `ActivityGraph` draws, while comparing, power, heart
+  rate and cadence of both, the other's from the pairs in a lighter
+  shade (`ColorBrightness`), on one scale for both, and leaves out
+  altitude and speed. The banner's text comes from
+  `compare_banner(record, other_record)`, in `widget/DataFields.*`, so
+  it's tested.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `ComparisonTest` (new):
+  - `pair_records()`: two 1 s recordings started a minute apart; one
+    recording every 3 s against one every second; a gap in the other of
+    more than 2 s; nothing in common.
+  - `compare()`: averages and maxima over the paired seconds only, with a
+    dropout on one; cadence leaving out zeros; NP with 30 paired seconds
+    or more, and none under; a value only one has; `difference()` and
+    `percent()`, and their sign.
+- `DataFieldsTest`: `format_compared()` with both and with one;
+  `data_fields()` with a comparison replacing the HR, power and cadence
+  lines; `compared_suffix()`; `lap_table()`'s "Δ Power" column;
+  `compare_banner()`.
+- `DisplayedActivityTest`: `comparison()` of the activity, a lap and a
+  range.
+- By hand: Ctrl+K on a compare ride, the graph's six lines and the
+  banner, a lap, a range, Tab with comparing on, Left and Right to an
+  activity of one recording and back, and Ctrl+K on an activity of one
+  recording.
 
 ## Review notes
 
