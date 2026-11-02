@@ -1311,6 +1311,7 @@ int main()
     test_summary();
     test_device_name();
     test_format_compared();
+    test_format_compared_zero();
     test_data_fields_compared();
     test_lap_table_compared();
     test_compare_banner();

@@ -340,6 +340,18 @@ std::string range_summary(Activity const &activity, size_t first, size_t last, S
     return std::format("{}–{} · {}{}", since_start(from), since_start(to), segment_summary(activity, segment), recording_suffix(activity));
 }
 
+namespace {
+
+// A difference rounded to a whole number, with its sign: "+7", "-3", and
+// "+0" rather than "-0" for one just under zero.
+std::string signed_whole(float64 value)
+{
+    auto const rounded = std::round(value);
+    return std::format("{:+.0f}", rounded == 0 ? 0.0 : rounded);
+}
+
+}
+
 std::string format_compared(Compared const &compared, std::string_view unit, float64 scale)
 {
     auto const value = [scale](std::optional<float64> const &v) {
@@ -347,9 +359,9 @@ std::string format_compared(Compared const &compared, std::string_view unit, flo
     };
     auto ret = std::format("{} / {} {}", value(compared.shown), value(compared.other), unit);
     if (auto const difference = compared.difference(); difference) {
-        ret += std::format(" · {:+.0f} {}", std::round(*difference * scale), unit);
+        ret += std::format(" · {} {}", signed_whole(*difference * scale), unit);
         if (auto const percent = compared.percent(); percent) {
-            ret += std::format(" ({:+.0f}%)", std::round(*percent));
+            ret += std::format(" ({}%)", signed_whole(*percent));
         }
     }
     return ret;
@@ -512,7 +524,7 @@ LapTable lap_table(Activity const &activity, std::vector<std::optional<Compariso
         table.columns.push_back({ .header = "Δ Power", .right_aligned = true });
         for (auto ix = 0uz; ix < table.rows.size(); ++ix) {
             auto const difference = ix < laps_compared.size() && laps_compared[ix] ? laps_compared[ix]->avg_power.difference() : std::nullopt;
-            table.rows[ix].push_back(difference ? std::format("{:+.0f} W", std::round(*difference)) : std::string { });
+            table.rows[ix].push_back(difference ? std::format("{} W", signed_whole(*difference)) : std::string { });
         }
     }
     return table;
