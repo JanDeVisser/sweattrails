@@ -40,6 +40,7 @@ ActivitySummary summary(std::string const &file, i64 start)
         .ascent = 412,
         .np = 231,
         .hr_load = 1.2e8,
+        .power = { 812, 790, 702, 455 },
     };
 }
 
@@ -52,6 +53,7 @@ void test_round_trip()
     unreadable.sub_sport.reset();
     unreadable.np.reset();
     unreadable.hr_load.reset();
+    unreadable.power.clear();
     ActivitySummaries const written { summary("2025/03/1741000000.fit", 1741000000), unreadable };
     CHECK(write_summaries(path, written).has_value());
     CHECK(read_summaries(path) == written);
@@ -78,9 +80,12 @@ void test_no_file()
     CHECK(read_summaries(path).empty());
     MUST(write_file_by_name(path.string(), std::string_view { "{ not json" }));
     CHECK(read_summaries(path).empty());
-    MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 2, "activities": [] })" }));
+    MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 3, "activities": [ { "file": "a.fit" } ] })" }));
     CHECK(read_summaries(path).empty());
-    MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 2, "activities": [ { "file": "a.fit" } ] })" }));
+    // Version 2 had no power curves.
+    MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 2, "activities": [ { "file": "a.fit", "size": 1, "modified": 1, "start": 1, "distance": 0, "moving": 0, "ascent": 0 } ] })" }));
+    CHECK(read_summaries(path).empty());
+    MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 3, "activities": [ { "file": "a.fit", "size": 1, "modified": 1, "start": 1, "distance": 0, "moving": 0, "ascent": 0, "power": [ "x" ] } ] })" }));
     CHECK(read_summaries(path).empty());
     // Version 1 had no NP or heart rate.
     MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 1, "activities": [ { "file": "a.fit", "size": 1, "modified": 1, "start": 1, "distance": 0, "moving": 0, "ascent": 0 } ] })" }));
@@ -152,6 +157,9 @@ void test_read_records()
     // NP is worked out in floats, which can round 200 W down.
     CHECK(ride.np && (*ride.np == 199 || *ride.np == 200));
     CHECK(ride.hr_load == 150.0 * 150 * 119);
+    // Two minutes at 200 W: every duration up to 2 minutes.
+    CHECK_EQ(ride.power.size(), 13uz);
+    CHECK(std::ranges::all_of(ride.power, [](u16 watts) { return watts == 200; }));
 }
 
 // Without power: no NP. A pause of 41 s between two minutes of records
@@ -177,6 +185,7 @@ void test_read_records_with_a_pause()
     auto const run = read_summary(store.storage, (*files)[0]);
     CHECK(run.sport.has_value());
     CHECK(!run.np);
+    CHECK(run.power.empty());
     CHECK(run.hr_load == 150.0 * 150 * 118);
 }
 

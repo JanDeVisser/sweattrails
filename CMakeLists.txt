@@ -228,6 +228,7 @@ add_executable(
         src/App/storage/Recordings.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Summaries.cpp
+        src/App/storage/PowerCurve.cpp
         src/App/storage/Fitness.cpp
         src/App/storage/Thresholds.cpp
         src/App/storage/Volume.cpp
@@ -698,6 +699,8 @@ sweattrails_test(
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
         src/App/storage/Summaries.cpp
+        src/App/storage/PowerCurve.cpp
+        src/App/storage/Volume.cpp
         src/App/storage/Types.cpp
         src/App/fit/FIT.cpp
         src/App/fit/Profile.cpp
@@ -714,8 +717,17 @@ sweattrails_test(
         src/App/storage/Volume.cpp
         src/App/storage/Fitness.cpp
         src/App/storage/Thresholds.cpp
+        src/App/storage/PowerCurve.cpp
 )
 target_include_directories(summaries_screen_test PRIVATE src/App)
+
+sweattrails_test(
+        power_curve_test
+        test/PowerCurveTest.cpp
+        src/App/storage/PowerCurve.cpp
+        src/App/storage/Volume.cpp
+)
+target_include_directories(power_curve_test PRIVATE src/App)
 
 sweattrails_test(
         fit_patch_test
@@ -745,6 +757,7 @@ sweattrails_test(
         test/RecordingsTest.cpp
         src/App/storage/Recordings.cpp
         src/App/storage/Summaries.cpp
+        src/App/storage/PowerCurve.cpp
         src/App/storage/Volume.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
