@@ -224,6 +224,7 @@ add_executable(
         src/App/widget/Summaries.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Gaps.cpp
+        src/App/storage/Comparison.cpp
         src/App/storage/Recordings.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Summaries.cpp
@@ -727,6 +728,13 @@ sweattrails_test(
 )
 target_include_directories(fit_patch_test PRIVATE src/App)
 target_link_libraries(fit_patch_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        comparison_test
+        test/ComparisonTest.cpp
+        src/App/storage/Comparison.cpp
+)
+target_include_directories(comparison_test PRIVATE src/App)
 
 sweattrails_test(
         recordings_test
