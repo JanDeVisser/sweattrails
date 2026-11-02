@@ -150,7 +150,9 @@ Pure functions on records, so that they're tested without a window.
   both have power, and so on. Cadence leaves out the seconds where
   either is 0, as the activity's own cadence does. NP is a
   `NormalizedRange<u16, 30>` of each over the paired seconds, as the
-  segments' NP is, and none under 30 of them.
+  segments' NP is, and none under 30 of them. A value they never both
+  have is each one's own, where it has it, so that the panel can say
+  "245 / – W".
 
 ### The recording compared with (`widget/DisplayedActivity.*`)
 

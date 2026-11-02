@@ -1510,6 +1510,27 @@ void show_recording_next_to(pSweatTrails const &sweattrails, int step)
     }
 }
 
+// Ctrl+K: compares the recording on display with another, the main one,
+// on every activity of several recordings, until Ctrl+K again.
+void cmd_compare_recordings(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    auto const displayed = activity_for_keys(sweattrails);
+    if (!displayed) {
+        return;
+    }
+    if (sweattrails->comparing) {
+        sweattrails->comparing = false;
+        sweattrails->activity_display->compare_with(std::nullopt);
+        return;
+    }
+    if (displayed->activity.recordings < 2) {
+        message_box("This activity has one recording.");
+        return;
+    }
+    sweattrails->comparing = true;
+    sweattrails->compare_if_on();
+}
+
 void cmd_next_recording(pSweatTrails const &sweattrails, JSONValue const &)
 {
     show_recording_next_to(sweattrails, 1);
@@ -1607,6 +1628,7 @@ void show_main_again(pSweatTrails const &the, std::vector<Grouped> const &groups
         } else if (the->showing_summaries()) {
             the->last_activity = *id;
             the->activity_display->set_activity(*loaded);
+            the->compare_if_on();
         } else {
             the->show_activity(*loaded);
         }
@@ -1847,6 +1869,7 @@ void SweatTrails::show_activity(Activity const &activity)
     auto display = widget_stack->activate<ActivityDisplay>();
     assert(display != nullptr);
     display->set_activity(activity);
+    compare_if_on();
 }
 
 void SweatTrails::show_recording(Activity const &recording)
@@ -1856,6 +1879,26 @@ void SweatTrails::show_recording(Activity const &recording)
     auto display = widget_stack->activate<ActivityDisplay>();
     assert(display != nullptr);
     display->switch_recording(recording);
+    compare_if_on();
+}
+
+void SweatTrails::compare_if_on()
+{
+    auto const displayed = activity_display->activity;
+    if (!comparing || !displayed || displayed->activity.recordings < 2) {
+        return;
+    }
+    auto const &id = displayed->activity.id;
+    auto const  order = recordings_in_order(storage, id);
+    if (order.size() < 2) {
+        return;
+    }
+    auto const other = load_to_show(storage, id.recording.empty() ? order[1] : order[0]);
+    if (!other) {
+        set_status(std::format("Can't compare: {}", other.error()));
+        return;
+    }
+    activity_display->compare_with(*other);
 }
 
 void SweatTrails::initialize()
@@ -2013,6 +2056,9 @@ void SweatTrails::initialize()
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-group-recordings", self(), cmd_group_recordings)
         .bind(KeyCombo { KEY_J, KModControl })
+        .when(on_activity_screen);
+    bus.add_task<SweatTrails>("st-compare-recordings", self(), cmd_compare_recordings)
+        .bind(KeyCombo { KEY_K, KModControl })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-next-recording", self(), cmd_next_recording)
         .bind(KeyCombo { KEY_TAB, KModNone })
