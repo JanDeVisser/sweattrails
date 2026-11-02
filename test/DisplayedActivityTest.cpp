@@ -50,6 +50,28 @@ int lap(std::optional<size_t> lap)
     return lap ? static_cast<int>(*lap) : -1;
 }
 
+// Tab to another recording, with lap 2 selected on the one before: it's
+// kept if this one has a lap 2.
+void test_keep_lap()
+{
+    TestActivity t;
+    t.displayed->keep_lap(2);
+    CHECK_EQ(lap(t.displayed->lap), 2);
+    CHECK(t.displayed->segment.has_value() && t.displayed->segment->min == 40);
+
+    TestActivity fewer { { 10, 100 } };
+    fewer.displayed->keep_lap(2);
+    CHECK_EQ(lap(fewer.displayed->lap), -1);
+
+    TestActivity none { { 100 } };
+    none.displayed->keep_lap(0);
+    CHECK_EQ(lap(none.displayed->lap), -1);
+
+    t.displayed->whole_activity();
+    t.displayed->keep_lap({ });
+    CHECK_EQ(lap(t.displayed->lap), -1);
+}
+
 // A drag in the graph clears the mark, and selects a range up to where the
 // mouse is: the preview follows that, rather than jumping to the start.
 void test_current_record()
@@ -388,6 +410,7 @@ void test_lap_of()
 int main()
 {
     test_current_record();
+    test_keep_lap();
     test_drag_either_way();
     test_end_segment();
     test_range_stats_cleared();

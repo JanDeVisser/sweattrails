@@ -43,8 +43,10 @@ ActivityMap::~ActivityMap()
     unload_tiles();
 }
 
-void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activity)
+void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activity, bool keep_view)
 {
+    auto const before = navigator.view;
+    auto const was_moved = navigator.moved && has_map;
     stop_download();
     unload_tiles();
     failed.clear();
@@ -63,6 +65,9 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
     }
     policy = SizePolicy::Relative;
     has_map = true;
+    if (keep_view) {
+        navigator.keep(before, was_moved);
+    }
 
     // A record without a position is drawn where the one before it was.
     auto const none = std::numeric_limits<double>::quiet_NaN();

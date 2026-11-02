@@ -397,6 +397,8 @@ struct SweatTrails : public Main<Job, Notification> {
     // An empty text, while a login waits, shows that it waits.
     void set_status(std::string_view const &text);
     void show_activity(Activity const &activity);
+    // Another recording of the activity on display, keeping the view.
+    void show_recording(Activity const &recording);
     // Has the job read what's new in the store for the summaries, unless
     // it's doing that already.
     void               update_summaries();

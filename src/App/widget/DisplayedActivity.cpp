@@ -102,6 +102,13 @@ std::optional<size_t> DisplayedActivity::lap_of(size_t t) const
     return { };
 }
 
+void DisplayedActivity::keep_lap(std::optional<size_t> ix)
+{
+    if (ix && has_laps()) {
+        select_lap(*ix);
+    }
+}
+
 void DisplayedActivity::select_lap(size_t ix)
 {
     if (ix >= activity.laps.size()) {

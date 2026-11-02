@@ -623,7 +623,30 @@ void test_summary()
     t.activity.segment.distance = 30000;
     CHECK_EQ(activity_summary(t.activity), "30.0 km · 50:00 · TSS 44");
     t.activity.recordings = 2;
-    CHECK_EQ(activity_summary(t.activity), "30.0 km · 50:00 · TSS 44 · 2 recordings");
+    CHECK_EQ(activity_summary(t.activity), "30.0 km · 50:00 · TSS 44 · Recording 1 of 2");
+    t.activity.recording_number = 2;
+    t.activity.manufacturer = FIT::manufacturer::wahoo_fitness;
+    t.activity.product_name = "ELEMNT ROAM";
+    CHECK_EQ(activity_summary(t.activity), "30.0 km · 50:00 · TSS 44 · Recording 2 of 2: Wahoo ELEMNT ROAM");
+}
+
+void test_device_name()
+{
+    TestActivity t { sport::Cycling, std::vector<record>(10) };
+    CHECK_EQ(device_name(t.activity), "");
+    t.activity.manufacturer = FIT::manufacturer::garmin;
+    CHECK_EQ(device_name(t.activity), "Garmin");
+    t.activity.manufacturer = FIT::manufacturer::favero_electronics;
+    CHECK_EQ(device_name(t.activity), "favero electronics");
+    t.activity.product_name = "Assioma";
+    CHECK_EQ(device_name(t.activity), "favero electronics Assioma");
+    t.activity.manufacturer = { };
+    CHECK_EQ(device_name(t.activity), "Assioma");
+    // A maker FIT's profile doesn't have isn't named "Unknown".
+    t.activity.manufacturer = static_cast<FIT::manufacturer>(65000);
+    CHECK_EQ(device_name(t.activity), "Assioma");
+    t.activity.product_name.clear();
+    CHECK_EQ(device_name(t.activity), "");
 }
 
 void test_summary_without_distance_or_tss()
@@ -833,6 +856,11 @@ void test_lap_summary()
 {
     TestActivity t { sport::Running, std::vector<record>(20), { { 0, 10, 1000, 300 }, { 10, 20, 1500, 450 } } };
     CHECK_EQ(lap_summary(t.activity, 1), "Lap 2 of 2 · 1.50 km · 07:30");
+    // Tab keeps the lap: the line says which recording it's of.
+    t.activity.recordings = 2;
+    t.activity.recording_number = 2;
+    t.activity.manufacturer = FIT::manufacturer::wahoo_fitness;
+    CHECK_EQ(lap_summary(t.activity, 1), "Lap 2 of 2 · 1.50 km · 07:30 · Recording 2 of 2: Wahoo");
 }
 
 std::vector<std::string> headers(LapTable const &table)
@@ -952,6 +980,9 @@ void test_range_summary()
         return;
     }
     CHECK_EQ(range_summary(t.activity, 20, 100, *range), "12.1–12.5 km · 400 m · 01:20");
+    t.activity.recordings = 2;
+    CHECK_EQ(range_summary(t.activity, 20, 100, *range), "12.1–12.5 km · 400 m · 01:20 · Recording 1 of 2");
+    t.activity.recordings = 1;
     // At a stop, in a ride with distance: still where it is in km.
     for (auto ix = 30uz; ix <= 50; ++ix) {
         t.activity.records[ix].distance = 12'160.0f;
@@ -1104,6 +1135,7 @@ int main()
     test_power_before_heart_rate();
     test_panel_has_no_distance_or_moving_time();
     test_summary();
+    test_device_name();
     test_summary_without_distance_or_tss();
     test_unrealistic_maxima_are_not_shown();
     test_only_times_without_data();

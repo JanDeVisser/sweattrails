@@ -82,7 +82,9 @@ struct ActivityMap : public Widget {
     void draw() override;
     void resize() override;
     void process_input() override;
-    void set_activity(std::shared_ptr<DisplayedActivity> const &activity);
+    // With `keep_view`, the view the user moved to stays, as on another
+    // recording of the activity.
+    void set_activity(std::shared_ptr<DisplayedActivity> const &activity, bool keep_view = false);
     void add_tile(MapTile const &tile);
     void tiles_done(MapTilesDone const &done);
     // A Zwift world was cut into tiles: if it's the activity's, the map
@@ -143,6 +145,9 @@ struct ActivityDisplay : public Layout {
 
     explicit ActivityDisplay(pWidget const &parent);
     void set_activity(Activity const &activity);
+    // Another recording of the activity on display: as set_activity(), but
+    // the map's view and the selected lap stay as they were.
+    void switch_recording(Activity const &recording);
     void clear_activity();
     // The activity's laps changed: the table shows them again.
     void               laps_changed();
@@ -153,6 +158,7 @@ struct ActivityDisplay : public Layout {
 
 private:
     void show_laps();
+    void show(Activity const &activity, bool keep_view);
 };
 
 }

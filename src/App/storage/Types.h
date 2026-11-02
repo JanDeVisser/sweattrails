@@ -185,6 +185,10 @@ struct ActivityID {
     Month       month { };
     std::string name { };
     FileTypes   files { };
+    // Another recording of the activity than its main one, by its name in
+    // the main one's folder, `<name>.recordings/<recording>.fit`
+    // (specs/32-switching-recordings.md). Empty for the main one.
+    std::string recording { };
 
     ActivityID() = default;
     ActivityID(Month const &the_month, std::string_view const &the_name, FileTypes the_files)
@@ -195,6 +199,12 @@ struct ActivityID {
     }
 
     auto operator<=>(ActivityID const &) const = default;
+
+    // The activity's, its main recording's.
+    [[nodiscard]] ActivityID main() const
+    {
+        return ActivityID { month, name, files };
+    }
 
     static ActivityID dummy(ActivityFile file_type)
     {

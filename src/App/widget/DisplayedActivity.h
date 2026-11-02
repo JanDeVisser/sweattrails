@@ -64,6 +64,9 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     // The lap that record `t` is in.
     [[nodiscard]] std::optional<size_t> lap_of(size_t t) const;
     void                                select_lap(size_t ix);
+    // After a switch from another recording of the activity: the lap that
+    // was selected there, by its number, if this one has it.
+    void keep_lap(std::optional<size_t> ix);
     // Selects the lap, or goes back to the whole activity if it's selected.
     void toggle_lap(size_t ix);
     // The next lap, or the first if none is selected. Stays on the last.

@@ -4,9 +4,11 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -253,38 +255,89 @@ std::string segment_summary(Activity const &activity, Segment const &segment)
 
 }
 
-std::string activity_summary(Activity const &activity)
+std::string device_name(Activity const &activity)
 {
-    auto ret = segment_summary(activity, activity.segment);
-    if (activity.recordings > 1) {
-        ret += std::format(" · {} recordings", activity.recordings);
+    using FIT::manufacturer;
+    // The makers of devices that record rides and runs, as they call
+    // themselves, rather than as FIT does.
+    static std::map<manufacturer, std::string_view> const makers {
+        { manufacturer::garmin, "Garmin" },
+        { manufacturer::wahoo_fitness, "Wahoo" },
+        { manufacturer::zwift, "Zwift" },
+        { manufacturer::zwift_byte, "Zwift" },
+        { manufacturer::hammerhead, "Hammerhead" },
+        { manufacturer::stages_cycling, "Stages" },
+        { manufacturer::srm, "SRM" },
+        { manufacturer::coros, "Coros" },
+        { manufacturer::coros_byte, "Coros" },
+        { manufacturer::polar_electro, "Polar" },
+        { manufacturer::suunto, "Suunto" },
+        { manufacturer::bryton, "Bryton" },
+        { manufacturer::sigmasport, "Sigma" },
+        { manufacturer::lezyne, "Lezyne" },
+    };
+    std::string maker;
+    if (activity.manufacturer) {
+        if (auto const known = makers.find(*activity.manufacturer); known != makers.end()) {
+            maker = known->second;
+        } else if (std::string_view const tag = FIT::tag(*activity.manufacturer); FIT::manufacturer_by_name(tag) == activity.manufacturer) {
+            // FIT's name, if its profile has the maker: not "Unknown".
+            maker = tag;
+            std::ranges::replace(maker, '_', ' ');
+        }
+    }
+    if (activity.product_name.empty()) {
+        return maker;
+    }
+    return maker.empty() ? activity.product_name : std::format("{} {}", maker, activity.product_name);
+}
+
+namespace {
+
+// Which of the activity's recordings is shown, for the line under the
+// title, whatever is selected: " · Recording 2 of 2: Wahoo".
+std::string recording_suffix(Activity const &activity)
+{
+    if (activity.recordings < 2) {
+        return "";
+    }
+    auto ret = std::format(" · Recording {} of {}", activity.recording_number, activity.recordings);
+    if (auto const device = device_name(activity); !device.empty()) {
+        ret += std::format(": {}", device);
     }
     return ret;
 }
 
+}
+
+std::string activity_summary(Activity const &activity)
+{
+    return segment_summary(activity, activity.segment) + recording_suffix(activity);
+}
+
 std::string lap_summary(Activity const &activity, size_t lap)
 {
-    return std::format("Lap {} of {} · {}", lap + 1, activity.laps.size(), segment_summary(activity, activity.laps[lap].segment));
+    return std::format("Lap {} of {} · {}{}", lap + 1, activity.laps.size(), segment_summary(activity, activity.laps[lap].segment), recording_suffix(activity));
 }
 
 std::string range_summary(Activity const &activity, size_t first, size_t last, Segment const &segment)
 {
     auto const &records = activity.records;
     if (first > last || last >= records.size()) {
-        return segment_summary(activity, segment);
+        return segment_summary(activity, segment) + recording_suffix(activity);
     }
     auto const &from = records[first];
     auto const &to = records[last];
     // By whether the records have distance, not whether the range went
     // anywhere: a range at a stop says where it is in km, as the others do.
     if (from.distance && to.distance) {
-        return std::format("{:.1f}–{:.1f} km · {}", *from.distance / 1000.0f, *to.distance / 1000.0f, segment_summary(activity, segment));
+        return std::format("{:.1f}–{:.1f} km · {}{}", *from.distance / 1000.0f, *to.distance / 1000.0f, segment_summary(activity, segment), recording_suffix(activity));
     }
     auto const since_start = [&records](record const &rec) {
         Duration const since { rec.timestamp.timestamp - records.front().timestamp.timestamp };
         return std::format("{}:{:02}:{:02}", since.elapsed / Duration::SECONDS_PER_HOUR, since.minutes, since.seconds);
     };
-    return std::format("{}–{} · {}", since_start(from), since_start(to), segment_summary(activity, segment));
+    return std::format("{}–{} · {}{}", since_start(from), since_start(to), segment_summary(activity, segment), recording_suffix(activity));
 }
 
 std::vector<DataLine> data_fields(Activity const &activity, Segment const &segment, size_t first_record)
