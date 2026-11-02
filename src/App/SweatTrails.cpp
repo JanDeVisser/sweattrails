@@ -849,12 +849,13 @@ void cmd_previous_lap(pSweatTrails const &sweattrails, JSONValue const &)
 // to load all of it, or be gone since it was listed.
 std::expected<Activity, std::string> load_to_show(Storage &storage, ActivityID const &id)
 {
-    auto const loaded = id.load(storage, LoadingDepth::Deep);
+    auto const  loaded = id.load(storage, LoadingDepth::Deep);
+    auto const &name = id.recording.empty() ? id.name : id.recording;
     if (!loaded) {
-        return std::unexpected(std::format("`{}` can't be loaded: {}", id.name, loaded.error().to_string()));
+        return std::unexpected(std::format("`{}` can't be loaded: {}", name, loaded.error().to_string()));
     }
     if (!*loaded) {
-        return std::unexpected(std::format("`{}` isn't there any more", id.name));
+        return std::unexpected(std::format("`{}` isn't there any more", name));
     }
     return **loaded;
 }
@@ -1475,7 +1476,8 @@ void cmd_remove_fills(pSweatTrails const &sweattrails, JSONValue const &)
 }
 
 // Tab and Shift+Tab: the next (`step` +1) or previous (-1) recording of
-// the activity on display, the main one first, wrapping around.
+// the activity on display, the main one first, wrapping around. One that
+// doesn't load is passed over, and named, as Left and Right do.
 void show_recording_next_to(pSweatTrails const &sweattrails, int step)
 {
     auto const displayed = activity_for_keys(sweattrails);
@@ -1488,12 +1490,20 @@ void show_recording_next_to(pSweatTrails const &sweattrails, int step)
     if (order.size() < 2 || here == order.end()) {
         return;
     }
-    auto const count = static_cast<int>(order.size());
-    auto const next = order[static_cast<size_t>((static_cast<int>(here - order.begin()) + step + count) % count)];
-    if (auto loaded = load_to_show(sweattrails->storage, next); loaded) {
-        sweattrails->show_recording(*loaded);
-    } else {
-        sweattrails->set_status(loaded.error());
+    auto const               count = static_cast<int>(order.size());
+    auto                     ix = static_cast<int>(here - order.begin());
+    std::vector<std::string> skipped;
+    for (auto tries = 1; tries < count; ++tries) {
+        ix = (ix + step + count) % count;
+        if (auto loaded = load_to_show(sweattrails->storage, order[static_cast<size_t>(ix)]); loaded) {
+            sweattrails->show_recording(*loaded);
+            break;
+        } else {
+            skipped.push_back(loaded.error());
+        }
+    }
+    if (!skipped.empty()) {
+        message_box(join(skipped, "\n"));
     }
 }
 
