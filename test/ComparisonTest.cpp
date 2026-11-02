@@ -320,6 +320,7 @@ int main()
     test_pair_started_late();
     test_pair_smart_recording();
     test_pair_nothing_in_common();
+    test_pair_clock_set_back();
     test_pair_repeated_timestamps();
     test_compare_paired_seconds_only();
     test_compare_cadence_leaves_out_zeros();

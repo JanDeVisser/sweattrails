@@ -25,8 +25,8 @@ constexpr u32 PairHoldSeconds = 2;
 
 // For each of `shown`'s records, the index of `other`'s record at its
 // time: the one at the same second, or the last one before it, at most
-// PairHoldSeconds earlier. None where the other has no record then. Both
-// are in time order. The indices are into `records` and `recorded`
+// PairHoldSeconds earlier. None where the other has no record then. The
+// other's are in time order; the shown one's needn't be. The indices are into `records` and `recorded`
 // alike, which have the same records.
 [[nodiscard]] std::vector<std::optional<size_t>> pair_records(std::span<FIT::record const> shown, std::span<FIT::record const> other);
 

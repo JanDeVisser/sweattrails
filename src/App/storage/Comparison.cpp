@@ -102,13 +102,13 @@ std::vector<std::optional<size_t>> pair_records(std::span<FIT::record const> sho
 {
     std::vector<std::optional<size_t>> ret;
     ret.reserve(shown.size());
-    size_t next { 0 }; // The first of `other`'s records after the shown one's time
+    // A search for each, rather than one pass over both: a device whose
+    // clock was set back during the activity repeats seconds.
     for (auto const &rec : shown) {
         auto const t = rec.timestamp.timestamp;
-        while (next < other.size() && other[next].timestamp.timestamp <= t) {
-            ++next;
-        }
-        if (next > 0 && t - other[next - 1].timestamp.timestamp <= PairHoldSeconds) {
+        auto const after = std::ranges::upper_bound(other, t, { }, [](FIT::record const &o) { return o.timestamp.timestamp; });
+        auto const next = static_cast<size_t>(after - other.begin());
+        if (next > 0 && static_cast<i64>(t) - static_cast<i64>(other[next - 1].timestamp.timestamp) <= PairHoldSeconds) {
             ret.push_back(next - 1);
         } else {
             ret.push_back(std::nullopt);
