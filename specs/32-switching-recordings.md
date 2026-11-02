@@ -1,6 +1,6 @@
 # Switching between the recordings of an activity
 
-Status: Ready
+Status: In progress, on branch feature/32-switching-recordings
 
 <!--
 Status is one of:
@@ -115,11 +115,95 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### A recording's identity (`storage/Types.h`, `storage/Activity.*`)
+
+- **`ActivityID::recording`**: the stem of a recording in its main one's
+  folder, `<name>.recordings/<recording>.fit`, and empty for the main one.
+  `month` and `name` stay the main one's, so everything that goes by the
+  activity works as from the activity without changes: Left and Right
+  (`activity_next_to()` finds the activity by `name`), the last activity
+  shown, and `show_main_again()` after grouping. `ActivityID::main()` is
+  the ID without the recording, for Ctrl+M's list to select.
+- **Loading**: `Activity::load()` reads a recording's FIT file from the
+  folder. `sidecar` is the recording's own, so laps (`set_lap_starts()`)
+  and fills (`fit_path()`, `original_path()`) work on the recording with
+  no changes, and `show_again(id)` loads the recording again after them.
+- **`Activity::activity_sidecar`**: the main one's sidecar, the same as
+  `sidecar` for the main one. `read_names()` and `rename()` use it, so
+  the title, notes and F2 are the activity's on every recording.
+- **`Activity::recording_number`**, 1 for the main one, next to
+  `recordings`, the count. Both come from the order below, on a deep
+  load.
+- **`Activity::product_name`**, from the FIT file's `file_id`, next to
+  `manufacturer`.
+
+### The order, and Ctrl+J and Ctrl+Shift+R (`storage/Recordings.*`)
+
+- **`recordings_in_order(storage, id)`**: the IDs of the activity's
+  recordings, the main one first, then the others by start time (their
+  names). Tab and Shift+Tab step through it, and the load numbers them
+  by it.
+- **`main_of(fit)`**: the main one's FIT file of a recording in a folder;
+  a listed one's is its own.
+- **`make_main(storage, recording_fit)`**: Ctrl+J on a recording. The
+  group is its main one and the folder's recordings. The marks are cleared,
+  this one is marked `"main"`, and `group_recordings()` makes it the main
+  one: it moves it to where the inbox would file it, and moves the former
+  main one, with the rest of the folder, into the new one's folder. The
+  title moves along if it has none. Only the group is grouped, and no
+  other overlapping activities, as Ctrl+J on the main one does.
+- **Ctrl+Shift+R on a recording** splits `main_of()` its file. The job
+  then finds the recording by its start (`activity_starts()`) where it's
+  filed now, and shows it, as the spec says.
+
+### The screen (`widget/Activity.*`, `widget/DataFields.*`, `SweatTrails.cpp`)
+
+- **`ActivityDisplay::switch_recording(activity)`**: `set_activity()`,
+  keeping the map's view and the selected lap. `MapNavigator::keep(view,
+  moved)` puts back the view from before, clamped to the new route, after
+  `start()`. The lap is selected again by its number if the new
+  recording has one; a dragged range isn't kept.
+- **`SweatTrails::show_recording()`**: `show_activity()` with
+  `switch_recording()`.
+- **`st-next-recording` (Tab) and `st-previous-recording` (Shift+Tab)**,
+  `.when(on_activity_screen)`: the next in `recordings_in_order()`,
+  wrapping around, loaded with `load_to_show()`. They do nothing for one
+  recording.
+- **`device_name(activity)`** in `widget/DataFields.*`: the maker's name
+  from a short table of the ones in use ("Garmin", "Wahoo", "Zwift",
+  "Hammerhead", "Stages", "SRM", "Coros", "Polar", "Suunto"), else FIT's
+  name with spaces for `_`. The product name follows it if there is one.
+  `activity_summary()` says "· Recording 2 of 2: Wahoo ELEMNT ROAM"
+  instead of "· 2 recordings".
+- **Ctrl+J**, `cmd_group_recordings()`: on a recording it asks "Make
+  this the main recording?" and runs the GroupWithMain job, which calls
+  `make_main()` for a FIT file in a folder. It shows the new main one,
+  by `activity_id_of(grouped.main)`.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `RecordingsTest`, with a temp store:
+  - `recordings_in_order()` for three recordings, and for one;
+  - `main_of()`;
+  - loading a recording's ID: its own records and sidecar, the main
+    one's title, its number and the count;
+  - laps saved on a recording go to its own sidecar, and F2's rename to
+    the main one's;
+  - `make_main()`: the recording listed and marked, the former main one
+    and the rest in its folder, the title moving, a preferred recording
+    coming in after it joining without taking its place;
+  - splitting from a recording.
+- `DataFieldsTest`: `device_name()` for a known maker, an unknown one,
+  with and without a product name; the summary line on the main one and
+  on a recording.
+- `MapTest`: `MapNavigator::keep()` keeps a view on the new route, and
+  clamps one off it.
+- `ActivityDisplayTest` or `DisplayedActivityTest` with `ScopedTestApp`:
+  `switch_recording()` keeps lap 3 when the other recording has it, and
+  drops it when it hasn't.
+- By hand: Tab and Shift+Tab on a compare ride, the summary line, the
+  map staying put, laps and a fill on the other recording, Ctrl+J on it,
+  and Ctrl+Shift+R from it.
 
 ## Review notes
 
