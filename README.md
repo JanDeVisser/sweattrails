@@ -146,7 +146,9 @@ gives both and the difference, "245 / 238 W · +7 W (+3%)", for the
 activity, the selected lap or a dragged range. The difference is the
 one on display minus the other. The lap table gets a "Δ Power" column.
 The recordings are matched by the clock, second by second, and only the
-seconds both recorded count.
+seconds both recorded count. So the compared maxima are of single
+seconds, and may differ from the maxima the panel shows otherwise, which
+are over 3 seconds.
 
 The main recording is the one from the first device in the settings'
 list that any of them is from, by FIT's names for the makers, and

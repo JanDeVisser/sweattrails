@@ -94,7 +94,9 @@ This is the last of the three specs in `31-multiple-recordings.md`.
   power, NP, average cadence, and average and maximum heart rate. Each
   as this one, the other one and the difference: "245 / 238 W · +7 W
   (+3%)". A value one of them doesn't have shows as "–", and has no
-  difference. These take the place of the panel's own power, cadence
+  difference. The maxima are of single seconds both recorded, not over 3
+  seconds as the panel's own, and they don't mark a record when clicked.
+  These take the place of the panel's own power, cadence
   and heart rate fields while comparing; the other fields, distance,
   times, speed and elevation, stay as they are, the one on display's.
 - A lap is the recording on display's lap; the other's numbers are over
