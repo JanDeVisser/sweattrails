@@ -470,8 +470,9 @@ void SweatTrails::job_split_recordings(Job::Payload const &data)
         warning(ST, "Can't read the store after splitting: {}", rescanned.error().to_string());
     }
     if (!moved) {
+        // The recording may have moved before it failed.
         the->notify<NotificationType::RecordingsChanged>(RecordingsChanged {
-            .id = request.id,
+            .id = split_shown(the->storage, request.id),
             .done = "Not all the recordings were split",
             .error = std::format("Couldn't split the recordings: {}", moved.error().to_string()),
         });
@@ -489,8 +490,10 @@ void SweatTrails::job_group_with_main(Job::Payload const &data)
         warning(ST, "Can't read the store after grouping: {}", rescanned.error().to_string());
     }
     if (!grouped) {
+        // A recording may have moved before it failed: its activity's main
+        // one is where it was.
         the->notify<NotificationType::RecordingsChanged>(RecordingsChanged {
-            .id = request.id,
+            .id = request.id.main(),
             .done = "Not all the recordings were grouped",
             .error = std::format("Couldn't group the recordings: {}", grouped.error().to_string()),
         });
