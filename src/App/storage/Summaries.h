@@ -50,13 +50,16 @@ struct ActivitySummary {
     // thresholds: power's NP, and Σ HR² × seconds over the moving records.
     std::optional<u16>     np { };      // W
     std::optional<float64> hr_load { }; // bpm² s
+    // The best average power for each of PowerDurations it lasts: empty
+    // without power.
+    std::vector<u16> power { }; // W
 
     bool operator==(ActivitySummary const &) const = default;
 };
 
 using ActivitySummaries = std::vector<ActivitySummary>;
 
-constexpr int SummariesVersion = 2;
+constexpr int SummariesVersion = 3;
 // Read at a time by the job, which other jobs can run between.
 constexpr size_t SummaryChunk = 50;
 

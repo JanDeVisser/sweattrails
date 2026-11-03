@@ -11,8 +11,10 @@
 
 #pragma once
 
+#include <array>
 #include <chrono>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -25,6 +27,7 @@
 #include <Widget.h>
 
 #include <storage/Fitness.h>
+#include <storage/PowerCurve.h>
 #include <storage/Summaries.h>
 #include <storage/Thresholds.h>
 #include <storage/Volume.h>
@@ -35,6 +38,7 @@ enum class Graph {
     Bars,
     YearToDate, // The lines of the totals so far
     Fitness,
+    Power, // The power curve
 };
 
 // What the screen shows, and the years it can go between.
@@ -49,6 +53,8 @@ struct SummaryView {
     int                     last_year { 0 };
     // Of any sport, for the fitness.
     std::pair<int, int> fitness_years { };
+    // The last day of the power curve's window.
+    std::chrono::year_month_day power_end { };
 
     // The months a month's weeks go between, if they're set: else the
     // years' Januaries and Decembers.
@@ -89,6 +95,45 @@ struct SummaryView {
 [[nodiscard]] std::vector<TableColumn> year_to_date_columns(int year);
 [[nodiscard]] std::vector<TableRow>    year_to_date_rows(std::vector<YearToDateRow> const &rows, Metric metric);
 
+constexpr int PowerWindowDays = 90;
+constexpr int PowerStepDays = 28;
+// Along the power curve's x axis, at evenly spaced logarithms of the time.
+constexpr size_t PowerCurvePoints = 200;
+// The durations of the power table's rows, in seconds.
+constexpr std::array<u32, 11> PowerTableDurations { 5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200 };
+
+// "Power · CP 288 W · W' 18 kJ · FTP 275 W · 90 days to 12 Oct 2026",
+// without CP if there's none, and without the FTP if there's no ride or
+// no FTP.
+[[nodiscard]] std::string power_heading(std::vector<PowerBest> const &window, std::optional<CriticalPower> const &cp,
+    std::optional<float64> ftp, std::chrono::year_month_day end);
+
+// The power table's rows: the best for each of PowerTableDurations a
+// ride in the window lasted.
+struct PowerRow {
+    u32       seconds { 0 };
+    PowerBest best { };
+};
+
+[[nodiscard]] std::vector<PowerRow> power_table(std::vector<PowerBest> const &bests);
+
+// "5 s", "1 min", "2 h".
+[[nodiscard]] std::string format_duration(u32 seconds);
+
+[[nodiscard]] std::vector<TableColumn> power_columns();
+[[nodiscard]] std::vector<TableRow>    power_rows(std::vector<PowerRow> const &rows, ActivitySummaries const &summaries,
+    std::function<std::string(ActivitySummary const &)> const &name_of);
+
+// The curve at PowerCurvePoints from 1 s to `longest` seconds, evenly
+// spaced in the logarithm of the time, interpolated between the
+// durations: up to the last of `bests`, so a shorter curve stops partway.
+[[nodiscard]] std::vector<double>    curve_line(std::vector<PowerBest> const &bests, u32 longest);
+[[nodiscard]] std::vector<ChartTick> curve_ticks(u32 longest);
+
+// The keys line under the heading: Left and Right move the power
+// curve's window by weeks, the rest by year.
+[[nodiscard]] std::string summaries_keys(Graph graph);
+
 // A total's time in hours and minutes, "312:10": a year's seconds mean
 // little.
 [[nodiscard]] std::string format_total_time(u64 seconds);
@@ -111,6 +156,13 @@ struct SummariesScreen : public Layout {
     std::vector<PeriodTotal>    totals { }; // The bars', none for the lines
     // Drilling into a week: its first activity, to list.
     std::function<void(ActivitySummary const &)> on_week { };
+    // Enter on a row of the power table: its ride, to show.
+    std::function<void(ActivitySummary const &)> on_ride { };
+    // A ride's name, for the power table, kept by file while the screen
+    // is open.
+    std::function<std::string(ActivitySummary const &)> ride_name { };
+    std::map<std::string, std::string>                  ride_names { };
+    std::vector<PowerRow>                               power_table_rows { };
 
     explicit SummariesScreen(pWidget const &parent);
     void initialize() override;
@@ -128,22 +180,29 @@ struct SummariesScreen : public Layout {
     void toggle_lines();
     // F: the fitness, or back to the bars, at the top.
     void toggle_fitness();
+    // P: the power curve of the 90 days up to today, or back to the bars.
+    void toggle_power();
+    // A year back or forward; in the power curve, 4 weeks.
     void step_year(int step);
     // Up and Down through the table's rows.
     void step_row(int step);
-    // Enter, or a click on a bar: into the selected period, or `bar`.
+    // Enter, or a click on a bar: into the selected period, or `bar`; in
+    // the power curve, the selected row's ride.
     void drill(std::optional<size_t> bar = { });
     // Backspace and Esc: back up to the view drilled down from. False at
     // the top.
     bool up();
 
 private:
-    void refresh();
-    void refresh_in_place();
-    void refresh_lines();
-    void refresh_fitness();
-    void show_graph(Graph graph);
-    void select_period(std::chrono::year_month_day first_day);
+    void               refresh();
+    void               refresh_in_place();
+    void               refresh_lines();
+    void               refresh_fitness();
+    void               refresh_power();
+    bool               step_power(int step);
+    std::string const &name_of(ActivitySummary const &summary);
+    void               show_graph(Graph graph);
+    void               select_period(std::chrono::year_month_day first_day);
     // The years and months the view can go between, for its sport.
     void set_span();
 };

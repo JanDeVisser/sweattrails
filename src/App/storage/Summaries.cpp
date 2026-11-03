@@ -15,6 +15,7 @@
 #include <StringUtil.h>
 
 #include <storage/Activity.h>
+#include <storage/PowerCurve.h>
 #include <storage/Storage.h>
 #include <storage/Summaries.h>
 
@@ -44,6 +45,13 @@ JSONValue encode(ActivitySummary const &summary)
     if (summary.hr_load) {
         json.set("hr_load", JSONValue { *summary.hr_load });
     }
+    if (!summary.power.empty()) {
+        auto power = JSONValue::array();
+        for (auto const watts : summary.power) {
+            power.append(JSONValue { watts });
+        }
+        json.set("power", power);
+    }
     return json;
 }
 
@@ -72,6 +80,9 @@ Decoded<ActivitySummary> decode(JSONValue const &json)
     }
     if (json.has("hr_load")) {
         ret.hr_load = TRY_EVAL(json.try_get<float64>("hr_load"));
+    }
+    if (json.has("power")) {
+        ret.power = TRY_EVAL(json.try_get_array<u16>("power"));
     }
     return ret;
 }
@@ -205,6 +216,7 @@ ActivitySummary read_summary(Storage &storage, SummaryFile const &file)
         ret.np = np->normalized;
     }
     ret.hr_load = activity.segment.hr_load;
+    ret.power = power_curve(activity.recorded);
     return ret;
 }
 

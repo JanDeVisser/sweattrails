@@ -361,6 +361,140 @@ std::string format_total_time(u64 seconds)
     return std::format("{}:{:02}", seconds / 3600, (seconds % 3600) / 60);
 }
 
+namespace {
+
+// "12 Oct 2026".
+std::string format_day(chrono::year_month_day day)
+{
+    return std::format("{} {} {}", static_cast<unsigned>(day.day()), short_month(day.month()), static_cast<int>(day.year()));
+}
+
+}
+
+std::string power_heading(std::vector<PowerBest> const &window, std::optional<CriticalPower> const &cp, std::optional<float64> ftp,
+    chrono::year_month_day end)
+{
+    std::string ret { "Power" };
+    if (window.empty()) {
+        ret += " · no rides with power";
+    } else {
+        if (cp) {
+            ret += std::format(" · CP {} W · W' {} kJ", std::llround(cp->cp), std::llround(cp->w_prime / 1000));
+        }
+        if (ftp) {
+            ret += std::format(" · FTP {} W", std::llround(*ftp));
+        }
+    }
+    return ret + std::format(" · {} days to {}", PowerWindowDays, format_day(end));
+}
+
+std::vector<PowerRow> power_table(std::vector<PowerBest> const &bests)
+{
+    std::vector<PowerRow> ret;
+    for (auto const seconds : PowerTableDurations) {
+        auto const ix = static_cast<size_t>(std::ranges::find(PowerDurations, seconds) - PowerDurations.begin());
+        if (ix < bests.size()) {
+            ret.push_back(PowerRow { .seconds = seconds, .best = bests[ix] });
+        }
+    }
+    return ret;
+}
+
+std::string format_duration(u32 seconds)
+{
+    if (seconds < 60) {
+        return std::format("{} s", seconds);
+    }
+    if (seconds < 3600) {
+        return seconds % 60 == 0 ? std::format("{} min", seconds / 60) : std::format("{}:{:02} min", seconds / 60, seconds % 60);
+    }
+    return seconds % 3600 == 0 ? std::format("{} h", seconds / 3600) : std::format("{}:{:02} h", seconds / 3600, (seconds % 3600) / 60);
+}
+
+std::vector<TableColumn> power_columns()
+{
+    return {
+        { .header = "Time" },
+        { .header = "Power", .right_aligned = true },
+        { .header = "Date" },
+        { .header = "Ride" },
+    };
+}
+
+std::vector<TableRow> power_rows(std::vector<PowerRow> const &rows, ActivitySummaries const &summaries,
+    std::function<std::string(ActivitySummary const &)> const &name_of)
+{
+    std::vector<TableRow> ret;
+    for (auto const &row : rows) {
+        auto const &ride = summaries[row.best.summary];
+        ret.push_back(TableRow {
+            format_duration(row.seconds),
+            std::format("{} W", row.best.watts),
+            format_day(start_day(ride)),
+            name_of ? name_of(ride) : std::string { },
+        });
+    }
+    return ret;
+}
+
+std::vector<double> curve_line(std::vector<PowerBest> const &bests, u32 longest)
+{
+    if (bests.empty() || longest < 1) {
+        return { };
+    }
+    // A single duration, or an axis of one second: a dot.
+    if (bests.size() == 1 || longest == 1) {
+        return { static_cast<double>(bests[0].watts) };
+    }
+    auto const          log_longest = std::log(static_cast<double>(longest));
+    auto const          last = static_cast<double>(PowerDurations[bests.size() - 1]);
+    std::vector<double> ret;
+    for (auto ix = 0uz; ix < PowerCurvePoints; ++ix) {
+        auto const at = log_longest * static_cast<double>(ix) / static_cast<double>(PowerCurvePoints - 1);
+        if (std::exp(at) > last * (1 + 1e-9)) {
+            break;
+        }
+        // Between the durations on either side, in the logarithm of the
+        // time, as the axis is.
+        auto upper = 1uz;
+        while (upper < bests.size() - 1 && std::log(static_cast<double>(PowerDurations[upper])) < at) {
+            ++upper;
+        }
+        auto const from = std::log(static_cast<double>(PowerDurations[upper - 1]));
+        auto const to = std::log(static_cast<double>(PowerDurations[upper]));
+        auto const fraction = std::clamp((at - from) / (to - from), 0.0, 1.0);
+        auto const low = static_cast<double>(bests[upper - 1].watts);
+        ret.push_back(low + fraction * (static_cast<double>(bests[upper].watts) - low));
+    }
+    return ret;
+}
+
+std::vector<ChartTick> curve_ticks(u32 longest)
+{
+    constexpr std::array<u32, 9> Ticks { 1, 10, 60, 300, 1200, 3600, 7200, 18000, 36000 };
+    std::vector<ChartTick>       ret;
+    if (longest <= 1) {
+        return ret;
+    }
+    for (auto const seconds : Ticks) {
+        if (seconds > longest) {
+            break;
+        }
+        ret.push_back(ChartTick {
+            .x = std::log(static_cast<double>(seconds)) / std::log(static_cast<double>(longest)) * static_cast<double>(PowerCurvePoints - 1),
+            .label = format_duration(seconds),
+        });
+    }
+    return ret;
+}
+
+std::string summaries_keys(Graph graph)
+{
+    return std::format("W M Y: week, month, year    G: to date    F: fitness    P: power    R C: running, cycling    "
+                       "D T N A: distance, time, number, ascent    Left Right: {}    Enter: open    Backspace: back    Esc: close",
+        graph == Graph::Power ? std::format("{} weeks", PowerStepDays / 7) : "year");
+}
+
 SummariesScreen::SummariesScreen(pWidget const &parent)
     : Layout(parent)
 {
@@ -370,9 +504,7 @@ void SummariesScreen::initialize()
 {
     heading = add_widget<Label>("");
     heading->size = FontSize::Large;
-    keys = add_widget<Label>("W M Y: week, month, year    G: to date    F: fitness    R C: running, cycling    D T N A: distance, time, number, ascent    "
-                             "Left Right: year    Enter: open    Backspace: back    Esc: close",
-        LIGHTGRAY);
+    keys = add_widget<Label>(summaries_keys(Graph::Bars), LIGHTGRAY);
     keys->size = FontSize::Small;
     chart = add_widget<BarChart>();
     chart->on_hover = [this](std::optional<size_t> bar) {
@@ -405,6 +537,7 @@ void SummariesScreen::open(VolumeSport sport, chrono::year_month_day today_date)
 {
     today = today_date;
     trail.clear();
+    ride_names.clear();
     view = SummaryView { .sport = sport, .year = static_cast<int>(today.year()) };
     set_span();
     refresh();
@@ -448,6 +581,12 @@ void SummariesScreen::toggle_fitness()
     show_graph(view.graph == Graph::Fitness ? Graph::Bars : Graph::Fitness);
 }
 
+void SummariesScreen::toggle_power()
+{
+    view.power_end = today;
+    show_graph(view.graph == Graph::Power ? Graph::Bars : Graph::Power);
+}
+
 // At the top. Leaving the fitness, whose years are those of any sport,
 // the year goes back among the sport's.
 void SummariesScreen::show_graph(Graph graph)
@@ -461,9 +600,24 @@ void SummariesScreen::show_graph(Graph graph)
 
 void SummariesScreen::step_year(int step)
 {
-    if (view.step_year(step)) {
+    if (view.graph == Graph::Power ? step_power(step) : view.step_year(step)) {
         refresh();
     }
+}
+
+// Forward up to today, and back while the window ends on or after the
+// first ride with power.
+bool SummariesScreen::step_power(int step)
+{
+    auto const end = chrono::sys_days { view.power_end } + chrono::days { step * PowerStepDays };
+    auto const first = std::ranges::find_if(summaries, [](ActivitySummary const &summary) {
+        return !summary.power.empty() && volume_sport(summary.sport, summary.sub_sport) == VolumeSport::Cycling;
+    });
+    if (end > chrono::sys_days { today } || first == summaries.end() || end < chrono::sys_days { start_day(*first) }) {
+        return false;
+    }
+    view.power_end = end;
+    return true;
 }
 
 void SummariesScreen::step_row(int step)
@@ -483,6 +637,12 @@ void SummariesScreen::step_row(int step)
 void SummariesScreen::drill(std::optional<size_t> bar)
 {
     auto const ix = bar ? bar : table->selection;
+    if (view.graph == Graph::Power) {
+        if (!bar && ix && *ix < power_table_rows.size() && on_ride) {
+            on_ride(summaries[power_table_rows[*ix].best.summary]);
+        }
+        return;
+    }
     if (view.graph != Graph::Bars || !ix || *ix >= totals.size()) {
         return;
     }
@@ -579,6 +739,7 @@ void SummariesScreen::refresh_in_place()
 void SummariesScreen::refresh()
 {
     heading->text = volume_heading(view);
+    keys->text = summaries_keys(view.graph);
     auto const suffix = unit(view.metric);
     auto const format_value = [suffix](double value) {
         return std::format("{:g}{}", value, suffix);
@@ -595,10 +756,17 @@ void SummariesScreen::refresh()
         totals.clear();
         chart->set_bars({ });
     }
-    if (view.graph == Graph::Fitness) {
+    if (view.graph != Graph::Power) {
+        power_table_rows.clear();
+    }
+    if (view.graph == Graph::Fitness || view.graph == Graph::Power) {
         lines->format_value = [](double value) { return std::format("{:g}", value); };
         lines->min_step = 0;
-        refresh_fitness();
+        if (view.graph == Graph::Fitness) {
+            refresh_fitness();
+        } else {
+            refresh_power();
+        }
         return;
     }
     if (view.graph == Graph::YearToDate) {
@@ -679,6 +847,43 @@ void SummariesScreen::refresh_fitness()
     lines->x_count = static_cast<size_t>(days_in_year(view.year));
     lines->ticks = month_ticks(view.year);
     table->set_rows(fitness_columns(has_thresholds), fitness_rows(fitness_weeks(days, view.year), has_thresholds));
+}
+
+}
+
+namespace ST {
+
+// The window's curve, bold, over the all-time best, faint; the window's
+// bests in the table.
+void SummariesScreen::refresh_power()
+{
+    auto const first = chrono::sys_days { view.power_end } - chrono::days { PowerWindowDays - 1 };
+    auto const window = best_curve(summaries, first, view.power_end);
+    auto const all_time = best_curve(summaries, chrono::year::min() / chrono::January / 1, today);
+    auto const thresholds_then = thresholds_on(thresholds, view.power_end);
+    heading->text = power_heading(window, critical_power(window), thresholds_then ? thresholds_then->ftp : std::nullopt, view.power_end);
+    lines->series.clear();
+    auto const longest = all_time.empty() ? 0u : PowerDurations[all_time.size() - 1];
+    if (!all_time.empty()) {
+        lines->series.push_back(ChartSeries { .label = "All time", .color = Fade(LIGHTGRAY, 0.5f), .values = curve_line(all_time, longest) });
+    }
+    if (!window.empty()) {
+        lines->series.push_back(ChartSeries {
+            .label = std::format("{} days", PowerWindowDays), .color = GOLD, .bold = true, .values = curve_line(window, longest) });
+    }
+    lines->x_count = PowerCurvePoints;
+    lines->ticks = curve_ticks(longest);
+    power_table_rows = power_table(window);
+    table->set_rows(power_columns(), power_rows(power_table_rows, summaries, [this](ActivitySummary const &ride) { return name_of(ride); }));
+}
+
+std::string const &SummariesScreen::name_of(ActivitySummary const &summary)
+{
+    auto [name, added] = ride_names.try_emplace(summary.source.file);
+    if (added && ride_name) {
+        name->second = ride_name(summary);
+    }
+    return name->second;
 }
 
 }

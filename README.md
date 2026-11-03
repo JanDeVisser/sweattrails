@@ -229,6 +229,32 @@ first counts back to your first activity. Rides use the cycling LTHR,
 everything else the running one. The activity's IF and TSS on the main
 screen use them too. Without thresholds there is no TSS.
 
+## Power curve and critical power
+
+P on the totals screen shows your power curve: the best average power
+you held for each length of time, from a second to your longest ride,
+over the 90 days up to today, in bold. Behind it, faint, is your best
+ever. Time runs along the bottom on a logarithmic scale.
+
+The heading has your **critical power** (CP) and **W'** for those 90
+days, next to the FTP in `settings.json`. CP is the power you could
+hold for a long time, and W' the work you can do above it before you
+run out. They come from fitting `work = CP × time + W'` to your best
+efforts of 3 to 20 minutes. CP usually comes out a little above FTP:
+if they're far apart, the FTP may want changing. Without a ride of 20
+minutes or more in the 90 days, there's no CP.
+
+The table has the bests for 5 s up to 2 h, and the date and name of
+the ride each is from. Up and Down go through it, and Enter opens the
+ride. Left and Right move the 90 days 4 weeks back or on. P again, F,
+G, or W, M and Y leave it.
+
+Every ride with power counts, indoor and Zwift ones too. A stop counts
+as zero power, so a best effort never spans a coffee break, and
+readings over 1500 W count as zero, as they're dropouts. Only an
+activity's main recording counts: if your power meter's isn't the main
+one, Ctrl+J on it makes it so.
+
 ## Zwift
 
 A ride in Zwift shows on the map of its Zwift world rather than on

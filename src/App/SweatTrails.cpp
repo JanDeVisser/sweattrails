@@ -1093,7 +1093,13 @@ void cmd_summaries_fitness(pSweatTrails const &sweattrails, JSONValue const &)
     sweattrails->summaries_screen->toggle_fitness();
 }
 
-// Enter: into the selected period.
+// P: the power curve, or back to the bars.
+void cmd_summaries_power(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    sweattrails->summaries_screen->toggle_power();
+}
+
+// Enter: into the selected period, or the power table's ride.
 void cmd_summaries_drill(pSweatTrails const &sweattrails, JSONValue const &)
 {
     sweattrails->summaries_screen->drill();
@@ -1941,6 +1947,30 @@ void SweatTrails::initialize()
             list_month(the(), *id);
         }
     };
+    summaries_screen->on_ride = [this](ActivitySummary const &summary) {
+        auto const id = summary_activity(summary);
+        if (!id) {
+            return;
+        }
+        if (auto const loaded = load_to_show(storage, *id); loaded) {
+            show_activity(*loaded);
+        } else {
+            message_box(loaded.error());
+        }
+    };
+    // As the activity list names them: the FIT file's name, or the
+    // sidecar's.
+    summaries_screen->ride_name = [this](ActivitySummary const &summary) -> std::string {
+        auto const id = summary_activity(summary);
+        if (!id) {
+            return { };
+        }
+        Activity activity { storage, *id };
+        if (auto const loaded = activity.load(LoadingDepth::Shallow); !loaded || !*loaded) {
+            return { };
+        }
+        return activity.title;
+    };
     // A status line at the bottom of the window, hidden while it's empty.
     status = add_widget<Label>("");
     status->policy = SizePolicy::Hide;
@@ -1995,6 +2025,9 @@ void SweatTrails::initialize()
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-fitness", self(), cmd_summaries_fitness)
         .bind(KeyCombo { KEY_F, KModNone })
+        .when(on_summaries);
+    bus.add_task<SweatTrails>("st-summaries-power", self(), cmd_summaries_power)
+        .bind(KeyCombo { KEY_P, KModNone })
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-drill", self(), cmd_summaries_drill)
         .bind(KeyCombo { KEY_ENTER, KModNone })
