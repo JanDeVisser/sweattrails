@@ -1,6 +1,6 @@
 # Critical power
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -308,3 +308,16 @@ They all do what the spec and the Architecture say.
      through chunks but read again after the screen is opened again,
      and every sample of `curve_line()` against an independent
      log-interpolation, plus where a shorter curve ends.
+
+### Resolution
+
+1. Fixed in ae594c6: a pause adds at most `PowerDurations.back()`, 10 h,
+   of zeros. `PowerCurveTest`'s `test_a_pause_of_decades` runs in a
+   moment, where the old code was still allocating after 30 s.
+2. Fixed in 0cd362a: the keys line follows the view, from
+   `summaries_keys()`, and says "Left Right: 4 weeks" in the power view.
+   `SummariesScreenTest`'s `test_power_keys_line` fails against the old
+   code.
+3. Left as it is, with Jan's agreement: it follows from the fixed
+   durations, and is hardly visible.
+4. The tests were committed with the review notes, in 9586f8d.
