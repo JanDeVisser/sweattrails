@@ -1397,6 +1397,18 @@ void test_curve_line_samples()
     CHECK(next_t > 3600);
 }
 
+// The keys line says what Left and Right do in the power curve.
+void test_power_keys_line()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_power_screen();
+    CHECK(screen->keys->text.contains("Left Right: year"));
+    screen->toggle_power();
+    CHECK(screen->keys->text.contains("Left Right: 4 weeks"));
+    CHECK(!screen->keys->text.contains("Left Right: year"));
+    screen->toggle_power();
+    CHECK(screen->keys->text.contains("Left Right: year"));
+}
 }
 
 int main()
@@ -1466,5 +1478,6 @@ int main()
     test_ride_names_kept_through_chunks();
     test_curve_line_samples();
     test_new_summaries_in_the_fitness();
+    test_power_keys_line();
     return Test::test_result();
 }

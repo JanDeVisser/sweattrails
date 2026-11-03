@@ -488,6 +488,13 @@ std::vector<ChartTick> curve_ticks(u32 longest)
     return ret;
 }
 
+std::string summaries_keys(Graph graph)
+{
+    return std::format("W M Y: week, month, year    G: to date    F: fitness    P: power    R C: running, cycling    "
+                       "D T N A: distance, time, number, ascent    Left Right: {}    Enter: open    Backspace: back    Esc: close",
+        graph == Graph::Power ? std::format("{} weeks", PowerStepDays / 7) : "year");
+}
+
 SummariesScreen::SummariesScreen(pWidget const &parent)
     : Layout(parent)
 {
@@ -497,9 +504,7 @@ void SummariesScreen::initialize()
 {
     heading = add_widget<Label>("");
     heading->size = FontSize::Large;
-    keys = add_widget<Label>("W M Y: week, month, year    G: to date    F: fitness    P: power    R C: running, cycling    D T N A: distance, time, number, ascent    "
-                             "Left Right: year    Enter: open    Backspace: back    Esc: close",
-        LIGHTGRAY);
+    keys = add_widget<Label>(summaries_keys(Graph::Bars), LIGHTGRAY);
     keys->size = FontSize::Small;
     chart = add_widget<BarChart>();
     chart->on_hover = [this](std::optional<size_t> bar) {
@@ -734,6 +739,7 @@ void SummariesScreen::refresh_in_place()
 void SummariesScreen::refresh()
 {
     heading->text = volume_heading(view);
+    keys->text = summaries_keys(view.graph);
     auto const suffix = unit(view.metric);
     auto const format_value = [suffix](double value) {
         return std::format("{:g}{}", value, suffix);

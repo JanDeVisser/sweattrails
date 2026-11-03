@@ -130,6 +130,10 @@ struct PowerRow {
 [[nodiscard]] std::vector<double>    curve_line(std::vector<PowerBest> const &bests, u32 longest);
 [[nodiscard]] std::vector<ChartTick> curve_ticks(u32 longest);
 
+// The keys line under the heading: Left and Right move the power
+// curve's window by weeks, the rest by year.
+[[nodiscard]] std::string summaries_keys(Graph graph);
+
 // A total's time in hours and minutes, "312:10": a year's seconds mean
 // little.
 [[nodiscard]] std::string format_total_time(u64 seconds);
