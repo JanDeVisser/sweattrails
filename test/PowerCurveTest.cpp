@@ -314,6 +314,20 @@ void test_critical_power_ignores_other_durations()
     CHECK(before && after && *before == *after);
 }
 
+// A few records stamped from when the device was switched on, decades
+// before the rest: the pause between them is cut to the longest
+// duration, not laid out a second each.
+void test_a_pause_of_decades()
+{
+    std::vector<FIT::record> records;
+    add(records, 0, 10, 300);
+    add(records, 3'000'000'000u, 60, 200);
+    auto const curve = power_curve(records);
+    CHECK_EQ(curve.size(), PowerDurations.size());
+    CHECK_EQ(curve[0], 300);
+    CHECK_EQ(curve[at(60)], 200);
+    CHECK_EQ(curve.back(), 0);
+}
 }
 
 int main()
@@ -335,5 +349,6 @@ int main()
     test_rounding();
     test_best_curve_bounds();
     test_critical_power_ignores_other_durations();
+    test_a_pause_of_decades();
     return Test::test_result();
 }

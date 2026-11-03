@@ -20,20 +20,26 @@ u16 counted(std::optional<u16> power)
     return power && *power <= MaxPower ? *power : 0;
 }
 
-// The power of each second from the first record to the last.
+// The power of each second from the first record to the last. A pause
+// longer than the longest duration is cut to it, which changes no best:
+// a file with a few timestamps from when the device was switched on
+// would otherwise have a pause of decades.
 std::vector<u16> by_second(std::span<FIT::record const> records)
 {
-    std::vector<u16> ret;
-    auto const       first = records.front().timestamp.timestamp;
+    std::vector<u16>   ret;
+    std::optional<u32> last { };
     for (auto const &rec : records) {
         auto const at = rec.timestamp.timestamp;
-        if (at < first || at - first < ret.size()) {
+        if (last && at <= *last) {
             continue; // Out of order, or a second already there
         }
-        auto const gap = at - first - ret.size();
-        // The seconds before this record: held through a short gap.
-        ret.resize(ret.size() + gap, gap < RangeMovingGap ? counted(rec.power) : u16 { 0 });
+        if (last) {
+            auto const gap = at - *last - 1;
+            // The seconds before this record: held through a short gap.
+            ret.resize(ret.size() + std::min(gap, PowerDurations.back()), gap < RangeMovingGap ? counted(rec.power) : u16 { 0 });
+        }
         ret.push_back(counted(rec.power));
+        last = at;
     }
     return ret;
 }
