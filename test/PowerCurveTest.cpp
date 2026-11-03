@@ -215,6 +215,105 @@ void test_no_critical_power_from_an_unsound_fit()
     CHECK(!critical_power(rising).has_value());
 }
 
+// A gap of up to 10 s between timestamps, as hr_load and the ranges'
+// moving time have it, is held; 11 s is a pause.
+void test_the_gap_limit()
+{
+    std::vector<FIT::record> held;
+    held.push_back(rec(0, 100));
+    held.push_back(rec(10, 100));
+    auto const held_curve = power_curve(held);
+    CHECK_EQ(held_curve.size(), at(10) + 1);
+    CHECK_EQ(held_curve[at(10)], 100);
+    std::vector<FIT::record> paused;
+    paused.push_back(rec(0, 100));
+    paused.push_back(rec(11, 100));
+    auto const paused_curve = power_curve(paused);
+    CHECK_EQ(paused_curve.size(), at(10) + 1);
+    // Twelve seconds, ten of them at zero: 10 W over 10 s at best.
+    CHECK_EQ(paused_curve[at(10)], 10);
+}
+
+void test_records_on_the_same_second()
+{
+    std::vector<FIT::record> records;
+    add(records, 0, 10, 100);
+    // The second one of second 5 is passed over.
+    records.insert(records.begin() + 6, rec(5, 1000));
+    auto const curve = power_curve(records);
+    CHECK_EQ(curve.size(), at(10) + 1);
+    CHECK_EQ(curve[0], 100);
+}
+
+void test_the_spike_limit()
+{
+    std::vector<FIT::record> records;
+    records.push_back(rec(0, MaxPower));
+    records.push_back(rec(1, static_cast<u16>(MaxPower + 1)));
+    auto const curve = power_curve(records);
+    CHECK_EQ(curve.size(), 2uz);
+    if (curve.size() == 2) {
+        CHECK_EQ(curve[0], MaxPower);
+        CHECK_EQ(curve[1], 750);
+    }
+    // Only spikes: no power.
+    CHECK(power_curve(std::vector { rec(0, 2000), rec(1, 2000) }).empty());
+}
+
+void test_a_single_record()
+{
+    auto const curve = power_curve(std::vector { rec(0, 250) });
+    CHECK_EQ(curve.size(), 1uz);
+    CHECK(curve == std::vector<u16> { 250 });
+}
+
+// Half a watt rounds up.
+void test_rounding()
+{
+    std::vector<FIT::record> records;
+    records.push_back(rec(0, 100));
+    records.push_back(rec(1, 101));
+    auto const curve = power_curve(records);
+    CHECK_EQ(curve.size(), 2uz);
+    if (curve.size() == 2) {
+        CHECK_EQ(curve[1], 101);
+    }
+}
+
+// The window's first and last days are in it; a tie stays with the
+// earlier ride.
+void test_best_curve_bounds()
+{
+    ActivitySummaries const summaries {
+        ride(date(2026, 2, 28), { 999 }),
+        ride(date(2026, 3, 1), { 500 }),
+        ride(date(2026, 3, 15), { 500, 400 }),
+        ride(date(2026, 3, 31), { 450, 450, 450 }),
+        ride(date(2026, 4, 1), { 999, 999, 999, 999 }),
+    };
+    auto const bests = best_curve(summaries, date(2026, 3, 1), date(2026, 3, 31));
+    CHECK_EQ(bests.size(), 3uz);
+    if (bests.size() == 3) {
+        CHECK(bests[0] == (PowerBest { .watts = 500, .summary = 1 }));
+        CHECK(bests[1] == (PowerBest { .watts = 450, .summary = 3 }));
+        CHECK(bests[2] == (PowerBest { .watts = 450, .summary = 3 }));
+    }
+    auto const one_day = best_curve(summaries, date(2026, 3, 15), date(2026, 3, 15));
+    CHECK_EQ(one_day.size(), 2uz);
+}
+
+// Only the bests from 3 to 20 minutes count: a sprinter's 5 s or a long
+// ride's hour don't move CP.
+void test_critical_power_ignores_other_durations()
+{
+    auto       bests = modelled(3600);
+    auto const before = critical_power(bests);
+    bests[0].watts = 1500;
+    bests[at(3600)].watts = 100;
+    auto const after = critical_power(bests);
+    CHECK(before && after && *before == *after);
+}
+
 }
 
 int main()
@@ -229,5 +328,12 @@ int main()
     test_best_curve();
     test_critical_power();
     test_no_critical_power_from_an_unsound_fit();
+    test_the_gap_limit();
+    test_records_on_the_same_second();
+    test_the_spike_limit();
+    test_a_single_record();
+    test_rounding();
+    test_best_curve_bounds();
+    test_critical_power_ignores_other_durations();
     return Test::test_result();
 }

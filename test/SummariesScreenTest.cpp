@@ -1255,6 +1255,148 @@ void test_curve_ticks()
     CHECK(curve_ticks(1).empty());
 }
 
+// The window is 90 days, today among them.
+void test_power_window_days()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_power_screen();
+    // Today, 15 June, less 89 days is 18 March.
+    screen->set_summaries({ power_ride(2026, 3, 17, 400, 600), power_ride(2026, 3, 18, 250, 300) });
+    screen->toggle_power();
+    CHECK_EQ(screen->table->rows.size(), 6uz);
+    if (!screen->table->rows.empty()) {
+        CHECK_EQ(screen->table->rows[0][2], "18 Mar 2026");
+    }
+}
+
+// The FTP in force on the window's last day.
+void test_power_heading_ftp_of_the_window()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_power_screen();
+    screen->thresholds = ThresholdList {
+        Thresholds { .from = std::chrono::year { 2020 } / 1 / 1, .ftp = 250 },
+        Thresholds { .from = std::chrono::year { 2026 } / 6 / 1, .ftp = 275 },
+    };
+    screen->toggle_power();
+    CHECK(screen->heading->text.contains("FTP 275 W"));
+    screen->step_year(-1);
+    CHECK(screen->heading->text.contains("FTP 250 W"));
+}
+
+// Back as far as a window that ends on the first ride with power, by
+// whole steps, and not further; a run with power doesn't count.
+void test_power_steps_to_the_first_ride()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_power_screen();
+    auto                early_run = run(2026, 1, 5);
+    early_run.power = { 400, 390 };
+    // 15 June less two steps of 28 days is 18 May.
+    screen->set_summaries({ early_run, power_ride(2026, 5, 18, 280, 1200) });
+    screen->toggle_power();
+    screen->step_year(-1);
+    screen->step_year(-1);
+    CHECK(screen->view.power_end == std::chrono::year { 2026 } / std::chrono::May / 18);
+    screen->step_year(-1);
+    CHECK(screen->view.power_end == std::chrono::year { 2026 } / std::chrono::May / 18);
+    // Without any ride with power, Left and Right do nothing.
+    screen->set_summaries({ ride(2026, 5, 1) });
+    screen->toggle_power();
+    screen->toggle_power();
+    screen->step_year(-1);
+    CHECK(screen->view.power_end == Today);
+    CHECK_EQ(screen->heading->text, "Power · no rides with power · 90 days to 15 Jun 2026");
+    CHECK(screen->lines->series.empty());
+}
+
+// After each of the summary job's chunks: the selected row stays, and
+// Enter opens its ride, also if a ride came in before it in the list.
+void test_power_refreshed_in_place()
+{
+    Test::ScopedTestApp            app;
+    auto                           screen = make_power_screen();
+    std::optional<ActivitySummary> opened { };
+    screen->on_ride = [&opened](ActivitySummary const &summary) { opened = summary; };
+    screen->toggle_power();
+    screen->step_row(1);
+    screen->step_row(1);
+    screen->step_row(1);
+    CHECK(screen->table->selection == std::optional<size_t> { 2 });
+    auto const best = screen->summaries[2];
+    auto       more = screen->summaries;
+    more.insert(more.begin(), power_ride(2024, 6, 1, 200, 600));
+    screen->set_summaries(more);
+    CHECK(screen->view.graph == Graph::Power);
+    CHECK(screen->table->selection == std::optional<size_t> { 2 });
+    CHECK_EQ(screen->table->rows.size(), 10uz);
+    screen->drill();
+    CHECK(opened && *opened == best);
+}
+
+// The names are read once a file while the screen is open, also as the
+// job's chunks come in, and again after it's opened again.
+void test_ride_names_kept_through_chunks()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_power_screen();
+    auto                calls = 0;
+    screen->ride_name = [&calls](ActivitySummary const &) {
+        ++calls;
+        return std::string { "A ride" };
+    };
+    screen->toggle_power();
+    screen->set_summaries(screen->summaries);
+    screen->set_summaries(screen->summaries);
+    CHECK_EQ(calls, 1);
+    screen->open(VolumeSport::Cycling, Today);
+    screen->toggle_power();
+    CHECK_EQ(calls, 2);
+}
+
+// Each sample is the curve interpolated in the logarithm of the time,
+// and a duration that a sample falls on has its own best.
+void test_curve_line_samples()
+{
+    std::vector<PowerBest> bests;
+    for (auto const watts : modelled(280, 3600)) {
+        bests.push_back(PowerBest { .watts = watts });
+    }
+    auto const line = curve_line(bests, 3600);
+    CHECK_EQ(line.size(), PowerCurvePoints);
+    for (auto ix = 0uz; ix < line.size(); ++ix) {
+        auto const t = std::exp(std::log(3600.0) * static_cast<double>(ix) / static_cast<double>(PowerCurvePoints - 1));
+        auto       upper = 1uz;
+        while (upper + 1 < bests.size() && PowerDurations[upper] < t) {
+            ++upper;
+        }
+        auto const lo = static_cast<double>(PowerDurations[upper - 1]);
+        auto const hi = static_cast<double>(PowerDurations[upper]);
+        auto const fraction = std::clamp((std::log(t) - std::log(lo)) / (std::log(hi) - std::log(lo)), 0.0, 1.0);
+        auto const expected = bests[upper - 1].watts + fraction * (bests[upper].watts - bests[upper - 1].watts);
+        CHECK(std::abs(line[ix] - expected) < 1e-6);
+    }
+    // An axis whose samples fall on 1, 10, 100 and 1000 s, with bests at
+    // the first two and the samples between on a straight line.
+    std::vector<PowerBest> short_bests;
+    for (auto d = 0uz; PowerDurations[d] <= 10; ++d) {
+        short_bests.push_back(PowerBest { .watts = static_cast<u16>(1000 - 100 * d) });
+    }
+    auto const short_line = curve_line(short_bests, 10);
+    CHECK_EQ(short_line.size(), PowerCurvePoints);
+    if (short_line.size() == PowerCurvePoints) {
+        CHECK(std::abs(short_line.front() - 1000) < 1e-6);
+        CHECK(std::abs(short_line.back() - short_bests.back().watts) < 1e-6);
+    }
+    // Two-hour axis, an hour's curve: it ends at the last sample at or
+    // before an hour.
+    auto const shorter = curve_line(bests, 7200);
+    auto const last_t = std::exp(std::log(7200.0) * static_cast<double>(shorter.size() - 1) / static_cast<double>(PowerCurvePoints - 1));
+    auto const next_t = std::exp(std::log(7200.0) * static_cast<double>(shorter.size()) / static_cast<double>(PowerCurvePoints - 1));
+    CHECK(last_t <= 3600 * (1 + 1e-9));
+    CHECK(next_t > 3600);
+}
+
 }
 
 int main()
@@ -1317,6 +1459,12 @@ int main()
     test_ride_names_are_kept();
     test_curve_line();
     test_curve_ticks();
+    test_power_window_days();
+    test_power_heading_ftp_of_the_window();
+    test_power_steps_to_the_first_ride();
+    test_power_refreshed_in_place();
+    test_ride_names_kept_through_chunks();
+    test_curve_line_samples();
     test_new_summaries_in_the_fitness();
     return Test::test_result();
 }

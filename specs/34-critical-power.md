@@ -257,4 +257,54 @@ None.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+No bugs found. I checked the gap rule, the sliding window and its
+rounding, the day filtering and summary indices of `best_curve()`, the
+fit and when it gives no CP (also whether floating-point noise can
+make a flat curve's W' come out just above zero: for flat curves of 1
+to 1500 W it never does), the log sampling, the limits of Left and
+Right, Enter, refreshing with the power view open, and the name cache.
+They all do what the spec and the Architecture say.
+
+1. **Suggestion**: `by_second()` (`storage/PowerCurve.cpp:27-37`) lays
+   out every second from the first record to the last, however long
+   the gap. If a FIT file's clock jumps forward, the vectors grow with
+   it. Say a few records have a FIT relative timestamp (below
+   0x10000000, seconds since the device was switched on) and the rest
+   are absolute: the gap is about 1.1e9 s. That means about 2 GB of
+   `u16` plus 9 GB of `u64` sums in `read_summary()`, in the summary
+   job. If the allocation fails, the app terminates, and does so again
+   on every start until the file is built. `hr_load` and moving time
+   just skip such gaps. No window is longer than `PowerDurations.back()`
+   (10 h), so capping a pause at that many zero seconds leaves every
+   best as it is, and limits the memory to what a 10-hour ride needs.
+   I haven't seen such a file, so this isn't a bug, but it costs one line.
+2. **Suggestion**: the keys line (`widget/Summaries.cpp:500`) still
+   says "Left Right: year". In the power view they move the window 4
+   weeks. Setting the line by view, or "Left Right: back, on", would
+   say so.
+3. **Suggestion**: the x axis runs to the longest of `PowerDurations`
+   that the longest ride lasted, not to the ride's length (a 3:50 ride
+   gives an axis to 3 h). A shorter window curve ends at the last
+   sample at or before its longest duration, which can be up to 5 %
+   short of it on a 10-hour axis. Both come from the Architecture's
+   fixed durations and are hardly visible. I'm noting it only because
+   the Feature says "to the longest ride".
+4. **Missing tests, added**:
+   - `PowerCurveTest`: the gap limit exactly (a gap of 10 s between
+     timestamps is held, 11 s is a pause), two records on the same
+     second (the first one counts), 1500 W counted and 1501 W at zero,
+     a ride of only spikes having no curve, a single record, rounding
+     half a watt up, `best_curve()` with rides on the window's first
+     and last days and a one-day window, ties staying with the earlier
+     ride, and CP not moving with the bests outside 3 to 20 minutes.
+   - `SummariesScreenTest`: the 90-day window including its 90th day
+     and not the 91st, the heading's FTP being the one in force on the
+     window's last day after Left, Left stopping exactly on a window
+     that ends on the first ride with power (a run with power earlier
+     doesn't count), Left doing nothing without any ride with power
+     (with an empty chart), a refresh after a chunk in the power view
+     keeping the selected row while a ride came in before it in the
+     list, Enter then opening the right ride, names not read again
+     through chunks but read again after the screen is opened again,
+     and every sample of `curve_line()` against an independent
+     log-interpolation, plus where a shorter curve ends.
