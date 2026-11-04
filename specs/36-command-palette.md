@@ -55,13 +55,14 @@ key. It also shows each action's key, so the palette teaches the keys.
   such as `st-message`, or that only move through a list, such as the
   summaries' Up and Down, get none, and aren't listed.
 - **An entry per binding** for a task bound with different arguments:
-  `st-summaries-period` is "Totals by week", "Totals by month" and
-  "Totals by year", each with its own key. Such a binding carries its
+  `st-summaries-period` is "Totals: by week", "Totals: by month" and
+  "Totals: by year", each with its own key. Such a binding carries its
   own title. A task whose bindings differ only by key, such as Enter and
   the keypad's Enter, is one entry.
 - **Only what works now**: a task whose `when()` is false, such as the
-  summaries' keys while the activity screen is showing, isn't listed, so
-  nothing listed does nothing. A task without keys, such as logging in
+  summaries' keys while the activity screen is showing, isn't listed: the
+  list goes by the screen. A command can still do nothing at the
+  moment, such as a download while one is running, as its key does then. A task without keys, such as logging in
   to Wahoo, is listed too: the palette is the only way to it without a
   key.
 - Each entry shows its key at the row's end, if it has one, in words
@@ -70,7 +71,7 @@ key. It also shows each action's key, so the palette teaches the keys.
   task with several keys shows the first.
 - **The titles** are short, and start with a verb where there is one:
   "Download from Garmin Connect", "Rename activity", "Show the totals",
-  "Totals by week". The Developer writes them for all the tasks, and Jan
+  "Totals: by week". The Developer writes them for all the tasks, and Jan
   checks them in the review.
 
 ### Searching and running
@@ -136,7 +137,7 @@ None.
   `.when()` and `.run_under_modals()` are chained.
 - `Binding` gets an optional **`title`**, and `Task::bind()` an optional
   third argument for it: `.bind(KeyCombo { KEY_W, KModNone },
-  summaries_argument("period", "week"), "Totals by week")`.
+  summaries_argument("period", "week"), "Totals: by week")`.
 - **`Command { title, task, arguments, key }`**, and
   **`AppBus::commands()`**: the entries, by the rules above, of the
   tasks whose `when()` is true now, unsorted. Pure over the bus's tasks

@@ -2049,7 +2049,7 @@ void SweatTrails::initialize()
         .titled("Show or close the totals")
         .bind(KeyCombo { KEY_T, KModControl });
     bus.add_task<SweatTrails>("st-summaries-close", self(), cmd_summaries_close)
-        .titled("Back to the activity")
+        .titled("Totals: back up, or close at the top")
         .bind(KeyCombo { KEY_ESCAPE, KModNone })
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-up", self(), cmd_summaries_up)
@@ -2057,15 +2057,15 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_BACKSPACE, KModNone })
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-graph", self(), cmd_summaries_graph)
-        .titled("Totals: year to date")
+        .titled("Totals: show year to date")
         .bind(KeyCombo { KEY_G, KModNone })
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-fitness", self(), cmd_summaries_fitness)
-        .titled("Totals: fitness")
+        .titled("Totals: show fitness")
         .bind(KeyCombo { KEY_F, KModNone })
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-curve", self(), cmd_summaries_curve)
-        .titled("Totals: best power or pace")
+        .titled("Totals: show best power or pace")
         .bind(KeyCombo { KEY_P, KModNone })
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-drill", self(), cmd_summaries_drill)
@@ -2074,9 +2074,9 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_KP_ENTER, KModNone })
         .when(on_summaries);
     auto &period = bus.add_task<SweatTrails>("st-summaries-period", self(), cmd_summaries_period).when(on_summaries);
-    period.bind(KeyCombo { KEY_W, KModNone }, summaries_argument("period", JSONValue { "week" }), "Totals by week");
-    period.bind(KeyCombo { KEY_M, KModNone }, summaries_argument("period", JSONValue { "month" }), "Totals by month");
-    period.bind(KeyCombo { KEY_Y, KModNone }, summaries_argument("period", JSONValue { "year" }), "Totals by year");
+    period.bind(KeyCombo { KEY_W, KModNone }, summaries_argument("period", JSONValue { "week" }), "Totals: by week");
+    period.bind(KeyCombo { KEY_M, KModNone }, summaries_argument("period", JSONValue { "month" }), "Totals: by month");
+    period.bind(KeyCombo { KEY_Y, KModNone }, summaries_argument("period", JSONValue { "year" }), "Totals: by year");
     auto &sport = bus.add_task<SweatTrails>("st-summaries-sport", self(), cmd_summaries_sport).when(on_summaries);
     sport.bind(KeyCombo { KEY_R, KModNone }, summaries_argument("sport", JSONValue { "running" }), "Totals: running");
     sport.bind(KeyCombo { KEY_C, KModNone }, summaries_argument("sport", JSONValue { "cycling" }), "Totals: cycling");
@@ -2086,8 +2086,8 @@ void SweatTrails::initialize()
     metric.bind(KeyCombo { KEY_N, KModNone }, summaries_argument("metric", JSONValue { "count" }), "Totals: number of activities");
     metric.bind(KeyCombo { KEY_A, KModNone }, summaries_argument("metric", JSONValue { "ascent" }), "Totals: ascent");
     auto &year = bus.add_task<SweatTrails>("st-summaries-year", self(), cmd_summaries_year).when(on_summaries);
-    year.bind(KeyCombo { KEY_LEFT, KModNone }, summaries_argument("step", JSONValue { -1 }), "Totals: back");
-    year.bind(KeyCombo { KEY_RIGHT, KModNone }, summaries_argument("step", JSONValue { 1 }), "Totals: on");
+    year.bind(KeyCombo { KEY_LEFT, KModNone }, summaries_argument("step", JSONValue { -1 }), "Totals: earlier");
+    year.bind(KeyCombo { KEY_RIGHT, KModNone }, summaries_argument("step", JSONValue { 1 }), "Totals: later");
     auto &row = bus.add_task<SweatTrails>("st-summaries-row", self(), cmd_summaries_row).when(on_summaries);
     row.bind(KeyCombo { KEY_UP, KModNone }, summaries_argument("step", JSONValue { -1 }));
     row.bind(KeyCombo { KEY_DOWN, KModNone }, summaries_argument("step", JSONValue { 1 }));
@@ -2149,7 +2149,7 @@ void SweatTrails::initialize()
         .bind(split_recordings_key)
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-group-recordings", self(), cmd_group_recordings)
-        .titled("Group the recordings, or make this one the main one")
+        .titled("Group recordings, or make this the main one")
         .bind(KeyCombo { KEY_J, KModControl })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-compare-recordings", self(), cmd_compare_recordings)
