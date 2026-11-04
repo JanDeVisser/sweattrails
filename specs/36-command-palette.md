@@ -1,6 +1,6 @@
 # Command palette
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -260,3 +260,21 @@ search by words, still of the title only); `CommandPaletteTest`
 (`test_runs_the_selected_match`, `test_empty_palette`,
 `test_task_runs_after_the_palette_closes`). The full run, `ctest -E
 oauth`, passes.
+
+### Resolution
+
+1. Fixed in 4380eeb: Esc on the totals is "Totals: back up, or close at
+   the top".
+2. Fixed in e73a3d7: a list box appends the typed codepoint as UTF-8,
+   and Backspace takes off a whole character. `ListBoxTest`'s
+   `test_search_by_codepoint` fails against the old code, and is back in
+   `main()`.
+3. Left as it is, with Jan's agreement: the list goes by the screen, as
+   the Feature now says, and a command that can't run at the moment does
+   nothing, as its key does.
+4. Fixed in 4380eeb: the totals' commands all read "Totals: …", the
+   views' with "show", Left and Right "earlier" and "later", and
+   grouping recordings has a shorter title.
+5. to 7. Left as they are: case-folding beyond ASCII was the same
+   before, and no unnamed key or title-less `AppBus::bind()` is used.
+8. The tests were committed with the review notes, in f85999a.
