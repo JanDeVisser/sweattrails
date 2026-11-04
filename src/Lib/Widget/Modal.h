@@ -7,9 +7,12 @@
 #pragma once
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <map>
+#include <ranges>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <raylib.h>
@@ -96,6 +99,25 @@ inline std::string_view first_chars(std::string_view text, size_t count)
 inline size_t char_count(std::string_view text)
 {
     return static_cast<size_t>(std::ranges::count_if(text, [](char ch) { return (static_cast<unsigned char>(ch) & 0xC0) != 0x80; }));
+}
+
+// Whether each word of `search` is in `text`, in any order,
+// case-insensitively: "garmin down" is in "Download from Garmin Connect".
+inline bool matches_words(std::string_view text, std::string_view search)
+{
+    auto const lower = [](std::string_view s) {
+        std::string ret { s };
+        std::ranges::transform(ret, ret.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        return ret;
+    };
+    auto const haystack = lower(text);
+    for (auto const word : std::views::split(std::string_view { search }, ' ')) {
+        auto const needle = lower(std::string_view { word.begin(), word.end() });
+        if (!needle.empty() && !haystack.contains(needle)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 template<typename Payload, ListBoxConfig Config = DefaultListBoxConfig, typename ToString = std::nullptr_t>
@@ -445,7 +467,7 @@ struct ListBox : public Modal {
             }
             for (auto const &e : entries) {
                 auto const sv = shown_text(e);
-                if (strcasestr(sv.c_str(), search.c_str()) != nullptr) {
+                if (matches_words(sv, search)) {
                     matches.push_back(e);
                 }
             }

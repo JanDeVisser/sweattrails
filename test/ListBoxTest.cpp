@@ -336,6 +336,28 @@ void test_first_chars()
     CHECK_EQ(char_count("Télégraphe"), 10uz);
 }
 
+void test_matches_words()
+{
+    CHECK(matches_words("Download from Garmin Connect", "garmin down"));
+    CHECK(matches_words("Download from Garmin Connect", "GARMIN"));
+    CHECK(matches_words("Download from Garmin Connect", "  from   "));
+    CHECK(matches_words("Download from Garmin Connect", ""));
+    // What a substring matched still matches.
+    CHECK(matches_words("Download from Garmin Connect", "load from gar"));
+    CHECK(!matches_words("Download from Garmin Connect", "garmin wahoo"));
+    CHECK(!matches_words("Download", "downloads"));
+}
+
+// Words in any order, in a list's search.
+void test_search_by_words(TestList &list)
+{
+    list.setup({ "Morning ride", "Evening run", "Morning run" });
+    list.type("run morn");
+    CHECK_EQ(list.shown_count(), 1);
+    list.key(KEY_ENTER);
+    CHECK_EQ(list.submitted, "Morning run");
+}
+
 }
 
 int main()
@@ -356,5 +378,7 @@ int main()
     test_select();
     test_widths();
     test_first_chars();
+    test_matches_words();
+    test_search_by_words(*list);
     return Test::test_result();
 }
