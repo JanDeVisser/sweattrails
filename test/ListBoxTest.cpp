@@ -373,17 +373,18 @@ void test_search_by_words(TestList &list)
     CHECK_EQ(list.submitted, "Morning run");
 }
 
-// FAILS, and isn't run from main(): a bug from before the palette.
-// raylib's GetCharPressed() gives a codepoint, and ListBox::character()
-// keeps its low byte, so typing "é" (U+00E9) searches for the byte 0xE9,
-// which no UTF-8 title has: "Télé" can't be found by typing it.
-[[maybe_unused]] void test_search_by_codepoint(TestList &list)
+// raylib's GetCharPressed() gives a codepoint: typing "é" (U+00E9)
+// searches for its UTF-8, not the byte 0xE9, which no UTF-8 title has.
+void test_search_by_codepoint(TestList &list)
 {
     list.setup({ "Col du Télégraphe", "Galibier" });
     list.character(U'T');
     list.character(U'é');
     CHECK_EQ(list.search, "Té");
     CHECK_EQ(list.shown_count(), 1);
+    // Backspace takes the é off whole.
+    list.key(KEY_BACKSPACE);
+    CHECK_EQ(list.search, "T");
 }
 
 }
@@ -406,6 +407,7 @@ int main()
     test_select();
     test_widths();
     test_first_chars();
+    test_search_by_codepoint(*list);
     test_matches_words();
     test_search_by_words(*list);
     test_matches_words_utf8();

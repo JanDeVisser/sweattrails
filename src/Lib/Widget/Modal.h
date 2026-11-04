@@ -360,8 +360,10 @@ struct ListBox : public Modal {
     bool character(int ch) override
     {
         if constexpr (Config.search) {
-            auto c = static_cast<char>(ch);
-            search.append(std::string_view { &c, 1 });
+            // raylib's is a codepoint, and the titles are UTF-8.
+            auto        size = 0;
+            auto const *utf8 = CodepointToUTF8(ch, &size);
+            search.append(std::string_view { utf8, static_cast<size_t>(size) });
             filter();
             return true;
         }
@@ -428,7 +430,8 @@ struct ListBox : public Modal {
             case KEY_BACKSPACE: {
                 if constexpr (Config.search) {
                     if (!search.empty()) {
-                        search.pop_back();
+                        // A whole character, not a byte of one.
+                        search.resize(first_chars(search, char_count(search) - 1).size());
                         filter();
                     }
                     return true;
