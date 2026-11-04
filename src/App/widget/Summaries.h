@@ -27,6 +27,7 @@
 #include <Widget.h>
 
 #include <storage/Fitness.h>
+#include <storage/PaceCurve.h>
 #include <storage/PowerCurve.h>
 #include <storage/Summaries.h>
 #include <storage/Thresholds.h>
@@ -135,6 +136,37 @@ struct PowerRow {
 // curve's window by weeks, the rest by year.
 [[nodiscard]] std::string summaries_keys(Graph graph);
 
+// The durations of the pace table's rows, in metres.
+constexpr std::array<u32, 7> PaceTableDistances { 400, 1000, 1609, 5000, 10000, 21097, 42195 };
+// The pace scale's steps, in seconds a km.
+constexpr std::array<double, 7> PaceSteps { 5, 10, 15, 30, 60, 120, 300 };
+
+// "Pace · CS 4:12 /km · D' 210 m · 90 days to 12 Oct 2026", without CS
+// if there's none; "Pace · no runs · …" without any.
+[[nodiscard]] std::string pace_heading(std::vector<PaceBest> const &window, std::optional<CriticalSpeed> const &cs,
+    std::chrono::year_month_day end);
+
+// The pace table's rows: the best for each of PaceTableDistances a run in
+// the window covered.
+struct PaceRow {
+    u32      metres { 0 };
+    PaceBest best { };
+};
+
+[[nodiscard]] std::vector<PaceRow> pace_table(std::vector<PaceBest> const &bests);
+
+// "400 m", "5 km", "1 mile", "Half marathon".
+[[nodiscard]] std::string format_race_distance(u32 metres);
+
+[[nodiscard]] std::vector<TableColumn> pace_columns();
+[[nodiscard]] std::vector<TableRow>    pace_rows(std::vector<PaceRow> const &rows, ActivitySummaries const &summaries,
+    std::function<std::string(ActivitySummary const &)> const &name_of);
+
+// The paces, s/km, from 400 m to `longest` metres, as curve_line() has
+// the power.
+[[nodiscard]] std::vector<double>    pace_line(std::vector<PaceBest> const &bests, u32 longest);
+[[nodiscard]] std::vector<ChartTick> pace_ticks(u32 longest);
+
 // A total's time in hours and minutes, "312:10": a year's seconds mean
 // little.
 [[nodiscard]] std::string format_total_time(u64 seconds);
@@ -202,6 +234,7 @@ private:
     void               refresh_lines();
     void               refresh_fitness();
     void               refresh_power();
+    void               refresh_pace();
     bool               step_curve(int step);
     std::string const &name_of(ActivitySummary const &summary);
     void               show_graph(Graph graph);

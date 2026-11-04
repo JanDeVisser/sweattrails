@@ -437,60 +437,193 @@ std::vector<TableRow> power_rows(std::vector<PowerRow> const &rows, ActivitySumm
     return ret;
 }
 
-std::vector<double> curve_line(std::vector<PowerBest> const &bests, u32 longest)
+namespace {
+
+// The `values` at the `xs` they're of, sampled at CurvePoints from
+// `first` to `last`, evenly in the logarithm of x, and interpolated in it
+// between the xs: up to the last of the values, so a shorter curve stops
+// partway.
+std::vector<double> log_line(std::span<u32 const> xs, std::vector<double> const &values, u32 first, u32 last)
 {
-    if (bests.empty() || longest < 1) {
+    if (values.empty() || last < first) {
         return { };
     }
-    // A single duration, or an axis of one second: a dot.
-    if (bests.size() == 1 || longest == 1) {
-        return { static_cast<double>(bests[0].watts) };
+    // A single value, or an axis of one x: a dot.
+    if (values.size() == 1 || last == first) {
+        return { values[0] };
     }
-    auto const          log_longest = std::log(static_cast<double>(longest));
-    auto const          last = static_cast<double>(PowerDurations[bests.size() - 1]);
+    auto const          log_first = std::log(static_cast<double>(first));
+    auto const          log_last = std::log(static_cast<double>(last));
+    auto const          end = static_cast<double>(xs[values.size() - 1]);
     std::vector<double> ret;
     for (auto ix = 0uz; ix < CurvePoints; ++ix) {
-        auto const at = log_longest * static_cast<double>(ix) / static_cast<double>(CurvePoints - 1);
-        if (std::exp(at) > last * (1 + 1e-9)) {
+        auto const at = log_first + (log_last - log_first) * static_cast<double>(ix) / static_cast<double>(CurvePoints - 1);
+        if (std::exp(at) > end * (1 + 1e-9)) {
             break;
         }
-        // Between the durations on either side, in the logarithm of the
-        // time, as the axis is.
         auto upper = 1uz;
-        while (upper < bests.size() - 1 && std::log(static_cast<double>(PowerDurations[upper])) < at) {
+        while (upper < values.size() - 1 && std::log(static_cast<double>(xs[upper])) < at) {
             ++upper;
         }
-        auto const from = std::log(static_cast<double>(PowerDurations[upper - 1]));
-        auto const to = std::log(static_cast<double>(PowerDurations[upper]));
+        auto const from = std::log(static_cast<double>(xs[upper - 1]));
+        auto const to = std::log(static_cast<double>(xs[upper]));
         auto const fraction = std::clamp((at - from) / (to - from), 0.0, 1.0);
-        auto const low = static_cast<double>(bests[upper - 1].watts);
-        ret.push_back(low + fraction * (static_cast<double>(bests[upper].watts) - low));
+        ret.push_back(values[upper - 1] + fraction * (values[upper] - values[upper - 1]));
     }
     return ret;
 }
 
-std::vector<ChartTick> curve_ticks(u32 longest)
+struct LogTick {
+    u32         x { 0 };
+    std::string label { };
+};
+
+// The ticks from `first` to `last`, on the axis log_line() samples.
+std::vector<ChartTick> log_ticks(std::span<LogTick const> ticks, u32 first, u32 last)
 {
-    constexpr std::array<u32, 9> Ticks { 1, 10, 60, 300, 1200, 3600, 7200, 18000, 36000 };
-    std::vector<ChartTick>       ret;
-    if (longest <= 1) {
+    std::vector<ChartTick> ret;
+    if (last <= first) {
         return ret;
     }
-    for (auto const seconds : Ticks) {
-        if (seconds > longest) {
-            break;
+    auto const span = std::log(static_cast<double>(last)) - std::log(static_cast<double>(first));
+    for (auto const &tick : ticks) {
+        if (tick.x < first || tick.x > last) {
+            continue;
         }
         ret.push_back(ChartTick {
-            .x = std::log(static_cast<double>(seconds)) / std::log(static_cast<double>(longest)) * static_cast<double>(CurvePoints - 1),
-            .label = format_duration(seconds),
+            .x = (std::log(static_cast<double>(tick.x)) - std::log(static_cast<double>(first))) / span * static_cast<double>(CurvePoints - 1),
+            .label = tick.label,
         });
     }
     return ret;
 }
 
+}
+
+std::vector<double> curve_line(std::vector<PowerBest> const &bests, u32 longest)
+{
+    std::vector<double> watts;
+    for (auto const &best : bests) {
+        watts.push_back(best.watts);
+    }
+    return log_line(PowerDurations, watts, 1, longest);
+}
+
+std::vector<ChartTick> curve_ticks(u32 longest)
+{
+    std::vector<LogTick> ticks;
+    for (auto const seconds : { 1u, 10u, 60u, 300u, 1200u, 3600u, 7200u, 18000u, 36000u }) {
+        ticks.push_back(LogTick { .x = seconds, .label = format_duration(seconds) });
+    }
+    return log_ticks(ticks, 1, longest);
+}
+
+namespace {
+
+// "4:19", of seconds; "1:32:10" from an hour.
+std::string format_time(double seconds)
+{
+    auto const whole = std::llround(seconds);
+    if (whole >= 3600) {
+        return std::format("{}:{:02}:{:02}", whole / 3600, (whole % 3600) / 60, whole % 60);
+    }
+    return std::format("{}:{:02}", whole / 60, whole % 60);
+}
+
+}
+
+std::string pace_heading(std::vector<PaceBest> const &window, std::optional<CriticalSpeed> const &cs, chrono::year_month_day end)
+{
+    std::string ret { "Pace" };
+    if (window.empty()) {
+        ret += " · no runs";
+    } else if (cs) {
+        ret += std::format(" · CS {} /km · D' {} m", format_time(1000 / cs->cs), std::llround(cs->d_prime));
+    }
+    return ret + std::format(" · {} days to {}", CurveWindowDays, format_day(end));
+}
+
+std::vector<PaceRow> pace_table(std::vector<PaceBest> const &bests)
+{
+    std::vector<PaceRow> ret;
+    for (auto const metres : PaceTableDistances) {
+        auto const ix = static_cast<size_t>(std::ranges::find(PaceDistances, metres) - PaceDistances.begin());
+        if (ix < bests.size()) {
+            ret.push_back(PaceRow { .metres = metres, .best = bests[ix] });
+        }
+    }
+    return ret;
+}
+
+std::string format_race_distance(u32 metres)
+{
+    switch (metres) {
+    case 1609:
+        return "1 mile";
+    case 16093:
+        return "10 miles";
+    case 21097:
+        return "Half marathon";
+    case 42195:
+        return "Marathon";
+    default:
+        break;
+    }
+    if (metres < 1000 || metres % 1000 != 0) {
+        return std::format("{} m", metres);
+    }
+    return std::format("{} km", metres / 1000);
+}
+
+std::vector<TableColumn> pace_columns()
+{
+    return {
+        { .header = "Distance" },
+        { .header = "Time", .right_aligned = true },
+        { .header = "Pace", .right_aligned = true },
+        { .header = "Date" },
+        { .header = "Run" },
+    };
+}
+
+std::vector<TableRow> pace_rows(std::vector<PaceRow> const &rows, ActivitySummaries const &summaries,
+    std::function<std::string(ActivitySummary const &)> const &name_of)
+{
+    std::vector<TableRow> ret;
+    for (auto const &row : rows) {
+        auto const &run = summaries[row.best.summary];
+        ret.push_back(TableRow {
+            format_race_distance(row.metres),
+            format_time(row.best.seconds),
+            std::format("{} /km", format_time(row.best.seconds * 1000.0 / row.metres)),
+            format_day(start_day(run)),
+            name_of ? name_of(run) : std::string { },
+        });
+    }
+    return ret;
+}
+
+std::vector<double> pace_line(std::vector<PaceBest> const &bests, u32 longest)
+{
+    std::vector<double> paces;
+    for (auto ix = 0uz; ix < bests.size(); ++ix) {
+        paces.push_back(bests[ix].seconds * 1000.0 / PaceDistances[ix]);
+    }
+    return log_line(PaceDistances, paces, PaceDistances[0], longest);
+}
+
+std::vector<ChartTick> pace_ticks(u32 longest)
+{
+    std::vector<LogTick> ticks;
+    for (auto const metres : { 400u, 1000u, 5000u, 10000u, 21097u, 42195u }) {
+        ticks.push_back(LogTick { .x = metres, .label = metres == 21097 ? "Half" : format_race_distance(metres) });
+    }
+    return log_ticks(ticks, PaceDistances[0], longest);
+}
+
 std::string summaries_keys(Graph graph)
 {
-    return std::format("W M Y: week, month, year    G: to date    F: fitness    P: power    R C: running, cycling    "
+    return std::format("W M Y: week, month, year    G: to date    F: fitness    P: best power or pace    R C: running, cycling    "
                        "D T N A: distance, time, number, ascent    Left Right: {}    Enter: open    Backspace: back    Esc: close",
         graph == Graph::Curve ? std::format("{} weeks", CurveStepDays / 7) : "year");
 }
@@ -606,11 +739,14 @@ void SummariesScreen::step_year(int step)
 }
 
 // Forward up to today, and back while the window ends on or after the
-// first ride with power.
+// first ride with power, or outdoor run with best times.
 bool SummariesScreen::step_curve(int step)
 {
     auto const end = chrono::sys_days { view.curve_end } + chrono::days { step * CurveStepDays };
-    auto const first = std::ranges::find_if(summaries, [](ActivitySummary const &summary) {
+    auto const first = std::ranges::find_if(summaries, [this](ActivitySummary const &summary) {
+        if (view.sport == VolumeSport::Running) {
+            return !summary.best_times.empty() && outdoor_run(summary);
+        }
         return !summary.power.empty() && volume_sport(summary.sport, summary.sub_sport) == VolumeSport::Cycling;
     });
     if (end > chrono::sys_days { today } || first == summaries.end() || end < chrono::sys_days { start_day(*first) }) {
@@ -759,11 +895,16 @@ void SummariesScreen::refresh()
     if (view.graph != Graph::Curve) {
         curve_rides.clear();
     }
+    lines->steps.clear();
     if (view.graph == Graph::Fitness || view.graph == Graph::Curve) {
         lines->format_value = [](double value) { return std::format("{:g}", value); };
         lines->min_step = 0;
         if (view.graph == Graph::Fitness) {
             refresh_fitness();
+        } else if (view.sport == VolumeSport::Running) {
+            lines->format_value = [](double value) { return format_time(value); };
+            lines->steps = { PaceSteps.begin(), PaceSteps.end() };
+            refresh_pace();
         } else {
             refresh_power();
         }
@@ -888,6 +1029,36 @@ std::string const &SummariesScreen::name_of(ActivitySummary const &summary)
         name->second = ride_name(summary);
     }
     return name->second;
+}
+
+}
+
+namespace ST {
+
+// As the power curve: the window's paces, bold, over the all-time best.
+void SummariesScreen::refresh_pace()
+{
+    auto const first = chrono::sys_days { view.curve_end } - chrono::days { CurveWindowDays - 1 };
+    auto const window = best_pace_curve(summaries, first, view.curve_end);
+    auto const all_time = best_pace_curve(summaries, chrono::year::min() / chrono::January / 1, today);
+    heading->text = pace_heading(window, critical_speed(window), view.curve_end);
+    lines->series.clear();
+    auto const longest = all_time.empty() ? 0u : PaceDistances[all_time.size() - 1];
+    if (!all_time.empty()) {
+        lines->series.push_back(ChartSeries { .label = "All time", .color = Fade(LIGHTGRAY, 0.5f), .values = pace_line(all_time, longest) });
+    }
+    if (!window.empty()) {
+        lines->series.push_back(ChartSeries {
+            .label = std::format("{} days", CurveWindowDays), .color = GOLD, .bold = true, .values = pace_line(window, longest) });
+    }
+    lines->x_count = CurvePoints;
+    lines->ticks = pace_ticks(longest);
+    auto const rows = pace_table(window);
+    curve_rides.clear();
+    for (auto const &row : rows) {
+        curve_rides.push_back(row.best.summary);
+    }
+    table->set_rows(pace_columns(), pace_rows(rows, summaries, [this](ActivitySummary const &run) { return name_of(run); }));
 }
 
 }

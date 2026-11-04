@@ -1165,11 +1165,17 @@ void test_leaving_the_power()
     Test::ScopedTestApp app;
     auto                screen = make_power_screen();
     screen->toggle_curve();
-    // R and the metrics don't change it.
-    screen->set_sport(VolumeSport::Running);
+    // The metrics don't change it; R makes it the pace curve, and C the
+    // power curve again.
     screen->set_metric(Metric::Time);
     CHECK(screen->view.graph == Graph::Curve);
     CHECK(screen->heading->text.starts_with("Power · CP 280 W"));
+    screen->set_sport(VolumeSport::Running);
+    CHECK(screen->view.graph == Graph::Curve);
+    CHECK(screen->heading->text.starts_with("Pace"));
+    screen->set_sport(VolumeSport::Cycling);
+    CHECK(screen->heading->text.starts_with("Power · CP 280 W"));
+    screen->set_sport(VolumeSport::Running);
     screen->toggle_fitness();
     CHECK(screen->view.graph == Graph::Fitness);
     screen->toggle_curve();
@@ -1409,6 +1415,176 @@ void test_power_keys_line()
     screen->toggle_curve();
     CHECK(screen->keys->text.contains("Left Right: year"));
 }
+// The best times of a runner with a CS of `cs` m/s and a D' of 150 m, up
+// to `to` metres.
+std::vector<u32> modelled_times(double cs, u32 to)
+{
+    std::vector<u32> ret;
+    for (auto const metres : PaceDistances) {
+        if (metres > to) {
+            break;
+        }
+        ret.push_back(static_cast<u32>(std::lround((metres - 150.0) / cs)));
+    }
+    return ret;
+}
+
+ActivitySummary paced_run(int year, unsigned month, unsigned day, double cs, u32 to)
+{
+    auto ret = run(year, month, day);
+    ret.source.file = std::format("{}/{:02}/{}.fit", year, month, ret.start);
+    ret.best_times = modelled_times(cs, to);
+    return ret;
+}
+
+std::shared_ptr<SummariesScreen> make_pace_screen()
+{
+    auto screen = Widget::make<SummariesScreen>(nullptr);
+    screen->viewport = Rect<float> { 0, 0, 1000, 800 };
+    auto treadmill = paced_run(2026, 6, 1, 6, 10000);
+    treadmill.sub_sport = FIT::sub_sport::treadmill;
+    screen->set_summaries({
+        paced_run(2025, 3, 1, 4, 21097), // The best ever
+        power_ride(2025, 9, 1, 300, 7200),
+        paced_run(2026, 5, 1, 3.5, 10000),
+        treadmill,
+    });
+    screen->ride_name = [](ActivitySummary const &summary) { return std::format("Run of {}", summary.start); };
+    screen->open(VolumeSport::Running, Today);
+    return screen;
+}
+
+void test_pace_heading()
+{
+    auto const                  end = std::chrono::year { 2026 } / std::chrono::October / 12;
+    std::vector<PaceBest> const bests { PaceBest { .seconds = 90 } };
+    CHECK_EQ(pace_heading(bests, CriticalSpeed { .cs = 1000.0 / 252, .d_prime = 209.6 }, end),
+        "Pace · CS 4:12 /km · D' 210 m · 90 days to 12 Oct 2026");
+    CHECK_EQ(pace_heading(bests, std::nullopt, end), "Pace · 90 days to 12 Oct 2026");
+    CHECK_EQ(pace_heading({ }, std::nullopt, end), "Pace · no runs · 90 days to 12 Oct 2026");
+}
+
+void test_format_race_distance()
+{
+    CHECK_EQ(format_race_distance(400), "400 m");
+    CHECK_EQ(format_race_distance(1500), "1500 m");
+    CHECK_EQ(format_race_distance(1000), "1 km");
+    CHECK_EQ(format_race_distance(1609), "1 mile");
+    CHECK_EQ(format_race_distance(10000), "10 km");
+    CHECK_EQ(format_race_distance(21097), "Half marathon");
+    CHECK_EQ(format_race_distance(42195), "Marathon");
+}
+
+void test_pace_view()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_pace_screen();
+    screen->toggle_curve();
+    CHECK(screen->view.graph == Graph::Curve);
+    // 1000 / 3.5 m/s is 4:46 a km; the treadmill run's faster times don't
+    // count.
+    CHECK(screen->heading->text.starts_with("Pace · CS 4:46 /km · D' 1"));
+    CHECK(screen->heading->text.ends_with(" m · 90 days to 15 Jun 2026"));
+    // Up to 10 km, the window's longest.
+    CHECK_EQ(screen->table->rows.size(), 5uz);
+    if (screen->table->rows.size() == 5) {
+        auto const &run = screen->summaries[2];
+        CHECK(screen->table->rows[1] == (TableRow { "1 km", "4:03", "4:03 /km", "1 May 2026", std::format("Run of {}", run.start) }));
+        CHECK_EQ(screen->table->rows[4][0], "10 km");
+        // (10000 - 150) / 3.5 s.
+        CHECK_EQ(screen->table->rows[4][1], "46:54");
+        CHECK_EQ(screen->table->rows[4][2], "4:41 /km");
+    }
+    // The all-time curve to the half marathon, the window's to 10 km, on
+    // a scale in steps of time.
+    CHECK_EQ(screen->lines->series.size(), 2uz);
+    if (screen->lines->series.size() == 2) {
+        CHECK_EQ(screen->lines->series[0].values.size(), CurvePoints);
+        CHECK(screen->lines->series[1].values.size() < CurvePoints);
+    }
+    CHECK(!screen->lines->steps.empty());
+    CHECK_EQ(screen->lines->format_value(252), "4:12");
+    // C: the power curve, on a scale of watts.
+    screen->set_sport(VolumeSport::Cycling);
+    CHECK(screen->heading->text.starts_with("Power"));
+    CHECK(screen->lines->steps.empty());
+    CHECK_EQ(screen->lines->format_value(250), "250");
+}
+
+void test_pace_steps()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_pace_screen();
+    screen->toggle_curve();
+    // Back to the first outdoor run, March 2025, and no further: not the
+    // ride's September.
+    for (auto step = 0; step < 30; ++step) {
+        screen->step_year(-1);
+    }
+    auto const end = std::chrono::sys_days { screen->view.curve_end };
+    auto const first = std::chrono::sys_days { std::chrono::year { 2025 } / std::chrono::March / 1 };
+    CHECK(end >= first);
+    CHECK(end - first < std::chrono::days { CurveStepDays });
+    CHECK(screen->heading->text.starts_with("Pace · CS 4:10 /km"));
+    // A window of no runs.
+    screen->toggle_curve();
+    screen->toggle_curve();
+    screen->step_year(-4);
+    CHECK(screen->heading->text.starts_with("Pace · no runs · "));
+    CHECK(screen->table->rows.empty());
+}
+
+void test_pace_without_a_sound_cs()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_pace_screen();
+    // 3 km, the longest best 12 minutes: not enough.
+    screen->set_summaries({ paced_run(2026, 6, 1, 4, 3000) });
+    screen->toggle_curve();
+    CHECK_EQ(screen->heading->text, "Pace · 90 days to 15 Jun 2026");
+    CHECK_EQ(screen->table->rows.size(), 3uz);
+}
+
+void test_enter_opens_the_run()
+{
+    Test::ScopedTestApp            app;
+    auto                           screen = make_pace_screen();
+    std::optional<ActivitySummary> opened { };
+    screen->on_ride = [&opened](ActivitySummary const &summary) { opened = summary; };
+    screen->toggle_curve();
+    screen->step_row(1);
+    screen->drill();
+    CHECK(opened && *opened == screen->summaries[2]);
+}
+
+void test_pace_line()
+{
+    std::vector<PaceBest> bests;
+    for (auto const seconds : modelled_times(4, 10000)) {
+        bests.push_back(PaceBest { .seconds = seconds });
+    }
+    auto const line = pace_line(bests, 10000);
+    CHECK_EQ(line.size(), CurvePoints);
+    if (line.size() == CurvePoints) {
+        // 400 m in 63 s: 157.5 s a km; 10 km in 2463 s.
+        CHECK(std::abs(line.front() - 157.5) < 1e-6);
+        CHECK(std::abs(line.back() - 246.3) < 1e-6);
+        CHECK(std::ranges::is_sorted(line));
+    }
+    CHECK(pace_line(bests, 21097).size() < CurvePoints);
+    auto const ticks = pace_ticks(10000);
+    CHECK_EQ(ticks.size(), 4uz);
+    if (ticks.size() == 4) {
+        CHECK_EQ(ticks[0].label, "400 m");
+        CHECK(std::abs(ticks[0].x) < 1e-9);
+        CHECK_EQ(ticks[3].label, "10 km");
+        CHECK(std::abs(ticks[3].x - static_cast<double>(CurvePoints - 1)) < 1e-9);
+    }
+    auto const to_marathon = pace_ticks(42195);
+    CHECK(!to_marathon.empty() && to_marathon.back().label == "Marathon");
+    CHECK(pace_ticks(400).empty());
+}
+
 }
 
 int main()
@@ -1479,5 +1655,12 @@ int main()
     test_curve_line_samples();
     test_new_summaries_in_the_fitness();
     test_power_keys_line();
+    test_pace_heading();
+    test_format_race_distance();
+    test_pace_view();
+    test_pace_steps();
+    test_pace_without_a_sound_cs();
+    test_enter_opens_the_run();
+    test_pace_line();
     return Test::test_result();
 }

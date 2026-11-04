@@ -229,9 +229,12 @@ first counts back to your first activity. Rides use the cycling LTHR,
 everything else the running one. The activity's IF and TSS on the main
 screen use them too. Without thresholds there is no TSS.
 
-## Power curve and critical power
+## Power and pace curves
 
-P on the totals screen shows your power curve: the best average power
+P on the totals screen shows your power curve when it's on cycling, and
+your pace curve when it's on running; R and C switch between them.
+
+The power curve is the best average power
 you held for each length of time, from a second to your longest ride,
 over the 90 days up to today, in bold. Behind it, faint, is your best
 ever. Time runs along the bottom on a logarithmic scale.
@@ -254,6 +257,22 @@ as zero power, so a best effort never spans a coffee break, and
 readings over 1500 W count as zero, as they're dropouts. Only an
 activity's main recording counts: if your power meter's isn't the main
 one, Ctrl+J on it makes it so.
+
+The pace curve has your best times over distances from 400 m to the
+marathon, as a pace in min/km, against the distance, so lower is
+faster. The heading has your **critical speed** (CS), as a pace, and
+**D'**: CS is the pace you could hold for a long time, about the pace
+of an hour's race, and D' the distance you can run faster than it
+before you run out. They come from fitting `distance = CS × time + D'`
+to your bests of 3 to 20 minutes, which a run of 20 minutes or more
+gives. The table has your bests over 400 m, 1 km, a mile, 5 and 10 km
+and the half and full marathon, with their pace.
+
+Outdoor runs count, trail runs too, but not treadmill or indoor runs,
+whose distance is the watch's guess. The distance is your watch's. Time
+runs on through a stop, such as at a traffic light, and distance gained
+faster than 8 m/s between two records is a GPS glitch, and doesn't
+count. The pace is as run: hills aren't taken into account.
 
 ## Zwift
 
