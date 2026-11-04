@@ -45,6 +45,10 @@ struct LineChart : public Widget {
     std::vector<ChartTick> ticks { };
     FormatValue            format_value { [](double v) { return std::format("{:g}", v); } };
     double                 min_step { 0 };
+    // The steps the scale can take, smallest first, if not 1, 2 or 5
+    // times a power of ten: the scale is then around the lines' values,
+    // not from 0.
+    std::vector<double> steps { };
 
     // Room for the scale on the left and the labels at the bottom, which
     // draw() measures. Tests, which have no fonts, set them themselves.

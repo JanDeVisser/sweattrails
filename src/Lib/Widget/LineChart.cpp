@@ -5,6 +5,7 @@
  */
 
 #include <algorithm>
+#include <optional>
 
 #include <App.h>
 #include <LineChart.h>
@@ -28,16 +29,19 @@ Rectangle LineChart::plot_area() const
 
 ChartScale LineChart::scale() const
 {
-    auto min = 0.0;
-    auto max = 0.0;
+    std::optional<double> min { };
+    std::optional<double> max { };
     for (auto const &line : series) {
         if (!line.values.empty()) {
             auto const [lowest, highest] = std::ranges::minmax(line.values);
-            min = std::min(min, lowest);
-            max = std::max(max, highest);
+            min = std::min(min.value_or(lowest), lowest);
+            max = std::max(max.value_or(highest), highest);
         }
     }
-    return nice_range(min, max, Ticks, min_step);
+    if (!steps.empty() && min) {
+        return nice_span(*min, *max, Ticks, steps);
+    }
+    return nice_range(std::min(min.value_or(0), 0.0), std::max(max.value_or(0), 0.0), Ticks, min_step);
 }
 
 // The first value at the plot's left edge, the last of `x_count` at its

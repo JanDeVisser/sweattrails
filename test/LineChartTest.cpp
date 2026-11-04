@@ -83,6 +83,36 @@ void test_scale_below_zero()
     CHECK_EQ(chart->y_at(50, scale), 10.0f);
 }
 
+// A pace's scale: around the values, in steps of time.
+void test_nice_span()
+{
+    std::vector<double> const steps { 5, 10, 15, 30, 60, 120, 300 };
+    // 3:20 to 6:10: a minute a step, from 3:00 to 7:00.
+    CHECK((nice_span(200, 370, 5, steps) == ChartScale { .bottom = 180, .top = 420, .step = 60 }));
+    // 4:02 to 4:38: 10 s, as 4 steps fit.
+    CHECK((nice_span(242, 278, 5, steps) == ChartScale { .bottom = 240, .top = 280, .step = 10 }));
+    // 4:02 to 4:52: 15 s.
+    CHECK((nice_span(242, 292, 5, steps) == ChartScale { .bottom = 240, .top = 300, .step = 15 }));
+    // A flat line, at 4:00 exactly: a step above it.
+    CHECK((nice_span(240, 240, 5, steps) == ChartScale { .bottom = 240, .top = 245, .step = 5 }));
+    // Wider than the largest step can make 5 of: the largest.
+    CHECK((nice_span(0, 3000, 5, steps) == ChartScale { .bottom = 0, .top = 3000, .step = 300 }));
+    CHECK((nice_span(0, 85, 5, { }) == nice_range(0, 85)));
+}
+
+void test_scale_with_steps()
+{
+    Test::ScopedTestApp app;
+    auto                chart = make_chart();
+    chart->steps = { 5, 10, 15, 30, 60 };
+    CHECK((chart->scale() == ChartScale { .top = 1, .step = 1 }));
+    chart->series = {
+        { .label = "All time", .values = { 230, 250, 300 } },
+        { .label = "90 days", .bold = true, .values = { 245, 262 } },
+    };
+    CHECK((chart->scale() == ChartScale { .bottom = 225, .top = 300, .step = 15 }));
+}
+
 void test_nice_range()
 {
     CHECK((nice_range(0, 85) == nice_scale(85)));
@@ -117,6 +147,8 @@ int main()
     test_scale();
     test_scale_below_zero();
     test_nice_range();
+    test_nice_span();
+    test_scale_with_steps();
     test_nice_range_in_fractions();
     return Test::test_result();
 }

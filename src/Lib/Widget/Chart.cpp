@@ -59,6 +59,25 @@ ChartScale nice_range(double min, double max, int ticks, double min_step)
     };
 }
 
+ChartScale nice_span(double min, double max, int ticks, std::vector<double> const &steps)
+{
+    if (steps.empty()) {
+        return nice_range(min, max, ticks);
+    }
+    auto const around = [min, max](double step) {
+        auto const bottom = std::floor(min / step) * step;
+        // A flat line gets a step above it.
+        auto const top = std::max(std::ceil(max / step) * step, bottom + step);
+        return ChartScale { .bottom = bottom, .top = top, .step = step };
+    };
+    for (auto const step : steps) {
+        if (auto const scale = around(step); ::ST::steps(scale) <= ticks) {
+            return scale;
+        }
+    }
+    return around(steps.back());
+}
+
 std::vector<size_t> visible_labels(std::vector<float> const &centres, std::vector<float> const &widths, float gap)
 {
     std::vector<size_t> ret;
