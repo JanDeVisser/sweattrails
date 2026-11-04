@@ -178,6 +178,19 @@ struct KeyCombo {
     auto operator<=>(KeyCombo const &) const = default;
 };
 
+// A key as the README writes it, to show it: "Cmd+Shift+P" on macOS,
+// "Ctrl+Alt+L", "F2", "Page Up".
+[[nodiscard]] std::string key_text(KeyCombo const &combo);
+
+// A command the user can run by its title, as from the command palette:
+// a task, with the arguments of one of its bindings, and its key.
+struct Command {
+    std::string             title { };
+    std::string             task { };
+    JSONValue               arguments { };
+    std::optional<KeyCombo> key { };
+};
+
 constexpr auto ZeroPadding = Rect<float> { 0.0 };
 constexpr auto DefaultPadding = Rect<float> { 5.0 };
 
@@ -218,6 +231,7 @@ struct AppBus {
         std::string task;
         pWidget     owner;
         Handler     handler;
+        std::string title { };              // For the command palette: none isn't listed
         bool        under_modals { false }; // Whether its keys work while a modal is open
         // When its keys work, if not always: when it's false, a key goes to
         // the next task it's bound to.
@@ -232,9 +246,18 @@ struct AppBus {
         }
         Task(Task const &) = default;
 
-        Task &bind(KeyCombo const &combo, JSONValue const &arguments = JSONValue { })
+        // A binding with a title of its own is an entry of the command
+        // palette, as W, M and Y are "Totals by week", "by month" and "by
+        // year": its arguments make it another command.
+        Task &bind(KeyCombo const &combo, JSONValue const &arguments = JSONValue { }, std::string_view binding_title = { })
         {
-            return bus.bind(*this, combo, arguments);
+            return bus.bind(*this, combo, arguments, binding_title);
+        }
+
+        Task &titled(std::string_view task_title)
+        {
+            title = task_title;
+            return *this;
         }
 
         // Its keys also work while a modal is open, such as force quit's.
@@ -266,6 +289,7 @@ struct AppBus {
         KeyCombo    combo;
         std::string task;
         JSONValue   arguments;
+        std::string title { };
     };
 
     struct PendingTask {
@@ -430,7 +454,7 @@ struct AppBus {
     {
         KeyboardModifier modifier = modifier_current();
         for (auto key : pressed_keys) {
-            for (auto const &[combo, task, arguments] : bindings) {
+            for (auto const &[combo, task, arguments, title] : bindings) {
                 if (combo.key != key || combo.modifier != modifier) {
                     continue;
                 }
@@ -451,7 +475,7 @@ struct AppBus {
         return t.bind(combo, arguments);
     }
 
-    Task &bind(Task &task, KeyCombo const &combo, JSONValue const &arguments = JSONValue { })
+    Task &bind(Task &task, KeyCombo const &combo, JSONValue const &arguments = JSONValue { }, std::string_view title = { })
     {
         auto args = arguments;
         if (args.is_null()) {
@@ -459,8 +483,45 @@ struct AppBus {
             set(args, "key", combo.key);
             set(args, "modifier", combo.modifier);
         }
-        bindings.emplace_back(combo, task.task, args);
+        bindings.emplace_back(combo, task.task, args, std::string { title });
         return task;
+    }
+
+    // The commands that work now, for the command palette: a task's titled
+    // bindings, each with its arguments, or else, if it has a title, the
+    // task, as its first key runs it. Tasks whose when() is false, and
+    // those without a title, aren't. Not sorted.
+    [[nodiscard]] std::vector<Command> commands() const
+    {
+        std::vector<Command> ret;
+        for (auto const &[name, task] : tasks) {
+            if (task.active && !task.active()) {
+                continue;
+            }
+            Binding const *first = nullptr;
+            auto           titled_bindings = false;
+            for (auto const &binding : bindings) {
+                if (binding.task != name) {
+                    continue;
+                }
+                if (first == nullptr) {
+                    first = &binding;
+                }
+                if (!binding.title.empty()) {
+                    titled_bindings = true;
+                    ret.push_back(Command { .title = binding.title, .task = name, .arguments = binding.arguments, .key = binding.combo });
+                }
+            }
+            if (titled_bindings || task.title.empty()) {
+                continue;
+            }
+            if (first != nullptr) {
+                ret.push_back(Command { .title = task.title, .task = name, .arguments = first->arguments, .key = first->combo });
+            } else {
+                ret.push_back(Command { .title = task.title, .task = name });
+            }
+        }
+        return ret;
     }
 
     template<typename C>

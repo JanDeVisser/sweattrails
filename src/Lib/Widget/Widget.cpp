@@ -75,6 +75,112 @@ std::string modifier_string(KeyboardModifier modifier)
     return ret;
 }
 
+namespace {
+
+std::string key_name(int key)
+{
+    if (key >= KEY_A && key <= KEY_Z) {
+        return std::string(1, static_cast<char>('A' + (key - KEY_A)));
+    }
+    if (key >= KEY_ZERO && key <= KEY_NINE) {
+        return std::string(1, static_cast<char>('0' + (key - KEY_ZERO)));
+    }
+    if (key >= KEY_F1 && key <= KEY_F12) {
+        return std::format("F{}", key - KEY_F1 + 1);
+    }
+    if (key >= KEY_KP_0 && key <= KEY_KP_9) {
+        return std::format("Keypad {}", key - KEY_KP_0);
+    }
+    switch (key) {
+    case KEY_SPACE:
+        return "Space";
+    case KEY_ENTER:
+        return "Enter";
+    case KEY_ESCAPE:
+        return "Esc";
+    case KEY_BACKSPACE:
+        return "Backspace";
+    case KEY_TAB:
+        return "Tab";
+    case KEY_DELETE:
+        return "Delete";
+    case KEY_INSERT:
+        return "Insert";
+    case KEY_LEFT:
+        return "Left";
+    case KEY_RIGHT:
+        return "Right";
+    case KEY_UP:
+        return "Up";
+    case KEY_DOWN:
+        return "Down";
+    case KEY_PAGE_UP:
+        return "Page Up";
+    case KEY_PAGE_DOWN:
+        return "Page Down";
+    case KEY_HOME:
+        return "Home";
+    case KEY_END:
+        return "End";
+    case KEY_MINUS:
+        return "-";
+    case KEY_EQUAL:
+        return "=";
+    case KEY_COMMA:
+        return ",";
+    case KEY_PERIOD:
+        return ".";
+    case KEY_SLASH:
+        return "/";
+    case KEY_SEMICOLON:
+        return ";";
+    case KEY_APOSTROPHE:
+        return "'";
+    case KEY_LEFT_BRACKET:
+        return "[";
+    case KEY_RIGHT_BRACKET:
+        return "]";
+    case KEY_BACKSLASH:
+        return "\\";
+    case KEY_GRAVE:
+        return "`";
+    case KEY_KP_ADD:
+        return "Keypad +";
+    case KEY_KP_SUBTRACT:
+        return "Keypad -";
+    case KEY_KP_MULTIPLY:
+        return "Keypad *";
+    case KEY_KP_DIVIDE:
+        return "Keypad /";
+    case KEY_KP_DECIMAL:
+        return "Keypad .";
+    case KEY_KP_ENTER:
+        return "Keypad Enter";
+    default:
+        return std::format("Key {}", key);
+    }
+}
+
+}
+
+std::string key_text(KeyCombo const &combo)
+{
+#ifdef __APPLE__
+    constexpr auto Super = "Cmd";
+    constexpr auto Alt = "Option";
+#else
+    constexpr auto Super = "Super";
+    constexpr auto Alt = "Alt";
+#endif
+    std::string ret;
+    for (auto const &[modifier, name] : { std::pair { KModSuper, Super }, { KModControl, "Ctrl" }, { KModAlt, Alt }, { KModShift, "Shift" } }) {
+        if ((combo.modifier & modifier) == modifier) {
+            ret += std::format("{}+", name);
+        }
+    }
+    return ret + key_name(combo.key);
+}
+
 Widget::Widget(pWidget parent, SizePolicy policy, float policy_size)
     : policy(policy)
     , policy_size(policy_size)

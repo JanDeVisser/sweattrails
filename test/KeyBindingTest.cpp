@@ -7,7 +7,11 @@
  * open when the key was pressed.
  */
 
+#include <algorithm>
 #include <memory>
+#include <optional>
+#include <string_view>
+#include <vector>
 
 #include <App.h>
 
@@ -185,6 +189,71 @@ void test_when_keeps_the_arguments()
     }
 }
 
+// The command of `title` among `commands`, if there's one.
+std::optional<Command> command(std::vector<Command> const &commands, std::string_view title)
+{
+    auto const it = std::ranges::find(commands, title, &Command::title);
+    if (it == commands.end()) {
+        return { };
+    }
+    return *it;
+}
+
+void test_commands()
+{
+    Test::ScopedTestApp app;
+    Bus                 bus;
+    auto const          nothing = [](auto const &, JSONValue const &) { };
+    bus.add_task<Widget>("test-download", app.app, nothing).titled("Download").bind(KeyCombo { KEY_G, KModControl });
+    // Plumbing: no title.
+    bus.add_task<Widget>("test-row", app.app, nothing).bind(KeyCombo { KEY_DOWN, KModNone });
+    // No key: still a command.
+    bus.add_task<Widget>("test-login", app.app, nothing).titled("Log in");
+    // Titled bindings are a command each; Enter's other key isn't.
+    auto week = JSONValue::object();
+    week.set("period", JSONValue { "week" });
+    auto month = JSONValue::object();
+    month.set("period", JSONValue { "month" });
+    bus.add_task<Widget>("test-period", app.app, nothing)
+        .titled("Period")
+        .bind(KeyCombo { KEY_W, KModNone }, week, "By week")
+        .bind(KeyCombo { KEY_M, KModNone }, month, "By month")
+        .bind(KeyCombo { KEY_KP_ENTER, KModNone }, week);
+    // Not on this screen.
+    bus.add_task<Widget>("test-elsewhere", app.app, nothing).titled("Elsewhere").when([] { return false; });
+    auto const commands = bus.commands();
+    CHECK_EQ(commands.size(), 4uz);
+    auto const download = command(commands, "Download");
+    CHECK(download && download->task == "test-download" && download->key == (KeyCombo { KEY_G, KModControl }));
+    CHECK(download && download->arguments.try_get<int>("key").value_or(0) == KEY_G);
+    auto const login = command(commands, "Log in");
+    CHECK(login && !login->key && login->arguments.is_null());
+    auto const by_month = command(commands, "By month");
+    CHECK(by_month && by_month->task == "test-period" && by_month->key == (KeyCombo { KEY_M, KModNone }));
+    CHECK(by_month && by_month->arguments.try_get<std::string>("period").value_or("") == "month");
+    CHECK(command(commands, "By week").has_value());
+    CHECK(!command(commands, "Period").has_value());
+    CHECK(!command(commands, "Elsewhere").has_value());
+}
+
+void test_key_text()
+{
+    CHECK_EQ(key_text(KeyCombo { KEY_G, KModControl }), "Ctrl+G");
+    CHECK_EQ(key_text(KeyCombo { KEY_F2, KModNone }), "F2");
+    CHECK_EQ(key_text(KeyCombo { KEY_ENTER, KModNone }), "Enter");
+    CHECK_EQ(key_text(KeyCombo { KEY_ESCAPE, KModNone }), "Esc");
+    CHECK_EQ(key_text(KeyCombo { KEY_PAGE_UP, KModNone }), "Page Up");
+    CHECK_EQ(key_text(KeyCombo { KEY_KP_ADD, KModNone }), "Keypad +");
+    CHECK_EQ(key_text(KeyCombo { KEY_SEVEN, KModShift }), "Shift+7");
+#ifdef __APPLE__
+    CHECK_EQ(key_text(KeyCombo { KEY_P, KModSuper | KModShift }), "Cmd+Shift+P");
+    CHECK_EQ(key_text(KeyCombo { KEY_L, KModControl | KModAlt }), "Ctrl+Option+L");
+#else
+    CHECK_EQ(key_text(KeyCombo { KEY_P, KModSuper | KModShift }), "Super+Shift+P");
+    CHECK_EQ(key_text(KeyCombo { KEY_L, KModControl | KModAlt }), "Ctrl+Alt+L");
+#endif
+}
+
 }
 
 int main()
@@ -197,5 +266,7 @@ int main()
     test_when_under_a_modal();
     test_same_key_other_modifier();
     test_when_keeps_the_arguments();
+    test_commands();
+    test_key_text();
     return Test::test_result();
 }
