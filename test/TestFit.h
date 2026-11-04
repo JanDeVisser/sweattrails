@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -148,6 +149,22 @@ inline void add_records(FITBuilder &fit, u32 count, u8 heart_rate, u16 power, u3
         fit.u32_le(Start + start + at);
         fit.byte(heart_rate);
         fit.u16_le(power);
+    }
+}
+
+// A record a second for `count` seconds after Start, with the distance
+// at `speed` m/s, as a run's.
+inline void add_distance_records(FITBuilder &fit, u32 count, float speed)
+{
+    fit.definition(5, 20,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 5, .size = 4, .base_type = Uint32 },
+        });
+    for (auto at = 0u; at < count; ++at) {
+        fit.message(5);
+        fit.u32_le(Start + at);
+        fit.u32_le(static_cast<u32>(std::lround(speed * static_cast<float>(at) * 100)));
     }
 }
 
