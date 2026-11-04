@@ -1,6 +1,6 @@
 # Command palette
 
-Status: Ready
+Status: In progress, on branch feature/36-command-palette
 
 <!--
 Status is one of:
@@ -112,11 +112,82 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### Where the spec leaves a gap
+
+- **A task with titled bindings and untitled ones**: the titled ones
+  are its entries, and the untitled ones, such as the keypad's Enter
+  next to Enter, are other keys for one of them, not entries of their
+  own. A task with a title and no titled binding is one entry, with its
+  first binding's arguments and key; without a binding, with no
+  arguments and no key.
+- **The palette doesn't list itself.**
+- **"The last few"** recent commands: up to 5, by title.
+- **Words in any order for every list box**, not only the palette: the
+  activity list's search (Ctrl+M) gets it too. Everything a substring
+  matched before still matches, as each of its words is in the title.
+- **Key names**: Cmd, Ctrl, Option and Shift on macOS (Super, Ctrl, Alt
+  and Shift elsewhere), in that order, as the README writes them
+  ("Cmd+Shift+R", "Ctrl+Alt+L"), then the key: "A", "F2", "Enter",
+  "Esc", "Left", "Page Up", "Keypad +".
+
+### The bus (`src/Lib/Widget/Widget.h`)
+
+- `Task` gets an optional **`title`**, set with **`.titled("…")`**, as
+  `.when()` and `.run_under_modals()` are chained.
+- `Binding` gets an optional **`title`**, and `Task::bind()` an optional
+  third argument for it: `.bind(KeyCombo { KEY_W, KModNone },
+  summaries_argument("period", "week"), "Totals by week")`.
+- **`Command { title, task, arguments, key }`**, and
+  **`AppBus::commands()`**: the entries, by the rules above, of the
+  tasks whose `when()` is true now, unsorted. Pure over the bus's tasks
+  and bindings, so a test can build a bus and check them, as
+  `KeyBindingTest` does.
+
+### Keys and searching (`src/Lib/Widget`)
+
+- **`key_text(KeyCombo)`** in `Widget.h`/`.cpp`, next to
+  `modifier_string()`: "Cmd+Shift+P". Pure.
+- **`matches_words(text, search)`** in `Modal.h`: each word of the
+  search in the text, case-insensitively. `ListBox::filter()` uses it
+  instead of `strcasestr()`.
+
+### The palette (`src/Lib/Widget/CommandPalette.*`)
+
+- It's general, not the app's: any app with tasks can have one.
+- **`order_commands(commands, recent)`**, pure: the commands whose
+  titles are in `recent`, most recent first, then the rest by title,
+  A to Z, case-insensitively.
+- **`RecentCommands`**: up to 5 titles, `used(title)` moving one to the
+  front. The app keeps one, for as long as it runs.
+- **`CommandPalette`**, a `ListBox<Command, { .search = true, .sort =
+  false }>`, with the key in the row's column, and a function to run on
+  Enter. **`command_palette(commands, recent, run)`** opens one.
+
+### The app (`SweatTrails.cpp`)
+
+- Every task gets `.titled()`, and the bindings with arguments their
+  titles. Task `st-command-palette`, Cmd+Shift+P (Ctrl+Shift+P off
+  macOS), not while a modal is open, which lists `bus.commands()` less
+  itself, and on Enter marks the command used and submits its task with
+  its arguments, which runs it next frame, with the palette closed.
+- The README.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `KeyBindingTest`: `commands()`: a titled task is an entry, an untitled
+  one isn't; titled bindings are an entry each, with their arguments and
+  keys, and an untitled binding of the same task isn't; a task without
+  keys is an entry without a key; a task whose `when()` is false isn't.
+- `KeyTextTest` (new, or in `KeyBindingTest`): `key_text()` for letters,
+  F-keys, Enter, arrows, the keypad, and modifiers in order.
+- `ListBoxTest`: `matches_words()`, and a list box's search by words in
+  any order, which still matches what a substring did.
+- `CommandPaletteTest` (new): `order_commands()` with and without
+  recent ones, `RecentCommands` keeping 5 and moving a used one to the
+  front, and the palette's Enter running the selected command and
+  closing, with a search typed.
+- By hand: Cmd+Shift+P on the activity screen and the summaries screen,
+  and running a command that asks for input, such as renaming.
 
 ## Review notes
 
