@@ -37,7 +37,8 @@ builds on.
 - The fit is over the bests whose times are 3 to 20 minutes, as for
   power. As every run contains bests over the distances shorter than
   it, a run of 20 minutes or more in the window gives a fit, as a ride
-  of 20 minutes does.
+  of 20 minutes does, if it wasn't all at one pace: an even run has a
+  D' of about 0, and no fit, as a flat power curve has none.
 - **Pace as run**, without adjusting for hills: a hilly run only sets
   slower bests. A long downhill could set a fast short best, but that's
   rare. Grade-adjusted pace is left out *(deferred)*: it needs a model
@@ -154,8 +155,8 @@ None.
   read from the bests: a 20-minute run of 4.7 km has no 5 km best, and
   its longest, 4 km, took 17 minutes. So the fit is sound if at least 3
   bests took 3 to 20 minutes, the longest of them 15 minutes or more,
-  and CS and D' come out above zero. A run of 20 minutes or more at any
-  pace gives that.
+  and CS and D' come out above zero. A run of 20 minutes or more gives
+  that, unless it was all at one pace, which has a D' of about 0.
 - **The distances** are `PaceDistances`: 400, 800 m, 1, 1.5 km, 1 mile,
   2, 3, 4, 5, 8, 10, 15 km, 10 miles, 20 km, the half marathon, 25, 30
   km and the marathon.

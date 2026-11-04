@@ -265,7 +265,8 @@ faster. The heading has your **critical speed** (CS), as a pace, and
 of an hour's race, and D' the distance you can run faster than it
 before you run out. They come from fitting `distance = CS × time + D'`
 to your bests of 3 to 20 minutes, which a run of 20 minutes or more
-gives. The table has your bests over 400 m, 1 km, a mile, 5 and 10 km
+gives, if some of it was faster than the rest: from runs all at one
+pace there's no D' to see, and no CS. The table has your bests over 400 m, 1 km, a mile, 5 and 10 km
 and the half and full marathon, with their pace.
 
 Outdoor runs count, trail runs too, but not treadmill or indoor runs,
