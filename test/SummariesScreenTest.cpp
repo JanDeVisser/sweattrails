@@ -1778,6 +1778,7 @@ int main()
     test_pace_line();
     test_pace_steps_cleared_for_the_other_lines();
     test_pace_steps_past_a_treadmill();
+    test_pace_steps_forward_after_r();
     test_pace_rows_over_an_hour();
     test_pace_refreshed_in_place();
     return Test::test_result();

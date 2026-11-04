@@ -739,7 +739,8 @@ void SummariesScreen::step_year(int step)
 }
 
 // Forward up to today, and back while the window ends on or after the
-// first ride with power, or outdoor run with best times.
+// first ride with power, or outdoor run with best times. R or C can leave
+// the window before the other sport's first: forward still goes.
 bool SummariesScreen::step_curve(int step)
 {
     auto const end = chrono::sys_days { view.curve_end } + chrono::days { step * CurveStepDays };
@@ -749,7 +750,10 @@ bool SummariesScreen::step_curve(int step)
         }
         return !summary.power.empty() && volume_sport(summary.sport, summary.sub_sport) == VolumeSport::Cycling;
     });
-    if (end > chrono::sys_days { today } || first == summaries.end() || end < chrono::sys_days { start_day(*first) }) {
+    if (end > chrono::sys_days { today }) {
+        return false;
+    }
+    if (step < 0 && (first == summaries.end() || end < chrono::sys_days { start_day(*first) })) {
         return false;
     }
     view.curve_end = end;
