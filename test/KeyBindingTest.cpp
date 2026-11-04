@@ -236,6 +236,86 @@ void test_commands()
     CHECK(!command(commands, "Elsewhere").has_value());
 }
 
+// As the app's W, M and Y: a task without a title of its own, only on the
+// summaries, whose bindings have titles. Its untitled binding, as the
+// keypad's Enter next to Enter, is no entry, and it has no entry under
+// its id.
+void test_commands_of_titled_bindings()
+{
+    Test::ScopedTestApp app;
+    auto                summaries = true;
+    Bus                 bus;
+    auto const          nothing = [](auto const &, JSONValue const &) { };
+    auto                week = JSONValue::object();
+    week.set("period", JSONValue { "week" });
+    auto year = JSONValue::object();
+    year.set("period", JSONValue { "year" });
+    auto &period = bus.add_task<Widget>("test-period", app.app, nothing).when([&summaries] { return summaries; });
+    period.bind(KeyCombo { KEY_W, KModNone }, week, "By week");
+    period.bind(KeyCombo { KEY_KP_1, KModNone }, week);
+    period.bind(KeyCombo { KEY_Y, KModNone }, year, "By year");
+    auto commands = bus.commands();
+    CHECK_EQ(commands.size(), 2uz);
+    auto const by_year = command(commands, "By year");
+    CHECK(by_year && by_year->key == (KeyCombo { KEY_Y, KModNone }));
+    CHECK(by_year && by_year->arguments.try_get<std::string>("period").value_or("") == "year");
+    CHECK(!command(commands, "").has_value());
+    // On the activity screen: none of them.
+    summaries = false;
+    CHECK(bus.commands().empty());
+    // Its titled keys still run it, with their arguments.
+    summaries = true;
+    bus.handle_keys({ KEY_Y }, false);
+    CHECK_EQ(task_run(bus), "test-period");
+    if (bus.messages.size() == 1) {
+        CHECK_EQ(std::get<Bus::PendingTask>(bus.messages.front()).arguments.try_get<std::string>("period").value_or(""), "year");
+    }
+}
+
+// A titled task with several keys is one entry, with its first key, as
+// zoom in's = and the keypad's +.
+void test_commands_first_key()
+{
+    Test::ScopedTestApp app;
+    Bus                 bus;
+    bus.add_task<Widget>("test-zoom-in", app.app, [](auto const &, JSONValue const &) { })
+        .titled("Zoom in")
+        .bind(KeyCombo { KEY_EQUAL, KModNone })
+        .bind(KeyCombo { KEY_EQUAL, KModShift })
+        .bind(KeyCombo { KEY_KP_ADD, KModNone })
+        .when([] { return true; });
+    auto const commands = bus.commands();
+    CHECK_EQ(commands.size(), 1uz);
+    auto const zoom = command(commands, "Zoom in");
+    CHECK(zoom && zoom->key == (KeyCombo { KEY_EQUAL, KModNone }));
+    // The arguments the key would have run it with.
+    CHECK(zoom && zoom->arguments.try_get<int>("key").value_or(0) == KEY_EQUAL);
+    CHECK(zoom && zoom->arguments.try_get<int>("modifier").value_or(-1) == KModNone);
+}
+
+// The arrows, the keypad, and the modifiers in order.
+void test_key_text_more()
+{
+    CHECK_EQ(key_text(KeyCombo { KEY_LEFT, KModNone }), "Left");
+    CHECK_EQ(key_text(KeyCombo { KEY_RIGHT, KModShift }), "Shift+Right");
+    CHECK_EQ(key_text(KeyCombo { KEY_UP, KModNone }), "Up");
+    CHECK_EQ(key_text(KeyCombo { KEY_DOWN, KModNone }), "Down");
+    CHECK_EQ(key_text(KeyCombo { KEY_KP_ENTER, KModNone }), "Keypad Enter");
+    CHECK_EQ(key_text(KeyCombo { KEY_KP_1, KModNone }), "Keypad 1");
+    CHECK_EQ(key_text(KeyCombo { KEY_F12, KModNone }), "F12");
+    CHECK_EQ(key_text(KeyCombo { KEY_A, KModNone }), "A");
+    CHECK_EQ(key_text(KeyCombo { KEY_Z, KModNone }), "Z");
+    CHECK_EQ(key_text(KeyCombo { KEY_ZERO, KModNone }), "0");
+    CHECK_EQ(key_text(KeyCombo { KEY_EQUAL, KModShift }), "Shift+=");
+    // All four, in the README's order, whatever order they're or-ed in.
+#ifdef __APPLE__
+    CHECK_EQ(key_text(KeyCombo { KEY_X, KModShift | KModAlt | KModControl | KModSuper }), "Cmd+Ctrl+Option+Shift+X");
+    CHECK_EQ(key_text(KeyCombo { KEY_R, KModControl | KModShift }), "Ctrl+Shift+R");
+#else
+    CHECK_EQ(key_text(KeyCombo { KEY_X, KModShift | KModAlt | KModControl | KModSuper }), "Super+Ctrl+Alt+Shift+X");
+#endif
+}
+
 void test_key_text()
 {
     CHECK_EQ(key_text(KeyCombo { KEY_G, KModControl }), "Ctrl+G");
@@ -268,5 +348,8 @@ int main()
     test_when_keeps_the_arguments();
     test_commands();
     test_key_text();
+    test_commands_of_titled_bindings();
+    test_commands_first_key();
+    test_key_text_more();
     return Test::test_result();
 }

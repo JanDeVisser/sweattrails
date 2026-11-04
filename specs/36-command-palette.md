@@ -191,4 +191,71 @@ None.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: "Back to the activity" doesn't always go back to the
+   activity.** `st-summaries-close` (`SweatTrails.cpp:2052`) is Esc, and
+   `cmd_summaries_close()` (`SweatTrails.cpp:1071`) first backs up a level
+   and only goes to the activity at the top. On the totals, drilled into a
+   month (Enter on a row), running "Back to the activity" from the palette
+   shows the year again, as "Totals: back up" does, and leaves the user on
+   the totals. The title should say what Esc does, such as "Totals: back
+   up, or to the activity", or "Show or close the totals" (Ctrl+T) should
+   be the palette's way back.
+2. **Bug, from before this branch: a list box's search can't be typed in
+   anything but ASCII.** `ListBox::character()` (`Modal.h:363`) keeps the
+   low byte of raylib's codepoint, so typing "é" (U+00E9) searches for the
+   byte 0xE9, which no UTF-8 title has. Typing "Té" finds nothing in the
+   Ctrl+M list of a month with "Col du Télégraphe"; the same goes for the
+   palette. Test `test_search_by_codepoint()` in `test/ListBoxTest.cpp`
+   fails, and isn't run from `main()`.
+3. **Suggestion: some listed commands do nothing now.** The spec says
+   "nothing listed does nothing", but only `when()` takes commands out.
+   While a download runs, "Download new activities", "Download from
+   Garmin Connect", "Download from Wahoo" and "Get all the titles from
+   Strava" are listed and return silently (`SweatTrails.cpp:664`, `690`);
+   with an empty store, every activity-screen command is listed and does
+   nothing (`activity_for_keys()` is null). A `when()` would also take
+   their keys away, so it's Jan's call whether this matters.
+4. **Suggestion: titles to look at.** "Totals: back" and "Totals: on"
+   (`SweatTrails.cpp:2089`, `2090`) are hard to read without the README,
+   which says Left and Right go "a year back or on" (a month in a month's
+   weeks, 90 days in the fitness): such as "Totals: earlier" and "Totals:
+   later". "Totals: year to date", "Totals: fitness" and "Totals: best
+   power or pace" switch a view on and off but read as if they only show
+   it, and have no verb; "Show or hide ..." would match "Show or close the
+   totals". "Totals by week" and "Totals: running" are two forms for the
+   same kind of choice. "Group the recordings, or make this one the main
+   one" is long for a row that also shows a key. There are no duplicate
+   titles, and every task the user can run has one; only `st-message`,
+   `st-fill-gaps` (a dropped file) and `st-summaries-row` (Up and Down)
+   don't, as the spec says.
+5. **Suggestion: case-insensitive only for ASCII.** `matches_words()`
+   (`Modal.h:110`) lowers byte by byte in the C locale (the app never calls
+   `setlocale()`), so UTF-8 is never broken, but "TÉLÉ" doesn't find
+   "Télégraphe". `strcasestr()` did the same, so this is no regression.
+   `test_matches_words_utf8()` checks what it does now.
+6. **Suggestion: `key_text()`'s fallback.** A key not in its table is
+   "Key 336" (`Widget.cpp:160`), such as the keypad's = or Caps Lock. None
+   is bound now, but a new binding on one would show that in the palette.
+7. **Suggestion: `AppBus::bind(task, combo, arguments)`**
+   (`Widget.h:470`) can't give a binding a title, while `Task::bind()`
+   can.
+
+Checked and fine: the rules of `commands()` (titled and untitled tasks
+and bindings, `when()`, tasks without keys); every handler with the
+arguments it gets from the palette, also the null ones of the keyless
+downloads and logins (`make_download_request()` and `cmd_strava_login()`
+check `is_object()`); handlers with `modals.empty()` checks run, as the
+palette is popped before the bus runs the task, and `PendingTask` puts
+the focus from before the palette back; `order_commands()`; the
+palette's entries by position while searching.
+
+Tests added: `KeyBindingTest` (`test_commands_of_titled_bindings`, an
+untitled task with titled bindings and `when()`, as W, M and Y;
+`test_commands_first_key`; `test_key_text_more`, the arrows, the keypad
+and all four modifiers in order); `ListBoxTest`
+(`test_matches_words_utf8`, and the failing `test_search_by_codepoint`,
+not in `main()`); `ActivitySelectorTest` (`test_search_by_words`, Ctrl+M's
+search by words, still of the title only); `CommandPaletteTest`
+(`test_runs_the_selected_match`, `test_empty_palette`,
+`test_task_runs_after_the_palette_closes`). The full run, `ctest -E
+oauth`, passes.

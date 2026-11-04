@@ -348,6 +348,21 @@ void test_matches_words()
     CHECK(!matches_words("Download", "downloads"));
 }
 
+// UTF-8 titles, such as activities': the bytes of a non-ASCII character
+// match as they are, and the ASCII ones whatever their case.
+void test_matches_words_utf8()
+{
+    CHECK(matches_words("Col du Télégraphe", "télé"));
+    CHECK(matches_words("Col du Télégraphe", "GRAPHE col"));
+    CHECK(matches_words("Col du Télégraphe", "égr"));
+    CHECK(!matches_words("Col du Télégraphe", "tele"));
+    CHECK(!matches_words("Col du Télégraphe", "é x"));
+    // One word that's only spaces, and a search that's only one.
+    CHECK(matches_words("Quit", " "));
+    CHECK(matches_words("", ""));
+    CHECK(!matches_words("", "a"));
+}
+
 // Words in any order, in a list's search.
 void test_search_by_words(TestList &list)
 {
@@ -356,6 +371,19 @@ void test_search_by_words(TestList &list)
     CHECK_EQ(list.shown_count(), 1);
     list.key(KEY_ENTER);
     CHECK_EQ(list.submitted, "Morning run");
+}
+
+// FAILS, and isn't run from main(): a bug from before the palette.
+// raylib's GetCharPressed() gives a codepoint, and ListBox::character()
+// keeps its low byte, so typing "é" (U+00E9) searches for the byte 0xE9,
+// which no UTF-8 title has: "Télé" can't be found by typing it.
+[[maybe_unused]] void test_search_by_codepoint(TestList &list)
+{
+    list.setup({ "Col du Télégraphe", "Galibier" });
+    list.character(U'T');
+    list.character(U'é');
+    CHECK_EQ(list.search, "Té");
+    CHECK_EQ(list.shown_count(), 1);
 }
 
 }
@@ -380,5 +408,6 @@ int main()
     test_first_chars();
     test_matches_words();
     test_search_by_words(*list);
+    test_matches_words_utf8();
     return Test::test_result();
 }
