@@ -1095,8 +1095,8 @@ void test_power_view()
 {
     Test::ScopedTestApp app;
     auto                screen = make_power_screen();
-    screen->toggle_power();
-    CHECK(screen->view.graph == Graph::Power);
+    screen->toggle_curve();
+    CHECK(screen->view.graph == Graph::Curve);
     CHECK_EQ(screen->heading->text, "Power · CP 280 W · W' 20 kJ · FTP 275 W · 90 days to 15 Jun 2026");
     // The rows up to an hour, the window's longest ride: not 2 hours.
     CHECK_EQ(screen->table->rows.size(), 10uz);
@@ -1109,11 +1109,11 @@ void test_power_view()
     // All time faint behind, to two hours; the window's to one.
     CHECK_EQ(screen->lines->series.size(), 2uz);
     if (screen->lines->series.size() == 2) {
-        CHECK_EQ(screen->lines->series[0].values.size(), PowerCurvePoints);
+        CHECK_EQ(screen->lines->series[0].values.size(), CurvePoints);
         CHECK(screen->lines->series[1].bold);
-        CHECK(screen->lines->series[1].values.size() < PowerCurvePoints);
+        CHECK(screen->lines->series[1].values.size() < CurvePoints);
     }
-    screen->toggle_power();
+    screen->toggle_curve();
     CHECK(screen->view.graph == Graph::Bars);
 }
 
@@ -1121,16 +1121,16 @@ void test_power_steps()
 {
     Test::ScopedTestApp app;
     auto                screen = make_power_screen();
-    screen->toggle_power();
+    screen->toggle_curve();
     // Right: no further than today.
     screen->step_year(1);
-    CHECK(screen->view.power_end == Today);
+    CHECK(screen->view.curve_end == Today);
     screen->step_year(-1);
-    CHECK(screen->view.power_end == std::chrono::year { 2026 } / std::chrono::May / 18);
+    CHECK(screen->view.curve_end == std::chrono::year { 2026 } / std::chrono::May / 18);
     // Back past the ride of May: the window has no ride, but the one of
     // March 2025 is still behind it.
     screen->step_year(-3);
-    CHECK(screen->view.power_end == std::chrono::year { 2026 } / std::chrono::February / 23);
+    CHECK(screen->view.curve_end == std::chrono::year { 2026 } / std::chrono::February / 23);
     CHECK_EQ(screen->heading->text, "Power · no rides with power · 90 days to 23 Feb 2026");
     CHECK(screen->table->rows.empty());
     CHECK_EQ(screen->lines->series.size(), 1uz);
@@ -1138,15 +1138,15 @@ void test_power_steps()
     for (auto step = 0; step < 30; ++step) {
         screen->step_year(-1);
     }
-    auto const end = std::chrono::sys_days { screen->view.power_end };
+    auto const end = std::chrono::sys_days { screen->view.curve_end };
     auto const first = std::chrono::sys_days { std::chrono::year { 2025 } / std::chrono::March / 1 };
     CHECK(end >= first);
-    CHECK(end - first < std::chrono::days { PowerStepDays });
+    CHECK(end - first < std::chrono::days { CurveStepDays });
     CHECK(screen->heading->text.starts_with("Power · CP 300 W"));
     // P again starts from today.
-    screen->toggle_power();
-    screen->toggle_power();
-    CHECK(screen->view.power_end == Today);
+    screen->toggle_curve();
+    screen->toggle_curve();
+    CHECK(screen->view.curve_end == Today);
 }
 
 void test_power_without_a_sound_cp()
@@ -1155,7 +1155,7 @@ void test_power_without_a_sound_cp()
     auto                screen = make_power_screen();
     // Only a 10-minute ride in the window.
     screen->set_summaries({ power_ride(2026, 6, 1, 280, 600) });
-    screen->toggle_power();
+    screen->toggle_curve();
     CHECK_EQ(screen->heading->text, "Power · FTP 275 W · 90 days to 15 Jun 2026");
     CHECK_EQ(screen->table->rows.size(), 7uz);
 }
@@ -1164,18 +1164,18 @@ void test_leaving_the_power()
 {
     Test::ScopedTestApp app;
     auto                screen = make_power_screen();
-    screen->toggle_power();
+    screen->toggle_curve();
     // R and the metrics don't change it.
     screen->set_sport(VolumeSport::Running);
     screen->set_metric(Metric::Time);
-    CHECK(screen->view.graph == Graph::Power);
+    CHECK(screen->view.graph == Graph::Curve);
     CHECK(screen->heading->text.starts_with("Power · CP 280 W"));
     screen->toggle_fitness();
     CHECK(screen->view.graph == Graph::Fitness);
-    screen->toggle_power();
+    screen->toggle_curve();
     screen->toggle_lines();
     CHECK(screen->view.graph == Graph::YearToDate);
-    screen->toggle_power();
+    screen->toggle_curve();
     screen->set_period(Period::Month);
     CHECK(screen->view.graph == Graph::Bars);
     CHECK_EQ(screen->heading->text, "Running · time by month · 2026");
@@ -1187,7 +1187,7 @@ void test_enter_opens_the_ride()
     auto                           screen = make_power_screen();
     std::optional<ActivitySummary> opened { };
     screen->on_ride = [&opened](ActivitySummary const &summary) { opened = summary; };
-    screen->toggle_power();
+    screen->toggle_curve();
     // Nothing selected.
     screen->drill();
     CHECK(!opened);
@@ -1209,7 +1209,7 @@ void test_ride_names_are_kept()
         ++calls;
         return std::string { "A ride" };
     };
-    screen->toggle_power();
+    screen->toggle_curve();
     screen->step_year(-1);
     screen->step_year(1);
     // All ten rows are of the one ride.
@@ -1223,21 +1223,21 @@ void test_curve_line()
         bests.push_back(PowerBest { .watts = watts });
     }
     auto const line = curve_line(bests, 3600);
-    CHECK_EQ(line.size(), PowerCurvePoints);
-    if (line.size() == PowerCurvePoints) {
+    CHECK_EQ(line.size(), CurvePoints);
+    if (line.size() == CurvePoints) {
         CHECK(std::abs(line.front() - bests.front().watts) < 1e-6);
         CHECK(std::abs(line.back() - bests.back().watts) < 1e-6);
         CHECK(std::ranges::is_sorted(line, std::ranges::greater_equal { }));
     }
     // Half way along an hour's axis is a minute, as 60² is 3600: the
     // point just past it is between the minute's best and 90 s's.
-    auto const just_past = line[PowerCurvePoints / 2];
+    auto const just_past = line[CurvePoints / 2];
     CHECK(just_past < 280 + 20000.0 / 60);
     CHECK(just_past > 280 + 20000.0 / 90);
     // On an axis to two hours, an hour's curve stops partway.
     auto const shorter = curve_line(bests, 7200);
-    CHECK(shorter.size() < PowerCurvePoints);
-    CHECK(shorter.size() > PowerCurvePoints * 9 / 10);
+    CHECK(shorter.size() < CurvePoints);
+    CHECK(shorter.size() > CurvePoints * 9 / 10);
     CHECK(curve_line({ }, 3600).empty());
     CHECK_EQ(curve_line({ PowerBest { .watts = 500 } }, 3600).size(), 1uz);
 }
@@ -1250,7 +1250,7 @@ void test_curve_ticks()
         CHECK_EQ(ticks[0].label, "1 s");
         CHECK(std::abs(ticks[0].x) < 1e-9);
         CHECK_EQ(ticks[5].label, "1 h");
-        CHECK(std::abs(ticks[5].x - static_cast<double>(PowerCurvePoints - 1)) < 1e-9);
+        CHECK(std::abs(ticks[5].x - static_cast<double>(CurvePoints - 1)) < 1e-9);
     }
     CHECK(curve_ticks(1).empty());
 }
@@ -1262,7 +1262,7 @@ void test_power_window_days()
     auto                screen = make_power_screen();
     // Today, 15 June, less 89 days is 18 March.
     screen->set_summaries({ power_ride(2026, 3, 17, 400, 600), power_ride(2026, 3, 18, 250, 300) });
-    screen->toggle_power();
+    screen->toggle_curve();
     CHECK_EQ(screen->table->rows.size(), 6uz);
     if (!screen->table->rows.empty()) {
         CHECK_EQ(screen->table->rows[0][2], "18 Mar 2026");
@@ -1278,7 +1278,7 @@ void test_power_heading_ftp_of_the_window()
         Thresholds { .from = std::chrono::year { 2020 } / 1 / 1, .ftp = 250 },
         Thresholds { .from = std::chrono::year { 2026 } / 6 / 1, .ftp = 275 },
     };
-    screen->toggle_power();
+    screen->toggle_curve();
     CHECK(screen->heading->text.contains("FTP 275 W"));
     screen->step_year(-1);
     CHECK(screen->heading->text.contains("FTP 250 W"));
@@ -1294,18 +1294,18 @@ void test_power_steps_to_the_first_ride()
     early_run.power = { 400, 390 };
     // 15 June less two steps of 28 days is 18 May.
     screen->set_summaries({ early_run, power_ride(2026, 5, 18, 280, 1200) });
-    screen->toggle_power();
+    screen->toggle_curve();
     screen->step_year(-1);
     screen->step_year(-1);
-    CHECK(screen->view.power_end == std::chrono::year { 2026 } / std::chrono::May / 18);
+    CHECK(screen->view.curve_end == std::chrono::year { 2026 } / std::chrono::May / 18);
     screen->step_year(-1);
-    CHECK(screen->view.power_end == std::chrono::year { 2026 } / std::chrono::May / 18);
+    CHECK(screen->view.curve_end == std::chrono::year { 2026 } / std::chrono::May / 18);
     // Without any ride with power, Left and Right do nothing.
     screen->set_summaries({ ride(2026, 5, 1) });
-    screen->toggle_power();
-    screen->toggle_power();
+    screen->toggle_curve();
+    screen->toggle_curve();
     screen->step_year(-1);
-    CHECK(screen->view.power_end == Today);
+    CHECK(screen->view.curve_end == Today);
     CHECK_EQ(screen->heading->text, "Power · no rides with power · 90 days to 15 Jun 2026");
     CHECK(screen->lines->series.empty());
 }
@@ -1318,7 +1318,7 @@ void test_power_refreshed_in_place()
     auto                           screen = make_power_screen();
     std::optional<ActivitySummary> opened { };
     screen->on_ride = [&opened](ActivitySummary const &summary) { opened = summary; };
-    screen->toggle_power();
+    screen->toggle_curve();
     screen->step_row(1);
     screen->step_row(1);
     screen->step_row(1);
@@ -1327,7 +1327,7 @@ void test_power_refreshed_in_place()
     auto       more = screen->summaries;
     more.insert(more.begin(), power_ride(2024, 6, 1, 200, 600));
     screen->set_summaries(more);
-    CHECK(screen->view.graph == Graph::Power);
+    CHECK(screen->view.graph == Graph::Curve);
     CHECK(screen->table->selection == std::optional<size_t> { 2 });
     CHECK_EQ(screen->table->rows.size(), 10uz);
     screen->drill();
@@ -1345,12 +1345,12 @@ void test_ride_names_kept_through_chunks()
         ++calls;
         return std::string { "A ride" };
     };
-    screen->toggle_power();
+    screen->toggle_curve();
     screen->set_summaries(screen->summaries);
     screen->set_summaries(screen->summaries);
     CHECK_EQ(calls, 1);
     screen->open(VolumeSport::Cycling, Today);
-    screen->toggle_power();
+    screen->toggle_curve();
     CHECK_EQ(calls, 2);
 }
 
@@ -1363,9 +1363,9 @@ void test_curve_line_samples()
         bests.push_back(PowerBest { .watts = watts });
     }
     auto const line = curve_line(bests, 3600);
-    CHECK_EQ(line.size(), PowerCurvePoints);
+    CHECK_EQ(line.size(), CurvePoints);
     for (auto ix = 0uz; ix < line.size(); ++ix) {
-        auto const t = std::exp(std::log(3600.0) * static_cast<double>(ix) / static_cast<double>(PowerCurvePoints - 1));
+        auto const t = std::exp(std::log(3600.0) * static_cast<double>(ix) / static_cast<double>(CurvePoints - 1));
         auto       upper = 1uz;
         while (upper + 1 < bests.size() && PowerDurations[upper] < t) {
             ++upper;
@@ -1383,16 +1383,16 @@ void test_curve_line_samples()
         short_bests.push_back(PowerBest { .watts = static_cast<u16>(1000 - 100 * d) });
     }
     auto const short_line = curve_line(short_bests, 10);
-    CHECK_EQ(short_line.size(), PowerCurvePoints);
-    if (short_line.size() == PowerCurvePoints) {
+    CHECK_EQ(short_line.size(), CurvePoints);
+    if (short_line.size() == CurvePoints) {
         CHECK(std::abs(short_line.front() - 1000) < 1e-6);
         CHECK(std::abs(short_line.back() - short_bests.back().watts) < 1e-6);
     }
     // Two-hour axis, an hour's curve: it ends at the last sample at or
     // before an hour.
     auto const shorter = curve_line(bests, 7200);
-    auto const last_t = std::exp(std::log(7200.0) * static_cast<double>(shorter.size() - 1) / static_cast<double>(PowerCurvePoints - 1));
-    auto const next_t = std::exp(std::log(7200.0) * static_cast<double>(shorter.size()) / static_cast<double>(PowerCurvePoints - 1));
+    auto const last_t = std::exp(std::log(7200.0) * static_cast<double>(shorter.size() - 1) / static_cast<double>(CurvePoints - 1));
+    auto const next_t = std::exp(std::log(7200.0) * static_cast<double>(shorter.size()) / static_cast<double>(CurvePoints - 1));
     CHECK(last_t <= 3600 * (1 + 1e-9));
     CHECK(next_t > 3600);
 }
@@ -1403,10 +1403,10 @@ void test_power_keys_line()
     Test::ScopedTestApp app;
     auto                screen = make_power_screen();
     CHECK(screen->keys->text.contains("Left Right: year"));
-    screen->toggle_power();
+    screen->toggle_curve();
     CHECK(screen->keys->text.contains("Left Right: 4 weeks"));
     CHECK(!screen->keys->text.contains("Left Right: year"));
-    screen->toggle_power();
+    screen->toggle_curve();
     CHECK(screen->keys->text.contains("Left Right: year"));
 }
 }

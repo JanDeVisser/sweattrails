@@ -1094,9 +1094,9 @@ void cmd_summaries_fitness(pSweatTrails const &sweattrails, JSONValue const &)
 }
 
 // P: the power curve, or back to the bars.
-void cmd_summaries_power(pSweatTrails const &sweattrails, JSONValue const &)
+void cmd_summaries_curve(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    sweattrails->summaries_screen->toggle_power();
+    sweattrails->summaries_screen->toggle_curve();
 }
 
 // Enter: into the selected period, or the power table's ride.
@@ -2026,7 +2026,7 @@ void SweatTrails::initialize()
     bus.add_task<SweatTrails>("st-summaries-fitness", self(), cmd_summaries_fitness)
         .bind(KeyCombo { KEY_F, KModNone })
         .when(on_summaries);
-    bus.add_task<SweatTrails>("st-summaries-power", self(), cmd_summaries_power)
+    bus.add_task<SweatTrails>("st-summaries-curve", self(), cmd_summaries_curve)
         .bind(KeyCombo { KEY_P, KModNone })
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-drill", self(), cmd_summaries_drill)

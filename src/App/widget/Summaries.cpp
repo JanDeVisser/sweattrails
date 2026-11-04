@@ -385,7 +385,7 @@ std::string power_heading(std::vector<PowerBest> const &window, std::optional<Cr
             ret += std::format(" · FTP {} W", std::llround(*ftp));
         }
     }
-    return ret + std::format(" · {} days to {}", PowerWindowDays, format_day(end));
+    return ret + std::format(" · {} days to {}", CurveWindowDays, format_day(end));
 }
 
 std::vector<PowerRow> power_table(std::vector<PowerBest> const &bests)
@@ -449,8 +449,8 @@ std::vector<double> curve_line(std::vector<PowerBest> const &bests, u32 longest)
     auto const          log_longest = std::log(static_cast<double>(longest));
     auto const          last = static_cast<double>(PowerDurations[bests.size() - 1]);
     std::vector<double> ret;
-    for (auto ix = 0uz; ix < PowerCurvePoints; ++ix) {
-        auto const at = log_longest * static_cast<double>(ix) / static_cast<double>(PowerCurvePoints - 1);
+    for (auto ix = 0uz; ix < CurvePoints; ++ix) {
+        auto const at = log_longest * static_cast<double>(ix) / static_cast<double>(CurvePoints - 1);
         if (std::exp(at) > last * (1 + 1e-9)) {
             break;
         }
@@ -481,7 +481,7 @@ std::vector<ChartTick> curve_ticks(u32 longest)
             break;
         }
         ret.push_back(ChartTick {
-            .x = std::log(static_cast<double>(seconds)) / std::log(static_cast<double>(longest)) * static_cast<double>(PowerCurvePoints - 1),
+            .x = std::log(static_cast<double>(seconds)) / std::log(static_cast<double>(longest)) * static_cast<double>(CurvePoints - 1),
             .label = format_duration(seconds),
         });
     }
@@ -492,7 +492,7 @@ std::string summaries_keys(Graph graph)
 {
     return std::format("W M Y: week, month, year    G: to date    F: fitness    P: power    R C: running, cycling    "
                        "D T N A: distance, time, number, ascent    Left Right: {}    Enter: open    Backspace: back    Esc: close",
-        graph == Graph::Power ? std::format("{} weeks", PowerStepDays / 7) : "year");
+        graph == Graph::Curve ? std::format("{} weeks", CurveStepDays / 7) : "year");
 }
 
 SummariesScreen::SummariesScreen(pWidget const &parent)
@@ -581,10 +581,10 @@ void SummariesScreen::toggle_fitness()
     show_graph(view.graph == Graph::Fitness ? Graph::Bars : Graph::Fitness);
 }
 
-void SummariesScreen::toggle_power()
+void SummariesScreen::toggle_curve()
 {
-    view.power_end = today;
-    show_graph(view.graph == Graph::Power ? Graph::Bars : Graph::Power);
+    view.curve_end = today;
+    show_graph(view.graph == Graph::Curve ? Graph::Bars : Graph::Curve);
 }
 
 // At the top. Leaving the fitness, whose years are those of any sport,
@@ -600,23 +600,23 @@ void SummariesScreen::show_graph(Graph graph)
 
 void SummariesScreen::step_year(int step)
 {
-    if (view.graph == Graph::Power ? step_power(step) : view.step_year(step)) {
+    if (view.graph == Graph::Curve ? step_curve(step) : view.step_year(step)) {
         refresh();
     }
 }
 
 // Forward up to today, and back while the window ends on or after the
 // first ride with power.
-bool SummariesScreen::step_power(int step)
+bool SummariesScreen::step_curve(int step)
 {
-    auto const end = chrono::sys_days { view.power_end } + chrono::days { step * PowerStepDays };
+    auto const end = chrono::sys_days { view.curve_end } + chrono::days { step * CurveStepDays };
     auto const first = std::ranges::find_if(summaries, [](ActivitySummary const &summary) {
         return !summary.power.empty() && volume_sport(summary.sport, summary.sub_sport) == VolumeSport::Cycling;
     });
     if (end > chrono::sys_days { today } || first == summaries.end() || end < chrono::sys_days { start_day(*first) }) {
         return false;
     }
-    view.power_end = end;
+    view.curve_end = end;
     return true;
 }
 
@@ -637,9 +637,9 @@ void SummariesScreen::step_row(int step)
 void SummariesScreen::drill(std::optional<size_t> bar)
 {
     auto const ix = bar ? bar : table->selection;
-    if (view.graph == Graph::Power) {
-        if (!bar && ix && *ix < power_table_rows.size() && on_ride) {
-            on_ride(summaries[power_table_rows[*ix].best.summary]);
+    if (view.graph == Graph::Curve) {
+        if (!bar && ix && *ix < curve_rides.size() && on_ride) {
+            on_ride(summaries[curve_rides[*ix]]);
         }
         return;
     }
@@ -756,10 +756,10 @@ void SummariesScreen::refresh()
         totals.clear();
         chart->set_bars({ });
     }
-    if (view.graph != Graph::Power) {
-        power_table_rows.clear();
+    if (view.graph != Graph::Curve) {
+        curve_rides.clear();
     }
-    if (view.graph == Graph::Fitness || view.graph == Graph::Power) {
+    if (view.graph == Graph::Fitness || view.graph == Graph::Curve) {
         lines->format_value = [](double value) { return std::format("{:g}", value); };
         lines->min_step = 0;
         if (view.graph == Graph::Fitness) {
@@ -857,11 +857,11 @@ namespace ST {
 // bests in the table.
 void SummariesScreen::refresh_power()
 {
-    auto const first = chrono::sys_days { view.power_end } - chrono::days { PowerWindowDays - 1 };
-    auto const window = best_curve(summaries, first, view.power_end);
+    auto const first = chrono::sys_days { view.curve_end } - chrono::days { CurveWindowDays - 1 };
+    auto const window = best_curve(summaries, first, view.curve_end);
     auto const all_time = best_curve(summaries, chrono::year::min() / chrono::January / 1, today);
-    auto const thresholds_then = thresholds_on(thresholds, view.power_end);
-    heading->text = power_heading(window, critical_power(window), thresholds_then ? thresholds_then->ftp : std::nullopt, view.power_end);
+    auto const thresholds_then = thresholds_on(thresholds, view.curve_end);
+    heading->text = power_heading(window, critical_power(window), thresholds_then ? thresholds_then->ftp : std::nullopt, view.curve_end);
     lines->series.clear();
     auto const longest = all_time.empty() ? 0u : PowerDurations[all_time.size() - 1];
     if (!all_time.empty()) {
@@ -869,12 +869,16 @@ void SummariesScreen::refresh_power()
     }
     if (!window.empty()) {
         lines->series.push_back(ChartSeries {
-            .label = std::format("{} days", PowerWindowDays), .color = GOLD, .bold = true, .values = curve_line(window, longest) });
+            .label = std::format("{} days", CurveWindowDays), .color = GOLD, .bold = true, .values = curve_line(window, longest) });
     }
-    lines->x_count = PowerCurvePoints;
+    lines->x_count = CurvePoints;
     lines->ticks = curve_ticks(longest);
-    power_table_rows = power_table(window);
-    table->set_rows(power_columns(), power_rows(power_table_rows, summaries, [this](ActivitySummary const &ride) { return name_of(ride); }));
+    auto const rows = power_table(window);
+    curve_rides.clear();
+    for (auto const &row : rows) {
+        curve_rides.push_back(row.best.summary);
+    }
+    table->set_rows(power_columns(), power_rows(rows, summaries, [this](ActivitySummary const &ride) { return name_of(ride); }));
 }
 
 std::string const &SummariesScreen::name_of(ActivitySummary const &summary)
