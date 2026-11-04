@@ -1139,6 +1139,22 @@ void cmd_summaries_row(pSweatTrails const &sweattrails, JSONValue const &argumen
     sweattrails->summaries_screen->step_row(arguments.try_get<int>("step").value_or(0));
 }
 
+// Cmd+Shift+P (Ctrl+Shift+P off macOS): the commands that work on the
+// screen on display, but itself, to run one by its title. On Enter the
+// palette closes, and the command runs next frame, as from its key.
+void cmd_command_palette(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (!sweattrails->modals.empty()) {
+        return;
+    }
+    auto commands = sweattrails->bus.commands();
+    std::erase_if(commands, [](Command const &command) { return command.task == "st-command-palette"; });
+    command_palette(commands, sweattrails->recent_commands, [sweattrails](Command const &command) {
+        sweattrails->recent_commands.used(command.title);
+        sweattrails->bus.submit(command.task, command.arguments);
+    });
+}
+
 // The arguments of a summaries key, such as { "period": "week" }.
 JSONValue summaries_argument(std::string_view key, JSONValue value)
 {
@@ -1992,80 +2008,109 @@ void SweatTrails::initialize()
     }
 
     bus.add_task<SweatTrails>("st-force-quit", self(), cmd_force_quit)
+        .titled("Quit without asking")
         .bind(KeyCombo { KEY_Q, KModControl | KModShift })
         .run_under_modals();
+#ifdef __APPLE__
+    auto const palette_key = KeyCombo { KEY_P, KModSuper | KModShift };
+#else
+    auto const palette_key = KeyCombo { KEY_P, KModControl | KModShift };
+#endif
+    bus.add_task<SweatTrails>("st-command-palette", self(), cmd_command_palette)
+        .titled("Show the command palette")
+        .bind(palette_key);
     bus.add_task<SweatTrails>("st-quit", self(), cmd_quit)
+        .titled("Quit")
         .bind(KeyCombo { KEY_Q, KModControl });
     bus.add_task<SweatTrails>("st-list-month", self(), cmd_list_month)
+        .titled("List the month's activities")
         .bind(KeyCombo { KEY_M, KModControl });
     bus.add_task<SweatTrails>("st-download", self(), cmd_download)
+        .titled("Download new activities")
         .bind(KeyCombo { KEY_G, KModControl });
-    bus.add_task<SweatTrails>("st-garmin-download", self(), cmd_garmin_download);
-    bus.add_task<SweatTrails>("st-wahoo-download", self(), cmd_wahoo_download);
+    bus.add_task<SweatTrails>("st-garmin-download", self(), cmd_garmin_download)
+        .titled("Download from Garmin Connect");
+    bus.add_task<SweatTrails>("st-wahoo-download", self(), cmd_wahoo_download)
+        .titled("Download from Wahoo");
     // No key: Ctrl+G offers it when it's needed.
-    bus.add_task<SweatTrails>("st-wahoo-login", self(), cmd_wahoo_login);
+    bus.add_task<SweatTrails>("st-wahoo-login", self(), cmd_wahoo_login)
+        .titled("Log in to Wahoo");
     // Ctrl+G's titles go back strava.days; this goes back all the way.
     bus.add_task<SweatTrails>("st-strava-titles", self(), cmd_strava_titles)
+        .titled("Get all the titles from Strava")
         .bind(KeyCombo { KEY_G, KModControl | KModShift });
-    bus.add_task<SweatTrails>("st-strava-login", self(), cmd_strava_login);
+    bus.add_task<SweatTrails>("st-strava-login", self(), cmd_strava_login)
+        .titled("Log in to Strava");
     bus.add_task<SweatTrails>("st-message", self(), cmd_message);
     // The screens' keys: Left, Right, Up, Down and Esc are both's.
     auto const on_activity_screen = [this] { return !showing_summaries(); };
     auto const on_summaries = [this] { return showing_summaries(); };
     bus.add_task<SweatTrails>("st-summaries", self(), cmd_summaries)
+        .titled("Show or close the totals")
         .bind(KeyCombo { KEY_T, KModControl });
     bus.add_task<SweatTrails>("st-summaries-close", self(), cmd_summaries_close)
+        .titled("Back to the activity")
         .bind(KeyCombo { KEY_ESCAPE, KModNone })
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-up", self(), cmd_summaries_up)
+        .titled("Totals: back up")
         .bind(KeyCombo { KEY_BACKSPACE, KModNone })
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-graph", self(), cmd_summaries_graph)
+        .titled("Totals: year to date")
         .bind(KeyCombo { KEY_G, KModNone })
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-fitness", self(), cmd_summaries_fitness)
+        .titled("Totals: fitness")
         .bind(KeyCombo { KEY_F, KModNone })
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-curve", self(), cmd_summaries_curve)
+        .titled("Totals: best power or pace")
         .bind(KeyCombo { KEY_P, KModNone })
         .when(on_summaries);
     bus.add_task<SweatTrails>("st-summaries-drill", self(), cmd_summaries_drill)
+        .titled("Totals: open the selected row")
         .bind(KeyCombo { KEY_ENTER, KModNone })
         .bind(KeyCombo { KEY_KP_ENTER, KModNone })
         .when(on_summaries);
     auto &period = bus.add_task<SweatTrails>("st-summaries-period", self(), cmd_summaries_period).when(on_summaries);
-    period.bind(KeyCombo { KEY_W, KModNone }, summaries_argument("period", JSONValue { "week" }));
-    period.bind(KeyCombo { KEY_M, KModNone }, summaries_argument("period", JSONValue { "month" }));
-    period.bind(KeyCombo { KEY_Y, KModNone }, summaries_argument("period", JSONValue { "year" }));
+    period.bind(KeyCombo { KEY_W, KModNone }, summaries_argument("period", JSONValue { "week" }), "Totals by week");
+    period.bind(KeyCombo { KEY_M, KModNone }, summaries_argument("period", JSONValue { "month" }), "Totals by month");
+    period.bind(KeyCombo { KEY_Y, KModNone }, summaries_argument("period", JSONValue { "year" }), "Totals by year");
     auto &sport = bus.add_task<SweatTrails>("st-summaries-sport", self(), cmd_summaries_sport).when(on_summaries);
-    sport.bind(KeyCombo { KEY_R, KModNone }, summaries_argument("sport", JSONValue { "running" }));
-    sport.bind(KeyCombo { KEY_C, KModNone }, summaries_argument("sport", JSONValue { "cycling" }));
+    sport.bind(KeyCombo { KEY_R, KModNone }, summaries_argument("sport", JSONValue { "running" }), "Totals: running");
+    sport.bind(KeyCombo { KEY_C, KModNone }, summaries_argument("sport", JSONValue { "cycling" }), "Totals: cycling");
     auto &metric = bus.add_task<SweatTrails>("st-summaries-metric", self(), cmd_summaries_metric).when(on_summaries);
-    metric.bind(KeyCombo { KEY_D, KModNone }, summaries_argument("metric", JSONValue { "distance" }));
-    metric.bind(KeyCombo { KEY_T, KModNone }, summaries_argument("metric", JSONValue { "time" }));
-    metric.bind(KeyCombo { KEY_N, KModNone }, summaries_argument("metric", JSONValue { "count" }));
-    metric.bind(KeyCombo { KEY_A, KModNone }, summaries_argument("metric", JSONValue { "ascent" }));
+    metric.bind(KeyCombo { KEY_D, KModNone }, summaries_argument("metric", JSONValue { "distance" }), "Totals: distance");
+    metric.bind(KeyCombo { KEY_T, KModNone }, summaries_argument("metric", JSONValue { "time" }), "Totals: time");
+    metric.bind(KeyCombo { KEY_N, KModNone }, summaries_argument("metric", JSONValue { "count" }), "Totals: number of activities");
+    metric.bind(KeyCombo { KEY_A, KModNone }, summaries_argument("metric", JSONValue { "ascent" }), "Totals: ascent");
     auto &year = bus.add_task<SweatTrails>("st-summaries-year", self(), cmd_summaries_year).when(on_summaries);
-    year.bind(KeyCombo { KEY_LEFT, KModNone }, summaries_argument("step", JSONValue { -1 }));
-    year.bind(KeyCombo { KEY_RIGHT, KModNone }, summaries_argument("step", JSONValue { 1 }));
+    year.bind(KeyCombo { KEY_LEFT, KModNone }, summaries_argument("step", JSONValue { -1 }), "Totals: back");
+    year.bind(KeyCombo { KEY_RIGHT, KModNone }, summaries_argument("step", JSONValue { 1 }), "Totals: on");
     auto &row = bus.add_task<SweatTrails>("st-summaries-row", self(), cmd_summaries_row).when(on_summaries);
     row.bind(KeyCombo { KEY_UP, KModNone }, summaries_argument("step", JSONValue { -1 }));
     row.bind(KeyCombo { KEY_DOWN, KModNone }, summaries_argument("step", JSONValue { 1 }));
     // The table and the data panel follow the lap these select.
     bus.add_task<SweatTrails>("st-next-lap", self(), cmd_next_lap)
+        .titled("Next lap")
         .bind(KeyCombo { KEY_DOWN, KModNone })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-previous-lap", self(), cmd_previous_lap)
+        .titled("Previous lap")
         .bind(KeyCombo { KEY_UP, KModNone })
         .when(on_activity_screen);
     // As Left and Right go through the months in Ctrl+M's list.
     bus.add_task<SweatTrails>("st-next-activity", self(), cmd_next_activity)
+        .titled("Next activity")
         .bind(KeyCombo { KEY_RIGHT, KModNone })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-previous-activity", self(), cmd_previous_activity)
+        .titled("Previous activity")
         .bind(KeyCombo { KEY_LEFT, KModNone })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-whole-activity", self(), cmd_whole_activity)
+        .titled("Show the whole activity")
         .bind(KeyCombo { KEY_ESCAPE, KModNone })
         .when(on_activity_screen);
     // F2 rather than Ctrl+R, which often means reload, and Cmd+Shift+R
@@ -2077,15 +2122,19 @@ void SweatTrails::initialize()
     auto const command = KModControl;
 #endif
     bus.add_task<SweatTrails>("st-mark-lap", self(), cmd_mark_lap)
+        .titled("Make the range a lap")
         .bind(KeyCombo { KEY_L, KModControl })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-split-laps", self(), cmd_split_laps)
+        .titled("Split into laps")
         .bind(KeyCombo { KEY_L, KModControl | KModShift })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-device-laps", self(), cmd_device_laps)
+        .titled("Back to the device's laps")
         .bind(KeyCombo { KEY_L, KModControl | KModAlt })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-rename-activity", self(), cmd_rename_activity)
+        .titled("Rename activity")
         .bind(KeyCombo { KEY_F2, KModNone })
         .bind(KeyCombo { KEY_R, command | KModShift })
         .when(on_activity_screen);
@@ -2096,44 +2145,56 @@ void SweatTrails::initialize()
     auto const split_recordings_key = KeyCombo { KEY_R, KModControl | KModAlt };
 #endif
     bus.add_task<SweatTrails>("st-split-recordings", self(), cmd_split_recordings)
+        .titled("Split the recordings")
         .bind(split_recordings_key)
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-group-recordings", self(), cmd_group_recordings)
+        .titled("Group the recordings, or make this one the main one")
         .bind(KeyCombo { KEY_J, KModControl })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-compare-recordings", self(), cmd_compare_recordings)
+        .titled("Compare the recordings")
         .bind(KeyCombo { KEY_K, KModControl })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-next-recording", self(), cmd_next_recording)
+        .titled("Next recording")
         .bind(KeyCombo { KEY_TAB, KModNone })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-previous-recording", self(), cmd_previous_recording)
+        .titled("Previous recording")
         .bind(KeyCombo { KEY_TAB, KModShift })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-overlay-preview", self(), cmd_overlay_preview)
+        .titled("Preview the overlay")
         .bind(KeyCombo { KEY_O, KModControl })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-overlay-layout", self(), cmd_overlay_layout)
+        .titled("Pick the overlay's layout")
         .bind(KeyCombo { KEY_O, KModControl | KModShift })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-overlay-render", self(), cmd_overlay_render)
+        .titled("Render the overlay")
         .bind(KeyCombo { KEY_E, KModControl })
         .when(on_activity_screen);
     // + is Shift = on most keyboards.
     bus.add_task<SweatTrails>("st-map-zoom-in", self(), cmd_map_zoom_in)
+        .titled("Zoom the map in")
         .bind(KeyCombo { KEY_EQUAL, KModNone })
         .bind(KeyCombo { KEY_EQUAL, KModShift })
         .bind(KeyCombo { KEY_KP_ADD, KModNone })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-map-zoom-out", self(), cmd_map_zoom_out)
+        .titled("Zoom the map out")
         .bind(KeyCombo { KEY_MINUS, KModNone })
         .bind(KeyCombo { KEY_KP_SUBTRACT, KModNone })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-fill-gaps", self(), cmd_fill_gaps);
     bus.add_task<SweatTrails>("st-remove-fills", self(), cmd_remove_fills)
+        .titled("Remove the filled gaps")
         .bind(KeyCombo { KEY_F, KModControl | KModShift })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-map-whole-route", self(), cmd_map_whole_route)
+        .titled("Show the whole route on the map")
         .bind(KeyCombo { KEY_ZERO, KModNone })
         .when(on_activity_screen);
 

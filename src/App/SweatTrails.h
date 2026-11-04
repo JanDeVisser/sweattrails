@@ -18,6 +18,7 @@
 #include <JSON.h>
 
 #include <App.h>
+#include <CommandPalette.h>
 
 #include <Zwift.h>
 #include <overlay/OverlayRender.h>
@@ -377,6 +378,8 @@ struct SweatTrails : public Main<Job, Notification> {
     std::string                      thresholds_error { }; // Why the settings' thresholds can't be read
     std::string                      settings_error { };   // Why a settings file can't be read
     std::shared_ptr<Label>           status { nullptr };
+    // Run from the command palette, for as long as the app runs.
+    RecentCommands recent_commands { };
 
     SweatTrails();
     static pSweatTrails the();
