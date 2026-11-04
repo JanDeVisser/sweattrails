@@ -23,6 +23,9 @@ else ()
   set(ICONV)
 endif ()
 
+# libc++ for compiling as well as linking: Apple's Clang uses it anyway,
+# but Linux's defaults to GCC's libstdc++.
+add_compile_options(-stdlib=libc++)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
 set(CMAKE_INSTALL_PREFIX ${PROJECT_BINARY_DIR} CACHE PATH "..." FORCE)
 
