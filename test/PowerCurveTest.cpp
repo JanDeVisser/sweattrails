@@ -328,6 +328,19 @@ void test_a_pause_of_decades()
     CHECK_EQ(curve[at(60)], 200);
     CHECK_EQ(curve.back(), 0);
 }
+
+void test_fit_line()
+{
+    std::vector<Point> const points { { .x = 1, .y = 5 }, { .x = 2, .y = 7 }, { .x = 4, .y = 11 } };
+    auto const               line = fit_line(points);
+    CHECK(line.has_value());
+    if (line) {
+        CHECK(std::abs(line->slope - 2) < 1e-9);
+        CHECK(std::abs(line->intercept - 3) < 1e-9);
+    }
+    CHECK(!fit_line(std::vector<Point> { { .x = 1, .y = 1 } }).has_value());
+    CHECK(!fit_line(std::vector<Point> { { .x = 1, .y = 1 }, { .x = 1, .y = 2 } }).has_value());
+}
 }
 
 int main()
@@ -350,5 +363,6 @@ int main()
     test_best_curve_bounds();
     test_critical_power_ignores_other_durations();
     test_a_pause_of_decades();
+    test_fit_line();
     return Test::test_result();
 }

@@ -91,35 +91,48 @@ std::vector<PowerBest> best_curve(ActivitySummaries const &summaries, std::chron
     return ret;
 }
 
-// Least squares of the work against the time.
+std::optional<Line> fit_line(std::span<Point const> points)
+{
+    if (points.size() < 2) {
+        return { };
+    }
+    auto const n = static_cast<double>(points.size());
+    double     sum_x = 0;
+    double     sum_y = 0;
+    double     sum_xx = 0;
+    double     sum_xy = 0;
+    for (auto const &[x, y] : points) {
+        sum_x += x;
+        sum_y += y;
+        sum_xx += x * x;
+        sum_xy += x * y;
+    }
+    auto const denominator = n * sum_xx - sum_x * sum_x;
+    if (denominator == 0) {
+        return { };
+    }
+    auto const slope = (n * sum_xy - sum_x * sum_y) / denominator;
+    return Line { .slope = slope, .intercept = (sum_y - slope * sum_x) / n };
+}
+
+// The work against the time.
 std::optional<CriticalPower> critical_power(std::vector<PowerBest> const &bests)
 {
-    double n = 0;
-    double sum_t = 0;
-    double sum_w = 0;
-    double sum_tt = 0;
-    double sum_tw = 0;
-    for (auto d = 0uz; d < bests.size(); ++d) {
-        auto const t = static_cast<double>(PowerDurations[d]);
-        if (t < FitFrom || t > FitTo) {
-            continue;
-        }
-        auto const w = static_cast<double>(bests[d].watts) * t;
-        n += 1;
-        sum_t += t;
-        sum_w += w;
-        sum_tt += t * t;
-        sum_tw += t * w;
-    }
     if (bests.size() <= static_cast<size_t>(std::ranges::find(PowerDurations, FitTo) - PowerDurations.begin())) {
         return { };
     }
-    auto const cp = (n * sum_tw - sum_t * sum_w) / (n * sum_tt - sum_t * sum_t);
-    auto const w_prime = (sum_w - cp * sum_t) / n;
-    if (cp <= 0 || w_prime <= 0) {
+    std::vector<Point> points;
+    for (auto d = 0uz; d < bests.size(); ++d) {
+        auto const t = static_cast<double>(PowerDurations[d]);
+        if (t >= FitFrom && t <= FitTo) {
+            points.push_back(Point { .x = t, .y = static_cast<double>(bests[d].watts) * t });
+        }
+    }
+    auto const line = fit_line(points);
+    if (!line || line->slope <= 0 || line->intercept <= 0) {
         return { };
     }
-    return CriticalPower { .cp = cp, .w_prime = w_prime };
+    return CriticalPower { .cp = line->slope, .w_prime = line->intercept };
 }
 
 }
