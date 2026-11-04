@@ -336,6 +336,57 @@ void test_first_chars()
     CHECK_EQ(char_count("Télégraphe"), 10uz);
 }
 
+void test_matches_words()
+{
+    CHECK(matches_words("Download from Garmin Connect", "garmin down"));
+    CHECK(matches_words("Download from Garmin Connect", "GARMIN"));
+    CHECK(matches_words("Download from Garmin Connect", "  from   "));
+    CHECK(matches_words("Download from Garmin Connect", ""));
+    // What a substring matched still matches.
+    CHECK(matches_words("Download from Garmin Connect", "load from gar"));
+    CHECK(!matches_words("Download from Garmin Connect", "garmin wahoo"));
+    CHECK(!matches_words("Download", "downloads"));
+}
+
+// UTF-8 titles, such as activities': the bytes of a non-ASCII character
+// match as they are, and the ASCII ones whatever their case.
+void test_matches_words_utf8()
+{
+    CHECK(matches_words("Col du Télégraphe", "télé"));
+    CHECK(matches_words("Col du Télégraphe", "GRAPHE col"));
+    CHECK(matches_words("Col du Télégraphe", "égr"));
+    CHECK(!matches_words("Col du Télégraphe", "tele"));
+    CHECK(!matches_words("Col du Télégraphe", "é x"));
+    // One word that's only spaces, and a search that's only one.
+    CHECK(matches_words("Quit", " "));
+    CHECK(matches_words("", ""));
+    CHECK(!matches_words("", "a"));
+}
+
+// Words in any order, in a list's search.
+void test_search_by_words(TestList &list)
+{
+    list.setup({ "Morning ride", "Evening run", "Morning run" });
+    list.type("run morn");
+    CHECK_EQ(list.shown_count(), 1);
+    list.key(KEY_ENTER);
+    CHECK_EQ(list.submitted, "Morning run");
+}
+
+// raylib's GetCharPressed() gives a codepoint: typing "é" (U+00E9)
+// searches for its UTF-8, not the byte 0xE9, which no UTF-8 title has.
+void test_search_by_codepoint(TestList &list)
+{
+    list.setup({ "Col du Télégraphe", "Galibier" });
+    list.character(U'T');
+    list.character(U'é');
+    CHECK_EQ(list.search, "Té");
+    CHECK_EQ(list.shown_count(), 1);
+    // Backspace takes the é off whole.
+    list.key(KEY_BACKSPACE);
+    CHECK_EQ(list.search, "T");
+}
+
 }
 
 int main()
@@ -356,5 +407,9 @@ int main()
     test_select();
     test_widths();
     test_first_chars();
+    test_search_by_codepoint(*list);
+    test_matches_words();
+    test_search_by_words(*list);
+    test_matches_words_utf8();
     return Test::test_result();
 }

@@ -77,6 +77,15 @@ That has been tried on macOS, not yet on Linux. Under Wayland, an app
 can't place its own window, so it may not start on the last monitor, and
 glfw warns about that when it starts; X11 doesn't have this problem.
 
+## Finding a command
+
+Cmd+Shift+P (Ctrl+Shift+P off macOS) opens the command palette: every
+command that works on the screen you're on, with its key. Type part of
+a command's name, its words in any order ("garmin down" finds
+"Download from Garmin Connect"), and Enter runs it, as its key would.
+The commands you last ran from it come first. It's also the way to the
+few commands without a key, such as logging in to Wahoo or Strava.
+
 ## Choosing an activity
 
 SweatTrails starts with the newest activity. Left and Right show the one

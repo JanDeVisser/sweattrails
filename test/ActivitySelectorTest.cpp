@@ -160,6 +160,23 @@ void test_search_matches_title_only()
     CHECK_EQ(f.submitted_name(), "Intervals 4x8");
 }
 
+// Ctrl+M's search is by words in any order too, still of the title only.
+void test_search_by_words()
+{
+    Fixture f { { } };
+    f.selector->entries.push_back(activity_entry(activity(f.storage, "Morning ride", 42300, 1, 32, 10)));
+    f.selector->entries.push_back(activity_entry(activity(f.storage, "Intervals 4x8 ride", 8100, 0, 41, 7)));
+    f.type("ride morn");
+    f.key(KEY_ENTER);
+    CHECK_EQ(f.submitted_name(), "Morning ride");
+    // 09:05 is the prefix's, not the title's.
+    f.selector->search = { };
+    f.submitted.reset();
+    f.type("ride 09");
+    f.key(KEY_ENTER);
+    CHECK_EQ(f.submitted_name(), "<none>");
+}
+
 // Left and Right go to the months with activities next to this one, and
 // Shift a year; at the ends, nowhere. A real store, whose months list.
 void test_destinations()
@@ -278,6 +295,7 @@ int main()
     test_no_match_submits_nothing();
     test_activity_entry();
     test_search_matches_title_only();
+    test_search_by_words();
     test_destinations();
     test_opens_at_activity();
     test_destinations_skip_months_that_list_nothing();

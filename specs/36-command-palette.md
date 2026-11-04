@@ -1,6 +1,6 @@
 # Command palette
 
-Status: Ready
+Status: Done
 
 <!--
 Status is one of:
@@ -55,13 +55,14 @@ key. It also shows each action's key, so the palette teaches the keys.
   such as `st-message`, or that only move through a list, such as the
   summaries' Up and Down, get none, and aren't listed.
 - **An entry per binding** for a task bound with different arguments:
-  `st-summaries-period` is "Totals by week", "Totals by month" and
-  "Totals by year", each with its own key. Such a binding carries its
+  `st-summaries-period` is "Totals: by week", "Totals: by month" and
+  "Totals: by year", each with its own key. Such a binding carries its
   own title. A task whose bindings differ only by key, such as Enter and
   the keypad's Enter, is one entry.
 - **Only what works now**: a task whose `when()` is false, such as the
-  summaries' keys while the activity screen is showing, isn't listed, so
-  nothing listed does nothing. A task without keys, such as logging in
+  summaries' keys while the activity screen is showing, isn't listed: the
+  list goes by the screen. A command can still do nothing at the
+  moment, such as a download while one is running, as its key does then. A task without keys, such as logging in
   to Wahoo, is listed too: the palette is the only way to it without a
   key.
 - Each entry shows its key at the row's end, if it has one, in words
@@ -70,7 +71,7 @@ key. It also shows each action's key, so the palette teaches the keys.
   task with several keys shows the first.
 - **The titles** are short, and start with a verb where there is one:
   "Download from Garmin Connect", "Rename activity", "Show the totals",
-  "Totals by week". The Developer writes them for all the tasks, and Jan
+  "Totals: by week". The Developer writes them for all the tasks, and Jan
   checks them in the review.
 
 ### Searching and running
@@ -112,12 +113,168 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### Where the spec leaves a gap
+
+- **A task with titled bindings and untitled ones**: the titled ones
+  are its entries, and the untitled ones, such as the keypad's Enter
+  next to Enter, are other keys for one of them, not entries of their
+  own. A task with a title and no titled binding is one entry, with its
+  first binding's arguments and key; without a binding, with no
+  arguments and no key.
+- **The palette doesn't list itself.**
+- **"The last few"** recent commands: up to 5, by title.
+- **Words in any order for every list box**, not only the palette: the
+  activity list's search (Ctrl+M) gets it too. Everything a substring
+  matched before still matches, as each of its words is in the title.
+- **Key names**: Cmd, Ctrl, Option and Shift on macOS (Super, Ctrl, Alt
+  and Shift elsewhere), in that order, as the README writes them
+  ("Cmd+Shift+R", "Ctrl+Alt+L"), then the key: "A", "F2", "Enter",
+  "Esc", "Left", "Page Up", "Keypad +".
+
+### The bus (`src/Lib/Widget/Widget.h`)
+
+- `Task` gets an optional **`title`**, set with **`.titled("…")`**, as
+  `.when()` and `.run_under_modals()` are chained.
+- `Binding` gets an optional **`title`**, and `Task::bind()` an optional
+  third argument for it: `.bind(KeyCombo { KEY_W, KModNone },
+  summaries_argument("period", "week"), "Totals: by week")`.
+- **`Command { title, task, arguments, key }`**, and
+  **`AppBus::commands()`**: the entries, by the rules above, of the
+  tasks whose `when()` is true now, unsorted. Pure over the bus's tasks
+  and bindings, so a test can build a bus and check them, as
+  `KeyBindingTest` does.
+
+### Keys and searching (`src/Lib/Widget`)
+
+- **`key_text(KeyCombo)`** in `Widget.h`/`.cpp`, next to
+  `modifier_string()`: "Cmd+Shift+P". Pure.
+- **`matches_words(text, search)`** in `Modal.h`: each word of the
+  search in the text, case-insensitively. `ListBox::filter()` uses it
+  instead of `strcasestr()`.
+
+### The palette (`src/Lib/Widget/CommandPalette.*`)
+
+- It's general, not the app's: any app with tasks can have one.
+- **`order_commands(commands, recent)`**, pure: the commands whose
+  titles are in `recent`, most recent first, then the rest by title,
+  A to Z, case-insensitively.
+- **`RecentCommands`**: up to 5 titles, `used(title)` moving one to the
+  front. The app keeps one, for as long as it runs.
+- **`CommandPalette`**, a `ListBox<Command, { .search = true, .sort =
+  false }>`, with the key in the row's column, and a function to run on
+  Enter. **`command_palette(commands, recent, run)`** opens one.
+
+### The app (`SweatTrails.cpp`)
+
+- Every task gets `.titled()`, and the bindings with arguments their
+  titles. Task `st-command-palette`, Cmd+Shift+P (Ctrl+Shift+P off
+  macOS), not while a modal is open, which lists `bus.commands()` less
+  itself, and on Enter marks the command used and submits its task with
+  its arguments, which runs it next frame, with the palette closed.
+- The README.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `KeyBindingTest`: `commands()`: a titled task is an entry, an untitled
+  one isn't; titled bindings are an entry each, with their arguments and
+  keys, and an untitled binding of the same task isn't; a task without
+  keys is an entry without a key; a task whose `when()` is false isn't.
+- `KeyTextTest` (new, or in `KeyBindingTest`): `key_text()` for letters,
+  F-keys, Enter, arrows, the keypad, and modifiers in order.
+- `ListBoxTest`: `matches_words()`, and a list box's search by words in
+  any order, which still matches what a substring did.
+- `CommandPaletteTest` (new): `order_commands()` with and without
+  recent ones, `RecentCommands` keeping 5 and moving a used one to the
+  front, and the palette's Enter running the selected command and
+  closing, with a search typed.
+- By hand: Cmd+Shift+P on the activity screen and the summaries screen,
+  and running a command that asks for input, such as renaming.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: "Back to the activity" doesn't always go back to the
+   activity.** `st-summaries-close` (`SweatTrails.cpp:2052`) is Esc, and
+   `cmd_summaries_close()` (`SweatTrails.cpp:1071`) first backs up a level
+   and only goes to the activity at the top. On the totals, drilled into a
+   month (Enter on a row), running "Back to the activity" from the palette
+   shows the year again, as "Totals: back up" does, and leaves the user on
+   the totals. The title should say what Esc does, such as "Totals: back
+   up, or to the activity", or "Show or close the totals" (Ctrl+T) should
+   be the palette's way back.
+2. **Bug, from before this branch: a list box's search can't be typed in
+   anything but ASCII.** `ListBox::character()` (`Modal.h:363`) keeps the
+   low byte of raylib's codepoint, so typing "é" (U+00E9) searches for the
+   byte 0xE9, which no UTF-8 title has. Typing "Té" finds nothing in the
+   Ctrl+M list of a month with "Col du Télégraphe"; the same goes for the
+   palette. Test `test_search_by_codepoint()` in `test/ListBoxTest.cpp`
+   fails, and isn't run from `main()`.
+3. **Suggestion: some listed commands do nothing now.** The spec says
+   "nothing listed does nothing", but only `when()` takes commands out.
+   While a download runs, "Download new activities", "Download from
+   Garmin Connect", "Download from Wahoo" and "Get all the titles from
+   Strava" are listed and return silently (`SweatTrails.cpp:664`, `690`);
+   with an empty store, every activity-screen command is listed and does
+   nothing (`activity_for_keys()` is null). A `when()` would also take
+   their keys away, so it's Jan's call whether this matters.
+4. **Suggestion: titles to look at.** "Totals: back" and "Totals: on"
+   (`SweatTrails.cpp:2089`, `2090`) are hard to read without the README,
+   which says Left and Right go "a year back or on" (a month in a month's
+   weeks, 90 days in the fitness): such as "Totals: earlier" and "Totals:
+   later". "Totals: year to date", "Totals: fitness" and "Totals: best
+   power or pace" switch a view on and off but read as if they only show
+   it, and have no verb; "Show or hide ..." would match "Show or close the
+   totals". "Totals by week" and "Totals: running" are two forms for the
+   same kind of choice. "Group the recordings, or make this one the main
+   one" is long for a row that also shows a key. There are no duplicate
+   titles, and every task the user can run has one; only `st-message`,
+   `st-fill-gaps` (a dropped file) and `st-summaries-row` (Up and Down)
+   don't, as the spec says.
+5. **Suggestion: case-insensitive only for ASCII.** `matches_words()`
+   (`Modal.h:110`) lowers byte by byte in the C locale (the app never calls
+   `setlocale()`), so UTF-8 is never broken, but "TÉLÉ" doesn't find
+   "Télégraphe". `strcasestr()` did the same, so this is no regression.
+   `test_matches_words_utf8()` checks what it does now.
+6. **Suggestion: `key_text()`'s fallback.** A key not in its table is
+   "Key 336" (`Widget.cpp:160`), such as the keypad's = or Caps Lock. None
+   is bound now, but a new binding on one would show that in the palette.
+7. **Suggestion: `AppBus::bind(task, combo, arguments)`**
+   (`Widget.h:470`) can't give a binding a title, while `Task::bind()`
+   can.
+
+Checked and fine: the rules of `commands()` (titled and untitled tasks
+and bindings, `when()`, tasks without keys); every handler with the
+arguments it gets from the palette, also the null ones of the keyless
+downloads and logins (`make_download_request()` and `cmd_strava_login()`
+check `is_object()`); handlers with `modals.empty()` checks run, as the
+palette is popped before the bus runs the task, and `PendingTask` puts
+the focus from before the palette back; `order_commands()`; the
+palette's entries by position while searching.
+
+Tests added: `KeyBindingTest` (`test_commands_of_titled_bindings`, an
+untitled task with titled bindings and `when()`, as W, M and Y;
+`test_commands_first_key`; `test_key_text_more`, the arrows, the keypad
+and all four modifiers in order); `ListBoxTest`
+(`test_matches_words_utf8`, and the failing `test_search_by_codepoint`,
+not in `main()`); `ActivitySelectorTest` (`test_search_by_words`, Ctrl+M's
+search by words, still of the title only); `CommandPaletteTest`
+(`test_runs_the_selected_match`, `test_empty_palette`,
+`test_task_runs_after_the_palette_closes`). The full run, `ctest -E
+oauth`, passes.
+
+### Resolution
+
+1. Fixed in 4380eeb: Esc on the totals is "Totals: back up, or close at
+   the top".
+2. Fixed in e73a3d7: a list box appends the typed codepoint as UTF-8,
+   and Backspace takes off a whole character. `ListBoxTest`'s
+   `test_search_by_codepoint` fails against the old code, and is back in
+   `main()`.
+3. Left as it is, with Jan's agreement: the list goes by the screen, as
+   the Feature now says, and a command that can't run at the moment does
+   nothing, as its key does.
+4. Fixed in 4380eeb: the totals' commands all read "Totals: …", the
+   views' with "show", Left and Right "earlier" and "later", and
+   grouping recordings has a shorter title.
+5. to 7. Left as they are: case-folding beyond ASCII was the same
+   before, and no unnamed key or title-less `AppBus::bind()` is used.
+8. The tests were committed with the review notes, in f85999a.

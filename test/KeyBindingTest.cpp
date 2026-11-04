@@ -7,7 +7,11 @@
  * open when the key was pressed.
  */
 
+#include <algorithm>
 #include <memory>
+#include <optional>
+#include <string_view>
+#include <vector>
 
 #include <App.h>
 
@@ -185,6 +189,151 @@ void test_when_keeps_the_arguments()
     }
 }
 
+// The command of `title` among `commands`, if there's one.
+std::optional<Command> command(std::vector<Command> const &commands, std::string_view title)
+{
+    auto const it = std::ranges::find(commands, title, &Command::title);
+    if (it == commands.end()) {
+        return { };
+    }
+    return *it;
+}
+
+void test_commands()
+{
+    Test::ScopedTestApp app;
+    Bus                 bus;
+    auto const          nothing = [](auto const &, JSONValue const &) { };
+    bus.add_task<Widget>("test-download", app.app, nothing).titled("Download").bind(KeyCombo { KEY_G, KModControl });
+    // Plumbing: no title.
+    bus.add_task<Widget>("test-row", app.app, nothing).bind(KeyCombo { KEY_DOWN, KModNone });
+    // No key: still a command.
+    bus.add_task<Widget>("test-login", app.app, nothing).titled("Log in");
+    // Titled bindings are a command each; Enter's other key isn't.
+    auto week = JSONValue::object();
+    week.set("period", JSONValue { "week" });
+    auto month = JSONValue::object();
+    month.set("period", JSONValue { "month" });
+    bus.add_task<Widget>("test-period", app.app, nothing)
+        .titled("Period")
+        .bind(KeyCombo { KEY_W, KModNone }, week, "By week")
+        .bind(KeyCombo { KEY_M, KModNone }, month, "By month")
+        .bind(KeyCombo { KEY_KP_ENTER, KModNone }, week);
+    // Not on this screen.
+    bus.add_task<Widget>("test-elsewhere", app.app, nothing).titled("Elsewhere").when([] { return false; });
+    auto const commands = bus.commands();
+    CHECK_EQ(commands.size(), 4uz);
+    auto const download = command(commands, "Download");
+    CHECK(download && download->task == "test-download" && download->key == (KeyCombo { KEY_G, KModControl }));
+    CHECK(download && download->arguments.try_get<int>("key").value_or(0) == KEY_G);
+    auto const login = command(commands, "Log in");
+    CHECK(login && !login->key && login->arguments.is_null());
+    auto const by_month = command(commands, "By month");
+    CHECK(by_month && by_month->task == "test-period" && by_month->key == (KeyCombo { KEY_M, KModNone }));
+    CHECK(by_month && by_month->arguments.try_get<std::string>("period").value_or("") == "month");
+    CHECK(command(commands, "By week").has_value());
+    CHECK(!command(commands, "Period").has_value());
+    CHECK(!command(commands, "Elsewhere").has_value());
+}
+
+// As the app's W, M and Y: a task without a title of its own, only on the
+// summaries, whose bindings have titles. Its untitled binding, as the
+// keypad's Enter next to Enter, is no entry, and it has no entry under
+// its id.
+void test_commands_of_titled_bindings()
+{
+    Test::ScopedTestApp app;
+    auto                summaries = true;
+    Bus                 bus;
+    auto const          nothing = [](auto const &, JSONValue const &) { };
+    auto                week = JSONValue::object();
+    week.set("period", JSONValue { "week" });
+    auto year = JSONValue::object();
+    year.set("period", JSONValue { "year" });
+    auto &period = bus.add_task<Widget>("test-period", app.app, nothing).when([&summaries] { return summaries; });
+    period.bind(KeyCombo { KEY_W, KModNone }, week, "By week");
+    period.bind(KeyCombo { KEY_KP_1, KModNone }, week);
+    period.bind(KeyCombo { KEY_Y, KModNone }, year, "By year");
+    auto commands = bus.commands();
+    CHECK_EQ(commands.size(), 2uz);
+    auto const by_year = command(commands, "By year");
+    CHECK(by_year && by_year->key == (KeyCombo { KEY_Y, KModNone }));
+    CHECK(by_year && by_year->arguments.try_get<std::string>("period").value_or("") == "year");
+    CHECK(!command(commands, "").has_value());
+    // On the activity screen: none of them.
+    summaries = false;
+    CHECK(bus.commands().empty());
+    // Its titled keys still run it, with their arguments.
+    summaries = true;
+    bus.handle_keys({ KEY_Y }, false);
+    CHECK_EQ(task_run(bus), "test-period");
+    if (bus.messages.size() == 1) {
+        CHECK_EQ(std::get<Bus::PendingTask>(bus.messages.front()).arguments.try_get<std::string>("period").value_or(""), "year");
+    }
+}
+
+// A titled task with several keys is one entry, with its first key, as
+// zoom in's = and the keypad's +.
+void test_commands_first_key()
+{
+    Test::ScopedTestApp app;
+    Bus                 bus;
+    bus.add_task<Widget>("test-zoom-in", app.app, [](auto const &, JSONValue const &) { })
+        .titled("Zoom in")
+        .bind(KeyCombo { KEY_EQUAL, KModNone })
+        .bind(KeyCombo { KEY_EQUAL, KModShift })
+        .bind(KeyCombo { KEY_KP_ADD, KModNone })
+        .when([] { return true; });
+    auto const commands = bus.commands();
+    CHECK_EQ(commands.size(), 1uz);
+    auto const zoom = command(commands, "Zoom in");
+    CHECK(zoom && zoom->key == (KeyCombo { KEY_EQUAL, KModNone }));
+    // The arguments the key would have run it with.
+    CHECK(zoom && zoom->arguments.try_get<int>("key").value_or(0) == KEY_EQUAL);
+    CHECK(zoom && zoom->arguments.try_get<int>("modifier").value_or(-1) == KModNone);
+}
+
+// The arrows, the keypad, and the modifiers in order.
+void test_key_text_more()
+{
+    CHECK_EQ(key_text(KeyCombo { KEY_LEFT, KModNone }), "Left");
+    CHECK_EQ(key_text(KeyCombo { KEY_RIGHT, KModShift }), "Shift+Right");
+    CHECK_EQ(key_text(KeyCombo { KEY_UP, KModNone }), "Up");
+    CHECK_EQ(key_text(KeyCombo { KEY_DOWN, KModNone }), "Down");
+    CHECK_EQ(key_text(KeyCombo { KEY_KP_ENTER, KModNone }), "Keypad Enter");
+    CHECK_EQ(key_text(KeyCombo { KEY_KP_1, KModNone }), "Keypad 1");
+    CHECK_EQ(key_text(KeyCombo { KEY_F12, KModNone }), "F12");
+    CHECK_EQ(key_text(KeyCombo { KEY_A, KModNone }), "A");
+    CHECK_EQ(key_text(KeyCombo { KEY_Z, KModNone }), "Z");
+    CHECK_EQ(key_text(KeyCombo { KEY_ZERO, KModNone }), "0");
+    CHECK_EQ(key_text(KeyCombo { KEY_EQUAL, KModShift }), "Shift+=");
+    // All four, in the README's order, whatever order they're or-ed in.
+#ifdef __APPLE__
+    CHECK_EQ(key_text(KeyCombo { KEY_X, KModShift | KModAlt | KModControl | KModSuper }), "Cmd+Ctrl+Option+Shift+X");
+    CHECK_EQ(key_text(KeyCombo { KEY_R, KModControl | KModShift }), "Ctrl+Shift+R");
+#else
+    CHECK_EQ(key_text(KeyCombo { KEY_X, KModShift | KModAlt | KModControl | KModSuper }), "Super+Ctrl+Alt+Shift+X");
+#endif
+}
+
+void test_key_text()
+{
+    CHECK_EQ(key_text(KeyCombo { KEY_G, KModControl }), "Ctrl+G");
+    CHECK_EQ(key_text(KeyCombo { KEY_F2, KModNone }), "F2");
+    CHECK_EQ(key_text(KeyCombo { KEY_ENTER, KModNone }), "Enter");
+    CHECK_EQ(key_text(KeyCombo { KEY_ESCAPE, KModNone }), "Esc");
+    CHECK_EQ(key_text(KeyCombo { KEY_PAGE_UP, KModNone }), "Page Up");
+    CHECK_EQ(key_text(KeyCombo { KEY_KP_ADD, KModNone }), "Keypad +");
+    CHECK_EQ(key_text(KeyCombo { KEY_SEVEN, KModShift }), "Shift+7");
+#ifdef __APPLE__
+    CHECK_EQ(key_text(KeyCombo { KEY_P, KModSuper | KModShift }), "Cmd+Shift+P");
+    CHECK_EQ(key_text(KeyCombo { KEY_L, KModControl | KModAlt }), "Ctrl+Option+L");
+#else
+    CHECK_EQ(key_text(KeyCombo { KEY_P, KModSuper | KModShift }), "Super+Shift+P");
+    CHECK_EQ(key_text(KeyCombo { KEY_L, KModControl | KModAlt }), "Ctrl+Alt+L");
+#endif
+}
+
 }
 
 int main()
@@ -197,5 +346,10 @@ int main()
     test_when_under_a_modal();
     test_same_key_other_modifier();
     test_when_keeps_the_arguments();
+    test_commands();
+    test_key_text();
+    test_commands_of_titled_bindings();
+    test_commands_first_key();
+    test_key_text_more();
     return Test::test_result();
 }
