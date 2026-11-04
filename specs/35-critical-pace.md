@@ -1,6 +1,6 @@
 # Critical pace
 
-Status: Ready
+Status: In progress, on branch feature/35-critical-pace
 
 <!--
 Status is one of:
@@ -148,11 +148,110 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### Where the spec leaves a gap
+
+- **When the fit is sound.** By distance, "a run of 20 minutes" can't be
+  read from the bests: a 20-minute run of 4.7 km has no 5 km best, and
+  its longest, 4 km, took 17 minutes. So the fit is sound if at least 3
+  bests took 3 to 20 minutes, the longest of them 15 minutes or more,
+  and CS and D' come out above zero. A run of 20 minutes or more at any
+  pace gives that.
+- **The distances** are `PaceDistances`: 400, 800 m, 1, 1.5 km, 1 mile,
+  2, 3, 4, 5, 8, 10, 15 km, 10 miles, 20 km, the half marathon, 25, 30
+  km and the marathon.
+- **A best's time** is in whole seconds, and its start is interpolated
+  between the two records it falls between, so that a 400 m best isn't
+  a second or two slow for the records' spacing.
+- **The glitch rule** is per pair of records: if the distance between
+  them was gained faster than 8 m/s, or went back, none of it counts.
+  Records without a distance are passed over.
+- **The x axis** runs from 400 m, the first distance, to the longest of
+  `PaceDistances` the longest run covered, as the power curve's runs to
+  a listed duration.
+
+### The pace curve (`storage/PaceCurve.*`), pure, next to `PowerCurve.*`
+
+- **`PaceDistances`**, **`MaxRunSpeed = 8`** (m/s), and
+  **`pace_curve(std::span<record const>)`**: a run's best time, in
+  seconds, for each of the distances it covered, `std::vector<u32>`.
+  It works on the records, not a second each as the power curve does:
+  the cumulative distance that counts, and two indices sliding along it.
+  Empty without distances.
+- **`PaceBest { seconds, summary }`** and
+  **`best_pace_curve(summaries, first, last)`**: the fastest of the
+  outdoor runs between the days, as `best_curve()` is for rides.
+  Treadmill and indoor runs are left out here, by `sub_sport`, not when
+  the summary is read, so a change to the rule needs no rebuild.
+- **`CriticalSpeed { cs, d_prime }`** (m/s, m) and
+  **`critical_speed(bests)`**, with the rule above.
+- **`fit_line(points)`**, the least squares that `critical_power()`
+  does now, moves to `PowerCurve.h` for both to use.
+
+### The summary file (`storage/Summaries.*`)
+
+- `ActivitySummary` gets **`best_times`**, `std::vector<u32>`, for each
+  of `PaceDistances` the run covered; empty for anything but a run. In
+  the file as `"best_times"`, left out when empty.
+- `read_summary()` works it out from `activity.recorded`, for runs only
+  (`volume_sport()` is running, treadmills too: see above).
+- `SummariesVersion` goes to 4.
+
+### The chart (`src/Lib/Widget/Chart.*`, `LineChart.*`)
+
+- **`nice_span(min, max, ticks, steps)`**: a scale from a step at or
+  below `min` to one at or above `max`, in the first of `steps` that
+  makes about `ticks` of them. Pace wants steps of 5, 10, 15, 30 s, 1,
+  2, 5 min, not 1, 2 or 5 times a power of ten, and a scale that doesn't
+  start at 0, where 0:00/km would squash the curve to the top.
+- **`LineChart::steps`**: when it's set, `scale()` uses `nice_span()`
+  over the lines' values; empty, as now. This is the widget library's
+  only change.
+
+### The screen (`widget/Summaries.*`)
+
+- **`Graph::Power` becomes `Graph::Curve`**, the best power or pace by
+  the view's sport, and `toggle_power()`, `power_end`, `step_power()`
+  become `toggle_curve()`, `curve_end`, `step_curve()`. **R and C**
+  change the sport in the view, which `set_sport()` already does, and
+  the curve follows. `step_curve()` goes back to the first ride with
+  power or the first outdoor run with best times, by the sport.
+- **`refresh_pace()`** next to `refresh_power()`, with
+  **`pace_heading()`**, **`pace_table()`**, **`pace_columns()`** and
+  **`pace_rows()`**, pure: "5 km · 21:34 · 4:19 /km · 12 Oct 2026 ·
+  Morning run". `PaceTableDistances`: 400 m, 1 km, 1 mile, 5 and 10 km,
+  half and full marathon.
+- **`curve_line()`** and **`curve_ticks()`** are generalized to take the
+  x values (durations or distances) and the axis's first x, so that the
+  pace curve shares them. Ticks: 400 m, 1, 5, 10 km, half, marathon.
+- The table's rows are kept as the summaries they point to, for Enter,
+  whichever the sport.
+- The keys line: "P: best power or pace".
+
+### The app (`SweatTrails.cpp`)
+
+- The task becomes `st-summaries-curve`, still on P. The README.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `PaceCurveTest` (new): `pace_curve()` of steady running, with the
+  start interpolated; a faster kilometre in the middle; a stop counting
+  as time; a glitch over 8 m/s and a distance going back not counting;
+  records without distance; a run shorter than a distance.
+  `best_pace_curve()` leaving out treadmill and indoor runs and rides,
+  by day. `critical_speed()` of bests from a known CS and D', and none
+  without 3 bests in range, without one of 15 minutes, or with D' at or
+  below 0. `critical_power()` still passes its tests through `fit_line()`.
+- `LineChartTest`: `nice_span()` for pace: from 3:20 to 6:10 in steps
+  of 30 s; a span under a minute; `scale()` with `steps` set.
+- `SummariesTest`: version 4 round trip with `best_times`; a version 3
+  file is read as none; `read_summary()` of a run with distances, and
+  none for a ride.
+- `SummariesScreenTest`: P on running shows pace, R and C switch it; the
+  heading with and without CS, and without runs; the rows and their
+  pace; Left back to the first outdoor run; Enter opens the run; the
+  power tests under the new names.
+- By hand: the pace chart and its scale on Jan's runs, after the summary
+  file is built again.
 
 ## Review notes
 
