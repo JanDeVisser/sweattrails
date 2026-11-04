@@ -75,8 +75,8 @@ struct CriticalSpeed {
     bool operator==(CriticalSpeed const &) const = default;
 };
 
-// The bests of 3 bests or more, the longest at least this long, make a
-// sound fit.
+// A sound fit needs this many bests of FitFrom to FitTo seconds, the
+// longest of them at least this long.
 constexpr size_t PaceFitPoints = 3;
 constexpr u32    PaceFitLongest = 900;
 

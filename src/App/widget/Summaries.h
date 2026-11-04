@@ -136,7 +136,7 @@ struct PowerRow {
 // curve's window by weeks, the rest by year.
 [[nodiscard]] std::string summaries_keys(Graph graph);
 
-// The durations of the pace table's rows, in metres.
+// The distances of the pace table's rows, in metres.
 constexpr std::array<u32, 7> PaceTableDistances { 400, 1000, 1609, 5000, 10000, 21097, 42195 };
 // The pace scale's steps, in seconds a km.
 constexpr std::array<double, 7> PaceSteps { 5, 10, 15, 30, 60, 120, 300 };
