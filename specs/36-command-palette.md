@@ -1,6 +1,6 @@
 # Command palette
 
-Status: In progress, on branch feature/36-command-palette
+Status: In review
 
 <!--
 Status is one of:
