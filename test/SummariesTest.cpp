@@ -15,6 +15,8 @@
 #include <Date.h>
 #include <IO.h>
 
+#include <storage/PaceCurve.h>
+#include <storage/PowerCurve.h>
 #include <storage/Summaries.h>
 
 #include <TempDir.h>
@@ -399,6 +401,31 @@ void test_summary_activity()
     CHECK(!summary_activity(summary("x/2025/03/1741000000.fit", 1741000000)));
 }
 
+// A file with longer curves than there are durations and distances, as
+// one edited by hand: they're cut to them.
+void test_curves_no_longer_than_their_lists()
+{
+    Test::TempDir dir { "summaries" };
+    auto const    path = dir.path / "summaries.json";
+    std::string   power;
+    for (auto ix = 0uz; ix < PowerDurations.size() + 5; ++ix) {
+        power += std::format("{}{}", ix == 0 ? "" : ", ", 300);
+    }
+    std::string times;
+    for (auto ix = 0uz; ix < PaceDistances.size() + 5; ++ix) {
+        times += std::format("{}{}", ix == 0 ? "" : ", ", 100 + ix);
+    }
+    MUST(write_file_by_name(path.string(),
+        std::format(R"({{ "version": {}, "activities": [ {{ "file": "a.fit", "size": 1, "modified": 1, "start": 1, "distance": 0, "moving": 0, "ascent": 0, "power": [ {} ], "best_times": [ {} ] }} ] }})",
+            SummariesVersion, power, times)));
+    auto const read = read_summaries(path);
+    CHECK_EQ(read.size(), 1uz);
+    if (read.size() == 1) {
+        CHECK_EQ(read[0].power.size(), PowerDurations.size());
+        CHECK_EQ(read[0].best_times.size(), PaceDistances.size());
+    }
+}
+
 }
 
 int main()
@@ -419,5 +446,6 @@ int main()
     test_update_reads_what_came_in_between();
     test_update_that_cant_write();
     test_summary_activity();
+    test_curves_no_longer_than_their_lists();
     return Test::test_result();
 }

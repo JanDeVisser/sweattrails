@@ -92,9 +92,13 @@ Decoded<ActivitySummary> decode(JSONValue const &json)
     }
     if (json.has("power")) {
         ret.power = TRY_EVAL(json.try_get_array<u16>("power"));
+        // No more than there are durations, or distances below, which the
+        // curves are indexed with: a file edited by hand could have more.
+        ret.power.resize(std::min(ret.power.size(), PowerDurations.size()));
     }
     if (json.has("best_times")) {
         ret.best_times = TRY_EVAL(json.try_get_array<u32>("best_times"));
+        ret.best_times.resize(std::min(ret.best_times.size(), PaceDistances.size()));
     }
     return ret;
 }
