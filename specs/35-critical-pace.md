@@ -1,6 +1,6 @@
 # Critical pace
 
-Status: In progress, on branch feature/35-critical-pace
+Status: In review
 
 <!--
 Status is one of:
@@ -241,8 +241,9 @@ None.
   by day. `critical_speed()` of bests from a known CS and D', and none
   without 3 bests in range, without one of 15 minutes, or with D' at or
   below 0. `critical_power()` still passes its tests through `fit_line()`.
-- `LineChartTest`: `nice_span()` for pace: from 3:20 to 6:10 in steps
-  of 30 s; a span under a minute; `scale()` with `steps` set.
+- `LineChartTest`: `nice_span()` for pace: 3:20 to 6:10 in steps of a
+  minute, as 30 s would make more than 5; spans in steps of 10 and 15
+  s; a flat line; `scale()` with `steps` set.
 - `SummariesTest`: version 4 round trip with `best_times`; a version 3
   file is read as none; `read_summary()` of a run with distances, and
   none for a ride.
