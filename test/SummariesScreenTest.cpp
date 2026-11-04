@@ -1585,6 +1585,120 @@ void test_pace_line()
     CHECK(pace_ticks(400).empty());
 }
 
+// Leaving the pace curve for the year to date or the fitness takes the
+// scale back to 1, 2 or 5 times a power of ten, from 0, and its numbers.
+void test_pace_steps_cleared_for_the_other_lines()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_pace_screen();
+    screen->toggle_curve();
+    CHECK(!screen->lines->steps.empty());
+    screen->toggle_lines();
+    CHECK(screen->view.graph == Graph::YearToDate);
+    CHECK(screen->lines->steps.empty());
+    CHECK(screen->lines->scale().bottom == 0);
+    CHECK(!screen->lines->format_value(252).contains(':'));
+    screen->toggle_curve();
+    CHECK(!screen->lines->steps.empty());
+    screen->toggle_fitness();
+    CHECK(screen->view.graph == Graph::Fitness);
+    CHECK(screen->lines->steps.empty());
+    CHECK_EQ(screen->lines->format_value(250), "250");
+}
+
+// Left stops at the first outdoor run, not at a treadmill run before it,
+// nor at a run without distances.
+void test_pace_steps_past_a_treadmill()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_pace_screen();
+    auto                treadmill = paced_run(2024, 3, 1, 5, 10000);
+    treadmill.sub_sport = FIT::sub_sport::treadmill;
+    auto more = screen->summaries;
+    more.insert(more.begin(), { treadmill, run(2024, 6, 1) });
+    screen->set_summaries(more);
+    screen->toggle_curve();
+    for (auto step = 0; step < 40; ++step) {
+        screen->step_year(-1);
+    }
+    auto const end = std::chrono::sys_days { screen->view.curve_end };
+    auto const first = std::chrono::sys_days { std::chrono::year { 2025 } / std::chrono::March / 1 };
+    CHECK(end >= first);
+    CHECK(end - first < std::chrono::days { CurveStepDays });
+}
+
+// Back in the power curve to before the first run, R shows a window of
+// no runs: Right has to bring it forward to today, not stay stuck there.
+void test_pace_steps_forward_after_r()
+{
+    Test::ScopedTestApp app;
+    auto                screen = make_pace_screen();
+    auto                more = screen->summaries;
+    more.insert(more.begin(), power_ride(2023, 3, 1, 250, 3600));
+    screen->set_summaries(more);
+    screen->open(VolumeSport::Cycling, Today);
+    screen->toggle_curve();
+    for (auto step = 0; step < 40; ++step) {
+        screen->step_year(-1);
+    }
+    CHECK(screen->view.curve_end < std::chrono::year { 2024 } / std::chrono::January / 1);
+    screen->set_sport(VolumeSport::Running);
+    CHECK(screen->heading->text.starts_with("Pace · no runs · "));
+    auto const before = screen->view.curve_end;
+    screen->step_year(1);
+    CHECK(screen->view.curve_end != before);
+    for (auto step = 0; step < 60; ++step) {
+        screen->step_year(1);
+    }
+    CHECK(screen->view.curve_end == Today);
+}
+
+// A marathon's row, over an hour.
+void test_pace_rows_over_an_hour()
+{
+    ActivitySummaries const    summaries { run(2026, 5, 1) };
+    std::vector<PaceRow> const rows {
+        PaceRow { .metres = 42195, .best = PaceBest { .seconds = 12600, .summary = 0 } },
+        PaceRow { .metres = 400, .best = PaceBest { .seconds = 59, .summary = 0 } },
+    };
+    auto const table = pace_rows(rows, summaries, { });
+    CHECK_EQ(table.size(), 2uz);
+    if (table.size() == 2) {
+        CHECK(table[0] == (TableRow { "Marathon", "3:30:00", "4:59 /km", "1 May 2026", "" }));
+        // 59 s for 400 m is 147.5 s a km: 2:28.
+        CHECK(table[1] == (TableRow { "400 m", "0:59", "2:28 /km", "1 May 2026", "" }));
+    }
+    // A table only for the distances the bests reach.
+    std::vector<PaceBest> const bests(PaceDistances.size(), PaceBest { .seconds = 100 });
+    CHECK_EQ(pace_table(bests).size(), PaceTableDistances.size());
+    std::vector<PaceBest> const short_bests(3, PaceBest { .seconds = 100 });
+    auto const                  short_table = pace_table(short_bests);
+    CHECK_EQ(short_table.size(), 2uz);
+}
+
+// The job's chunks coming in keep the pace curve, its steps and the run
+// that Enter opens.
+void test_pace_refreshed_in_place()
+{
+    Test::ScopedTestApp            app;
+    auto                           screen = make_pace_screen();
+    std::optional<ActivitySummary> opened { };
+    screen->on_ride = [&opened](ActivitySummary const &summary) { opened = summary; };
+    screen->toggle_curve();
+    screen->step_row(1);
+    screen->step_row(1);
+    auto const best = screen->summaries[2];
+    auto       more = screen->summaries;
+    more.insert(more.begin(), paced_run(2024, 6, 1, 3, 5000));
+    screen->set_summaries(more);
+    CHECK(screen->view.graph == Graph::Curve);
+    CHECK(screen->heading->text.starts_with("Pace · CS 4:46 /km"));
+    CHECK(!screen->lines->steps.empty());
+    CHECK(screen->table->selection == std::optional<size_t> { 1 });
+    screen->drill();
+    CHECK(opened && *opened == best);
+}
+
 }
 
 int main()
@@ -1662,5 +1776,9 @@ int main()
     test_pace_without_a_sound_cs();
     test_enter_opens_the_run();
     test_pace_line();
+    test_pace_steps_cleared_for_the_other_lines();
+    test_pace_steps_past_a_treadmill();
+    test_pace_rows_over_an_hour();
+    test_pace_refreshed_in_place();
     return Test::test_result();
 }

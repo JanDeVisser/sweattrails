@@ -171,12 +171,18 @@ void test_read_records()
 // the same has none.
 void test_read_best_times()
 {
-    for (auto const sport : { u8 { 1 }, u8 { 2 } }) {
+    // A treadmill run (sub-sport 1) has them too: the pace curve leaves
+    // it out, so that a change to that rule needs no rebuild.
+    struct Case {
+        u8 sport;
+        u8 sub_sport;
+    };
+    for (auto const [sport, sub_sport] : { Case { 1, Test::NoSubSport }, Case { 2, Test::NoSubSport }, Case { 1, 1 } }) {
         Test::TempStore  store;
         Test::FITBuilder fit;
         Test::add_file_id(fit, 1);
         Test::add_distance_records(fit, 301, 4);
-        Test::add_session(fit, 300, 0, Test::NoSubSport, 0, sport);
+        Test::add_session(fit, 300, 0, sub_sport, 0, sport);
         auto const unix_start = static_cast<i64>(Test::Start) + DateTime::FIT_TIMESTAMP_OFFSET;
         auto const date = DateTime::from_timestamp(static_cast<i32>(unix_start));
         auto const dir = store.storage.activity_dir / std::format("{:04}/{:02}", static_cast<u16>(date.year), static_cast<u8>(date.month) + 1);

@@ -256,4 +256,63 @@ None.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: Right gets stuck after R or C in an earlier window.**
+   `step_curve()` (`widget/Summaries.cpp:743`) refuses any step whose
+   end is before the first ride with power or outdoor run of the
+   *current* sport, forward steps too. `set_sport()` (line 694) keeps
+   `curve_end`. Steps to reproduce: rides with power from 2023 and runs
+   from 2025. P on cycling, Left back to 2023, then R. The heading
+   reads "Pace · no runs", and Right does nothing, since 2023 + 4 weeks
+   is still before the first run. The only way out is P twice. C after
+   going back in the pace curve does the same when rides start later
+   than runs. Forward steps up to today should always be allowed, or
+   `set_sport()` should clamp `curve_end` into the new sport's range.
+   `test_pace_steps_forward_after_r` in `test/SummariesScreenTest.cpp`
+   fails on it (lines 1650 and 1654). It is in `main()`, so
+   `summaries_screen_test` fails until this is fixed.
+2. **Suggestion: a summary file with more best times than
+   `PaceDistances` reads past the array.** `decode()` takes
+   `best_times` of any length. `best_pace_curve()` then returns a curve
+   that long, and `critical_speed()` (`PaceCurve.cpp:126`),
+   `pace_line()` (`Summaries.cpp:610`, and `log_line()`'s `xs`) and
+   `refresh_pace()` (line 1046) index `PaceDistances` with it. The app
+   never writes such a file, but a hand-edited one, or one from a
+   build with a longer list under the same version, would cause
+   undefined behaviour. `power` has the same issue with
+   `PowerDurations`. Truncating in `decode()`, or treating the file as
+   unreadable, would close it.
+3. **Suggestion: "a run of 20 minutes or more gives a fit" isn't quite
+   true for an even run.** For an evenly paced run, the line through
+   its bests goes through 0, so D' comes out at 0, or just either side
+   of it from rounding, and the fit is dropped. Real runs are seldom
+   that even, so this hardly matters in practice. The Architecture
+   section and the README promise it, though.
+4. **Suggestion: two comments.** `PaceCurve.h:78`, "The bests of 3
+   bests or more", should say what the constants are: at least 3 bests
+   in the fit's range, the longest at least `PaceFitLongest`.
+   `Summaries.h:139` calls `PaceTableDistances` "durations".
+
+Checked and found sound: `covered()` and `fastest()`, which handle
+records without distance, out of order or on the same second, glitches
+at and over 8 m/s, a distance going back, a start above 0, stops at a
+best's start or in it, the interpolated start at a record spacing of 7
+s, and a run exactly as long as a distance. Also `critical_speed()` at
+the edges (180 and 1200 s in, 1201 out, longest 899 vs 900),
+`fit_line()` in `critical_power()`, `nice_span()`, and
+`LineChart::scale()` with and without `steps`. `steps` is cleared for
+the year to date and the fitness. `log_line()` and `log_ticks()` give
+the power curve the same result as before. `outdoor_run()` and the
+`curve_rides` behind Enter, also through `refresh_in_place()`, work as
+specified.
+
+Tests added by the Reviewer:
+
+- `PaceCurveTest`: `test_out_of_order_and_repeated_seconds`,
+  `test_the_glitch_limit`, `test_distance_from_a_start_above_zero`,
+  `test_a_stop_at_the_start_of_a_best`, `test_critical_speed_bounds`.
+- `SummariesScreenTest`: `test_pace_steps_cleared_for_the_other_lines`,
+  `test_pace_steps_past_a_treadmill`, `test_pace_steps_forward_after_r`
+  (fails, note 1), `test_pace_rows_over_an_hour`,
+  `test_pace_refreshed_in_place`.
+- `SummariesTest`: `test_read_best_times` reads a treadmill run too,
+  which gets best times.

@@ -229,6 +229,104 @@ void test_no_critical_speed_from_an_unsound_fit()
     CHECK(!critical_speed(slower).has_value());
 }
 
+void test_out_of_order_and_repeated_seconds()
+{
+    // A second recorded twice, the second time 50 m on, and a record from
+    // before the last: neither counts, and neither moves the distance on.
+    std::vector<FIT::record> records;
+    auto const               distance = add(records, 0, 100, 4);
+    records.push_back(rec(99, distance + 46));
+    records.push_back(rec(50, 2000));
+    add(records, 100, 201, 4, distance);
+    auto const curve = pace_curve(records);
+    CHECK_EQ(curve.size(), at(1000) + 1);
+    if (curve.size() > at(1000)) {
+        CHECK_EQ(curve[at(400)], 100u);
+        CHECK_EQ(curve[at(1000)], 250u);
+    }
+}
+
+void test_the_glitch_limit()
+{
+    // 8 m/s is still running, and the start is interpolated in it.
+    std::vector<FIT::record> records;
+    add(records, 0, 101, 8);
+    auto const curve = pace_curve(records);
+    CHECK_EQ(curve.size(), at(800) + 1);
+    if (curve.size() > at(800)) {
+        CHECK_EQ(curve[at(400)], 50u);
+        CHECK_EQ(curve[at(800)], 100u);
+    }
+    // Records 7 s apart: 35 m in each is 5 m/s, not 35.
+    records.clear();
+    add(records, 0, 701, 5, 0, 7);
+    auto const spaced = pace_curve(records);
+    CHECK_EQ(spaced.size(), at(3000) + 1);
+    if (!spaced.empty()) {
+        CHECK_EQ(spaced[at(400)], 80u);
+    }
+}
+
+void test_distance_from_a_start_above_zero()
+{
+    // The first record's distance is where the curve starts from, as a
+    // run resumed or a foot pod's count: 1 km on, not 1.5.
+    std::vector<FIT::record> records;
+    add(records, 0, 251, 4, 500);
+    auto const curve = pace_curve(records);
+    CHECK_EQ(curve.size(), at(1000) + 1);
+    if (curve.size() > at(1000)) {
+        CHECK_EQ(curve[at(1000)], 250u);
+    }
+    // Exactly the distance: the whole run.
+    records.clear();
+    add(records, 0, 101, 4);
+    auto const exactly = pace_curve(records);
+    CHECK_EQ(exactly.size(), 1uz);
+    if (!exactly.empty()) {
+        CHECK_EQ(exactly[0], 100u);
+    }
+}
+
+void test_a_stop_at_the_start_of_a_best()
+{
+    // Standing at the start for a minute, then 400 m at 4 m/s: the best
+    // starts as the runner sets off.
+    std::vector<FIT::record> records;
+    add(records, 0, 60, 0);
+    add(records, 60, 101, 4);
+    auto const curve = pace_curve(records);
+    CHECK_EQ(curve.size(), 1uz);
+    if (!curve.empty()) {
+        CHECK_EQ(curve[0], 100u);
+    }
+}
+
+void test_critical_speed_bounds()
+{
+    // From 3 minutes to 20, both in: 800 m in 180 s, 3 km in 900, 4 km
+    // in 1200, at a CS of 3.1 m/s or so with a D' above 0.
+    std::vector<PaceBest> bests(at(4000) + 1, PaceBest { .seconds = 60 });
+    bests[at(800)].seconds = 180;
+    bests[at(1000)].seconds = 179;
+    bests[at(1500)].seconds = 179;
+    bests[at(1609)].seconds = 179;
+    bests[at(2000)].seconds = 179;
+    bests[at(3000)].seconds = 900;
+    bests[at(4000)].seconds = 1200;
+    CHECK(critical_speed(bests).has_value());
+    // 4 km in 1201 s is out of the fit, which leaves two.
+    bests[at(4000)].seconds = 1201;
+    CHECK(!critical_speed(bests).has_value());
+    // Three in it, the longest 899 s.
+    bests[at(4000)].seconds = 1201;
+    bests[at(2000)].seconds = 500;
+    bests[at(3000)].seconds = 899;
+    CHECK(!critical_speed(bests).has_value());
+    bests[at(3000)].seconds = 900;
+    CHECK(critical_speed(bests).has_value());
+}
+
 }
 
 int main()
@@ -243,5 +341,10 @@ int main()
     test_best_pace_curve();
     test_critical_speed();
     test_no_critical_speed_from_an_unsound_fit();
+    test_out_of_order_and_repeated_seconds();
+    test_the_glitch_limit();
+    test_distance_from_a_start_above_zero();
+    test_a_stop_at_the_start_of_a_best();
+    test_critical_speed_bounds();
     return Test::test_result();
 }
