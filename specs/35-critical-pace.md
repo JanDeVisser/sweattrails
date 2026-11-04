@@ -1,6 +1,6 @@
 # Critical pace
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -317,3 +317,18 @@ Tests added by the Reviewer:
   `test_pace_refreshed_in_place`.
 - `SummariesTest`: `test_read_best_times` reads a treadmill run too,
   which gets best times.
+
+### Resolution
+
+1. Fixed in 4973cee: the sport's first activity only holds Left back,
+   and Right goes on up to today. `test_pace_steps_forward_after_r`
+   fails against the old code, and is back in `main()`.
+2. Fixed in b1670a7: the power curve and the best times are cut to
+   `PowerDurations` and `PaceDistances` when the summary file is read.
+   `SummariesTest`'s `test_curves_no_longer_than_their_lists` fails
+   against the old code.
+3. The rule stays, with Jan's agreement: a CS from even easy runs would
+   be the easy pace. The README and this spec now say that a run all at
+   one pace gives no fit (b36acc1).
+4. Fixed in 8295f9e.
+5. The tests were committed with the review notes, in 8992701.
