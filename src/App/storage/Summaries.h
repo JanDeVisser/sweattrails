@@ -53,13 +53,16 @@ struct ActivitySummary {
     // The best average power for each of PowerDurations it lasts: empty
     // without power.
     std::vector<u16> power { }; // W
+    // A run's best time for each of PaceDistances it covered: empty for
+    // anything else.
+    std::vector<u32> best_times { }; // s
 
     bool operator==(ActivitySummary const &) const = default;
 };
 
 using ActivitySummaries = std::vector<ActivitySummary>;
 
-constexpr int SummariesVersion = 3;
+constexpr int SummariesVersion = 4;
 // Read at a time by the job, which other jobs can run between.
 constexpr size_t SummaryChunk = 50;
 

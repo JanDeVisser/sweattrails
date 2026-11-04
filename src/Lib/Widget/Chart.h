@@ -26,8 +26,8 @@ constexpr Color ChartLabelColor = LIGHTGRAY;
 
 using FormatValue = std::function<std::string(double)>;
 
-// A scale from `bottom`, 0 or below, to `top`, in steps of 1, 2 or 5
-// times a power of ten.
+// A scale from `bottom` to `top`, in steps of `step`: 1, 2 or 5 times a
+// power of ten, from 0 or below, unless the chart picks its own steps.
 struct ChartScale {
     double bottom { 0 };
     double top { 1 };
@@ -42,6 +42,9 @@ struct ChartScale {
 // One that `min` fits in too, if it's below 0, as a balance can be: the
 // line at 0 is drawn brighter than the others.
 [[nodiscard]] ChartScale nice_range(double min, double max, int ticks = 5, double min_step = 0);
+// One just around `min` and `max`, not from 0, in the smallest of `steps`
+// that makes `ticks` of them or fewer: a pace's of 15 s or a minute, say.
+[[nodiscard]] ChartScale nice_span(double min, double max, int ticks, std::vector<double> const &steps);
 
 // Which labels, centred at `centres` and as wide as `widths`, can be drawn
 // without overlapping the one drawn before, `gap` apart, from left to

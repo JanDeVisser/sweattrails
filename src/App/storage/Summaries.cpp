@@ -15,9 +15,11 @@
 #include <StringUtil.h>
 
 #include <storage/Activity.h>
+#include <storage/PaceCurve.h>
 #include <storage/PowerCurve.h>
 #include <storage/Storage.h>
 #include <storage/Summaries.h>
+#include <storage/Volume.h>
 
 namespace ST {
 
@@ -52,6 +54,13 @@ JSONValue encode(ActivitySummary const &summary)
         }
         json.set("power", power);
     }
+    if (!summary.best_times.empty()) {
+        auto best_times = JSONValue::array();
+        for (auto const seconds : summary.best_times) {
+            best_times.append(JSONValue { seconds });
+        }
+        json.set("best_times", best_times);
+    }
     return json;
 }
 
@@ -83,6 +92,13 @@ Decoded<ActivitySummary> decode(JSONValue const &json)
     }
     if (json.has("power")) {
         ret.power = TRY_EVAL(json.try_get_array<u16>("power"));
+        // No more than there are durations, or distances below, which the
+        // curves are indexed with: a file edited by hand could have more.
+        ret.power.resize(std::min(ret.power.size(), PowerDurations.size()));
+    }
+    if (json.has("best_times")) {
+        ret.best_times = TRY_EVAL(json.try_get_array<u32>("best_times"));
+        ret.best_times.resize(std::min(ret.best_times.size(), PaceDistances.size()));
     }
     return ret;
 }
@@ -217,6 +233,10 @@ ActivitySummary read_summary(Storage &storage, SummaryFile const &file)
     }
     ret.hr_load = activity.segment.hr_load;
     ret.power = power_curve(activity.recorded);
+    // Treadmill runs too: which runs count is the pace curve's to say.
+    if (volume_sport(ret.sport, ret.sub_sport) == VolumeSport::Running) {
+        ret.best_times = pace_curve(activity.recorded);
+    }
     return ret;
 }
 

@@ -84,6 +84,20 @@ struct PowerBest {
 [[nodiscard]] std::vector<PowerBest> best_curve(ActivitySummaries const &summaries, std::chrono::year_month_day first,
     std::chrono::year_month_day last);
 
+struct Point {
+    double x { 0 };
+    double y { 0 };
+};
+
+struct Line {
+    double slope { 0 };
+    double intercept { 0 };
+};
+
+// The least-squares line through the points. None for fewer than two, or
+// all at one x.
+[[nodiscard]] std::optional<Line> fit_line(std::span<Point const> points);
+
 struct CriticalPower {
     float64 cp { 0 };      // W
     float64 w_prime { 0 }; // J
