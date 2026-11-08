@@ -283,4 +283,64 @@ that a window resize redraws the graph.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: the legend never goes back to the ranges once the graph has
+   been hovered.** `draw_legend()` (`src/App/widget/Activity.cpp:350-361`)
+   shows the values whenever `activity->mark` is set, but the mark is only
+   cleared by a press in the graph (`Activity.cpp:449`): `process_input()`
+   returns at `if (!mouse_in())` (`:445`) without clearing it, and nothing
+   else does. So moving the mouse over the graph and then off it leaves
+   the hover values in the legend for as long as the activity is shown,
+   and the ranges are only visible before the first hover. Clicking a
+   maximum in the data panel also puts values in the legend without the
+   mouse being over the graph. The spec says the values show "while the
+   mouse is over the graph". Fix: in `draw_legend()`, show the values only
+   while `mouse_in()` (and the mark is set), else the ranges; keep the
+   mark itself for the map's dot and the mark's line. Not tested: it
+   needs mouse input.
+2. **Bug: when the clock goes back, the 5 s average becomes a running
+   average until the clock catches up.** `RollingAverage::add()`
+   (`src/App/widget/GraphData.cpp:69-77`) only restarts on a forward gap
+   and only drops samples from the front once `front.at + 5 <= at`. After
+   a record earlier than the one before it, the front stays later than
+   every new `at`, so nothing is dropped and every value since the jump is
+   averaged in, along with the 5 s before it: an hour's clock correction
+   gives an hour-long running average of power and speed. Fix: also
+   `clear()` when `at < window.back().at`. Test:
+   `test_average_restarts_when_the_clock_goes_back`, which fails.
+3. **Bug (against the spec): the legend's ranges come from the column
+   averages, not from the values.** `render_lines()` and
+   `render_compared()` (`Activity.cpp:505`, `:542`) call `graph_scale()`
+   on `graph_columns()`. With more records than pixels (a 3 h ride is
+   10,800 records on a ~1,000 px plot) each column averages ~10 records,
+   so "HR 102–178 bpm" shows as something like "HR 105–172 bpm": the
+   heart rate and altitude ranges no longer match the data panel's
+   min/max, which the spec asks for ("from the lowest to the highest"),
+   and power and speed are below "the highest smoothed value". The
+   numbers also change when the window is resized. Fix: take the scale
+   from the `graph_series()` values (the line then fills the plot nearly,
+   not exactly), or change the spec to say the ranges are those of the
+   drawn columns.
+4. **Suggestion: the bands are fixed in pixels, the labels aren't.**
+   `TopBand = 50` and `BottomBand = 20` (`src/App/widget/Activity.h:116-117`),
+   and the km labels at `TopBand - 22` (`Activity.cpp:382`), fit the
+   default small font (15 px). The small font is 3/4 of the
+   `appearance.font_size` setting: from a font size of about 28, the time
+   labels (`below + 3`, `:384`) run out of the widget into the one below,
+   and the legend runs into the km labels. The spec asks for "one
+   small-font row"; derive the bands from `char_size(FontSize::Small).y`,
+   as `strip_height()` already does with `char_size()`.
+5. **Suggestion: the hover legend is a guess at "over the graph".**
+   `mouse_in()` also covers the legend, the km row, the time row and the
+   20 px right of the plot, so a press on a time label or in the legend
+   starts a drag. Harmless, but the plot area would be the clearer hit
+   area, now that the widget has bands above and below it.
+6. **Suggestion (nit):** `std::vector<size_t> shown` in `draw_ticks()`
+   (`Activity.cpp:336`) is unused.
+
+Tests added to `test/GraphDataTest.cpp`:
+`test_average_restarts_when_the_clock_goes_back` (fails, finding 2),
+`test_repeated_timestamps_are_averaged`, `test_cadence_is_as_recorded`,
+`test_columns_take_every_record_once`,
+`test_time_ticks_after_the_specs_pause`, `test_ticks_at_the_edges` and
+`test_legend_range_while_comparing` (all pass). The full run fails only on
+`graph_data_test`, because of finding 2.

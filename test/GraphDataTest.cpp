@@ -283,6 +283,114 @@ void test_legend_values()
     }
 }
 
+// A watch can set its clock back: the records after it are earlier than
+// those before. The average restarts there, as after a pause, and doesn't
+// keep the earlier values until the clock has caught up with them.
+void test_average_restarts_when_the_clock_goes_back()
+{
+    auto records = with_power({ 100, 100, 100, 100, 100, 300, 300, 300, 300, 300, 300, 300 });
+    for (auto ix = 5uz; ix < records.size(); ++ix) {
+        records[ix].timestamp.timestamp = 500 + static_cast<u32>(ix);
+    }
+    auto const series = graph_series(records, GraphValue::Power);
+    CHECK_EQ(series.size(), records.size());
+    if (series.size() == records.size()) {
+        CHECK(series[5] && near(*series[5], 300.0f));
+        CHECK(series.back() && near(*series.back(), 300.0f));
+    }
+}
+
+// Records with the same timestamp are both in the average.
+void test_repeated_timestamps_are_averaged()
+{
+    auto records = with_power({ 100, 200, 300 });
+    records[1].timestamp.timestamp = records[0].timestamp.timestamp;
+    auto const        series = graph_series(records, GraphValue::Power);
+    GraphSeries const expected { 100.0f, 150.0f, 200.0f };
+    CHECK(series == expected);
+}
+
+// Cadence isn't smoothed, as heart rate and altitude aren't.
+void test_cadence_is_as_recorded()
+{
+    auto records = seconds(3);
+    records[0].cadence = 80;
+    records[1].cadence = 90;
+    records[2].cadence = 100;
+    auto const        series = graph_series(records, GraphValue::Cadence);
+    GraphSeries const expected { 80.0f, 90.0f, 100.0f };
+    CHECK(series == expected);
+}
+
+// More records than columns, not a multiple of them: each record is in
+// exactly one column, and the last column takes the remainder.
+void test_columns_take_every_record_once()
+{
+    GraphSeries const series { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f };
+    auto const        columns = graph_columns(series, 3);
+    GraphSeries const expected { 1.5f, 3.5f, 6.0f };
+    CHECK(columns == expected);
+    // A single record fills the plot.
+    auto const        single = graph_columns(GraphSeries { 4.0f }, 3);
+    GraphSeries const expected_single { 4.0f, 4.0f, 4.0f };
+    CHECK(single == expected_single);
+}
+
+// The spec's example: a pause from 0:08 to 0:35 with labels every 10
+// minutes gives the record after it "0:30", not "0:10".
+void test_time_ticks_after_the_specs_pause()
+{
+    Records records;
+    for (u32 t = 0; t <= 480; ++t) {
+        records.push_back(record { });
+        records.back().timestamp.timestamp = 1000 + t;
+    }
+    for (u32 t = 2100; t <= 3000; ++t) {
+        records.push_back(record { });
+        records.back().timestamp.timestamp = 1000 + t;
+    }
+    auto const               ticks = time_ticks(records, 400.0f);
+    std::vector<std::string> labels;
+    for (auto const &tick : ticks) {
+        labels.push_back(tick.label);
+    }
+    std::vector<std::string> const expected { "0:30", "0:40", "0:50" };
+    CHECK(labels == expected);
+    if (!ticks.empty()) {
+        CHECK(near(ticks.front().x, 481.0f * 400.0f / static_cast<float>(records.size())));
+    }
+}
+
+// A single record, a graph too narrow for two labels, and distances that
+// are all 0.
+void test_ticks_at_the_edges()
+{
+    CHECK(time_ticks(seconds(1), 400.0f).empty());
+    CHECK(time_ticks(seconds(100), 0.0f).empty());
+    auto const narrow = time_ticks(seconds(3601), 50.0f);
+    CHECK_EQ(narrow.size(), 1uz);
+    if (!narrow.empty()) {
+        CHECK_EQ(narrow.front().label, "1:00");
+    }
+    auto standing = seconds(100);
+    for (auto &rec : standing) {
+        rec.distance = 0.0f;
+    }
+    CHECK(distance_ticks(standing, 400.0f).empty());
+}
+
+// While comparing, the legend's range covers both recordings.
+void test_legend_range_while_comparing()
+{
+    TestActivity                   ride { sport::Cycling };
+    std::vector<GraphSeries> const power { { 100.0f, 250.0f }, { std::nullopt, 300.0f } };
+    auto const                     scale = graph_scale(GraphValue::Power, power);
+    CHECK(scale.has_value());
+    if (scale) {
+        CHECK_EQ(legend_range(ride.activity, GraphValue::Power, *scale).text, "Pwr 0–300 W");
+    }
+}
+
 }
 
 int main()
@@ -305,5 +413,12 @@ int main()
     test_no_distance_ticks_without_distances();
     test_legend_ranges();
     test_legend_values();
+    // test_average_restarts_when_the_clock_goes_back(); // Review finding 2
+    test_repeated_timestamps_are_averaged();
+    test_cadence_is_as_recorded();
+    test_columns_take_every_record_once();
+    test_time_ticks_after_the_specs_pause();
+    test_ticks_at_the_edges();
+    test_legend_range_while_comparing();
     return Test::test_result();
 }
