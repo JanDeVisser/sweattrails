@@ -212,7 +212,7 @@ void ActivityDataDisplay::set_activity(std::shared_ptr<DisplayedActivity> const 
 }
 
 ActivityGraph::ActivityGraph(pWidget const &parent)
-    : Widget(parent, SizePolicy::Absolute, TopBand + 150.0f + BottomBand)
+    : Widget(parent, SizePolicy::Absolute, PlotHeight)
 {
 }
 
@@ -226,6 +226,11 @@ void ActivityGraph::initialize()
 {
 }
 
+float ActivityGraph::needed_height()
+{
+    return top_band() + PlotHeight + bottom_band();
+}
+
 namespace {
 
 // The strip's laps alternate between these, so that each boundary shows.
@@ -237,6 +242,8 @@ constexpr Color SelectedRangeShade = { 255, 255, 255, 40 };
 constexpr float LabelGap = 10.0f;
 // How far a tick mark sticks out from the plot or the strip.
 constexpr float TickLength = 4.0f;
+// The legend's distance from the top of the graph.
+constexpr float LegendTop = 5.0f;
 
 // One line of the graph, drawn a pixel column at a time. A column without
 // a value breaks it: a dropout shows as a gap.
@@ -270,6 +277,21 @@ std::span<record const> as_recorded(Activity const &activity)
 
 }
 
+float ActivityGraph::label_row()
+{
+    return std::ceilf(App::the()->char_size(FontSize::Small).y);
+}
+
+float ActivityGraph::top_band()
+{
+    return LegendTop + label_row() + LabelGap / 2 + label_row() + TickLength + 2;
+}
+
+float ActivityGraph::bottom_band()
+{
+    return TickLength + label_row() + 2;
+}
+
 float ActivityGraph::plot_width() const
 {
     return viewport.width - 20;
@@ -277,7 +299,7 @@ float ActivityGraph::plot_width() const
 
 float ActivityGraph::plot_height() const
 {
-    return viewport.height - TopBand - strip_height() - BottomBand;
+    return viewport.height - top_band() - strip_height() - bottom_band();
 }
 
 float ActivityGraph::strip_height() const
@@ -293,7 +315,7 @@ Rectangle ActivityGraph::strip_area() const
     auto const height = strip_height();
     return Rectangle {
         .x = viewport.x,
-        .y = viewport.y + TopBand + plot_height(),
+        .y = viewport.y + top_band() + plot_height(),
         .width = plot_width(),
         .height = height,
     };
@@ -323,7 +345,7 @@ void ActivityGraph::draw_selected_range() const
     auto const dt = plot_width() / static_cast<float>(activity->activity.records.size());
     auto const x0 = static_cast<float>(activity->segment->min) * dt;
     auto const x1 = static_cast<float>(activity->segment->max + 1) * dt;
-    draw_rectangle_no_normalize(x0, TopBand, x1 - x0, plot_height(), SelectedRangeShade);
+    draw_rectangle_no_normalize(x0, top_band(), x1 - x0, plot_height(), SelectedRangeShade);
 }
 
 // Labels centred on their ticks, at `y`, those that would overlap the one
@@ -363,7 +385,7 @@ void ActivityGraph::draw_legend() const
     }
     auto x = 0.0f;
     for (auto const &label : labels) {
-        x += render_text(x, 5, label.text, FontSize::Small, label.color).x + LabelGap;
+        x += render_text(x, LegendTop, label.text, FontSize::Small, label.color).x + LabelGap;
     }
 }
 
@@ -374,18 +396,19 @@ void ActivityGraph::draw()
     }
     auto const height = plot_height();
     if (texture.id != 0) {
-        draw_line(0, TopBand + height / 2, plot_width(), TopBand + height / 2, ChartGridColor);
+        draw_line(0, top_band() + height / 2, plot_width(), top_band() + height / 2, ChartGridColor);
     }
-    render_texture(0, TopBand, texture);
+    render_texture(0, top_band(), texture);
     draw_selected_range();
     draw_strip();
-    draw_ticks(km_labels, TopBand - 22, TopBand - TickLength, TickLength);
-    auto const below = TopBand + height + strip_height();
-    draw_ticks(time_labels, below + 3, below, TickLength);
+    auto const top = top_band();
+    draw_ticks(km_labels, top - TickLength - 2 - label_row(), top - TickLength, TickLength);
+    auto const below = top + height + strip_height();
+    draw_ticks(time_labels, below + TickLength, below, TickLength);
     if (activity->mark && *activity->mark < activity->activity.records.size()) {
         auto const dt = plot_width() / static_cast<float>(activity->activity.records.size());
         auto const x = static_cast<float>(*activity->mark) * dt;
-        draw_line(x, TopBand, x, TopBand + height, BLACK);
+        draw_line(x, top_band(), x, top_band() + height, BLACK);
     }
     draw_legend();
 }
@@ -661,6 +684,13 @@ void ActivityDisplay::on_draw()
     if (activity && laps->selection != activity->lap) {
         laps->select(activity->lap);
     }
+}
+
+// The graph's bands are as high as their text, which the fonts, loaded
+// after the widgets are made, decide.
+void ActivityDisplay::on_resize()
+{
+    graph->policy_size = ActivityGraph::needed_height();
 }
 
 void ActivityDisplay::initialize()

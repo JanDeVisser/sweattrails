@@ -111,10 +111,8 @@ private:
 };
 
 struct ActivityGraph : public Widget {
-    // Above the plot: the legend, and the km labels under it. Below the
-    // plot and the lap strip: the time labels.
-    static constexpr float TopBand = 50.0f;
-    static constexpr float BottomBand = 20.0f;
+    // The plot's height, without the bands around it.
+    static constexpr float PlotHeight = 150.0f;
 
     std::shared_ptr<DisplayedActivity> activity;
     bool                               dragging { false };
@@ -132,10 +130,18 @@ struct ActivityGraph : public Widget {
     void resize() override;
     void process_input() override;
     void set_activity(std::shared_ptr<DisplayedActivity> const &activity);
+    // The plot and the bands around it.
+    [[nodiscard]] static float needed_height();
 
 private:
-    [[nodiscard]] float plot_width() const;
-    [[nodiscard]] float plot_height() const;
+    // Above the plot: the legend, and the km labels under it. Below the
+    // plot and the lap strip: the time labels. A row of the small font
+    // each, so that they grow with it.
+    [[nodiscard]] static float label_row();
+    [[nodiscard]] static float top_band();
+    [[nodiscard]] static float bottom_band();
+    [[nodiscard]] float        plot_width() const;
+    [[nodiscard]] float        plot_height() const;
     // Draws the lines into `image`, and works out the legend and labels,
     // for the activity and the plot's size.
     void render();
@@ -179,6 +185,7 @@ struct ActivityDisplay : public Layout {
     void               show_preview(bool on);
     void               initialize() override;
     void               on_draw() override;
+    void               on_resize() override;
 
 private:
     void show_laps();
