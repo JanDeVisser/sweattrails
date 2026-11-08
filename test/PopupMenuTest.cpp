@@ -7,6 +7,7 @@
  * skip greyed-out items, and which item is under the mouse.
  */
 
+#include <algorithm>
 #include <format>
 #include <memory>
 #include <string>
@@ -144,6 +145,90 @@ void test_menu_position()
     CHECK_EQ(tiny.y, 0.0f);
 }
 
+// Reviewer: the menu is closed when the action runs, so that an action
+// that opens a modal of its own, such as a message, has it on top, and
+// it stays open.
+void test_the_action_runs_after_the_menu_closed()
+{
+    std::vector<MenuItem>      items;
+    auto                       menu_open = true;
+    auto const                 other = std::make_shared<Modal>("Another");
+    std::shared_ptr<PopupMenu> menu;
+    items.push_back({ .title = "Item", .action = [&]() {
+                         menu_open = std::ranges::find(App::the()->modals, std::static_pointer_cast<Widget>(menu)) != App::the()->modals.end();
+                         other->make_visible();
+                     } });
+    menu = std::make_shared<PopupMenu>(Vector2 { 100, 100 }, std::move(items));
+    menu->select_next(1);
+    menu->make_visible();
+    menu->process_key(KModNone, KEY_ENTER);
+    CHECK(!menu_open);
+    CHECK(App::the()->modals.size() == 1 && App::the()->modals.back() == other);
+    App::the()->pop_modal(other);
+}
+
+// Reviewer: with a modifier, the keys aren't the menu's: Ctrl+Down
+// doesn't move, and Shift+Enter doesn't choose.
+void test_keys_with_a_modifier()
+{
+    TestMenu t;
+    CHECK(!t.menu->process_key(KModControl, KEY_DOWN));
+    CHECK(t.menu->selection == 0uz);
+    CHECK(!t.menu->process_key(KModShift, KEY_ENTER));
+    CHECK(t.ran.empty());
+    CHECK(t.menu->status == ModalStatus::Active);
+}
+
+// Reviewer: Esc closes a menu with nothing to choose, and an item without
+// an action closes it too.
+void test_closing_without_actions()
+{
+    TestMenu nothing { { false, false } };
+    nothing.press(KEY_ESCAPE);
+    CHECK(nothing.menu->status == ModalStatus::Dismissed);
+    CHECK(App::the()->modals.empty());
+
+    auto menu = std::make_shared<PopupMenu>(Vector2 { 100, 100 }, std::vector<MenuItem> { { .title = "No action" } });
+    menu->select_next(1);
+    menu->make_visible();
+    menu->process_key(KModNone, KEY_ENTER);
+    CHECK(menu->status == ModalStatus::Submitted);
+    CHECK(App::the()->modals.empty());
+}
+
+// Reviewer: a frame without a click or a key leaves the menu open, and
+// runs nothing.
+void test_a_frame_without_input()
+{
+    TestMenu t;
+    App::the()->process_input();
+    CHECK(t.menu->status == ModalStatus::Active);
+    CHECK(App::the()->modals.size() == 1);
+    CHECK(t.ran.empty());
+}
+
+// Reviewer: the edges of the rows: the last row's bottom, and the padding
+// under it.
+void test_item_at_the_bottom()
+{
+    TestMenu t;
+    t.menu->viewport = Rect<float> { 100.0f, 100.0f, 100.0f, 92.0f };
+    t.menu->row_height = 20;
+    CHECK(t.menu->item_at({ 150, 185.9f }) == 3uz);
+    CHECK(!t.menu->item_at({ 150, 187 }).has_value());
+    CHECK(t.menu->item_at({ 100, 110 }) == 0uz);
+    CHECK(!t.menu->item_at({ 200, 110 }).has_value());
+}
+
+// Reviewer: a menu that just fits stays right of and below the click.
+void test_menu_position_just_fitting()
+{
+    Rectangle const screen { .x = 0, .y = 0, .width = 800, .height = 600 };
+    auto const      at = menu_position({ 600, 450 }, { 200, 150 }, screen);
+    CHECK_EQ(at.x, 600.0f);
+    CHECK_EQ(at.y, 450.0f);
+}
+
 }
 
 int main()
@@ -157,5 +242,11 @@ int main()
     test_a_greyed_out_item_cant_be_chosen();
     test_item_at();
     test_menu_position();
+    test_the_action_runs_after_the_menu_closed();
+    test_keys_with_a_modifier();
+    test_closing_without_actions();
+    test_a_frame_without_input();
+    test_item_at_the_bottom();
+    test_menu_position_just_fitting();
     return Test::test_result();
 }

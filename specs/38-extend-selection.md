@@ -257,4 +257,69 @@ None.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug (against the spec): with records a few seconds apart, a short
+   slowdown is a stop.** `stops()` (`src/App/storage/Boundaries.cpp:140`)
+   calls it a stop when two *moving* records are more than
+   `RangeMovingGap` apart. With 1 s records that matches the spec, but
+   with smart recording it doesn't: moving at t=0, one record standing
+   still at t=6, moving again at t=11 is a stop (11 s), though there's no
+   pause of more than 10 s, and the moving time leaves out 6 s of standing
+   still. So "On to the stop" stops at a slow corner. Fix: add up what the
+   moving time leaves out since the last moving record (the gaps of still
+   records, and gaps over `RangeMovingGap`), and make it a stop when a gap
+   is over `RangeMovingGap` or the still time reaches it. Test:
+   `test_a_slowdown_between_sparse_records_is_not_a_stop`, which fails.
+2. **Bug: 10 s of standing still at the end of an activity isn't a stop,
+   while 10 s in the middle is.** The end stop
+   (`Boundaries.cpp:145`) is measured from the last moving record to the
+   last record, with `> RangeMovingGap`. In the middle the gap runs to the
+   next moving record, which adds that record's own second. Records 60-69
+   still at the end of 70 is 10 s that the moving time leaves out, but not
+   a stop, so "On to the stop" is greyed out there. The same 10 records at
+   20-29 are a stop. Fix: `>= RangeMovingGap` for the end (or fold it
+   into the fix for 1). Test: `test_ten_seconds_still_at_the_end`, which
+   fails; `test_ten_seconds_still_in_the_middle` passes.
+3. **Bug: the menu's action can start from the wrong record.** Decision 3
+   relies on the mark staying put while the menu is open, but the action
+   runs later: it submits the task to the bus
+   (`src/App/SweatTrails.cpp:1932`), which `handle_one()` runs one message
+   per frame, after the menu closed. Meanwhile
+   `ActivityGraph::process_input()` (`src/App/widget/Activity.cpp:497-498`)
+   moves the mark to the record under the mouse. Sequence: no selection,
+   right-click at record R, move the mouse over "On to the km" (records
+   further right), press Enter while a message is ahead in the queue (a
+   download's or sync's notification): the extension starts from the
+   record under the menu item, not R. A click on an item usually escapes
+   it, as the graph doesn't set the mark while the button is held. Fix:
+   pass the start in the task's arguments from the menu (`{"from": R}`),
+   and let `extend()` take it, falling back to the mark from the palette.
+   Not tested: it needs the bus and the graph with a window.
+4. **Suggestion: an activity with one real lap and an empty one gets lap
+   items.** `extend_to()` (`Boundaries.cpp:164`) greys the lap items out
+   when `laps.size() < 2`, counting laps without records, which a watch
+   can log. With laps [0, 100) and [100, 100), "On to the lap" goes to the
+   last record and "Back to the lap" to the first, which the spec greys
+   out for one lap. `has_laps()` counts the same way, so it's consistent
+   with the lap table; consider counting laps with records in both.
+5. **Missing test (added): the stop, km and lap edge cases.** In
+   `test/BoundariesTest.cpp`: the threshold of standing still,
+   a clock going back (also at the start), no or one record or all
+   standing still, Back and On to stops at the start and end, from inside
+   a stop, distances starting partway or past the first km, empty laps
+   and laps not covering all records. All pass but the two in 1 and 2.
+6. **Missing test (added): extending in `DisplayedActivity`.** Back from
+   the mark, after a short drag that was cleared, from a lap without
+   records, from a mark past the records, during a drag (no change, the
+   drag goes on), and the comparison of an extended range, a short one
+   included, while comparing. All pass.
+7. **Missing test (added): the menu.** The action runs after the menu
+   has closed, and a modal it opens stays on top; modified keys aren't
+   the menu's; Esc on a menu with nothing to choose; an item without an
+   action; a frame without input leaves it open; the rows' bottom edge;
+   a menu that just fits. All pass.
+8. **Suggestion: make the menu's mouse handling testable.** Clicking an
+   item, a click outside, and the hover are only tested by hand, as
+   `PopupMenu::process_input()` (`src/Lib/Widget/PopupMenu.cpp:100`)
+   asks raylib. A `handle_mouse(mouse, moved, pressed)` that
+   `process_input()` calls would let a test cover them, as
+   `ListBox::handle_scrolling()` does for the scrollbar.

@@ -572,6 +572,105 @@ void test_no_extending_while_dragging()
     CHECK(!d.can_extend(Boundary::Lap, Direction::On));
 }
 
+// Reviewer: back from the mark, to the start of its lap, and on again.
+void test_extend_back_from_the_mark()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.set_mark(25);
+    CHECK(d.extend(Boundary::Lap, Direction::Back));
+    CHECK(d.segment.has_value() && d.segment->min == 10 && d.segment->max == 25);
+    CHECK(d.range_stats.has_value());
+    CHECK(d.extend(Boundary::Lap, Direction::Back));
+    CHECK(d.segment.has_value() && d.segment->min == 0 && d.segment->max == 25);
+    CHECK(!d.can_extend(Boundary::Lap, Direction::Back));
+}
+
+// Reviewer: a drag too short to keep, a click say, leaves no range: the
+// mark is where extending starts.
+void test_extend_after_a_short_drag()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.start_segment(15);
+    d.set_segment(17);
+    d.end_segment();
+    CHECK(!d.segment.has_value());
+    d.set_mark(17);
+    CHECK(d.extend(Boundary::Lap, Direction::On));
+    CHECK(d.segment.has_value() && d.segment->min == 17 && d.segment->max == 39);
+}
+
+// Reviewer: a lap without records, which a watch can log, has no range,
+// so extending starts from the mark, and the lap isn't selected after.
+void test_extend_from_an_empty_lap()
+{
+    TestActivity t { { 10, 10, 40, 100 } };
+    auto        &d = *t.displayed;
+    d.select_lap(1);
+    CHECK(!d.segment.has_value());
+    CHECK(!d.extend(Boundary::Lap, Direction::On));
+    CHECK(d.lap == 1uz);
+    d.set_mark(20);
+    CHECK(d.extend(Boundary::Lap, Direction::On));
+    CHECK(!d.lap.has_value());
+    CHECK(d.segment.has_value() && d.segment->min == 20 && d.segment->max == 39);
+}
+
+// Reviewer: a mark past the records, left from a longer activity, is
+// nothing to start from.
+void test_extend_from_a_mark_past_the_records()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.set_mark(100);
+    CHECK(!d.can_extend(Boundary::Lap, Direction::Back));
+    CHECK(!d.extend(Boundary::Lap, Direction::Back));
+    CHECK(!d.segment.has_value());
+}
+
+// Reviewer: during a drag, extend() doesn't take over the range being
+// dragged, nor end the drag.
+void test_extend_while_dragging()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.start_segment(15);
+    d.set_segment(25);
+    CHECK(!d.extend(Boundary::Lap, Direction::On));
+    CHECK(d.anchor == 15uz);
+    CHECK(d.segment.has_value() && d.segment->min == 15 && d.segment->max == 25);
+}
+
+// Reviewer: while comparing, the comparison is the extended range's, a
+// short one included, and no longer the lap's.
+void test_comparison_of_an_extended_range()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    for (auto ix = 0uz; ix < d.activity.recorded.size(); ++ix) {
+        d.activity.recorded[ix].power = static_cast<u16>(ix < 10 ? 100 : 200);
+    }
+    auto other = d.activity;
+    for (auto &rec : other.recorded) {
+        rec.power = static_cast<u16>(*rec.power - 10);
+    }
+    d.compare_with(other);
+    d.select_lap(0);
+    CHECK(d.comparison().has_value() && d.comparison()->avg_power.shown == 100.0);
+    // Records 0 to 39, 10 at 100 W and 30 at 200 W.
+    CHECK(d.extend(Boundary::Lap, Direction::On));
+    auto const range = d.comparison();
+    CHECK(range.has_value() && range->avg_power.shown == 175.0 && range->avg_power.other == 165.0);
+
+    // Records 38 and 39, two seconds.
+    d.whole_activity();
+    d.set_mark(38);
+    CHECK(d.extend(Boundary::Lap, Direction::On));
+    auto const short_range = d.comparison();
+    CHECK(short_range.has_value() && short_range->avg_power.shown == 200.0);
+}
+
 int main()
 {
     test_current_record();
@@ -581,6 +680,12 @@ int main()
     test_extend_from_nothing();
     test_extend_to_nothing();
     test_no_extending_while_dragging();
+    test_extend_back_from_the_mark();
+    test_extend_after_a_short_drag();
+    test_extend_from_an_empty_lap();
+    test_extend_from_a_mark_past_the_records();
+    test_extend_while_dragging();
+    test_comparison_of_an_extended_range();
     test_keep_lap();
     test_comparison();
     test_comparison_of_a_lap_by_the_clock();
