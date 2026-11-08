@@ -71,8 +71,11 @@ std::string format_compared(Compared const &compared, std::string_view unit, flo
 std::string compared_suffix(std::string_view device);
 
 // The graph's colors, which the banner under the cursor uses too. The
-// other recording's lines are a lighter shade of them.
-constexpr Color PowerColor = DARKBLUE;
+// other recording's lines are a lighter shade of them. Light enough to
+// read on the dark background.
+constexpr Color AltitudeColor = LIGHTGRAY;
+constexpr Color SpeedColor = LIME;
+constexpr Color PowerColor = SKYBLUE;
 constexpr Color HeartRateColor = RED;
 constexpr Color CadenceColor = PURPLE;
 

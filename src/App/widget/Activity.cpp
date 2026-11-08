@@ -309,7 +309,7 @@ void ActivityGraph::draw()
             }
         } else {
             if (record.altitude) {
-                banner.push_back({ std::format("Alt {} m", std::truncf(*record.altitude)), LIGHTGRAY });
+                banner.push_back({ std::format("Alt {} m", std::truncf(*record.altitude)), AltitudeColor });
                 sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
             }
             if (record.power) {
@@ -317,7 +317,7 @@ void ActivityGraph::draw()
                 sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
             }
             if (record.speed) {
-                banner.push_back({ std::format("Spd {:.1f} km/h", *record.speed * 3.6), DARKGREEN });
+                banner.push_back({ std::format("Spd {:.1f} km/h", *record.speed * 3.6), SpeedColor });
                 sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
             }
             if (record.heart_rate) {
@@ -463,7 +463,7 @@ void ActivityGraph::set_activity(std::shared_ptr<DisplayedActivity> const &activ
                 ImageDrawRectangleRec(
                     &image,
                     Rectangle { .x = prev_x, .y = alt_y, .width = std::ceilf(x - prev_x), .height = height - alt_y },
-                    LIGHTGRAY);
+                    AltitudeColor);
             }
             if (dspeed_maybe && record.speed) {
                 float speed_y = height - *record.speed * *dspeed_maybe;
@@ -471,7 +471,7 @@ void ActivityGraph::set_activity(std::shared_ptr<DisplayedActivity> const &activ
                     &image,
                     Vector2 { .x = prev_x, .y = std::ceilf(prev_speed) },
                     Vector2 { .x = x, .y = std::ceilf(speed_y) },
-                    DARKGREEN);
+                    SpeedColor);
                 prev_speed = speed_y;
             }
             if (dhr_maybe && record.heart_rate) {
@@ -480,7 +480,7 @@ void ActivityGraph::set_activity(std::shared_ptr<DisplayedActivity> const &activ
                     &image,
                     Vector2 { .x = prev_x, .y = std::ceilf(prev_hr) },
                     Vector2 { .x = x, .y = std::ceilf(hr_y) },
-                    RED);
+                    HeartRateColor);
                 prev_hr = hr_y;
             }
             if (dpower_maybe && record.power) {
@@ -489,7 +489,7 @@ void ActivityGraph::set_activity(std::shared_ptr<DisplayedActivity> const &activ
                     &image,
                     Vector2 { .x = prev_x, .y = std::ceilf(prev_power) },
                     Vector2 { .x = x, .y = std::ceilf(power_y) },
-                    DARKBLUE);
+                    PowerColor);
                 prev_power = power_y;
             }
             prev_x = x;
