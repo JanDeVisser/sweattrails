@@ -125,24 +125,30 @@ std::vector<Stop> stops(std::span<record const> recorded)
 {
     std::vector<Stop>     ret;
     std::optional<size_t> last_moving;
-    // Where the activity started standing still, if it did before moving.
-    auto const start_still = [&recorded](size_t first_moving) {
-        return first_moving > 0 && seconds_between(recorded.front(), recorded[first_moving]) > RangeMovingGap;
-    };
+    // What the moving time leaves out since the last record that moved:
+    // the time up to each record standing still, and each pause.
+    i64  left_out = 0;
+    bool paused = false;
+    auto stopped = [&left_out, &paused]() { return paused || left_out >= RangeMovingGap; };
     for (auto ix = 0uz; ix < recorded.size(); ++ix) {
+        auto const gap = ix > 0 ? seconds_between(recorded[ix - 1], recorded[ix]) : 0;
+        // A clock going back is no time at all.
+        if (gap > RangeMovingGap) {
+            paused = true;
+        } else if (gap > 0 && still(recorded[ix])) {
+            left_out += gap;
+        }
         if (still(recorded[ix])) {
             continue;
         }
-        if (!last_moving) {
-            if (start_still(ix)) {
-                ret.push_back({ .first_moving = ix });
-            }
-        } else if (seconds_between(recorded[*last_moving], recorded[ix]) > RangeMovingGap) {
+        if (ix > 0 && stopped()) {
             ret.push_back({ .last_moving = last_moving, .first_moving = ix });
         }
         last_moving = ix;
+        left_out = 0;
+        paused = false;
     }
-    if (last_moving && *last_moving + 1 < recorded.size() && seconds_between(recorded[*last_moving], recorded.back()) > RangeMovingGap) {
+    if (last_moving && stopped()) {
         ret.push_back({ .last_moving = last_moving });
     }
     return ret;

@@ -373,13 +373,13 @@ int main()
     test_stops_from_the_recorded_speeds();
     test_from_past_the_records();
     test_ten_seconds_still_in_the_middle();
-    // test_ten_seconds_still_at_the_end(); // Review finding 2
+    test_ten_seconds_still_at_the_end();
     test_a_clock_going_back_is_not_a_stop();
     test_no_stops_in_too_few_records();
     test_stop_on_and_back_to_the_ends();
     test_stop_from_inside_a_stop();
     test_km_with_distances_from_partway();
     test_laps_empty_and_not_covering_the_records();
-    // test_a_slowdown_between_sparse_records_is_not_a_stop(); // Review finding 1
+    test_a_slowdown_between_sparse_records_is_not_a_stop();
     return Test::test_result();
 }

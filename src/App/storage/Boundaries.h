@@ -39,11 +39,12 @@ struct Stop {
 };
 
 // The stops of the records as recorded, as the moving time sees them: a
-// record slower than RangeMovingSpeed stands still, and a stop is more
-// than RangeMovingGap seconds between two records that move. That's a
-// pause that recorded nothing, or about 10 seconds or more of standing
-// still, but not a slowdown of a few seconds. Records without a speed
-// move, so only pauses stop them.
+// record slower than RangeMovingSpeed stands still, and a stop is where
+// the moving time leaves out RangeMovingGap seconds or more between two
+// records that move. That's a pause of more than RangeMovingGap that
+// recorded nothing, or as long standing still, but not a slowdown of a
+// few seconds, however far apart the records are. Records without a
+// speed move, so only pauses stop them.
 [[nodiscard]] std::vector<Stop> stops(std::span<record const> recorded);
 
 // The record the selection's start moves back to, or its end on to, from
