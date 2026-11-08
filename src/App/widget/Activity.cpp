@@ -378,11 +378,14 @@ void ActivityGraph::draw_ticks(std::vector<GraphTick> const &ticks, float y, flo
     }
 }
 
-// The lines' ranges, or the values at the mark.
+// The lines' ranges, or while the mouse is over the plot the values at
+// the mark. The mark stays when the mouse leaves, for the map, and is set
+// from the data panel too: neither is hovering.
 void ActivityGraph::draw_legend() const
 {
-    auto labels = ranges;
-    if (auto const mark = activity->mark; mark) {
+    auto       labels = ranges;
+    auto const hovering = CheckCollisionPointRec(GetMousePosition(), plot_area());
+    if (auto const mark = activity->mark; mark && hovering && *mark < activity->activity.records.size()) {
         auto const recorded = as_recorded(activity->activity);
         if (auto const &compared = activity->compared; compared) {
             auto const pair = *mark < compared->pairs.size() ? compared->pairs[*mark] : std::nullopt;
