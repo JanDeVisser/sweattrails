@@ -395,7 +395,7 @@ void ActivityGraph::draw_legend() const
             labels = legend_values(recorded[*mark]);
         }
         auto position = mark_position(activity->activity.records, *mark);
-        labels.insert(labels.begin(), position.begin(), position.end());
+        labels.insert(labels.end(), position.begin(), position.end());
     }
     auto x = 0.0f;
     for (auto const &label : labels) {

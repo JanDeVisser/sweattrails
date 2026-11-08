@@ -103,9 +103,9 @@ altitude. For power and speed that's the highest smoothed value, so
 that the line fills the plot, and it can be below the data panel's
 maximum.
 
-While the mouse is over the graph, the legend shows where the mark is
-and the values there instead: "0:42:10  12.34 km  Alt 45 m  Spd 32.4
-km/h  HR 145 bpm  Pwr 245 W". The time is since the activity's first
+While the mouse is over the graph, the legend shows the values at the
+mark instead, followed by where the mark is: "Alt 45 m  Spd 32.4 km/h
+HR 145 bpm  Pwr 245 W  0:42:10  12.34 km". The time is since the activity's first
 record, and the distance is left out for a record without one. Both
 are in white. The
 floating banner next to the mark goes away, while the mark's vertical
@@ -119,8 +119,8 @@ lines against their ranges.
 While comparing recordings (spec 33), the legend lists power, heart
 rate and cadence, with both recordings' ranges taken together, as the
 lines are drawn. While hovering, it shows the values of both, as the
-banner does now, from `compare_banner()`: "245 / 238 W", after the
-mark's time and distance.
+banner does now, from `compare_banner()`: "245 / 238 W", followed by
+the mark's time and distance.
 
 ### Smoothing
 
