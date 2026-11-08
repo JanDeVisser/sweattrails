@@ -9,19 +9,16 @@
 #include <Format.h>
 #include <StringUtil.h>
 
+#include <Chart.h>
 #include <Widget.h>
 
 #include <SweatTrails.h>
 #include <storage/Activity.h>
 #include <widget/Activity.h>
+#include <widget/GraphData.h>
 #include <widget/SportIcon.h>
 
 namespace ST {
-
-struct Text {
-    std::string text;
-    Color       color;
-};
 
 ActivityDataDisplay::ActivityDataDisplay(pWidget const &parent)
     : Widget(parent, SizePolicy::Stretch, 0.0)
@@ -215,7 +212,7 @@ void ActivityDataDisplay::set_activity(std::shared_ptr<DisplayedActivity> const 
 }
 
 ActivityGraph::ActivityGraph(pWidget const &parent)
-    : Widget(parent, SizePolicy::Absolute, 200.0)
+    : Widget(parent, SizePolicy::Absolute, TopBand + 150.0f + BottomBand)
 {
 }
 
@@ -236,6 +233,51 @@ constexpr Color LapShades[] = { { 70, 70, 70, 255 }, { 110, 110, 110, 255 } };
 constexpr Color SelectedLapShade = RAYWHITE;
 constexpr Color SelectedRangeShade = { 255, 255, 255, 40 };
 
+// Room between the legend's entries, and between labels along the graph.
+constexpr float LabelGap = 10.0f;
+// How far a tick mark sticks out from the plot or the strip.
+constexpr float TickLength = 4.0f;
+
+// One line of the graph, drawn a pixel column at a time. A column without
+// a value breaks it: a dropout shows as a gap.
+struct GraphLine {
+    Color                  color;
+    std::optional<Vector2> previous { };
+
+    void to(Image &image, float x, std::optional<float> y)
+    {
+        if (!y) {
+            previous.reset();
+            return;
+        }
+        Vector2 const point { .x = x, .y = std::ceilf(*y) };
+        if (previous) {
+            ImageDrawLineV(&image, *previous, point, color);
+        }
+        previous = point;
+    }
+};
+
+// The recording's records as recorded, which the graph smooths itself.
+// An activity that wasn't analyzed has only `records`.
+std::span<record const> as_recorded(Activity const &activity)
+{
+    if (activity.recorded.size() == activity.records.size()) {
+        return activity.recorded;
+    }
+    return activity.records;
+}
+
+}
+
+float ActivityGraph::plot_width() const
+{
+    return viewport.width - 20;
+}
+
+float ActivityGraph::plot_height() const
+{
+    return viewport.height - TopBand - strip_height() - BottomBand;
 }
 
 float ActivityGraph::strip_height() const
@@ -251,8 +293,8 @@ Rectangle ActivityGraph::strip_area() const
     auto const height = strip_height();
     return Rectangle {
         .x = viewport.x,
-        .y = viewport.y + viewport.height - height,
-        .width = viewport.width - 20,
+        .y = viewport.y + TopBand + plot_height(),
+        .width = plot_width(),
         .height = height,
     };
 }
@@ -278,10 +320,51 @@ void ActivityGraph::draw_selected_range() const
     if (!activity->segment || activity->activity.records.empty()) {
         return;
     }
-    auto const dt = (viewport.width - 20) / static_cast<float>(activity->activity.records.size());
+    auto const dt = plot_width() / static_cast<float>(activity->activity.records.size());
     auto const x0 = static_cast<float>(activity->segment->min) * dt;
     auto const x1 = static_cast<float>(activity->segment->max + 1) * dt;
-    draw_rectangle_no_normalize(x0, 50, x1 - x0, viewport.height - 50 - strip_height(), SelectedRangeShade);
+    draw_rectangle_no_normalize(x0, TopBand, x1 - x0, plot_height(), SelectedRangeShade);
+}
+
+// Labels centred on their ticks, at `y`, those that would overlap the one
+// before left out, with a tick mark from `tick_y` to `tick_y + tick`.
+void ActivityGraph::draw_ticks(std::vector<GraphTick> const &ticks, float y, float tick_y, float tick) const
+{
+    auto const          width = plot_width();
+    std::vector<float>  centres;
+    std::vector<float>  widths;
+    std::vector<size_t> shown;
+    for (auto const &t : ticks) {
+        auto const w = App::measure_text(t.label.c_str(), FontSize::Small).x;
+        // A label wider than the graph isn't drawn.
+        centres.push_back(w < width ? std::clamp(t.x, w / 2, width - w / 2) : t.x);
+        widths.push_back(w < width ? w : 0);
+    }
+    for (auto const ix : visible_labels(centres, widths, LabelGap)) {
+        draw_line(ticks[ix].x, tick_y, ticks[ix].x, tick_y + tick, ChartScaleColor);
+        render_text(centres[ix] - widths[ix] / 2, y, ticks[ix].label, FontSize::Small, ChartLabelColor);
+    }
+}
+
+// The lines' ranges, or the values at the mark.
+void ActivityGraph::draw_legend() const
+{
+    auto labels = ranges;
+    if (auto const mark = activity->mark; mark) {
+        auto const recorded = as_recorded(activity->activity);
+        if (auto const &compared = activity->compared; compared) {
+            auto const pair = *mark < compared->pairs.size() ? compared->pairs[*mark] : std::nullopt;
+            auto const other_recorded = as_recorded(compared->activity);
+            auto const other = pair && *pair < other_recorded.size() ? std::optional { other_recorded[*pair] } : std::nullopt;
+            labels = compare_banner(activity->activity, recorded[*mark], other);
+        } else {
+            labels = legend_values(recorded[*mark]);
+        }
+    }
+    auto x = 0.0f;
+    for (auto const &label : labels) {
+        x += render_text(x, 5, label.text, FontSize::Small, label.color).x + LabelGap;
+    }
 }
 
 void ActivityGraph::draw()
@@ -289,66 +372,31 @@ void ActivityGraph::draw()
     if (!activity) {
         return;
     }
-    render_texture(0, 50, texture);
+    auto const height = plot_height();
+    if (texture.id != 0) {
+        draw_line(0, TopBand + height / 2, plot_width(), TopBand + height / 2, ChartGridColor);
+    }
+    render_texture(0, TopBand, texture);
     draw_selected_range();
     draw_strip();
-    if (activity->mark) {
-        auto const  width = this->viewport.width - 20;
-        float       dt = static_cast<float>(width) / static_cast<float>(activity->activity.records.size());
-        float       x = *activity->mark * dt;
-        auto const &record { activity->activity.records[*activity->mark] };
-        draw_line(x, 50, x, 50 + texture.height, BLACK);
-        std::vector<Text> banner;
-        size_t            sz = 0;
-        if (auto const &compared = activity->compared; compared) {
-            auto const pair = *activity->mark < compared->pairs.size() ? compared->pairs[*activity->mark] : std::nullopt;
-            auto const other = pair && *pair < compared->activity.records.size() ? std::optional { compared->activity.records[*pair] } : std::nullopt;
-            for (auto const &label : compare_banner(activity->activity, record, other)) {
-                banner.push_back({ label.text, label.color });
-                sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
-            }
-        } else {
-            if (record.altitude) {
-                banner.push_back({ std::format("Alt {} m", std::truncf(*record.altitude)), AltitudeColor });
-                sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
-            }
-            if (record.power) {
-                banner.push_back({ std::format("Pwr {} W", *record.power), PowerColor });
-                sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
-            }
-            if (record.speed) {
-                banner.push_back({ std::format("Spd {:.1f} km/h", *record.speed * 3.6), SpeedColor });
-                sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
-            }
-            if (record.heart_rate) {
-                banner.push_back({ std::format("HR {} bpm", *record.heart_rate), HeartRateColor });
-                sz += App::measure_text(banner.back().text.c_str(), FontSize::Small).x;
-            }
-        }
-        if (!banner.empty()) {
-            draw_line(x, 30, x, 50, RAYWHITE);
-            sz += (banner.size() - 1) * 10.0;
-            auto render_banner = [this, &banner](float x) {
-                for (auto const &text : banner) {
-                    x += render_text(x, 20, text.text.c_str(), FontSize::Small, text.color).x + 10;
-                }
-            };
-
-            if (x + sz <= width) {
-                draw_line(x, 30, x + 20, 30, RAYWHITE);
-                draw_circle(x + 20, 30, 5, RAYWHITE);
-                render_banner(x + 30);
-            } else {
-                draw_line(x, 30, x - 20, 30, RAYWHITE);
-                draw_circle(x - 20, 30, 5, RAYWHITE);
-                render_banner(x - sz - 30);
-            }
-        }
+    draw_ticks(km_labels, TopBand - 22, TopBand - TickLength, TickLength);
+    auto const below = TopBand + height + strip_height();
+    draw_ticks(time_labels, below + 3, below, TickLength);
+    if (activity->mark && *activity->mark < activity->activity.records.size()) {
+        auto const dt = plot_width() / static_cast<float>(activity->activity.records.size());
+        auto const x = static_cast<float>(*activity->mark) * dt;
+        draw_line(x, TopBand, x, TopBand + height, BLACK);
     }
+    draw_legend();
 }
 
+// The layout resizes all its widgets whenever any of them changes: only a
+// new size needs the graph drawn again.
 void ActivityGraph::resize()
 {
+    if (plot_width() != rendered.x || plot_height() != rendered.y) {
+        render();
+    }
 }
 
 void ActivityGraph::process_input()
@@ -363,7 +411,7 @@ void ActivityGraph::process_input()
     auto const mouse = GetMousePosition();
     auto const record_at = [this, &mouse]() {
         auto const num_records = activity->activity.records.size();
-        auto const dt = (viewport.width - 20) / static_cast<float>(num_records);
+        auto const dt = plot_width() / static_cast<float>(num_records);
         auto const x = std::max(0.0f, mouse.x - viewport.x);
         return std::min(static_cast<size_t>(std::truncf(x / dt)), num_records - 1);
     };
@@ -408,6 +456,12 @@ void ActivityGraph::process_input()
 
 void ActivityGraph::set_activity(std::shared_ptr<DisplayedActivity> const &activity)
 {
+    this->activity = activity;
+    render();
+}
+
+void ActivityGraph::render()
+{
     // Reset them after unloading: an activity without data to graph doesn't
     // make new ones, and draw() mustn't draw the old texture, nor the next
     // activity unload the old ones again. Unloading empty ones does nothing,
@@ -416,180 +470,91 @@ void ActivityGraph::set_activity(std::shared_ptr<DisplayedActivity> const &activ
     UnloadImage(image);
     texture = { };
     image = { };
-    this->activity = activity;
-    if (!this->activity) {
+    ranges.clear();
+    time_labels.clear();
+    km_labels.clear();
+    rendered = { .x = plot_width(), .y = plot_height() };
+    if (!activity || activity->activity.records.empty()) {
         return;
     }
-
-    auto const &seg = activity->activity.segment;
-    auto const  width = this->viewport.width - 20;
-    auto const  height = this->viewport.height - 50 - strip_height();
-    if (activity->compared) {
-        draw_compared(static_cast<int>(width), static_cast<int>(height));
+    auto const width = static_cast<int>(rendered.x);
+    auto const height = static_cast<int>(rendered.y);
+    if (width <= 0 || height <= 0) {
         return;
     }
-    float                prev_x = 0.0;
-    float                prev_speed = 0.0;
-    float                prev_power = 0.0;
-    float                prev_hr = 0.0;
-    float                dt = static_cast<float>(width) / static_cast<float>(activity->activity.records.size());
-    std::optional<float> dalt_maybe { };
-    if (seg.computed_elevation_range) {
-        dalt_maybe = static_cast<float>(height) / static_cast<float>(*seg.computed_elevation_range.diff());
-    }
-    std::optional<float> dspeed_maybe { };
-    if (seg.computed_speed_range.range) {
-        dspeed_maybe = static_cast<float>(height) / static_cast<float>(*seg.computed_speed_range.diff());
-    }
-    std::optional<float> dpower_maybe { };
-    if (seg.computed_power_range.range) {
-        dpower_maybe = static_cast<float>(height) / static_cast<float>(*seg.computed_power_range.diff());
-    }
-    std::optional<float> dhr_maybe { };
-    if (seg.computed_hr_range.range) {
-        dhr_maybe = static_cast<float>(height) / static_cast<float>(*seg.computed_hr_range.diff());
-    }
-    if (!dalt_maybe && !dspeed_maybe && !dpower_maybe && !dhr_maybe) {
-        return;
-    }
-
+    time_labels = time_ticks(activity->activity.records, rendered.x);
+    km_labels = distance_ticks(activity->activity.records, rendered.x);
     image = GenImageColor(width, height, BLANK);
-    size_t ix = 0;
-    for (auto const &record : activity->activity.records) {
-        float x = dt * ix;
-        if (x - prev_x > 1.0) {
-            if (dalt_maybe && record.altitude) {
-                float alt_y = height - (*record.altitude - seg.computed_elevation_range.min()) * *dalt_maybe;
-                ImageDrawRectangleRec(
-                    &image,
-                    Rectangle { .x = prev_x, .y = alt_y, .width = std::ceilf(x - prev_x), .height = height - alt_y },
-                    AltitudeColor);
-            }
-            if (dspeed_maybe && record.speed) {
-                float speed_y = height - *record.speed * *dspeed_maybe;
-                ImageDrawLineV(
-                    &image,
-                    Vector2 { .x = prev_x, .y = std::ceilf(prev_speed) },
-                    Vector2 { .x = x, .y = std::ceilf(speed_y) },
-                    SpeedColor);
-                prev_speed = speed_y;
-            }
-            if (dhr_maybe && record.heart_rate) {
-                float hr_y = height - (*record.heart_rate - seg.computed_hr_range.range->min) * *dhr_maybe;
-                ImageDrawLineV(
-                    &image,
-                    Vector2 { .x = prev_x, .y = std::ceilf(prev_hr) },
-                    Vector2 { .x = x, .y = std::ceilf(hr_y) },
-                    HeartRateColor);
-                prev_hr = hr_y;
-            }
-            if (dpower_maybe && record.power) {
-                float power_y = height - *record.power * *dpower_maybe;
-                ImageDrawLineV(
-                    &image,
-                    Vector2 { .x = prev_x, .y = std::ceilf(prev_power) },
-                    Vector2 { .x = x, .y = std::ceilf(power_y) },
-                    PowerColor);
-                prev_power = power_y;
-            }
-            prev_x = x;
-        }
-        ix += 1;
+    if (activity->compared) {
+        render_compared(width, height);
+    } else {
+        render_lines(width, height);
     }
     texture = LoadTextureFromImage(image);
 }
 
-namespace {
-
-// One line of the graph, drawn a pixel column at a time. A column without
-// a value breaks it: a dropout shows as a gap.
-struct GraphLine {
-    Color                  color;
-    std::optional<Vector2> previous { };
-
-    void to(Image &image, float x, std::optional<float> y)
-    {
-        if (!y) {
-            previous.reset();
-            return;
-        }
-        Vector2 const point { .x = x, .y = std::ceilf(*y) };
-        if (previous) {
-            ImageDrawLineV(&image, *previous, point, color);
-        }
-        previous = point;
-    }
-};
-
-// A value's range over both recordings' segments.
-template<typename Range>
-std::optional<std::pair<float, float>> both_ranges(Range const &a, Range const &b)
+// Altitude as an area under the lines, and speed, heart rate and power,
+// power on top.
+void ActivityGraph::render_lines(int width, int height)
 {
-    if (!a.range && !b.range) {
-        return { };
-    }
-    auto lo = std::numeric_limits<float>::max();
-    auto hi = std::numeric_limits<float>::lowest();
-    for (auto const *r : { &a, &b }) {
-        if (r->range) {
-            lo = std::min(lo, static_cast<float>(r->range->min));
-            hi = std::max(hi, static_cast<float>(r->range->max));
+    auto const &shown = activity->activity;
+    auto const  recorded = as_recorded(shown);
+    auto const  h = static_cast<float>(height);
+    for (auto const value : { GraphValue::Altitude, GraphValue::Speed, GraphValue::HeartRate, GraphValue::Power }) {
+        auto const columns = graph_columns(graph_series(recorded, value), width);
+        auto const scale = graph_scale(value, std::span { &columns, 1 });
+        if (!scale) {
+            continue;
+        }
+        auto const label = legend_range(shown, value, *scale);
+        ranges.push_back(label);
+        GraphLine line { .color = label.color };
+        for (auto x = 0uz; x < columns.size(); ++x) {
+            auto const y = columns[x] ? std::optional { graph_y(*scale, *columns[x], h) } : std::nullopt;
+            if (value != GraphValue::Altitude) {
+                line.to(image, static_cast<float>(x), y);
+            } else if (y) {
+                ImageDrawRectangleRec(&image, Rectangle { .x = static_cast<float>(x), .y = *y, .width = 1, .height = h - *y }, label.color);
+            }
         }
     }
-    return std::pair { lo, hi };
 }
 
-}
-
-void ActivityGraph::draw_compared(int width, int height)
+// Power, heart rate and cadence of both recordings, the other's lighter,
+// on one scale for both. The other's records are paired with the shown
+// one's, so that both are drawn along the same x. Power is drawn last, on
+// top, but comes first in the legend, as in the data panel.
+void ActivityGraph::render_compared(int width, int height)
 {
     auto const &shown = activity->activity;
     auto const &compared = *activity->compared;
-    auto const &other = compared.activity;
-    auto const  power = both_ranges(shown.segment.computed_power_range, other.segment.computed_power_range);
-    auto const  hr = both_ranges(shown.segment.computed_hr_range, other.segment.computed_hr_range);
-    auto const  cadence = both_ranges(shown.segment.computed_cadence_range, other.segment.computed_cadence_range);
-    if (!power && !hr && !cadence) {
-        return;
-    }
-    auto const h = static_cast<float>(height);
-    // Power and cadence from 0, heart rate over its range.
-    auto const from_zero = [h](std::optional<std::pair<float, float>> const &range, auto const &value) -> std::optional<float> {
-        if (!range || !value || range->second <= 0) {
-            return { };
+    auto const  other_recorded = as_recorded(compared.activity);
+    auto const  h = static_cast<float>(height);
+    for (auto const value : { GraphValue::Cadence, GraphValue::HeartRate, GraphValue::Power }) {
+        auto const  other_series = graph_series(other_recorded, value);
+        GraphSeries paired(shown.records.size());
+        for (auto ix = 0uz; ix < paired.size() && ix < compared.pairs.size(); ++ix) {
+            if (auto const pair = compared.pairs[ix]; pair && *pair < other_series.size()) {
+                paired[ix] = other_series[*pair];
+            }
         }
-        return h - static_cast<float>(*value) * h / range->second;
-    };
-    auto const over_range = [h](std::optional<std::pair<float, float>> const &range, auto const &value) -> std::optional<float> {
-        if (!range || !value || range->second <= range->first) {
-            return { };
-        }
-        return h - (static_cast<float>(*value) - range->first) * h / (range->second - range->first);
-    };
-    std::array<GraphLine, 3> theirs { GraphLine { ColorBrightness(CadenceColor, 0.5f) }, GraphLine { ColorBrightness(HeartRateColor, 0.5f) }, GraphLine { ColorBrightness(PowerColor, 0.5f) } };
-    std::array<GraphLine, 3> ours { GraphLine { CadenceColor }, GraphLine { HeartRateColor }, GraphLine { PowerColor } };
-
-    image = GenImageColor(width, height, BLANK);
-    auto const dt = static_cast<float>(width) / static_cast<float>(shown.records.size());
-    auto       prev_x = -2.0f;
-    for (auto ix = 0uz; ix < shown.records.size(); ++ix) {
-        auto const x = dt * static_cast<float>(ix);
-        if (x - prev_x <= 1.0f) {
+        std::array const columns { graph_columns(graph_series(as_recorded(shown), value), width), graph_columns(paired, width) };
+        auto const       scale = graph_scale(value, columns);
+        if (!scale) {
             continue;
         }
-        prev_x = x;
-        auto const              &rec = shown.records[ix];
-        static FIT::record const none { };
-        auto const               paired = ix < compared.pairs.size() && compared.pairs[ix] && *compared.pairs[ix] < other.records.size();
-        auto const              &o = paired ? other.records[*compared.pairs[ix]] : none;
-        theirs[0].to(image, x, from_zero(cadence, o.cadence));
-        theirs[1].to(image, x, over_range(hr, real_heart_rate(o)));
-        theirs[2].to(image, x, from_zero(power, o.power));
-        ours[0].to(image, x, from_zero(cadence, rec.cadence));
-        ours[1].to(image, x, over_range(hr, real_heart_rate(rec)));
-        ours[2].to(image, x, from_zero(power, rec.power));
+        auto const label = legend_range(shown, value, *scale);
+        ranges.insert(ranges.begin(), label);
+        GraphLine ours { .color = label.color };
+        GraphLine theirs { .color = ColorBrightness(label.color, 0.5f) };
+        for (auto x = 0uz; x < static_cast<size_t>(width); ++x) {
+            auto const y = [&](GraphSeries const &series) {
+                return x < series.size() && series[x] ? std::optional { graph_y(*scale, *series[x], h) } : std::nullopt;
+            };
+            theirs.to(image, static_cast<float>(x), y(columns[1]));
+            ours.to(image, static_cast<float>(x), y(columns[0]));
+        }
     }
-    texture = LoadTextureFromImage(image);
 }
 
 ActivityDisplay::ActivityDisplay(pWidget const &parent)

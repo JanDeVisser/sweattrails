@@ -17,6 +17,7 @@
 #include <storage/Activity.h>
 #include <widget/DataFields.h>
 #include <widget/DisplayedActivity.h>
+#include <widget/GraphData.h>
 #include <widget/OverlayPreview.h>
 
 namespace ST {
@@ -110,10 +111,19 @@ private:
 };
 
 struct ActivityGraph : public Widget {
+    // Above the plot: the legend, and the km labels under it. Below the
+    // plot and the lap strip: the time labels.
+    static constexpr float TopBand = 50.0f;
+    static constexpr float BottomBand = 20.0f;
+
     std::shared_ptr<DisplayedActivity> activity;
     bool                               dragging { false };
-    Image                              image { };   // empty while no graph is shown
-    Texture2D                          texture { }; // empty while no graph is shown
+    Image                              image { };    // empty while no graph is shown
+    Texture2D                          texture { };  // empty while no graph is shown
+    Vector2                            rendered { }; // The plot's size when it was drawn
+    std::vector<GraphLabel>            ranges { };   // The legend, while not hovering
+    std::vector<GraphTick>             time_labels { };
+    std::vector<GraphTick>             km_labels { };
 
     explicit ActivityGraph(pWidget const &parent);
     ~ActivityGraph();
@@ -124,15 +134,23 @@ struct ActivityGraph : public Widget {
     void set_activity(std::shared_ptr<DisplayedActivity> const &activity);
 
 private:
+    [[nodiscard]] float plot_width() const;
+    [[nodiscard]] float plot_height() const;
+    // Draws the lines into `image`, and works out the legend and labels,
+    // for the activity and the plot's size.
+    void render();
+    void render_lines(int width, int height);
+    // While comparing: power, heart rate and cadence of both recordings,
+    // the other's lighter, on one scale for both.
+    void render_compared(int width, int height);
     // The lap strip under the graph, half a character high: none without
     // laps.
-    // While comparing: power, heart rate and cadence of both recordings
-    // into `image`, the other's lighter, on one scale for both.
-    void                    draw_compared(int width, int height);
     [[nodiscard]] float     strip_height() const;
     [[nodiscard]] Rectangle strip_area() const; // In screen coordinates
     void                    draw_strip() const;
     void                    draw_selected_range() const;
+    void                    draw_ticks(std::vector<GraphTick> const &ticks, float y, float tick_y, float tick) const;
+    void                    draw_legend() const;
 };
 
 struct ActivityDisplay : public Layout {
