@@ -141,6 +141,7 @@ private:
     [[nodiscard]] static float top_band();
     [[nodiscard]] static float bottom_band();
     [[nodiscard]] float        plot_width() const;
+    [[nodiscard]] Rectangle    plot_area() const; // In screen coordinates
     [[nodiscard]] float        plot_height() const;
     // Draws the lines into `image`, and works out the legend and labels,
     // for the activity and the plot's size.

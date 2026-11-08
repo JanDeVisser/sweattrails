@@ -310,6 +310,16 @@ float ActivityGraph::strip_height() const
     return std::ceilf(0.6f * App::the()->char_size().y);
 }
 
+Rectangle ActivityGraph::plot_area() const
+{
+    return Rectangle {
+        .x = viewport.x,
+        .y = viewport.y + top_band(),
+        .width = plot_width(),
+        .height = plot_height(),
+    };
+}
+
 Rectangle ActivityGraph::strip_area() const
 {
     auto const height = strip_height();
@@ -464,8 +474,9 @@ void ActivityGraph::process_input()
         return;
     }
 
-    // A drag starts with a press in the graph, and ends a lap's selection.
-    if (!mouse_in()) {
+    // A drag starts with a press in the plot, and ends a lap's selection.
+    // The legend and the labels around it don't respond.
+    if (!CheckCollisionPointRec(mouse, plot_area())) {
         return;
     }
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
