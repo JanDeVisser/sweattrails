@@ -229,6 +229,7 @@ add_executable(
         src/App/widget/SportIcon.cpp
         src/App/widget/Summaries.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Boundaries.cpp
         src/App/storage/Gaps.cpp
         src/App/storage/Comparison.cpp
         src/App/storage/Recordings.cpp
@@ -687,6 +688,22 @@ sweattrails_test(
 )
 target_include_directories(overlay_tiles_needed_test PRIVATE src/App)
 target_link_libraries(overlay_tiles_needed_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        boundaries_test
+        test/BoundariesTest.cpp
+        src/App/storage/Boundaries.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(boundaries_test PRIVATE src/App)
+target_link_libraries(boundaries_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         displayed_activity_test
