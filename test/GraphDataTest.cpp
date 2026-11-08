@@ -391,6 +391,28 @@ void test_legend_range_while_comparing()
     }
 }
 
+void test_mark_position()
+{
+    auto records = seconds(3);
+    records[2].timestamp.timestamp += 2 * 3600 + 42 * 60;
+    records[2].distance = 12345.0f;
+    auto const               labels = mark_position(records, 2);
+    std::vector<std::string> texts;
+    for (auto const &label : labels) {
+        texts.push_back(label.text);
+    }
+    std::vector<std::string> const expected { "2:42:02", "12.35 km" };
+    CHECK(texts == expected);
+
+    // Without a distance, only the time.
+    auto const first = mark_position(records, 0);
+    CHECK_EQ(first.size(), 1uz);
+    if (!first.empty()) {
+        CHECK_EQ(first.front().text, "0:00:00");
+    }
+    CHECK(mark_position(records, 3).empty());
+}
+
 }
 
 int main()
@@ -420,5 +442,6 @@ int main()
     test_time_ticks_after_the_specs_pause();
     test_ticks_at_the_edges();
     test_legend_range_while_comparing();
+    test_mark_position();
     return Test::test_result();
 }

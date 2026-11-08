@@ -10,6 +10,8 @@
 #include <format>
 #include <functional>
 
+#include <Date.h>
+
 #include <Chart.h>
 
 #include <widget/GraphData.h>
@@ -244,6 +246,22 @@ GraphLabel legend_range(Activity const &activity, GraphValue value, GraphScale c
     }
     }
     return { };
+}
+
+std::vector<GraphLabel> mark_position(std::span<record const> records, size_t mark)
+{
+    if (mark >= records.size()) {
+        return { };
+    }
+    auto const    &rec = records[mark];
+    Duration const since { rec.timestamp.timestamp - records.front().timestamp.timestamp };
+    std::vector    ret {
+        GraphLabel { std::format("{}:{:02}:{:02}", since.elapsed / Duration::SECONDS_PER_HOUR, since.minutes, since.seconds), RAYWHITE },
+    };
+    if (rec.distance) {
+        ret.push_back({ std::format("{:.2f} km", *rec.distance / 1000.0f), RAYWHITE });
+    }
+    return ret;
 }
 
 std::vector<GraphLabel> legend_values(record const &recorded)

@@ -99,8 +99,8 @@ The graph under the map shows altitude as a gray area, and speed, heart
 rate and power as lines, with the elapsed time along the bottom and the
 distance in km along the top. Power and speed are averaged over 5
 seconds. The legend above it gives each line's range, "HR 102–178 bpm",
-and while the mouse is over the graph, the values of the second under
-it, as recorded. A pause that recorded nothing takes no room, so the
+and while the mouse is over the graph, the time and distance of the
+second under it, marked by a gold line, and its values as recorded. A pause that recorded nothing takes no room, so the
 time labels bunch on either side of it, and a dropout in a sensor's data
 is a gap in its line.
 

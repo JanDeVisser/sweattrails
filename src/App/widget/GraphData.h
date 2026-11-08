@@ -89,7 +89,11 @@ struct GraphTick {
 
 // The legend's entry for a line: "Pwr 0–612 W".
 [[nodiscard]] GraphLabel legend_range(Activity const &activity, GraphValue value, GraphScale const &scale);
-// The legend while hovering: the record's values, "Alt 45 m",
+// The legend while hovering starts with where the marked record is: the
+// time since the first record, "0:42:10", and its distance, "12.34 km",
+// if it has one. None for a mark past the records.
+[[nodiscard]] std::vector<GraphLabel> mark_position(std::span<record const> records, size_t mark);
+// Then the record's values, "Alt 45 m",
 // "Spd 32.4 km/h", "HR 145 bpm", "Pwr 245 W", for those it has.
 [[nodiscard]] std::vector<GraphLabel> legend_values(record const &recorded);
 
