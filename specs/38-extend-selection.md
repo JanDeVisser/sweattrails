@@ -1,6 +1,6 @@
 # Extending the selection to the next km, lap or stop
 
-Status: Ready
+Status: In progress
 
 <!--
 Status is one of:
@@ -164,11 +164,96 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### Decisions
+
+1. **The boundaries go in a new `src/App/storage/Boundaries.h/.cpp`.**
+   They're activity logic, with no widget in it, so a test reaches them
+   without a window.
+
+   ```cpp
+   enum class Boundary { Km, Lap, Stop };
+   enum class Direction { Back, On };
+
+   // Where the activity stood still: the last record moving before it,
+   // and the first moving again after it.
+   struct Stop {
+       size_t last_moving;
+       size_t first_moving;
+   };
+   // From the records as recorded: a pause of more than RangeMovingGap,
+   // or RangeMovingGap seconds or more below RangeMovingSpeed.
+   std::vector<Stop> stops(std::span<record const> recorded);
+
+   // The record the selection's start (Back) or end (On) moves to from
+   // record `from`, or none if there's nothing to go to.
+   std::optional<size_t> extend_to(Activity const &activity, size_t from, Boundary boundary, Direction direction);
+   ```
+
+2. **`DisplayedActivity` gets `extend(Boundary, Direction)`** and
+   `can_extend(Boundary, Direction)`. They start from the selection,
+   dragged or a lap's, or else from the mark. A new range clears the
+   lap and gets its stats straight away, without `end_segment()`'s 10 s
+   rule. `extend()` returns false when there's nothing to start from,
+   for the palette's message.
+3. **The right-click point is the mark.** Hovering the plot already sets
+   the mark to the record under the mouse, and the menu is a modal, so
+   the graph gets no input while it's open and the mark stays put. The
+   palette's fallback is the mark too, so this needs no new state.
+4. **A new `PopupMenu` in `src/Lib/Widget/PopupMenu.h/.cpp`.** It's a
+   `Modal` with items `{ title, enabled, action }`, opened at a point.
+   It is not a `ListBox`: that one is a centred dialog with a prompt and
+   a search, and has no greyed-out items or clicks to choose. The menu
+   handles:
+   - Up and Down, skipping greyed-out items;
+   - Enter, and Esc;
+   - the item under the mouse, which a click chooses;
+   - a click outside, which closes it;
+   - staying on screen, worked out by a pure `menu_position(point,
+     size, screen)`.
+
+   On a choice, the menu closes and runs the item's action. Its header
+   joins `.clang-format`'s Widget regex.
+5. **Six tasks, one per item**, such as `st-extend-on-km`, each
+   `.titled("Selection: on to the km")` and `.when(on_activity_screen)`,
+   with no keys. They share one handler with the boundary and direction
+   bound in. The menu's actions submit them to the bus, as the palette
+   does, so that both run the same code.
+6. **`ActivityGraph::process_input()` opens the menu** on a right-click
+   in the plot, through a function in `SweatTrails.cpp` that builds the
+   items from `can_extend()`. The graph reaches it with
+   `SweatTrails::the()`, as the map does for its jobs.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- A new `boundaries_test` (`test/BoundariesTest.cpp`):
+  - `stops()`:
+    - a pause of more than 10 s;
+    - 10 s or more of standing still;
+    - a slowdown under 10 s, which isn't a stop;
+    - records without speed;
+    - a stop at the start or end of the activity.
+  - `extend_to()`, both ways, for each of km, lap and stop:
+    - from inside a stretch;
+    - from a record already on a boundary, which steps to the next;
+    - none left in that direction;
+    - "Back to the km" in the first km, which goes to the first record;
+    - no distance, and one lap.
+- `DisplayedActivityTest`:
+  - extending a dragged range, a selected lap, and from the mark;
+  - nothing to start from;
+  - the lap is cleared, and the stats are there;
+  - a short range isn't cleared.
+- A new `popup_menu_test` (`test/PopupMenuTest.cpp`), with a
+  `ScopedTestApp`:
+  - Up and Down skip greyed-out items;
+  - Enter runs the selected item's action and Esc runs none;
+  - a menu with every item greyed out;
+  - `menu_position()` near each edge of the screen.
+- By hand in the app:
+  - drawing the menu;
+  - the right-click;
+  - choosing an item with the mouse;
+  - a click outside it.
 
 ## Review notes
 
