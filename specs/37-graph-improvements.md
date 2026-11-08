@@ -1,6 +1,6 @@
 # Graph improvements
 
-Status: Ready
+Status: In progress
 
 <!--
 Status is one of:
@@ -173,11 +173,111 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### What's there
+
+- `ActivityGraph` in `src/App/widget/Activity.cpp` draws the lines into
+  an `Image` once, in `set_activity()`, and loads it into a texture.
+  `draw()` draws the texture, the selected range, the strip, the mark
+  and the banner. `draw_compared()` draws the comparison, with a
+  `GraphLine` helper that already breaks a line at a missing value.
+- `Activity::records` aren't as recorded: `Segment::analyze()` smooths
+  speed, power, cadence and heart rate over 3 records in place.
+  `Activity::recorded` has them as recorded, with the same indices.
+  The graph and the banner use `records` now.
+- `nice_span()` and `visible_labels()` in `src/Lib/Widget/Chart.h` pick
+  a step for labels and drop those that would overlap.
+
+### Decisions
+
+1. **The logic goes in a new `src/App/widget/GraphData.h/.cpp`.** These
+   are pure functions of the records and a width, so the test reaches
+   them without a window. `ActivityGraph` stays in `Activity.cpp` and
+   only draws what they return.
+
+   ```cpp
+   enum class GraphValue { Altitude, Speed, HeartRate, Power, Cadence };
+
+   // A value of each record: the recorded one, or for power and speed the
+   // average over the last 5 seconds. None for a record without one; the
+   // average restarts after a pause of more than RangeMovingGap seconds
+   // and after a dropout.
+   std::vector<std::optional<float>> graph_series(std::span<record const> recorded, GraphValue value);
+
+   // The series per pixel column of a graph `width` wide: the average of
+   // the records in each column, none for a column without values.
+   std::vector<std::optional<float>> graph_columns(std::span<std::optional<float> const> series, int width);
+
+   struct GraphTick {
+       float       x;      // From the graph's left edge
+       std::string label;  // "1:30", "5 km"
+   };
+   std::vector<GraphTick> time_ticks(std::span<record const> records, float width);
+   std::vector<GraphTick> distance_ticks(std::span<record const> records, float width);
+
+   // The legend: "Pwr 0–612 W", or while hovering "Pwr 245 W".
+   std::vector<GraphLabel> legend_ranges(...);
+   std::vector<GraphLabel> legend_values(record const &recorded);
+   ```
+
+   `compare_banner()` stays in `DataFields.cpp`, and the legend uses it
+   while comparing.
+2. **Smoothing reads `Activity::recorded`, not `records`.** Otherwise
+   the 5-second average would be applied on top of the existing 3-record
+   one. The legend's hover values come from `recorded` too, as the spec
+   asks. That changes what the old banner showed, the 3-record smoothed
+   values, to the record's own.
+3. **The ticks' step:** `nice_span(0, total, width / 80, steps)` picks
+   the step from the spec's lists. A label goes at the first record at
+   or past its time or distance. `visible_labels()` then drops those a
+   pause bunches into each other.
+4. **Layout:** the widget becomes 220 pixels high instead of 200. The
+   top band stays 50 pixels: the legend at the top and the km labels
+   under it. The extra 20 pixels at the bottom take the time labels,
+   under the strip. The plot keeps its height.
+5. **Resizing:** `set_activity()` and `resize()` both call a private
+   `render()`. `resize()` only renders again when the plot's width or
+   height has changed, since the layout resizes every widget whenever
+   any of it changes.
+6. **Colours:** in `DataFields.h`, `PowerColor` becomes `SKYBLUE`, and
+   `SpeedColor = LIME` and `AltitudeColor = LIGHTGRAY` join it. The
+   graph code stops spelling out `DARKGREEN` and `LIGHTGRAY`.
+
+Nothing new goes in `src/Lib/Widget`. The ticks reuse `Chart.h`. The
+legend is a row of coloured text, as the banner was, so it doesn't need
+a widget of its own.
 
 ## Test plan
 
-*Filled in by the Developer.*
+A new `graph_data_test` (`test/GraphDataTest.cpp`) tests the functions
+in `GraphData.h` on records built in the test:
+
+- `graph_series()`:
+  - a 5-second average of power and speed;
+  - no smoothing for heart rate and altitude;
+  - a restart after a gap of more than 10 s;
+  - a dropout gives none, and the average after it doesn't include the
+    values before it;
+  - it reads the recorded values.
+- `graph_columns()`:
+  - averaging when there are more records than pixels;
+  - one record over several columns when there are fewer;
+  - none for a column of dropouts.
+- `time_ticks()` and `distance_ticks()`:
+  - the step for a short and a long activity;
+  - labels at the first record at or past each step;
+  - bunching around a pause;
+  - none without distances.
+- `legend_ranges()` and `legend_values()`:
+  - the texts, the colours, the smoothed maximum, and values left out
+    when the record has none;
+  - comparing.
+
+The dropout fix is a fix to `graph_series()` and `graph_columns()`, and
+their tests cover it.
+
+Drawing and resizing need a window, so they're checked by hand in the
+app: the layout, the legend while hovering and not, the colours, and
+that a window resize redraws the graph.
 
 ## Review notes
 
