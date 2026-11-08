@@ -362,10 +362,9 @@ void ActivityGraph::draw_selected_range() const
 // before left out, with a tick mark from `tick_y` to `tick_y + tick`.
 void ActivityGraph::draw_ticks(std::vector<GraphTick> const &ticks, float y, float tick_y, float tick) const
 {
-    auto const          width = plot_width();
-    std::vector<float>  centres;
-    std::vector<float>  widths;
-    std::vector<size_t> shown;
+    auto const         width = plot_width();
+    std::vector<float> centres;
+    std::vector<float> widths;
     for (auto const &t : ticks) {
         auto const w = App::measure_text(t.label.c_str(), FontSize::Small).x;
         // A label wider than the graph isn't drawn.
