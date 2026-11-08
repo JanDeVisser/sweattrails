@@ -95,6 +95,16 @@ either way, selects part of the activity, such as a climb: when you let
 go, the data panel shows that part's stats, as it does a lap's. A drag
 of less than 10 seconds selects nothing.
 
+A right-click in the graph extends the selection, back from its start or
+on from its end, to the next whole km, lap or stop: "Back to the km",
+"On to the lap", "On to the stop", and so on. Choosing one again goes a
+km, lap or stop further. A selected lap becomes a range when extended,
+and without a selection, it starts from the point clicked. A stop is a
+pause of more than 10 seconds, or standing still for about as long. An
+item with nowhere to go, such as the km for an activity without
+distance, is greyed out. The six are also in the command palette, as
+"Selection: on to the km" and so on.
+
 The graph under the map shows altitude as a gray area, and speed, heart
 rate and power as lines, with the elapsed time along the bottom and the
 distance in km along the top. Power and speed are averaged over 5

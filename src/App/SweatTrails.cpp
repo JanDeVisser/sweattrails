@@ -23,6 +23,7 @@
 
 #include <App.h>
 #include <Modal.h>
+#include <PopupMenu.h>
 #include <Widget.h>
 
 #include <Http.h>
@@ -1013,6 +1014,39 @@ void cmd_mark_lap(pSweatTrails const &sweattrails, JSONValue const &)
     }
 }
 
+// The selection's six extensions (specs/38-extend-selection.md), each a
+// task of its own, so that the command palette has them, and the
+// graph's right-click menu runs them.
+struct Extension {
+    std::string_view task;
+    std::string_view title;     // In the command palette
+    std::string_view menu_item; // In the graph's menu
+    Boundary         boundary;
+    Direction        direction;
+};
+
+constexpr std::array<Extension, 6> Extensions { {
+    { "st-extend-back-km", "Selection: back to the km", "Back to the km", Boundary::Km, Direction::Back },
+    { "st-extend-back-lap", "Selection: back to the lap", "Back to the lap", Boundary::Lap, Direction::Back },
+    { "st-extend-back-stop", "Selection: back to the stop", "Back to the stop", Boundary::Stop, Direction::Back },
+    { "st-extend-on-km", "Selection: on to the km", "On to the km", Boundary::Km, Direction::On },
+    { "st-extend-on-lap", "Selection: on to the lap", "On to the lap", Boundary::Lap, Direction::On },
+    { "st-extend-on-stop", "Selection: on to the stop", "On to the stop", Boundary::Stop, Direction::On },
+} };
+
+// From the palette there's no right-click: without a selection or a
+// mark, there's nothing to extend from.
+void extend_selection(pSweatTrails const &sweattrails, Extension const &extension)
+{
+    auto activity = activity_for_keys(sweattrails);
+    if (!activity) {
+        return;
+    }
+    if (!activity->extend(extension.boundary, extension.direction)) {
+        message_box("Drag or right-click in the graph to select a range first.");
+    }
+}
+
 // Asks how to split the activity into laps, such as every "1 km", and
 // splits it.
 void cmd_split_laps(pSweatTrails const &sweattrails, JSONValue const &)
@@ -1884,6 +1918,23 @@ void SweatTrails::files_dropped(std::vector<std::string> const &paths)
     bus.submit("st-fill-gaps", arguments);
 }
 
+void SweatTrails::selection_menu(Vector2 at)
+{
+    auto const activity = activity_display->activity;
+    if (!activity) {
+        return;
+    }
+    std::vector<MenuItem> items;
+    for (auto const &extension : Extensions) {
+        items.push_back(MenuItem {
+            .title = std::string { extension.menu_item },
+            .enabled = activity->can_extend(extension.boundary, extension.direction),
+            .action = [this, task = extension.task]() { bus.submit(task, JSONValue { }); },
+        });
+    }
+    popup_menu(at, std::move(items));
+}
+
 void SweatTrails::show_activity(Activity const &activity)
 {
     trace(ST, "Showing activity {}", activity.id);
@@ -2125,6 +2176,14 @@ void SweatTrails::initialize()
         .titled("Make the range a lap")
         .bind(KeyCombo { KEY_L, KModControl })
         .when(on_activity_screen);
+    // No keys: six would be a lot to learn for something rarely needed.
+    for (auto const &extension : Extensions) {
+        bus.add_task<SweatTrails>(extension.task, self(), [&extension](pSweatTrails const &sweattrails, JSONValue const &) {
+               extend_selection(sweattrails, extension);
+           })
+            .titled(extension.title)
+            .when(on_activity_screen);
+    }
     bus.add_task<SweatTrails>("st-split-laps", self(), cmd_split_laps)
         .titled("Split into laps")
         .bind(KeyCombo { KEY_L, KModControl | KModShift })
