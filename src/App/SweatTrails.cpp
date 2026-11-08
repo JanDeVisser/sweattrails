@@ -1034,15 +1034,23 @@ constexpr std::array<Extension, 6> Extensions { {
     { "st-extend-on-stop", "Selection: on to the stop", "On to the stop", Boundary::Stop, Direction::On },
 } };
 
-// From the palette there's no right-click: without a selection or a
-// mark, there's nothing to extend from.
-void extend_selection(pSweatTrails const &sweattrails, Extension const &extension)
+// The menu passes the record right-clicked, as "from": the task runs a
+// frame or more after the menu closed, and by then hovering the graph can
+// have moved the mark. From the palette there's no right-click: without a
+// selection or a mark, there's nothing to extend from.
+void extend_selection(pSweatTrails const &sweattrails, Extension const &extension, JSONValue const &arguments)
 {
     auto activity = activity_for_keys(sweattrails);
     if (!activity) {
         return;
     }
-    if (!activity->extend(extension.boundary, extension.direction)) {
+    std::optional<size_t> from;
+    if (arguments.is_object()) {
+        if (auto const record = arguments.try_get<int>("from"); record && *record >= 0) {
+            from = static_cast<size_t>(*record);
+        }
+    }
+    if (!activity->extend(extension.boundary, extension.direction, from)) {
         message_box("Drag or right-click in the graph to select a range first.");
     }
 }
@@ -1924,12 +1932,18 @@ void SweatTrails::selection_menu(Vector2 at)
     if (!activity) {
         return;
     }
+    // The record right-clicked, which the graph has just marked.
+    auto const from = activity->mark;
+    auto       arguments = JSONValue::object();
+    if (from) {
+        arguments.set("from", JSONValue { static_cast<int>(*from) });
+    }
     std::vector<MenuItem> items;
     for (auto const &extension : Extensions) {
         items.push_back(MenuItem {
             .title = std::string { extension.menu_item },
-            .enabled = activity->can_extend(extension.boundary, extension.direction),
-            .action = [this, task = extension.task]() { bus.submit(task, JSONValue { }); },
+            .enabled = activity->can_extend(extension.boundary, extension.direction, from),
+            .action = [this, task = extension.task, arguments]() { bus.submit(task, arguments); },
         });
     }
     popup_menu(at, std::move(items));
@@ -2178,8 +2192,8 @@ void SweatTrails::initialize()
         .when(on_activity_screen);
     // No keys: six would be a lot to learn for something rarely needed.
     for (auto const &extension : Extensions) {
-        bus.add_task<SweatTrails>(extension.task, self(), [&extension](pSweatTrails const &sweattrails, JSONValue const &) {
-               extend_selection(sweattrails, extension);
+        bus.add_task<SweatTrails>(extension.task, self(), [&extension](pSweatTrails const &sweattrails, JSONValue const &arguments) {
+               extend_selection(sweattrails, extension, arguments);
            })
             .titled(extension.title)
             .when(on_activity_screen);

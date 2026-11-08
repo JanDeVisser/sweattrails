@@ -671,12 +671,24 @@ void test_comparison_of_an_extended_range()
     CHECK(short_range.has_value() && short_range->avg_power.shown == 200.0);
 }
 
+// The menu passes the record right-clicked: the mark can have moved by
+// the time its task runs.
+void test_extend_from_the_record_right_clicked()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.set_mark(80); // Hovered after the right-click at 36
+    CHECK(d.extend(Boundary::Lap, Direction::On, 36));
+    CHECK(d.segment.has_value() && d.segment->min == 36 && d.segment->max == 39);
+}
+
 int main()
 {
     test_current_record();
     test_extend_a_range();
     test_extend_a_lap();
     test_extend_from_the_mark();
+    test_extend_from_the_record_right_clicked();
     test_extend_from_nothing();
     test_extend_to_nothing();
     test_no_extending_while_dragging();

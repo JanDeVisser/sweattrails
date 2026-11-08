@@ -156,39 +156,42 @@ void DisplayedActivity::whole_activity()
     clear_segment();
 }
 
-std::optional<DisplayedActivity::RecordRange> DisplayedActivity::extension_base() const
+std::optional<DisplayedActivity::RecordRange> DisplayedActivity::extension_base(std::optional<size_t> from) const
 {
     // Not while a drag is going on: the range isn't there yet.
     if (segment && !anchor) {
         return segment;
     }
-    if (mark && *mark < activity.records.size()) {
-        return RecordRange { .min = *mark, .max = *mark };
+    if (!from) {
+        from = mark;
+    }
+    if (from && *from < activity.records.size()) {
+        return RecordRange { .min = *from, .max = *from };
     }
     return { };
 }
 
-std::optional<size_t> DisplayedActivity::extension_target(Boundary boundary, Direction direction) const
+std::optional<size_t> DisplayedActivity::extension_target(Boundary boundary, Direction direction, std::optional<size_t> from) const
 {
-    auto const base = extension_base();
+    auto const base = extension_base(from);
     if (!base) {
         return { };
     }
     return extend_to(activity, direction == Direction::Back ? base->min : base->max, boundary, direction);
 }
 
-bool DisplayedActivity::can_extend(Boundary boundary, Direction direction) const
+bool DisplayedActivity::can_extend(Boundary boundary, Direction direction, std::optional<size_t> from) const
 {
-    return extension_target(boundary, direction).has_value();
+    return extension_target(boundary, direction, from).has_value();
 }
 
-bool DisplayedActivity::extend(Boundary boundary, Direction direction)
+bool DisplayedActivity::extend(Boundary boundary, Direction direction, std::optional<size_t> from)
 {
-    auto base = extension_base();
+    auto base = extension_base(from);
     if (!base) {
         return false;
     }
-    auto const target = extension_target(boundary, direction);
+    auto const target = extension_target(boundary, direction, from);
     if (!target) {
         return true;
     }

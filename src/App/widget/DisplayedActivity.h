@@ -89,14 +89,14 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
 
     // Moves the selection's start back, or its end on, to the next km, lap
     // or stop (specs/38-extend-selection.md). It extends a dragged range
-    // or a lap, or else starts from the mark, the record right-clicked or
-    // last hovered. The new range is no lap's, and has its stats at once,
+    // or a lap, or else starts from `from`, the record right-clicked, or
+    // the mark, the record last hovered. The new range is no lap's, and has its stats at once,
     // however short: it was chosen, not dragged by accident. False if
     // there's nothing to start from; with nothing to go to, it stays as
     // it was.
-    bool extend(Boundary boundary, Direction direction);
+    bool extend(Boundary boundary, Direction direction, std::optional<size_t> from = { });
     // Whether extend() would change the selection.
-    [[nodiscard]] bool can_extend(Boundary boundary, Direction direction) const;
+    [[nodiscard]] bool can_extend(Boundary boundary, Direction direction, std::optional<size_t> from = { }) const;
 
     // Compares the activity with `other`, another recording of it, or stops.
     void compare_with(std::optional<Activity> const &other);
@@ -108,9 +108,9 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     [[nodiscard]] std::optional<Comparison> lap_comparison(size_t ix) const;
 
 private:
-    // What extend() starts from: the selection, or else the mark.
-    [[nodiscard]] std::optional<RecordRange> extension_base() const;
-    [[nodiscard]] std::optional<size_t>      extension_target(Boundary boundary, Direction direction) const;
+    // What extend() starts from: the selection, or else `from` or the mark.
+    [[nodiscard]] std::optional<RecordRange> extension_base(std::optional<size_t> from) const;
+    [[nodiscard]] std::optional<size_t>      extension_target(Boundary boundary, Direction direction, std::optional<size_t> from) const;
     [[nodiscard]] std::optional<Comparison>  comparison_of(size_t first, size_t end) const;
 
     // The last comparison_of(): the data panel asks for it every frame.
