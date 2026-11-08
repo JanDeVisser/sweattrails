@@ -650,6 +650,7 @@ sweattrails_test(
         src/App/overlay/Template.cpp
         src/App/overlay/TrackMap.cpp
         src/App/widget/DisplayedActivity.cpp
+        src/App/storage/Boundaries.cpp
         src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
@@ -709,6 +710,7 @@ sweattrails_test(
         displayed_activity_test
         test/DisplayedActivityTest.cpp
         src/App/widget/DisplayedActivity.cpp
+        src/App/storage/Boundaries.cpp
         src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp

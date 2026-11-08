@@ -156,6 +156,50 @@ void DisplayedActivity::whole_activity()
     clear_segment();
 }
 
+std::optional<DisplayedActivity::RecordRange> DisplayedActivity::extension_base() const
+{
+    // Not while a drag is going on: the range isn't there yet.
+    if (segment && !anchor) {
+        return segment;
+    }
+    if (mark && *mark < activity.records.size()) {
+        return RecordRange { .min = *mark, .max = *mark };
+    }
+    return { };
+}
+
+std::optional<size_t> DisplayedActivity::extension_target(Boundary boundary, Direction direction) const
+{
+    auto const base = extension_base();
+    if (!base) {
+        return { };
+    }
+    return extend_to(activity, direction == Direction::Back ? base->min : base->max, boundary, direction);
+}
+
+bool DisplayedActivity::can_extend(Boundary boundary, Direction direction) const
+{
+    return extension_target(boundary, direction).has_value();
+}
+
+bool DisplayedActivity::extend(Boundary boundary, Direction direction)
+{
+    auto base = extension_base();
+    if (!base) {
+        return false;
+    }
+    auto const target = extension_target(boundary, direction);
+    if (!target) {
+        return true;
+    }
+    (direction == Direction::Back ? base->min : base->max) = *target;
+    lap.reset();
+    anchor.reset();
+    segment = base;
+    range_stats = range_segment(activity, base->min, base->max);
+    return true;
+}
+
 std::vector<LapSpan> lap_spans(Activity const &activity, float width)
 {
     std::vector<LapSpan> spans;

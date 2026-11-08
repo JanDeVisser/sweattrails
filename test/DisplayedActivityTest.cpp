@@ -496,9 +496,91 @@ void test_lap_of()
     CHECK(!d.lap_of(100).has_value());
 }
 
+// A dragged range from 15 to 25, in the second lap, extends to the laps'
+// ends, and again to the next lap's.
+void test_extend_a_range()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.start_segment(15);
+    d.set_segment(25);
+    d.end_segment();
+    CHECK(d.extend(Boundary::Lap, Direction::On));
+    CHECK(d.segment.has_value() && d.segment->min == 15 && d.segment->max == 39);
+    CHECK(d.range_stats.has_value());
+    CHECK(d.extend(Boundary::Lap, Direction::On));
+    CHECK(d.segment.has_value() && d.segment->max == 99);
+    CHECK(d.extend(Boundary::Lap, Direction::Back));
+    CHECK(d.segment.has_value() && d.segment->min == 10 && d.segment->max == 99);
+}
+
+// A selected lap is a range once extended: no lap is selected.
+void test_extend_a_lap()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.select_lap(1);
+    CHECK(d.extend(Boundary::Lap, Direction::On));
+    CHECK(!d.lap.has_value());
+    CHECK(d.segment.has_value() && d.segment->min == 10 && d.segment->max == 99);
+    CHECK(d.range_stats.has_value());
+}
+
+// Without a selection, from the mark: the record right-clicked. A range
+// of a few seconds isn't cleared, as a short drag is.
+void test_extend_from_the_mark()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.set_mark(36);
+    CHECK(d.can_extend(Boundary::Lap, Direction::On));
+    CHECK(d.extend(Boundary::Lap, Direction::On));
+    CHECK(d.segment.has_value() && d.segment->min == 36 && d.segment->max == 39);
+    CHECK(d.range_stats.has_value());
+}
+
+void test_extend_from_nothing()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    CHECK(!d.can_extend(Boundary::Lap, Direction::On));
+    CHECK(!d.extend(Boundary::Lap, Direction::On));
+    CHECK(!d.segment.has_value());
+}
+
+// Nothing to go to: no distances for a km, and nothing after the last
+// lap. The selection stays as it was.
+void test_extend_to_nothing()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.select_lap(2);
+    CHECK(!d.can_extend(Boundary::Km, Direction::On));
+    CHECK(!d.can_extend(Boundary::Lap, Direction::On));
+    CHECK(d.extend(Boundary::Lap, Direction::On));
+    CHECK(d.lap == 2uz);
+    CHECK(d.segment.has_value() && d.segment->min == 40 && d.segment->max == 99);
+}
+
+// While a drag goes on there's no range to extend yet.
+void test_no_extending_while_dragging()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.start_segment(15);
+    d.set_segment(25);
+    CHECK(!d.can_extend(Boundary::Lap, Direction::On));
+}
+
 int main()
 {
     test_current_record();
+    test_extend_a_range();
+    test_extend_a_lap();
+    test_extend_from_the_mark();
+    test_extend_from_nothing();
+    test_extend_to_nothing();
+    test_no_extending_while_dragging();
     test_keep_lap();
     test_comparison();
     test_comparison_of_a_lap_by_the_clock();
