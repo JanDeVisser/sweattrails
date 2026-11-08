@@ -47,6 +47,10 @@ struct PopupMenu : public Modal {
     // The mouse: the item under it is selected, a click chooses it, and a
     // click outside the menu closes it.
     void process_input() override;
+    // The mouse at `mouse`, in screen coordinates, whether it moved, and
+    // whether a button was pressed. A press on a greyed-out item or the
+    // menu's edge does nothing.
+    void handle_mouse(Vector2 mouse, bool moved, bool pressed);
     // Up and Down, skipping greyed-out items, Enter and Esc.
     bool process_key(KeyboardModifier modifier, int key) override;
 

@@ -99,12 +99,19 @@ std::optional<size_t> PopupMenu::item_at(Vector2 mouse) const
 
 void PopupMenu::process_input()
 {
-    auto const mouse = GetMousePosition();
+    auto const delta = GetMouseDelta();
+    auto const pressed = IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
+    handle_mouse(GetMousePosition(), delta.x != 0 || delta.y != 0, pressed);
+}
+
+void PopupMenu::handle_mouse(Vector2 mouse, bool moved, bool pressed)
+{
     auto const item = item_at(mouse);
-    if (item && (GetMouseDelta().x != 0 || GetMouseDelta().y != 0)) {
+    // Only when it moves: a mouse resting on the menu doesn't undo Up
+    // and Down.
+    if (item && moved) {
         selection = item;
     }
-    auto const pressed = IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
     if (!pressed) {
         return;
     }

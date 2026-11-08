@@ -125,6 +125,37 @@ void test_item_at()
     CHECK(!t.menu->item_at({ 250, 110 }).has_value()); // Outside
 }
 
+// The menu at (100, 100), as in test_item_at().
+void test_the_mouse()
+{
+    TestMenu t;
+    t.menu->viewport = Rect<float> { 100.0f, 100.0f, 100.0f, 92.0f };
+    t.menu->row_height = 20;
+    t.menu->handle_mouse({ 150, 170 }, false, false);
+    CHECK(t.menu->selection == 0uz); // Resting: Up and Down's stays
+    t.menu->handle_mouse({ 150, 170 }, true, false);
+    CHECK(t.menu->selection == 3uz);
+    t.menu->handle_mouse({ 150, 130 }, true, true); // Greyed out
+    CHECK(t.ran.empty());
+    CHECK(t.menu->status == ModalStatus::Active);
+    t.menu->handle_mouse({ 150, 150 }, false, true);
+    std::vector<std::string> const expected { "Item 2" };
+    CHECK(t.ran == expected);
+    CHECK(t.menu->status == ModalStatus::Submitted);
+}
+
+void test_a_click_outside_closes_the_menu()
+{
+    TestMenu t;
+    t.menu->viewport = Rect<float> { 100.0f, 100.0f, 100.0f, 92.0f };
+    t.menu->row_height = 20;
+    t.menu->handle_mouse({ 150, 103 }, false, true); // The padding
+    CHECK(t.menu->status == ModalStatus::Active);
+    t.menu->handle_mouse({ 300, 300 }, false, true);
+    CHECK(t.ran.empty());
+    CHECK(t.menu->status == ModalStatus::Dismissed);
+}
+
 void test_menu_position()
 {
     Rectangle const screen { .x = 0, .y = 0, .width = 800, .height = 600 };
@@ -242,6 +273,8 @@ int main()
     test_a_greyed_out_item_cant_be_chosen();
     test_item_at();
     test_menu_position();
+    test_the_mouse();
+    test_a_click_outside_closes_the_menu();
     test_the_action_runs_after_the_menu_closed();
     test_keys_with_a_modifier();
     test_closing_without_actions();
