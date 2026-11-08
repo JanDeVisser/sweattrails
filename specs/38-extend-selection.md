@@ -323,3 +323,26 @@ None.
    asks raylib. A `handle_mouse(mouse, moved, pressed)` that
    `process_input()` calls would let a test cover them, as
    `ListBox::handle_scrolling()` does for the scrollbar.
+
+### Resolution
+
+Findings 1, 2, 3, 4 and 8 were fixed, each in its own commit; 5, 6 and 7
+are the reviewer's tests, committed with the review notes.
+
+1. and 2. A stop is now what the moving time leaves out between two
+   records that move, or at either end: a pause of more than
+   `RangeMovingGap`, or `RangeMovingGap` seconds or more up to records
+   standing still, however far apart the records are. Both tests pass.
+3. The menu passes the record right-clicked to its task as `"from"`,
+   and `DisplayedActivity::extend()` and `can_extend()` take it, in
+   place of the mark. The palette still starts from the mark.
+   `test_extend_from_the_record_right_clicked` checks that it takes the
+   place of a moved mark.
+4. `laps_with_records()` counts only laps with records, for the lap
+   items and for `has_laps()`, so an activity with one lap and an empty
+   one has neither a lap table nor lap items. `test_one_lap_and_an_
+   empty_one` checks it.
+8. `PopupMenu::handle_mouse()` takes the mouse's position, whether it
+   moved and whether a button was pressed. `test_the_mouse` and
+   `test_a_click_outside_closes_the_menu` cover it.
+
