@@ -163,6 +163,8 @@ add_library(
         src/Lib/Widget/ClipShader.cpp
         src/Lib/Widget/CommandPalette.h
         src/Lib/Widget/CommandPalette.cpp
+        src/Lib/Widget/PopupMenu.h
+        src/Lib/Widget/PopupMenu.cpp
         src/Lib/Widget/Colors.h
         src/Lib/Widget/Colors.cpp
         src/Lib/Widget/FontCache.h
@@ -332,6 +334,7 @@ endfunction()
 
 sweattrails_test(listbox_test test/ListBoxTest.cpp)
 sweattrails_test(command_palette_test test/CommandPaletteTest.cpp)
+sweattrails_test(popup_menu_test test/PopupMenuTest.cpp)
 sweattrails_test(scroll_test test/ScrollTest.cpp)
 sweattrails_test(table_test test/TableTest.cpp)
 sweattrails_test(bar_chart_test test/BarChartTest.cpp)
