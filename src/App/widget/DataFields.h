@@ -84,6 +84,14 @@ struct GraphLabel {
     Color       color { };
 };
 
+// FIT has a cadence on foot per leg: steps a minute are twice it.
+struct CadenceUnit {
+    std::string_view unit;
+    float64          scale;
+};
+
+[[nodiscard]] CadenceUnit cadence_unit(Activity const &activity);
+
 // A heart rate of 0 isn't one: the smoothing for the graph writes it into
 // the first records.
 [[nodiscard]] std::optional<u8> real_heart_rate(record const &rec);

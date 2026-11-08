@@ -80,7 +80,9 @@ records.
   "1:30", in hours and minutes. Each label goes at the first record at
   or past its time, with a short tick mark down from the plot. A pause
   that recorded nothing bunches the labels on either side of it, which
-  shows where it was.
+  shows where it was. If it lasted longer than a step, the record after
+  it gets the last step it passed: "0:30" after a pause from 0:08 to
+  0:35, not "0:10".
 - **Distance** runs along the top of the plot, under the legend: "5 km",
   at the first record at or past it, with a short tick mark up from the
   plot. An activity without distances, such as an indoor ride without a

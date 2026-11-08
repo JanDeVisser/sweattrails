@@ -224,6 +224,7 @@ add_executable(
         src/App/widget/ActivitySelector.cpp
         src/App/widget/DataFields.cpp
         src/App/widget/DisplayedActivity.cpp
+        src/App/widget/GraphData.cpp
         src/App/widget/OverlayPreview.cpp
         src/App/widget/SportIcon.cpp
         src/App/widget/Summaries.cpp
@@ -422,6 +423,26 @@ sweattrails_test(
 )
 target_include_directories(data_fields_test PRIVATE src/App)
 target_link_libraries(data_fields_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        graph_data_test
+        test/GraphDataTest.cpp
+        src/App/widget/GraphData.cpp
+        src/App/widget/DataFields.cpp
+        src/App/storage/Thresholds.cpp
+        src/App/storage/Volume.cpp
+        src/App/storage/Comparison.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(graph_data_test PRIVATE src/App)
+target_link_libraries(graph_data_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         overlay_fields_test
