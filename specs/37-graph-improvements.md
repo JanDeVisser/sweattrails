@@ -232,10 +232,11 @@ None.
    the step from the spec's lists. A label goes at the first record at
    or past its time or distance. `visible_labels()` then drops those a
    pause bunches into each other.
-4. **Layout:** the widget becomes 220 pixels high instead of 200. The
-   top band stays 50 pixels: the legend at the top and the km labels
-   under it. The extra 20 pixels at the bottom take the time labels,
-   under the strip. The plot keeps its height.
+4. **Layout:** the plot keeps its 150 pixels, less the strip. Above it,
+   the top band has the legend and the km labels under it; below the
+   strip, the bottom band has the time labels. Each band is sized from
+   the small font's height, so the widget grows with the font: about
+   220 pixels at the default size.
 5. **Resizing:** `set_activity()` and `resize()` both call a private
    `render()`. `resize()` only renders again when the plot's width or
    height has changed, since the layout resizes every widget whenever
@@ -344,3 +345,23 @@ Tests added to `test/GraphDataTest.cpp`:
 `test_time_ticks_after_the_specs_pause`, `test_ticks_at_the_edges` and
 `test_legend_range_while_comparing` (all pass). The full run fails only on
 `graph_data_test`, because of finding 2.
+
+### Resolution
+
+All six were fixed, each in its own commit:
+
+1. The legend shows values only while the mouse is over the plot and a
+   mark is set, and the ranges otherwise. The mark stays, for the map
+   and the line in the graph. Checked by hand: it needs the mouse.
+2. `RollingAverage::add()` starts again when a record is earlier than
+   the one before it, as after a pause.
+   `test_average_restarts_when_the_clock_goes_back` passes now.
+3. The scales, and so the legend's ranges, come from `graph_series()`,
+   the smoothed values, not the columns, also while comparing.
+4. The bands are a small-font row each: `top_band()` and
+   `bottom_band()`. `ActivityDisplay::on_resize()` sets the graph's
+   height from them, since the fonts are loaded after the widgets are
+   made.
+5. Only the plot, `plot_area()`, starts a drag or sets the mark. The
+   lap strip still selects laps.
+6. The unused variable is gone.
