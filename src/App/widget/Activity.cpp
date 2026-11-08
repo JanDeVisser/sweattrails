@@ -501,8 +501,11 @@ void ActivityGraph::render_lines(int width, int height)
     auto const  recorded = as_recorded(shown);
     auto const  h = static_cast<float>(height);
     for (auto const value : { GraphValue::Altitude, GraphValue::Speed, GraphValue::HeartRate, GraphValue::Power }) {
-        auto const columns = graph_columns(graph_series(recorded, value), width);
-        auto const scale = graph_scale(value, std::span { &columns, 1 });
+        // The scale is the values', not the columns': a column averages
+        // its records, and would hide the lowest and highest of them.
+        auto const series = graph_series(recorded, value);
+        auto const columns = graph_columns(series, width);
+        auto const scale = graph_scale(value, std::span { &series, 1 });
         if (!scale) {
             continue;
         }
@@ -538,8 +541,9 @@ void ActivityGraph::render_compared(int width, int height)
                 paired[ix] = other_series[*pair];
             }
         }
-        std::array const columns { graph_columns(graph_series(as_recorded(shown), value), width), graph_columns(paired, width) };
-        auto const       scale = graph_scale(value, columns);
+        std::array const series { graph_series(as_recorded(shown), value), paired };
+        std::array const columns { graph_columns(series[0], width), graph_columns(series[1], width) };
+        auto const       scale = graph_scale(value, series);
         if (!scale) {
             continue;
         }
