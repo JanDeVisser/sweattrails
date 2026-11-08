@@ -403,6 +403,9 @@ struct SweatTrails : public Main<Job, Notification> {
     // An empty text, while a login waits, shows that it waits.
     void set_status(std::string_view const &text);
     void show_activity(Activity const &activity);
+    // The graph's right-click menu at `at`, to extend the selection, or
+    // from the mark, the record right-clicked.
+    void selection_menu(Vector2 at);
     // Another recording of the activity on display, keeping the view.
     void show_recording(Activity const &recording);
     // While comparing, the activity on display is compared with another

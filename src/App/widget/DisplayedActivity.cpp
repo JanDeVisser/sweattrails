@@ -89,7 +89,7 @@ size_t DisplayedActivity::current_record() const
 
 bool DisplayedActivity::has_laps() const
 {
-    return activity.laps.size() > 1;
+    return laps_with_records(activity) > 1;
 }
 
 std::optional<size_t> DisplayedActivity::lap_of(size_t t) const
@@ -154,6 +154,53 @@ void DisplayedActivity::previous_lap()
 void DisplayedActivity::whole_activity()
 {
     clear_segment();
+}
+
+std::optional<DisplayedActivity::RecordRange> DisplayedActivity::extension_base(std::optional<size_t> from) const
+{
+    // Not while a drag is going on: the range isn't there yet.
+    if (segment && !anchor) {
+        return segment;
+    }
+    if (!from) {
+        from = mark;
+    }
+    if (from && *from < activity.records.size()) {
+        return RecordRange { .min = *from, .max = *from };
+    }
+    return { };
+}
+
+std::optional<size_t> DisplayedActivity::extension_target(Boundary boundary, Direction direction, std::optional<size_t> from) const
+{
+    auto const base = extension_base(from);
+    if (!base) {
+        return { };
+    }
+    return extend_to(activity, direction == Direction::Back ? base->min : base->max, boundary, direction);
+}
+
+bool DisplayedActivity::can_extend(Boundary boundary, Direction direction, std::optional<size_t> from) const
+{
+    return extension_target(boundary, direction, from).has_value();
+}
+
+bool DisplayedActivity::extend(Boundary boundary, Direction direction, std::optional<size_t> from)
+{
+    auto base = extension_base(from);
+    if (!base) {
+        return false;
+    }
+    auto const target = extension_target(boundary, direction, from);
+    if (!target) {
+        return true;
+    }
+    (direction == Direction::Back ? base->min : base->max) = *target;
+    lap.reset();
+    anchor.reset();
+    segment = base;
+    range_stats = range_segment(activity, base->min, base->max);
+    return true;
 }
 
 std::vector<LapSpan> lap_spans(Activity const &activity, float width)

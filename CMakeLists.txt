@@ -163,6 +163,8 @@ add_library(
         src/Lib/Widget/ClipShader.cpp
         src/Lib/Widget/CommandPalette.h
         src/Lib/Widget/CommandPalette.cpp
+        src/Lib/Widget/PopupMenu.h
+        src/Lib/Widget/PopupMenu.cpp
         src/Lib/Widget/Colors.h
         src/Lib/Widget/Colors.cpp
         src/Lib/Widget/FontCache.h
@@ -229,6 +231,7 @@ add_executable(
         src/App/widget/SportIcon.cpp
         src/App/widget/Summaries.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Boundaries.cpp
         src/App/storage/Gaps.cpp
         src/App/storage/Comparison.cpp
         src/App/storage/Recordings.cpp
@@ -331,6 +334,7 @@ endfunction()
 
 sweattrails_test(listbox_test test/ListBoxTest.cpp)
 sweattrails_test(command_palette_test test/CommandPaletteTest.cpp)
+sweattrails_test(popup_menu_test test/PopupMenuTest.cpp)
 sweattrails_test(scroll_test test/ScrollTest.cpp)
 sweattrails_test(table_test test/TableTest.cpp)
 sweattrails_test(bar_chart_test test/BarChartTest.cpp)
@@ -649,6 +653,7 @@ sweattrails_test(
         src/App/overlay/Template.cpp
         src/App/overlay/TrackMap.cpp
         src/App/widget/DisplayedActivity.cpp
+        src/App/storage/Boundaries.cpp
         src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp
@@ -689,9 +694,26 @@ target_include_directories(overlay_tiles_needed_test PRIVATE src/App)
 target_link_libraries(overlay_tiles_needed_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
+        boundaries_test
+        test/BoundariesTest.cpp
+        src/App/storage/Boundaries.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(boundaries_test PRIVATE src/App)
+target_link_libraries(boundaries_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
         displayed_activity_test
         test/DisplayedActivityTest.cpp
         src/App/widget/DisplayedActivity.cpp
+        src/App/storage/Boundaries.cpp
         src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Laps.cpp

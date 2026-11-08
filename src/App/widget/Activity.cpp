@@ -483,6 +483,13 @@ void ActivityGraph::process_input()
     if (!CheckCollisionPointRec(mouse, plot_area())) {
         return;
     }
+    // A right-click opens the menu to extend the selection, or to select
+    // from the record clicked, the mark, if there's no selection.
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+        activity->set_mark(record_at());
+        SweatTrails::the()->selection_menu(mouse);
+        return;
+    }
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
         activity->clear_mark();
         dragging = true;
