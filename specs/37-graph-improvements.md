@@ -153,6 +153,10 @@ background, so they get lighter:
   `DARKGREEN`. It gets a `SpeedColor` constant next to `PowerColor`,
   `HeartRateColor` and `CadenceColor`, used for its line, the legend and
   the hover values, where `DARKGREEN` is now written out.
+- **The mark**, the line across the graph at the record under the mouse,
+  was black, which hardly shows on the dark background. It becomes
+  raylib's `GOLD`, as a `MarkColor` constant, a colour none of the lines
+  has.
 
 ### Version 1 scope
 

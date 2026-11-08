@@ -420,7 +420,7 @@ void ActivityGraph::draw()
     if (activity->mark && *activity->mark < activity->activity.records.size()) {
         auto const dt = plot_width() / static_cast<float>(activity->activity.records.size());
         auto const x = static_cast<float>(*activity->mark) * dt;
-        draw_line(x, top_band(), x, top_band() + height, BLACK);
+        draw_line(x, top_band(), x, top_band() + height, MarkColor);
     }
     draw_legend();
 }

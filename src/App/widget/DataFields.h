@@ -78,6 +78,8 @@ constexpr Color SpeedColor = LIME;
 constexpr Color PowerColor = SKYBLUE;
 constexpr Color HeartRateColor = RED;
 constexpr Color CadenceColor = PURPLE;
+// The marked record's line across the graph, in none of the lines' colors.
+constexpr Color MarkColor = GOLD;
 
 struct GraphLabel {
     std::string text { };
