@@ -172,9 +172,10 @@ Deferred:
 
 - Extending the selection with a right-click, to the next km, lap or
   stop: spec 38 *(deferred)*.
-- Pace instead of speed for runs, turning lines on and off, and cadence
-  outside comparing *(deferred)*.
-- Zooming into a range *(deferred)*.
+- Pace instead of speed for runs: `specs/39-graph-zoom-and-pace.md`
+  *(deferred)*.
+- Turning lines on and off, and cadence outside comparing *(deferred)*.
+- Zooming into a range: `specs/39-graph-zoom-and-pace.md` *(deferred)*.
 - Miles *(deferred)*.
 
 ## Open questions
