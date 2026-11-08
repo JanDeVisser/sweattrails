@@ -1,6 +1,6 @@
 # Extending the selection to the next km, lap or stop
 
-Status: In progress
+Status: In review
 
 <!--
 Status is one of:
