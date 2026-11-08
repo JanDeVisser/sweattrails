@@ -71,15 +71,28 @@ std::string format_compared(Compared const &compared, std::string_view unit, flo
 std::string compared_suffix(std::string_view device);
 
 // The graph's colors, which the banner under the cursor uses too. The
-// other recording's lines are a lighter shade of them.
-constexpr Color PowerColor = DARKBLUE;
+// other recording's lines are a lighter shade of them. Light enough to
+// read on the dark background.
+constexpr Color AltitudeColor = LIGHTGRAY;
+constexpr Color SpeedColor = LIME;
+constexpr Color PowerColor = SKYBLUE;
 constexpr Color HeartRateColor = RED;
 constexpr Color CadenceColor = PURPLE;
+// The marked record's line across the graph, in none of the lines' colors.
+constexpr Color MarkColor = GOLD;
 
 struct GraphLabel {
     std::string text { };
     Color       color { };
 };
+
+// FIT has a cadence on foot per leg: steps a minute are twice it.
+struct CadenceUnit {
+    std::string_view unit;
+    float64          scale;
+};
+
+[[nodiscard]] CadenceUnit cadence_unit(Activity const &activity);
 
 // A heart rate of 0 isn't one: the smoothing for the graph writes it into
 // the first records.

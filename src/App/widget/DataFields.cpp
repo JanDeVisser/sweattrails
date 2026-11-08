@@ -374,22 +374,6 @@ std::string compared_suffix(std::string_view device)
 
 namespace {
 
-struct CadenceUnit {
-    std::string_view unit;
-    float64          scale;
-};
-
-CadenceUnit cadence_unit(Activity const &activity)
-{
-    if (is_ride(activity)) {
-        return { "rpm", 1 };
-    }
-    if (is_on_foot(activity)) {
-        return { "spm", 2 };
-    }
-    return { "/min", 1 };
-}
-
 void add_compared_lines(std::vector<DataLine> &lines, Activity const &activity, Comparison const &comparison)
 {
     auto const add = [&lines](std::string const &label, Compared const &compared, std::string_view unit, float64 scale = 1) {
@@ -406,6 +390,17 @@ void add_compared_lines(std::vector<DataLine> &lines, Activity const &activity, 
     add("Max HR", comparison.max_hr, "bpm");
 }
 
+}
+
+CadenceUnit cadence_unit(Activity const &activity)
+{
+    if (is_ride(activity)) {
+        return { "rpm", 1 };
+    }
+    if (is_on_foot(activity)) {
+        return { "spm", 2 };
+    }
+    return { "/min", 1 };
 }
 
 std::optional<u8> real_heart_rate(record const &rec)
