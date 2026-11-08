@@ -47,6 +47,10 @@ struct Stop {
 // speed move, so only pauses stop them.
 [[nodiscard]] std::vector<Stop> stops(std::span<record const> recorded);
 
+// The laps with records: a watch can log a lap without any, which isn't
+// one to select or extend to.
+[[nodiscard]] size_t laps_with_records(Activity const &activity);
+
 // The record the selection's start moves back to, or its end on to, from
 // record `from`, for the next km, lap or stop in that direction. One
 // `from` is already on doesn't count. None when there's nothing to go to:

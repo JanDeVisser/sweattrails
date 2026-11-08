@@ -70,7 +70,8 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     // the first.
     [[nodiscard]] size_t current_record() const;
 
-    // Whether there are laps to select: one lap is the whole activity.
+    // Whether there are laps to select: one lap with records is the whole
+    // activity.
     [[nodiscard]] bool has_laps() const;
     // The lap that record `t` is in.
     [[nodiscard]] std::optional<size_t> lap_of(size_t t) const;

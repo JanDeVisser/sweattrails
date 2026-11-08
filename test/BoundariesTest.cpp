@@ -339,6 +339,16 @@ void test_laps_empty_and_not_covering_the_records()
     CHECK(partial.to(20, Boundary::Lap, Direction::Back) == std::optional<size_t> { });
 }
 
+// One lap with records, and an empty one, is a single lap: nothing to
+// extend to.
+void test_one_lap_and_an_empty_one()
+{
+    TestActivity const t { moving(100), { { 0, 100 }, { 100, 100 } } };
+    CHECK_EQ(laps_with_records(t.activity), 1uz);
+    CHECK(t.to(50, Boundary::Lap, Direction::On) == std::optional<size_t> { });
+    CHECK(t.to(50, Boundary::Lap, Direction::Back) == std::optional<size_t> { });
+}
+
 // Reviewer: smart recording, records a few seconds apart. One record
 // still, 6 s after the one before, and the next moving 5 s after it: no
 // pause of more than 10 s, and 6 s standing still, which the moving time
@@ -381,5 +391,6 @@ int main()
     test_km_with_distances_from_partway();
     test_laps_empty_and_not_covering_the_records();
     test_a_slowdown_between_sparse_records_is_not_a_stop();
+    test_one_lap_and_an_empty_one();
     return Test::test_result();
 }

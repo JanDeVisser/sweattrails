@@ -154,6 +154,11 @@ std::vector<Stop> stops(std::span<record const> recorded)
     return ret;
 }
 
+size_t laps_with_records(Activity const &activity)
+{
+    return static_cast<size_t>(std::ranges::count_if(activity.laps, [](Lap const &lap) { return lap.end_record > lap.first_record; }));
+}
+
 std::optional<size_t> extend_to(Activity const &activity, size_t from, Boundary boundary, Direction direction)
 {
     std::span<record const> const records = activity.records;
@@ -167,7 +172,7 @@ std::optional<size_t> extend_to(Activity const &activity, size_t from, Boundary 
         }
         return direction == Direction::On ? km_on(records, from) : km_back(records, from);
     case Boundary::Lap:
-        if (activity.laps.size() < 2) {
+        if (laps_with_records(activity) < 2) {
             return { };
         }
         return direction == Direction::On ? lap_on(activity.laps, from) : lap_back(activity.laps, from);

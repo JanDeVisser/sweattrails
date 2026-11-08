@@ -89,7 +89,7 @@ size_t DisplayedActivity::current_record() const
 
 bool DisplayedActivity::has_laps() const
 {
-    return activity.laps.size() > 1;
+    return laps_with_records(activity) > 1;
 }
 
 std::optional<size_t> DisplayedActivity::lap_of(size_t t) const
