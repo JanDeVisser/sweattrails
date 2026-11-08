@@ -66,7 +66,9 @@ struct RollingAverage {
 
     float add(u32 at, float value)
     {
-        if (!window.empty() && at > window.back().at + RangeMovingGap) {
+        // A clock that goes back would keep every sample after it in the
+        // window, until it catches up: start again, as after a pause.
+        if (!window.empty() && (at > window.back().at + RangeMovingGap || at < window.back().at)) {
             clear();
         }
         window.push_back({ .at = at, .value = value });

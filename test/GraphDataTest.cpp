@@ -413,7 +413,7 @@ int main()
     test_no_distance_ticks_without_distances();
     test_legend_ranges();
     test_legend_values();
-    // test_average_restarts_when_the_clock_goes_back(); // Review finding 2
+    test_average_restarts_when_the_clock_goes_back();
     test_repeated_timestamps_are_averaged();
     test_cadence_is_as_recorded();
     test_columns_take_every_record_once();

@@ -40,8 +40,9 @@ constexpr u32 GraphSmoothing = 5;
 constexpr float GraphTickSpacing = 80.0f;
 
 // One value of the records as recorded, smoothed for power and speed. The
-// average restarts after a dropout, and after a pause of more than
-// RangeMovingGap seconds, which recorded nothing.
+// average restarts after a dropout, after a pause of more than
+// RangeMovingGap seconds, which recorded nothing, and when the clock goes
+// back.
 [[nodiscard]] GraphSeries graph_series(std::span<record const> recorded, GraphValue value);
 
 // The series in `width` pixel columns: each the average of its records'
