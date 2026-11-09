@@ -55,6 +55,17 @@ void TextArea::set_width(float width, Measure measure)
 
 bool TextArea::insert(rune ch)
 {
+    if (!put(ch)) {
+        return false;
+    }
+    changed();
+    return true;
+}
+
+// Puts a character at the cursor, as insert() does, but without wrapping
+// again: a paste wraps once, after its last.
+bool TextArea::put(rune ch)
+{
     auto const is_codepoint = ch >= 0 && ch <= 0x10FFFF && (ch < 0xD800 || ch > 0xDFFF);
     if (ch == L'\t') {
         ch = L' ';
@@ -64,7 +75,6 @@ bool TextArea::insert(rune ch)
     }
     text.insert(cursor, 1, ch);
     ++cursor;
-    changed();
     return true;
 }
 
@@ -88,8 +98,9 @@ void TextArea::paste(std::string_view const &utf8)
             }
             ch = L'\n';
         }
-        insert(ch);
+        put(ch);
     }
+    changed();
 }
 
 void TextArea::backspace()

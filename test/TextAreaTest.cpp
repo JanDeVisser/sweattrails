@@ -371,6 +371,25 @@ void test_delete_word_over_a_line_break()
 
 }
 
+// A long paste is wrapped once, not again after each character.
+void test_paste_wraps_once()
+{
+    size_t   measured = 0;
+    TextArea a;
+    a.set_width(400, [&measured](rune_view piece) {
+        ++measured;
+        return 10.0f * static_cast<float>(piece.length());
+    });
+    std::string words;
+    for (auto ix = 0; ix < 200; ++ix) {
+        words += "word ";
+    }
+    measured = 0;
+    a.handle_key(Paste, KEY_V, [&words] { return words; });
+    CHECK_EQ(a.text.length(), 1000uz);
+    CHECK(measured < 2000);
+}
+
 int main()
 {
     Test::ScopedTestApp app;
@@ -384,6 +403,7 @@ int main()
     test_text_start_and_end();
     test_words();
     test_paste();
+    test_paste_wraps_once();
     test_position_at();
     test_scrolling();
     test_click_forgets_the_goal();

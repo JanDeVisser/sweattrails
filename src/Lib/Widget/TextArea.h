@@ -114,6 +114,7 @@ private:
     float                m_width { std::numeric_limits<float>::max() };
     Measure              m_measure { };
     std::optional<float> m_goal_x { }; // Where up() and down() aim for
+    bool                 put(rune ch);
     void                 changed();
     void                 wrap();
     [[nodiscard]] float  measure(size_t start, size_t end) const;
