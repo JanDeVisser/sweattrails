@@ -333,8 +333,7 @@ struct ListBox : public Modal {
         if constexpr (Config.shrink && !Config.search) {
             scroll.lines = clamp(scroll.lines, 0, entries.size());
         }
-        auto    f = App::the()->font();
-        Vector2 m = MeasureTextEx(*f, prompt.c_str(), f->baseSize, 2);
+        auto const m = App::measure_text(prompt.c_str(), FontSize::Medium);
         if (m.x > viewport.width - 16) {
             viewport.width = m.x + 16;
             viewport.x = (screen.width - m.x) / 2;
@@ -617,9 +616,7 @@ void input_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
             auto const scroll = line.scroll_for(cursor_x, text_width, width - 2);
 
             BeginScissorMode(viewport.x + left, viewport.y + y - 2, width, App::the()->cell().y + 4);
-            assert(sizeof(rune) == sizeof(int));
-            DrawTextCodepoints(*font, reinterpret_cast<int const *>(line.text.c_str()), static_cast<int>(line.text.length()),
-                Vector2 { viewport.x + left - scroll, viewport.y + y }, static_cast<float>(font->baseSize), 2, RAYWHITE);
+            render_text_no_normalize(left - scroll, y, rune_view { line.text }, FontSize::Medium, RAYWHITE);
             double t = GetTime();
             if ((t - floor(t)) < 0.5) {
                 draw_rectangle_no_normalize(left + cursor_x - scroll, y - 2, 2, App::the()->cell().y + 2, RAYWHITE);

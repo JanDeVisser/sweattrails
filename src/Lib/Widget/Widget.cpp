@@ -9,6 +9,7 @@
 #include <raylib.h>
 
 #include <JSON.h>
+#include <Utf8.h>
 
 #include <App.h>
 #include <Emoji.h>
@@ -208,6 +209,42 @@ Vector2 text_size(rune_view text, Font const &font, float size)
     return ret;
 }
 
+// The text in runs of text and emoji, or as one run without emoji.
+std::vector<TextRun> runs_of(rune_view text)
+{
+    auto const *set = emoji_set();
+    if (set == nullptr) {
+        return { TextRun { .kind = RunKind::Text, .start = 0, .end = text.size() } };
+    }
+    return split_emoji(text, *set, App::font_has);
+}
+
+// Draws the runs from `pos`, in screen coordinates.
+void draw_runs(Vector2 pos, rune_view const &text, std::vector<TextRun> const &runs, Font const &font, float size, Color color)
+{
+    auto const emoji_size = static_cast<float>(font.baseSize) * size;
+    auto const piece = [&text](TextRun const &run) {
+        return text.substr(run.start, run.end - run.start);
+    };
+    static_assert(sizeof(rune) == sizeof(int));
+    for (auto const &run : runs) {
+        auto const runes = piece(run);
+        if (run.kind == RunKind::Text) {
+            DrawTextCodepoints(font, reinterpret_cast<int const *>(runes.data()), static_cast<int>(runes.size()), pos, emoji_size, 2, color);
+            pos.x += text_size(runes, font, size).x;
+        } else if (run.kind == RunKind::Emoji) {
+            if (auto const texture = App::the()->emoji_texture(run.image); texture) {
+                Rectangle const source { .x = 0, .y = 0, .width = static_cast<float>(texture->width), .height = static_cast<float>(texture->height) };
+                Rectangle const dest { .x = pos.x, .y = pos.y, .width = emoji_size, .height = emoji_size };
+                DrawTexturePro(*texture, source, dest, Vector2 { }, 0, WHITE);
+            } else {
+                DrawTextCodepoints(font, reinterpret_cast<int const *>(runes.data()), static_cast<int>(runes.size()), pos, emoji_size, 2, color);
+            }
+            pos.x += emoji_size + 2;
+        }
+    }
+}
+
 }
 
 // The text in runs of text and emoji (specs/42-emoji.md): the text in the
@@ -218,11 +255,7 @@ Vector2 Widget::render_sized_text_(float x, float y, rune_view const &text, Font
     if (text.empty()) {
         return { 0, 0 };
     }
-    auto const          *set = emoji_set();
-    std::vector<TextRun> runs = set != nullptr ? split_emoji(text, *set, App::font_has) : std::vector<TextRun> { };
-    if (runs.empty()) {
-        runs.push_back(TextRun { .kind = RunKind::Text, .start = 0, .end = text.size() });
-    }
+    auto const runs = runs_of(text);
     auto const emoji_size = static_cast<float>(font.baseSize) * size;
     auto const piece = [&text](TextRun const &run) {
         return text.substr(run.start, run.end - run.start);
@@ -245,26 +278,19 @@ Vector2 Widget::render_sized_text_(float x, float y, rune_view const &text, Font
     if (y < 0) {
         y = viewport.height - total.y + y;
     }
-
-    Vector2 pos { viewport.x + x, viewport.y + y };
-    static_assert(sizeof(rune) == sizeof(int));
-    for (auto const &run : runs) {
-        auto const runes = piece(run);
-        if (run.kind == RunKind::Text) {
-            DrawTextCodepoints(font, reinterpret_cast<int const *>(runes.data()), static_cast<int>(runes.size()), pos, emoji_size, 2, color);
-            pos.x += text_size(runes, font, size).x;
-        } else if (run.kind == RunKind::Emoji) {
-            if (auto const texture = App::the()->emoji_texture(run.image); texture) {
-                Rectangle const source { .x = 0, .y = 0, .width = static_cast<float>(texture->width), .height = static_cast<float>(texture->height) };
-                Rectangle const dest { .x = pos.x, .y = pos.y, .width = emoji_size, .height = emoji_size };
-                DrawTexturePro(*texture, source, dest, Vector2 { }, 0, WHITE);
-            } else {
-                DrawTextCodepoints(font, reinterpret_cast<int const *>(runes.data()), static_cast<int>(runes.size()), pos, emoji_size, 2, color);
-            }
-            pos.x += emoji_size + 2;
-        }
-    }
+    draw_runs(Vector2 { viewport.x + x, viewport.y + y }, text, runs, font, size, color);
     return total;
+}
+
+Vector2 Widget::render_text_no_normalize_(float x, float y, rune_view const &text, FontSize font_size, Color color) const
+{
+    auto const font = App::the()->font(font_size);
+    if (!font || text.empty()) {
+        return { 0, 0 };
+    }
+    auto const runs = runs_of(text);
+    draw_runs(Vector2 { viewport.x + x, viewport.y + y }, text, runs, *font, 1.0f, color);
+    return App::measure_text(to_utf8(text).value_or(std::string { }).c_str(), font_size);
 }
 
 Vector2 Widget::render_sized_text_(float x, float y, rune_view const &text, FontSize font_size, Color color) const
@@ -374,7 +400,7 @@ void Widget::draw_hover_panel_(float x, float y, StringList const &text, Color b
     }
     auto f = App::the()->font(font_size);
     assert(f.has_value());
-    auto text_size { MeasureTextEx(*f, text.at(longest_line).c_str(), f->baseSize, 2) };
+    auto text_size { App::measure_text(text.at(longest_line).c_str(), font_size) };
     auto width { static_cast<float>(text_size.x + 12) };
     auto height { (text_size.y + 2) * text.size() + 12 };
     draw_rectangle_no_normalize(x, y, width, height, bgcolor);
