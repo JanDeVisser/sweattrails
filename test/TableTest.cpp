@@ -253,7 +253,7 @@ int main()
 {
     Test::ScopedTestApp app;
     // test_fit_rows_keeps_the_rows_filled(); // Review finding 2
-    // test_characters_table_shows_its_rows(app); // Review finding 1
+    test_characters_table_shows_its_rows(app);
     test_fit_rows();
     test_set_rows();
     test_select_scrolls();

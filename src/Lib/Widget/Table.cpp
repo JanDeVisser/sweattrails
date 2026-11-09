@@ -123,7 +123,11 @@ void Table::fit_rows()
     if (row_height <= 0) {
         return;
     }
-    scroll.lines = std::max(0, static_cast<int>(std::floor(viewport.height / row_height)) - 1);
+    // The layout works a height in characters out in double, and the row
+    // height is in float: a height of a whole number of rows can come out
+    // a hair short of it.
+    auto const fit = std::floor(viewport.height / row_height + 0.001f);
+    scroll.lines = std::max(0, static_cast<int>(fit) - 1);
     if (selection) {
         scroll.scroll_to(static_cast<int>(*selection));
     }
