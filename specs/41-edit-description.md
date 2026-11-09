@@ -289,3 +289,28 @@ the new `test/TextAreaBoxTest.cpp` (`text_area_box_test`, registered in
 `test/StravaTitlesTest.cpp` (`test_sync_keeps_the_users_notes`). With
 them, `text_area_test` and `activity_load_test` fail, for findings 1 and
 2; all other tests pass.
+
+### Resolution
+
+1. Fixed. `TextArea::click(line, x)` places the cursor and forgets the
+   x Up and Down aim for; the box uses it. It's the Architecture's
+   `cursor_at()`, under another name. `test_click_forgets_the_goal`
+   passes, calling `click()`, which the old code didn't have.
+2. Fixed. `set_notes()` compares with Strava's description trimmed.
+   `test_set_notes_on_stravas_untrimmed_description` passes.
+3. Fixed. A paste puts its characters in and wraps once:
+   `test_paste_wraps_once` counts the measures, and failed on the old
+   code.
+4. Kept `text_area_box_test`. Esc with changes and "Discard the
+   changes?" are checked by hand.
+5. Fixed. End, and a click past the end, on a line that breaks a word
+   go to the break, where typing goes on with the word, shown at the
+   start of the next line. Right and Left step over the spaces a line
+   wraps after. `test_ends_of_wrapped_lines`.
+6. Fixed. `set()` goes through `paste()`, so `\r\n` and `\r` are line
+   breaks, and wraps again for text that isn't UTF-8.
+   `test_set_with_carriage_returns`.
+7. Fixed. `notif_titles_changed()` lays the activity screen out again
+   after reading the names, as saving a description does. Checked by
+   hand.
+
