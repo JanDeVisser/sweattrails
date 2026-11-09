@@ -83,26 +83,32 @@ struct RollingAverage {
     }
 };
 
-// A tick at the first record at or past each step from 0, for a position
-// that grows with the records.
-std::vector<GraphTick> ticks_at(std::span<record const> records, float width, std::vector<double> const &steps,
-    std::function<std::optional<double>(record const &)> const &position, std::function<std::string(double)> const &label)
+// A tick at the first record at or past each step within the view, for a
+// position that grows with the records.
+std::vector<GraphTick> ticks_at(std::span<record const> records, GraphView const &view, float width, std::vector<double> const &steps,
+    std::function<std::optional<double>(record const &)> const &position, std::function<std::string(double, double)> const &label)
 {
     std::vector<GraphTick> ret;
-    std::optional<double>  last;
-    for (auto const &rec : records) {
+    if (view.count() == 0 || view.end > records.size() || width <= 0) {
+        return ret;
+    }
+    auto const            shown = records.subspan(view.first, view.count());
+    std::optional<double> first;
+    std::optional<double> last;
+    for (auto const &rec : shown) {
         if (auto const p = position(rec); p) {
+            first = first.value_or(*p);
             last = std::max(last.value_or(*p), *p);
         }
     }
-    if (records.empty() || width <= 0 || !last || *last <= 0) {
+    if (!first || *last <= *first) {
         return ret;
     }
     auto const ticks = std::max(1, static_cast<int>(width / GraphTickSpacing));
-    auto const step = nice_span(0, *last, ticks, steps).step;
-    auto const dt = width / static_cast<float>(records.size());
-    auto       next = step;
-    for (auto ix = 0uz; ix < records.size() && next <= *last; ++ix) {
+    auto const step = nice_span(*first, *last, ticks, steps).step;
+    // Not one at the left edge, where the view starts.
+    auto next = std::floor(*first / step) * step + step;
+    for (auto ix = view.first; ix < view.end && next <= *last; ++ix) {
         auto const p = position(records[ix]);
         if (!p || *p < next) {
             continue;
@@ -110,7 +116,7 @@ std::vector<GraphTick> ticks_at(std::span<record const> records, float width, st
         // After a pause that recorded nothing for longer than a step, the
         // record is past several: it gets the last of them.
         auto const passed = std::floor(*p / step) * step;
-        ret.push_back({ .x = dt * static_cast<float>(ix), .label = label(passed) });
+        ret.push_back({ .x = view_x(view, ix, width), .label = label(passed, step) });
         next = passed + step;
     }
     return ret;
@@ -192,31 +198,35 @@ float graph_y(GraphScale const &scale, float value, float height)
     return height - (value - scale.bottom) * height / (scale.top - scale.bottom);
 }
 
-std::vector<GraphTick> time_ticks(std::span<record const> records, float width)
+std::vector<GraphTick> time_ticks(std::span<record const> records, GraphView const &view, float width)
 {
     if (records.empty()) {
         return { };
     }
     auto const start = records.front().timestamp.timestamp;
     return ticks_at(
-        records, width, { 60, 120, 300, 600, 900, 1800, 3600, 7200 },
+        records, view, width, { 10, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200 },
         [start](record const &rec) -> std::optional<double> {
             return static_cast<double>(rec.timestamp.timestamp) - static_cast<double>(start);
         },
-        [](double seconds) {
-            auto const minutes = static_cast<int>(std::lround(seconds / 60));
+        [](double seconds, double step) {
+            auto const s = std::lround(seconds);
+            if (step < 60) {
+                return std::format("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60);
+            }
+            auto const minutes = std::lround(seconds / 60);
             return std::format("{}:{:02}", minutes / 60, minutes % 60);
         });
 }
 
-std::vector<GraphTick> distance_ticks(std::span<record const> records, float width)
+std::vector<GraphTick> distance_ticks(std::span<record const> records, GraphView const &view, float width)
 {
     return ticks_at(
-        records, width, { 1000, 2000, 5000, 10000, 20000, 50000, 100000 },
+        records, view, width, { 1000, 2000, 5000, 10000, 20000, 50000, 100000 },
         [](record const &rec) -> std::optional<double> {
             return rec.distance ? std::optional { static_cast<double>(*rec.distance) } : std::nullopt;
         },
-        [](double metres) {
+        [](double metres, double) {
             return std::format("{} km", std::lround(metres / 1000));
         });
 }

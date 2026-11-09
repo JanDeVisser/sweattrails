@@ -24,6 +24,17 @@ namespace {
 
 using Records = std::vector<record>;
 
+// Ticks over the whole of `records`.
+std::vector<GraphTick> whole_time_ticks(Records const &records, float width)
+{
+    return time_ticks(records, GraphView { .first = 0, .end = records.size() }, width);
+}
+
+std::vector<GraphTick> whole_distance_ticks(Records const &records, float width)
+{
+    return distance_ticks(records, GraphView { .first = 0, .end = records.size() }, width);
+}
+
 bool near(float actual, float expected)
 {
     return std::abs(actual - expected) < 0.01f;
@@ -165,7 +176,7 @@ void test_y()
 // An hour 800 pixels wide has room for 10 labels: every 10 minutes.
 void test_time_ticks_of_an_hour()
 {
-    auto const ticks = time_ticks(seconds(3601), 800.0f);
+    auto const ticks = whole_time_ticks(seconds(3601), 800.0f);
     CHECK_EQ(ticks.size(), 6uz);
     if (ticks.size() == 6) {
         auto const first = ticks.front();
@@ -178,7 +189,7 @@ void test_time_ticks_of_an_hour()
 
 void test_time_ticks_of_a_long_ride()
 {
-    auto const ticks = time_ticks(seconds(5 * 3600 + 1), 400.0f);
+    auto const ticks = whole_time_ticks(seconds(5 * 3600 + 1), 400.0f);
     CHECK_EQ(ticks.size(), 5uz);
     if (!ticks.empty()) {
         auto const first = ticks.front();
@@ -196,7 +207,7 @@ void test_time_ticks_around_a_pause()
     }
     // From 0 to 2699 s, 400 pixels: steps of 10 minutes. The pause is
     // from 499 to 2000 s, past 0:10 and 0:20 up to 0:30.
-    auto const               ticks = time_ticks(records, 400.0f);
+    auto const               ticks = whole_time_ticks(records, 400.0f);
     std::vector<std::string> labels;
     for (auto const &tick : ticks) {
         labels.push_back(tick.label);
@@ -215,7 +226,7 @@ void test_distance_ticks()
         records[ix].distance = static_cast<float>(ix) * 10.0f;
     }
     // 10 km, 400 pixels: 5 labels, every 2 km.
-    auto const               ticks = distance_ticks(records, 400.0f);
+    auto const               ticks = whole_distance_ticks(records, 400.0f);
     std::vector<std::string> labels;
     for (auto const &tick : ticks) {
         labels.push_back(tick.label);
@@ -229,8 +240,70 @@ void test_distance_ticks()
 
 void test_no_distance_ticks_without_distances()
 {
-    CHECK(distance_ticks(seconds(100), 400.0f).empty());
-    CHECK(time_ticks({ }, 400.0f).empty());
+    CHECK(whole_distance_ticks(seconds(100), 400.0f).empty());
+    CHECK(whole_time_ticks({ }, 400.0f).empty());
+}
+
+void test_view_x_and_record()
+{
+    GraphView const whole { .first = 0, .end = 100 };
+    GraphView const zoomed { .first = 40, .end = 60 };
+    CHECK(near(view_x(whole, 50, 400), 200));
+    CHECK(near(view_x(zoomed, 50, 400), 200));
+    CHECK(near(view_x(zoomed, 30, 400), -200)); // Left of the view
+    CHECK_EQ(view_record(zoomed, 0, 400), 40uz);
+    CHECK_EQ(view_record(zoomed, 399, 400), 59uz);
+    CHECK_EQ(view_record(zoomed, -50, 400), 40uz); // Dragged past the ends
+    CHECK_EQ(view_record(zoomed, 900, 400), 59uz);
+    CHECK_EQ(view_record(GraphView { }, 10, 400), 0uz);
+}
+
+// Zoomed to 1:12:00–1:18:00 of a 2-hour ride, 400 pixels: labels from
+// the activity's start, every 2 minutes.
+void test_time_ticks_zoomed()
+{
+    auto const               records = seconds(7200);
+    GraphView const          view { .first = 4320, .end = 4681 };
+    auto const               ticks = time_ticks(records, view, 400.0f);
+    std::vector<std::string> labels;
+    for (auto const &tick : ticks) {
+        labels.push_back(tick.label);
+    }
+    std::vector<std::string> const expected { "1:14", "1:16", "1:18" };
+    CHECK(labels == expected);
+    if (!ticks.empty()) {
+        CHECK(near(ticks.front().x, 120.0f * 400.0f / 361.0f));
+    }
+}
+
+// A few minutes zoomed: steps under a minute, with seconds.
+void test_time_ticks_with_seconds()
+{
+    auto const               records = seconds(7200);
+    GraphView const          view { .first = 4320, .end = 4441 };
+    auto const               ticks = time_ticks(records, view, 400.0f);
+    std::vector<std::string> labels;
+    for (auto const &tick : ticks) {
+        labels.push_back(tick.label);
+    }
+    std::vector<std::string> const expected { "1:12:30", "1:13:00", "1:13:30", "1:14:00" };
+    CHECK(labels == expected);
+}
+
+void test_distance_ticks_zoomed()
+{
+    auto records = seconds(1001);
+    for (auto ix = 0uz; ix < records.size(); ++ix) {
+        records[ix].distance = static_cast<float>(ix) * 10.0f;
+    }
+    // 4.5 to 7.5 km, 400 pixels: every km, from the start.
+    auto const               ticks = distance_ticks(records, GraphView { .first = 450, .end = 751 }, 400.0f);
+    std::vector<std::string> labels;
+    for (auto const &tick : ticks) {
+        labels.push_back(tick.label);
+    }
+    std::vector<std::string> const expected { "5 km", "6 km", "7 km" };
+    CHECK(labels == expected);
 }
 
 struct TestActivity {
@@ -349,7 +422,7 @@ void test_time_ticks_after_the_specs_pause()
         records.push_back(record { });
         records.back().timestamp.timestamp = 1000 + t;
     }
-    auto const               ticks = time_ticks(records, 400.0f);
+    auto const               ticks = whole_time_ticks(records, 400.0f);
     std::vector<std::string> labels;
     for (auto const &tick : ticks) {
         labels.push_back(tick.label);
@@ -365,9 +438,9 @@ void test_time_ticks_after_the_specs_pause()
 // are all 0.
 void test_ticks_at_the_edges()
 {
-    CHECK(time_ticks(seconds(1), 400.0f).empty());
-    CHECK(time_ticks(seconds(100), 0.0f).empty());
-    auto const narrow = time_ticks(seconds(3601), 50.0f);
+    CHECK(whole_time_ticks(seconds(1), 400.0f).empty());
+    CHECK(whole_time_ticks(seconds(100), 0.0f).empty());
+    auto const narrow = whole_time_ticks(seconds(3601), 50.0f);
     CHECK_EQ(narrow.size(), 1uz);
     if (!narrow.empty()) {
         CHECK_EQ(narrow.front().label, "1:00");
@@ -376,7 +449,7 @@ void test_ticks_at_the_edges()
     for (auto &rec : standing) {
         rec.distance = 0.0f;
     }
-    CHECK(distance_ticks(standing, 400.0f).empty());
+    CHECK(whole_distance_ticks(standing, 400.0f).empty());
 }
 
 // While comparing, the legend's range covers both recordings.
@@ -443,5 +516,9 @@ int main()
     test_ticks_at_the_edges();
     test_legend_range_while_comparing();
     test_mark_position();
+    test_view_x_and_record();
+    test_time_ticks_zoomed();
+    test_time_ticks_with_seconds();
+    test_distance_ticks_zoomed();
     return Test::test_result();
 }

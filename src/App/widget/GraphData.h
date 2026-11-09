@@ -17,6 +17,7 @@
 
 #include <storage/Activity.h>
 #include <widget/DataFields.h>
+#include <widget/GraphView.h>
 
 namespace ST {
 
@@ -78,14 +79,15 @@ struct GraphTick {
 
 // The graph's x is the record, so a tick goes at the first record at or
 // past its time or distance, and a pause bunches them. The steps are
-// GraphTickSpacing or more apart over the whole width, which a pause can
-// undo: the graph leaves out labels that would overlap.
+// GraphTickSpacing or more apart over the view's width, which a pause can
+// undo: the graph leaves out labels that would overlap. They count from
+// the activity's first record, also for a view of part of it.
 
 // Elapsed time from the first record, "0:10", "1:30", in hours and
-// minutes.
-[[nodiscard]] std::vector<GraphTick> time_ticks(std::span<record const> records, float width);
+// minutes, or with seconds, "1:12:30", for steps under a minute.
+[[nodiscard]] std::vector<GraphTick> time_ticks(std::span<record const> records, GraphView const &view, float width);
 // Distance, "5 km". None without distances.
-[[nodiscard]] std::vector<GraphTick> distance_ticks(std::span<record const> records, float width);
+[[nodiscard]] std::vector<GraphTick> distance_ticks(std::span<record const> records, GraphView const &view, float width);
 
 // The legend's entry for a line: "Pwr 0–612 W".
 [[nodiscard]] GraphLabel legend_range(Activity const &activity, GraphValue value, GraphScale const &scale);

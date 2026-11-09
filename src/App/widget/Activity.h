@@ -122,6 +122,7 @@ struct ActivityGraph : public Widget {
     std::vector<GraphLabel>            ranges { };   // The legend, while not hovering
     std::vector<GraphTick>             time_labels { };
     std::vector<GraphTick>             km_labels { };
+    GraphView                          rendered_view { }; // The records the graph was drawn for
 
     explicit ActivityGraph(pWidget const &parent);
     ~ActivityGraph();
@@ -145,8 +146,9 @@ private:
     [[nodiscard]] float        plot_height() const;
     // Draws the lines into `image`, and works out the legend and labels,
     // for the activity and the plot's size.
-    void render();
-    void render_lines(int width, int height);
+    void                      render();
+    void                      render_lines(int width, int height);
+    [[nodiscard]] GraphSeries in_view(GraphSeries const &series) const;
     // While comparing: power, heart rate and cadence of both recordings,
     // the other's lighter, on one scale for both.
     void render_compared(int width, int height);

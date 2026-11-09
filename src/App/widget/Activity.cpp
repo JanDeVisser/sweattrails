@@ -339,7 +339,7 @@ void ActivityGraph::draw_strip() const
         return;
     }
     auto const y = area.y - viewport.y;
-    auto const spans = lap_spans(activity->activity, area.width);
+    auto const spans = lap_spans(activity->activity, rendered_view, area.width);
     for (auto ix = 0uz; ix < spans.size(); ++ix) {
         auto const color = (activity->lap == ix) ? SelectedLapShade : LapShades[ix % 2];
         draw_rectangle_no_normalize(spans[ix].x0, y, spans[ix].x1 - spans[ix].x0, area.height, color);
@@ -352,10 +352,13 @@ void ActivityGraph::draw_selected_range() const
     if (!activity->segment || activity->activity.records.empty()) {
         return;
     }
-    auto const dt = plot_width() / static_cast<float>(activity->activity.records.size());
-    auto const x0 = static_cast<float>(activity->segment->min) * dt;
-    auto const x1 = static_cast<float>(activity->segment->max + 1) * dt;
-    draw_rectangle_no_normalize(x0, top_band(), x1 - x0, plot_height(), SelectedRangeShade);
+    // Zoomed in, the selection can reach past the view, or lie outside it.
+    auto const width = plot_width();
+    auto const x0 = std::clamp(view_x(rendered_view, activity->segment->min, width), 0.0f, width);
+    auto const x1 = std::clamp(view_x(rendered_view, activity->segment->max + 1, width), 0.0f, width);
+    if (x1 > x0) {
+        draw_rectangle_no_normalize(x0, top_band(), x1 - x0, plot_height(), SelectedRangeShade);
+    }
 }
 
 // Labels centred on their ticks, at `y`, those that would overlap the one
@@ -408,6 +411,10 @@ void ActivityGraph::draw()
     if (!activity) {
         return;
     }
+    // Zooming is a task, which doesn't know about the graph.
+    if (activity->view() != rendered_view) {
+        render();
+    }
     auto const height = plot_height();
     if (texture.id != 0) {
         draw_line(0, top_band() + height / 2, plot_width(), top_band() + height / 2, ChartGridColor);
@@ -419,9 +426,8 @@ void ActivityGraph::draw()
     draw_ticks(km_labels, top - TickLength - 2 - label_row(), top - TickLength, TickLength);
     auto const below = top + height + strip_height();
     draw_ticks(time_labels, below + TickLength, below, TickLength);
-    if (activity->mark && *activity->mark < activity->activity.records.size()) {
-        auto const dt = plot_width() / static_cast<float>(activity->activity.records.size());
-        auto const x = static_cast<float>(*activity->mark) * dt;
+    if (activity->mark && *activity->mark >= rendered_view.first && *activity->mark < rendered_view.end) {
+        auto const x = view_x(rendered_view, *activity->mark, plot_width());
         draw_line(x, top_band(), x, top_band() + height, MarkColor);
     }
     draw_legend();
@@ -447,10 +453,7 @@ void ActivityGraph::process_input()
     // graph's ends.
     auto const mouse = GetMousePosition();
     auto const record_at = [this, &mouse]() {
-        auto const num_records = activity->activity.records.size();
-        auto const dt = plot_width() / static_cast<float>(num_records);
-        auto const x = std::max(0.0f, mouse.x - viewport.x);
-        return std::min(static_cast<size_t>(std::truncf(x / dt)), num_records - 1);
+        return view_record(rendered_view, mouse.x - viewport.x, plot_width());
     };
 
     // A drag goes on until the button is let go, wherever the mouse goes,
@@ -468,7 +471,7 @@ void ActivityGraph::process_input()
     // A click in the strip selects the lap, as in the table.
     auto const strip = strip_area();
     if (strip.height > 0 && CheckCollisionPointRec(mouse, strip)) {
-        auto const lap = lap_at(lap_spans(activity->activity, strip.width), mouse.x - strip.x);
+        auto const lap = lap_at(lap_spans(activity->activity, rendered_view, strip.width), mouse.x - strip.x);
         if (lap) {
             App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
@@ -519,7 +522,8 @@ void ActivityGraph::render()
     time_labels.clear();
     km_labels.clear();
     rendered = { .x = plot_width(), .y = plot_height() };
-    if (!activity || activity->activity.records.empty()) {
+    rendered_view = activity ? activity->view() : GraphView { };
+    if (!activity || rendered_view.count() == 0) {
         return;
     }
     auto const width = static_cast<int>(rendered.x);
@@ -527,8 +531,8 @@ void ActivityGraph::render()
     if (width <= 0 || height <= 0) {
         return;
     }
-    time_labels = time_ticks(activity->activity.records, rendered.x);
-    km_labels = distance_ticks(activity->activity.records, rendered.x);
+    time_labels = time_ticks(activity->activity.records, rendered_view, rendered.x);
+    km_labels = distance_ticks(activity->activity.records, rendered_view, rendered.x);
     image = GenImageColor(width, height, BLANK);
     if (activity->compared) {
         render_compared(width, height);
@@ -536,6 +540,18 @@ void ActivityGraph::render()
         render_lines(width, height);
     }
     texture = LoadTextureFromImage(image);
+}
+
+// The part of a series over all the records that's in the view. The series
+// is worked out over all of them, so that the smoothing at the view's left
+// edge has the seconds before it.
+GraphSeries ActivityGraph::in_view(GraphSeries const &series) const
+{
+    auto const end = std::min(rendered_view.end, series.size());
+    if (rendered_view.first >= end) {
+        return { };
+    }
+    return GraphSeries(series.begin() + static_cast<std::ptrdiff_t>(rendered_view.first), series.begin() + static_cast<std::ptrdiff_t>(end));
 }
 
 // Altitude as an area under the lines, and speed, heart rate and power,
@@ -548,7 +564,7 @@ void ActivityGraph::render_lines(int width, int height)
     for (auto const value : { GraphValue::Altitude, GraphValue::Speed, GraphValue::HeartRate, GraphValue::Power }) {
         // The scale is the values', not the columns': a column averages
         // its records, and would hide the lowest and highest of them.
-        auto const series = graph_series(recorded, value);
+        auto const series = in_view(graph_series(recorded, value));
         auto const columns = graph_columns(series, width);
         auto const scale = graph_scale(value, std::span { &series, 1 });
         if (!scale) {
@@ -586,7 +602,7 @@ void ActivityGraph::render_compared(int width, int height)
                 paired[ix] = other_series[*pair];
             }
         }
-        std::array const series { graph_series(as_recorded(shown), value), paired };
+        std::array const series { in_view(graph_series(as_recorded(shown), value)), in_view(paired) };
         std::array const columns { graph_columns(series[0], width), graph_columns(series[1], width) };
         auto const       scale = graph_scale(value, series);
         if (!scale) {
