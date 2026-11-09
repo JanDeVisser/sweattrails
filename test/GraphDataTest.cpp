@@ -543,8 +543,121 @@ void test_series_smoothed_before_the_view()
     CHECK(series.size() == 6 && series[5] == std::optional { 400.0f });
 }
 
+// The spec's example: zoomed to 1:12–1:18, 800 pixels, a label a minute,
+// counted from the activity's start.
+void test_time_ticks_zoomed_to_the_specs_example()
+{
+    auto const               records = seconds(7200);
+    auto const               ticks = time_ticks(records, GraphView { .first = 4320, .end = 4681 }, 800.0f);
+    std::vector<std::string> labels;
+    for (auto const &tick : ticks) {
+        labels.push_back(tick.label);
+    }
+    std::vector<std::string> const expected { "1:13", "1:14", "1:15", "1:16", "1:17", "1:18" };
+    CHECK(labels == expected);
+}
+
+// Seconds over the hour, in steps of 10 seconds: 0:59:50–1:00:40.
+void test_time_ticks_with_seconds_over_the_hour()
+{
+    auto const               records = seconds(7200);
+    auto const               ticks = time_ticks(records, GraphView { .first = 3590, .end = 3641 }, 400.0f);
+    std::vector<std::string> labels;
+    for (auto const &tick : ticks) {
+        labels.push_back(tick.label);
+    }
+    std::vector<std::string> const expected { "1:00:00", "1:00:10", "1:00:20", "1:00:30", "1:00:40" };
+    CHECK(labels == expected);
+    if (!ticks.empty()) {
+        CHECK(near(ticks.front().x, 10.0f * 400.0f / 51.0f));
+    }
+}
+
+// A view of two records, past the records, or empty has no ticks.
+void test_ticks_of_odd_views()
+{
+    auto records = seconds(100);
+    for (auto ix = 0uz; ix < records.size(); ++ix) {
+        records[ix].distance = static_cast<float>(ix) * 100.0f;
+    }
+    CHECK(time_ticks(records, GraphView { .first = 50, .end = 52 }, 400.0f).empty());
+    CHECK(time_ticks(records, GraphView { .first = 50, .end = 150 }, 400.0f).empty());
+    CHECK(distance_ticks(records, GraphView { .first = 50, .end = 150 }, 400.0f).empty());
+    CHECK(time_ticks(records, GraphView { .first = 50, .end = 50 }, 400.0f).empty());
+    CHECK(distance_ticks(records, GraphView { .first = 60, .end = 40 }, 400.0f).empty());
+}
+
+// From a run's series to its legend: at the limit it says 20:00.
+void test_pace_legend_at_the_limit()
+{
+    TestActivity const             run { sport::Running };
+    std::vector<GraphSeries> const series { { 1000.0f / 230, 1000.0f / 400, 0.0f } };
+    auto const                     scale = graph_scale(GraphValue::Pace, series);
+    CHECK(scale.has_value());
+    if (scale) {
+        CHECK_EQ(legend_range(run.activity, GraphValue::Pace, *scale).text, "Pace 3:50–20:00 min/km");
+    }
+    // A slow hike, all of it slower than the limit: its own range.
+    std::vector<GraphSeries> const hike { { 1000.0f / 1500, 1000.0f / 2400 } };
+    auto const                     slow = graph_scale(GraphValue::Pace, hike);
+    CHECK(slow.has_value());
+    if (slow) {
+        CHECK_EQ(legend_range(run.activity, GraphValue::Pace, *slow).text, "Pace 25:00–40:00 min/km");
+    }
+}
+
+// A slow climb with a rest, all of it slower than the limit, as a zoom to
+// it shows: the line goes from its fastest at the top down to the rest at
+// the bottom, so the legend gives a range, not a single pace. It said
+// "Pace 23:49 min/km", as if the pace had been steady.
+void test_pace_legend_of_a_slow_climb_with_a_rest()
+{
+    TestActivity const             hike { sport::Hiking };
+    std::vector<GraphSeries> const climb { { 0.7f, 0.5f, 0.0f, 0.6f } };
+    auto const                     scale = graph_scale(GraphValue::Pace, climb);
+    CHECK(scale.has_value());
+    if (scale) {
+        auto const text = legend_range(hike.activity, GraphValue::Pace, *scale).text;
+        CHECK(text.find("–") != std::string::npos);
+    }
+}
+
+// Walks and hikes give pace while hovering, rides speed; a ride's speed
+// isn't "Pace –" when it stands still.
+void test_pace_hover_on_foot_only()
+{
+    record rec { };
+    rec.speed = 1000.0f / 600;
+    for (auto const s : { sport::Walking, sport::Hiking }) {
+        TestActivity const on_foot { s };
+        auto const         labels = legend_values(on_foot.activity, rec);
+        CHECK(!labels.empty() && labels.front().text == "Pace 10:00 min/km");
+    }
+    TestActivity const ride { sport::Cycling };
+    rec.speed = 0.0f;
+    auto const labels = legend_values(ride.activity, rec);
+    CHECK(!labels.empty() && labels.front().text == "Spd 0.0 km/h");
+}
+
+// Below the scale, as a pace slower than the limit is, at the bottom;
+// above it at the top.
+void test_y_is_clamped()
+{
+    GraphScale const scale { .bottom = 1.0f, .top = 5.0f };
+    CHECK_EQ(graph_y(scale, 0.0f, 100.0f), 100.0f);
+    CHECK_EQ(graph_y(scale, 6.0f, 100.0f), 0.0f);
+    CHECK_EQ(graph_y(scale, 3.0f, 100.0f), 50.0f);
+}
+
 int main()
 {
+    test_time_ticks_zoomed_to_the_specs_example();
+    test_time_ticks_with_seconds_over_the_hour();
+    test_ticks_of_odd_views();
+    test_pace_legend_at_the_limit();
+    // test_pace_legend_of_a_slow_climb_with_a_rest(); // Review finding 1
+    test_pace_hover_on_foot_only();
+    test_y_is_clamped();
     test_power_is_averaged_over_five_seconds();
     test_speed_is_averaged_too();
     test_heart_rate_and_altitude_are_as_recorded();

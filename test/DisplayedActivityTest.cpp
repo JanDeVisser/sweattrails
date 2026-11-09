@@ -739,12 +739,88 @@ void test_lap_spans_zoomed()
     CHECK(lap_at(spans, 399) == 2uz);
 }
 
+// Zoomed to records 50–69, inside the last lap: the strip is that lap, from
+// edge to edge, and the laps before it have nothing to click.
+void test_lap_spans_zoomed_inside_a_lap()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.zoom = DisplayedActivity::RecordRange { .min = 50, .max = 69 };
+    auto const spans = lap_spans(d.activity, d.view(), 400);
+    CHECK_EQ(spans.size(), 3uz);
+    if (spans.size() == 3) {
+        CHECK_EQ(spans[0].x0, spans[0].x1);
+        CHECK_EQ(spans[1].x0, spans[1].x1);
+        CHECK_EQ(spans[2].x0, 0.0f);
+        CHECK_EQ(spans[2].x1, 400.0f);
+    }
+    CHECK(lap_at(spans, 0) == 2uz);
+    CHECK(lap_at(spans, 399.9f) == 2uz);
+}
+
+// Zoomed to a lap, a selection elsewhere is zoomed to in its turn: zooming
+// isn't only further in.
+void test_zoom_to_a_selection_outside_the_zoom()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.select_lap(1);
+    d.zoom_in();
+    d.select_lap(2);
+    CHECK(d.can_zoom_in());
+    d.zoom_in();
+    CHECK(d.view() == (GraphView { .first = 40, .end = 100 }));
+    // A two-record selection is enough.
+    d.segment = DisplayedActivity::RecordRange { .min = 98, .max = 99 };
+    d.lap.reset();
+    d.zoom_in();
+    CHECK(d.view() == (GraphView { .first = 98, .end = 100 }));
+}
+
+// Zoomed in, a drag going on doesn't zoom further, and leaves the view.
+void test_no_zoom_while_dragging_zoomed()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.select_lap(1);
+    d.zoom_in();
+    d.start_segment(15);
+    d.set_segment(30);
+    d.zoom_in();
+    CHECK(d.view() == (GraphView { .first = 10, .end = 40 }));
+}
+
+// New laps, which leave the records as they are, leave the zoom; a zoom
+// past the records, which no selection can make, shows the whole activity.
+void test_zoom_after_the_laps_change()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.select_lap(2);
+    d.zoom_in();
+    d.activity.laps = { Lap { .first_record = 0, .end_record = 50 }, Lap { .first_record = 50, .end_record = 100 } };
+    d.whole_activity();
+    CHECK(d.view() == (GraphView { .first = 40, .end = 100 }));
+    CHECK(!d.can_zoom_in());
+    d.zoom = DisplayedActivity::RecordRange { .min = 90, .max = 120 };
+    CHECK(d.view() == (GraphView { .first = 0, .end = 100 }));
+
+    TestActivity none { { } };
+    CHECK(!none.displayed->can_zoom_in());
+    none.displayed->zoom_in();
+    CHECK(none.displayed->view().count() == 0);
+}
+
 int main()
 {
     test_current_record();
     test_zoom();
     test_no_zoom_to_one_record();
     test_lap_spans_zoomed();
+    test_lap_spans_zoomed_inside_a_lap();
+    test_zoom_to_a_selection_outside_the_zoom();
+    test_no_zoom_while_dragging_zoomed();
+    test_zoom_after_the_laps_change();
     test_extend_a_range();
     test_extend_a_lap();
     test_extend_from_the_mark();
