@@ -115,6 +115,18 @@ void Table::process_input()
 void Table::resize()
 {
     row_height = 1.2f * App::the()->char_size().y;
+    fit_rows();
+}
+
+void Table::fit_rows()
+{
+    if (row_height <= 0) {
+        return;
+    }
+    scroll.lines = std::max(0, static_cast<int>(std::floor(viewport.height / row_height)) - 1);
+    if (selection) {
+        scroll.scroll_to(static_cast<int>(*selection));
+    }
 }
 
 // Each column is as wide as its header or its widest cell.
@@ -142,6 +154,9 @@ void Table::draw()
     if (column_widths.size() != columns.size()) {
         measure_columns();
     }
+    // A table wider than its place is cut off, rather than drawn over its
+    // neighbours.
+    BeginScissorMode(static_cast<int>(viewport.x), static_cast<int>(viewport.y), static_cast<int>(viewport.width), static_cast<int>(viewport.height));
     auto const text_offset = (row_height - App::the()->char_size().y) / 2;
     draw_row(
         columns | std::views::transform(&TableColumn::header) | std::ranges::to<TableRow>(),
@@ -163,6 +178,7 @@ void Table::draw()
         draw_row(rows[row], y + text_offset, color);
     }
     Scrollbar::draw(track(), scroll);
+    EndScissorMode();
 }
 
 // The cells side by side, a gap of two characters between columns, the

@@ -182,9 +182,30 @@ void test_no_scrollbar_when_rows_fit()
 
 }
 
+// A table that's made taller shows more rows, and one made shorter fewer,
+// with the selection still in view.
+void test_fit_rows()
+{
+    auto table = make_table(20);
+    table->fit_rows();
+    CHECK_EQ(table->scroll.lines, 5);
+    table->viewport.height = 250;
+    table->fit_rows();
+    CHECK_EQ(table->scroll.lines, 11);
+    table->select(10);
+    table->viewport.height = 90;
+    table->fit_rows();
+    CHECK_EQ(table->scroll.lines, 3);
+    CHECK(table->scroll.top_line <= 10 && 10 < table->scroll.top_line + 3);
+    table->viewport.height = 10;
+    table->fit_rows();
+    CHECK_EQ(table->scroll.lines, 0);
+}
+
 int main()
 {
     Test::ScopedTestApp app;
+    test_fit_rows();
     test_set_rows();
     test_select_scrolls();
     test_row_at();

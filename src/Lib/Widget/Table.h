@@ -47,7 +47,8 @@ struct Table : public Widget {
     // The columns' widths, which draw() measures when the rows are new.
     std::vector<float> column_widths { };
 
-    // As high as the header and `visible_rows` rows.
+    // As high as the header and `visible_rows` rows. A table that
+    // stretches shows as many as fit its height.
     Table(pWidget const &parent, int visible_rows);
 
     // New rows, with nothing selected, scrolled to the top.
@@ -63,6 +64,10 @@ struct Table : public Widget {
     // Where the rows and the scrollbar are, in screen coordinates.
     [[nodiscard]] Rectangle rows_area() const;
     [[nodiscard]] Rectangle track() const;
+
+    // Shows as many rows as fit under the header, for the table's height
+    // and `row_height`, keeping the selection in view.
+    void fit_rows();
 
     // A click on a row calls on_click, unless the scrollbar takes it.
     void handle_input(ScrollInput const &input);
