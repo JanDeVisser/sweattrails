@@ -98,6 +98,14 @@ void test_app_icon_files_exist()
     CHECK(fs::exists(Icons / "sweattrails.icns"));
 }
 
+// The data panel draws the pen after the title from the PNG, which
+// svg2png.swift makes from the SVG.
+void test_pen_icon_files_exist()
+{
+    CHECK(fs::exists(Icons / "pen.svg"));
+    CHECK(fs::exists(Icons / "pen-48.png"));
+}
+
 }
 
 int main()
@@ -109,5 +117,6 @@ int main()
     test_default();
     test_every_sport_has_an_icon();
     test_app_icon_files_exist();
+    test_pen_icon_files_exist();
     return ST::Test::test_result();
 }

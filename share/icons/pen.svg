@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- A pencil, white on transparent: the app tints it. -->
+  <g transform="rotate(45 24 24)" fill="#ffffff">
+    <rect x="19" y="4" width="10" height="5" rx="1.5"/>
+    <rect x="19" y="11" width="10" height="23"/>
+    <path d="M19 36 L29 36 L24 46 Z"/>
+  </g>
+</svg>

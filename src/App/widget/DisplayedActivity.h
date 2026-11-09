@@ -126,6 +126,8 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     [[nodiscard]] std::optional<Comparison> comparison() const;
     // The comparison of lap `ix`, for the lap table.
     [[nodiscard]] std::optional<Comparison> lap_comparison(size_t ix) const;
+    // The whole activity's, whatever's selected.
+    [[nodiscard]] std::optional<Comparison> whole_comparison() const;
 
 private:
     // What extend() starts from: the selection, or else `from` or the mark.

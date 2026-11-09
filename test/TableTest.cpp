@@ -10,6 +10,7 @@
 #include <format>
 #include <memory>
 #include <optional>
+#include <print>
 #include <vector>
 
 #include <Table.h>
@@ -182,9 +183,78 @@ void test_no_scrollbar_when_rows_fit()
 
 }
 
+// A table that's made taller shows more rows, and one made shorter fewer,
+// with the selection still in view.
+void test_fit_rows()
+{
+    auto table = make_table(20);
+    table->fit_rows();
+    CHECK_EQ(table->scroll.lines, 5);
+    table->viewport.height = 250;
+    table->fit_rows();
+    CHECK_EQ(table->scroll.lines, 11);
+    table->select(10);
+    table->viewport.height = 90;
+    table->fit_rows();
+    CHECK_EQ(table->scroll.lines, 3);
+    CHECK(table->scroll.top_line <= 10 && 10 < table->scroll.top_line + 3);
+    table->viewport.height = 10;
+    table->fit_rows();
+    CHECK_EQ(table->scroll.lines, 0);
+}
+
+// A table that grows, as the lap table does when the data panel above it
+// gets shorter (comparing stops, or the window gets taller), shows as many
+// rows as fit, rather than empty lines under the last row with rows above
+// out of view.
+void test_fit_rows_keeps_the_rows_filled()
+{
+    // Scrolled to the bottom with the wheel: rows 15 to 19 of 20.
+    auto table = make_table(20);
+    table->fit_rows();
+    table->scroll.top_line = table->scroll.max_top_line();
+    CHECK_EQ(table->scroll.top_line, 15);
+    table->viewport.height = 250;
+    table->fit_rows();
+    CHECK_EQ(table->scroll.lines, 11);
+    CHECK_EQ(table->scroll.top_line, 9);
+
+    // The last row selected.
+    auto selected = make_table(20);
+    selected->fit_rows();
+    selected->select(19);
+    CHECK_EQ(selected->scroll.top_line, 15);
+    selected->viewport.height = 250;
+    selected->fit_rows();
+    CHECK_EQ(selected->scroll.top_line, 9);
+}
+
+// A table sized by the Characters policy, as the summaries' is, shows the
+// rows it was made for, at any font size. The layout works its height out
+// in double, and resize() its row height in float.
+void test_characters_table_shows_its_rows(Test::ScopedTestApp &app)
+{
+    for (auto const height : { 16.0f, 20.0f, 24.0f, 25.0f, 30.0f, 45.0f }) {
+        app.app->char_sizes[static_cast<size_t>(FontSize::Medium)] = Vector2 { .x = 12, .y = height };
+        auto layout = std::make_shared<Layout>(nullptr, ContainerOrientation::Vertical);
+        layout->viewport = Rect<float> { 0, 0, 800, 1000 };
+        auto table = layout->add_widget<Table>(8);
+        layout->add_widget<Layout>(ContainerOrientation::Vertical, SizePolicy::Stretch);
+        layout->resize();
+        if (table->scroll.lines != 8) {
+            std::println(stderr, "With characters {} high:", height);
+        }
+        CHECK_EQ(table->scroll.lines, 8);
+    }
+    app.app->char_sizes[static_cast<size_t>(FontSize::Medium)] = Vector2 { };
+}
+
 int main()
 {
     Test::ScopedTestApp app;
+    test_fit_rows_keeps_the_rows_filled();
+    test_characters_table_shows_its_rows(app);
+    test_fit_rows();
     test_set_rows();
     test_select_scrolls();
     test_row_at();

@@ -121,6 +121,12 @@ std::vector<DataLine> data_fields(Activity const &activity);
 // and cadence lines.
 std::vector<DataLine> data_fields(Activity const &activity, Segment const &segment, size_t first_record, std::optional<Comparison> const &comparison = { });
 
+// The most lines data_fields() gives for the whole activity or any of its
+// laps, so that the data panel can be as high as the most it shows. While
+// comparing, `whole` is the whole activity's comparison and `laps_compared`
+// the laps', as lap_table() takes them.
+[[nodiscard]] size_t most_data_lines(Activity const &activity, std::optional<Comparison> const &whole = { }, std::vector<std::optional<Comparison>> const &laps_compared = { });
+
 // The lap table's columns and rows: Lap and Time, and Distance, Pace or
 // Speed, Avg HR, Avg Power, Cadence and Climb if the activity has that
 // data. A lap without the data has an empty cell.

@@ -95,6 +95,10 @@ either way, selects part of the activity, such as a climb: when you let
 go, the data panel shows that part's stats, as it does a lap's. A drag
 of less than 10 seconds selects nothing.
 
+The laps are in a table under the data panel, beside the map: clicking
+one selects it, and clicking it again goes back to the whole activity.
+F2, or a click on the title or the pen after it, renames the activity.
+
 A right-click in the graph extends the selection, back from its start or
 on from its end, to the next whole km, lap or stop: "Back to the km",
 "On to the lap", "On to the stop", and so on. Choosing one again goes a

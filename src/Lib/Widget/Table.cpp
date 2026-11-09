@@ -115,6 +115,24 @@ void Table::process_input()
 void Table::resize()
 {
     row_height = 1.2f * App::the()->char_size().y;
+    fit_rows();
+}
+
+void Table::fit_rows()
+{
+    if (row_height <= 0) {
+        return;
+    }
+    // The layout works a height in characters out in double, and the row
+    // height is in float: a height of a whole number of rows can come out
+    // a hair short of it.
+    auto const fit = std::floor(viewport.height / row_height + 0.001f);
+    scroll.lines = std::max(0, static_cast<int>(fit) - 1);
+    // A table that grew shows rows above, rather than empty lines below.
+    scroll.clamp();
+    if (selection) {
+        scroll.scroll_to(static_cast<int>(*selection));
+    }
 }
 
 // Each column is as wide as its header or its widest cell.
@@ -142,6 +160,9 @@ void Table::draw()
     if (column_widths.size() != columns.size()) {
         measure_columns();
     }
+    // A table wider than its place is cut off, rather than drawn over its
+    // neighbours.
+    BeginScissorMode(static_cast<int>(viewport.x), static_cast<int>(viewport.y), static_cast<int>(viewport.width), static_cast<int>(viewport.height));
     auto const text_offset = (row_height - App::the()->char_size().y) / 2;
     draw_row(
         columns | std::views::transform(&TableColumn::header) | std::ranges::to<TableRow>(),
@@ -163,6 +184,7 @@ void Table::draw()
         draw_row(rows[row], y + text_offset, color);
     }
     Scrollbar::draw(track(), scroll);
+    EndScissorMode();
 }
 
 // The cells side by side, a gap of two characters between columns, the
