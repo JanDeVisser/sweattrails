@@ -598,11 +598,11 @@ void test_pace_legend_at_the_limit()
         CHECK_EQ(legend_range(run.activity, GraphValue::Pace, *scale).text, "Pace 3:50–20:00 min/km");
     }
     // A slow hike, all of it slower than the limit: its own range.
-    std::vector<GraphSeries> const hike { { 1000.0f / 1500, 1000.0f / 2400 } };
+    std::vector<GraphSeries> const hike { { 1000.0f / 1500, 1000.0f / 1800 } };
     auto const                     slow = graph_scale(GraphValue::Pace, hike);
     CHECK(slow.has_value());
     if (slow) {
-        CHECK_EQ(legend_range(run.activity, GraphValue::Pace, *slow).text, "Pace 25:00–40:00 min/km");
+        CHECK_EQ(legend_range(run.activity, GraphValue::Pace, *slow).text, "Pace 25:00–30:00 min/km");
     }
 }
 
@@ -655,7 +655,7 @@ int main()
     test_time_ticks_with_seconds_over_the_hour();
     test_ticks_of_odd_views();
     test_pace_legend_at_the_limit();
-    // test_pace_legend_of_a_slow_climb_with_a_rest(); // Review finding 1
+    test_pace_legend_of_a_slow_climb_with_a_rest();
     test_pace_hover_on_foot_only();
     test_y_is_clamped();
     test_power_is_averaged_over_five_seconds();

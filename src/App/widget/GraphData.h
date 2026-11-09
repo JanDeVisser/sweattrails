@@ -70,7 +70,8 @@ struct GraphScale {
 // The scale of one or more series of a value, those of two recordings
 // while comparing. None without values, or without any above 0 where it
 // goes from 0. Pace's goes from the slowest speed, but none slower than
-// SlowestGraphPace, unless all of it is.
+// SlowestGraphPace, unless all of it is: then from the slowest moving one,
+// and none standing still.
 [[nodiscard]] std::optional<GraphScale> graph_scale(GraphValue value, std::span<GraphSeries const> series);
 
 // Where `value` goes in a plot `height` high, from the top: the middle

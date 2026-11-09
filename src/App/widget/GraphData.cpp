@@ -193,10 +193,25 @@ std::optional<GraphScale> graph_scale(GraphValue value, std::span<GraphSeries co
         if (ret->top <= 0) {
             return { };
         }
-        // Unless all of it is slower, a stroll in the mountains say.
+        // Unless all of it is slower, a climb in the mountains say: then
+        // from its slowest moving speed, with a rest drawn at the bottom,
+        // as a pace that's infinite.
         auto const slowest = 1000 / SlowestGraphPace;
         if (ret->top > slowest) {
             ret->bottom = std::max(ret->bottom, slowest);
+        } else {
+            std::optional<float> moving;
+            for (auto const &s : series) {
+                for (auto const &v : s) {
+                    if (v && *v >= RangeMovingSpeed) {
+                        moving = std::min(moving.value_or(*v), *v);
+                    }
+                }
+            }
+            if (!moving) {
+                return { };
+            }
+            ret->bottom = *moving;
         }
     }
     if (ret && from_zero(value)) {
