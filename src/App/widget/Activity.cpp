@@ -130,7 +130,10 @@ void ActivityDataDisplay::draw_pen(Rectangle const &title)
     }
     pen_area = Rectangle { .x = title.x + title.width + 10, .y = title.y, .width = title.height, .height = title.height };
     Rectangle const source { .x = 0, .y = 0, .width = static_cast<float>(pen_icon.width), .height = static_cast<float>(pen_icon.height) };
-    DrawTexturePro(pen_icon, source, pen_area, Vector2 { }, 0, renaming_hovered ? RAYWHITE : GRAY);
+    // Not while a modal, such as the rename box, has the mouse.
+    auto const mouse = GetMousePosition();
+    auto const hovered = App::the()->modals.empty() && (CheckCollisionPointRec(mouse, title) || CheckCollisionPointRec(mouse, pen_area));
+    DrawTexturePro(pen_icon, source, pen_area, Vector2 { }, 0, hovered ? RAYWHITE : GRAY);
 }
 
 void ActivityDataDisplay::draw_notes(std::vector<std::string> const &notes, float y)
@@ -221,8 +224,7 @@ void ActivityDataDisplay::process_input()
         return;
     }
     auto const mouse = GetMousePosition();
-    renaming_hovered = CheckCollisionPointRec(mouse, title_area) || CheckCollisionPointRec(mouse, pen_area);
-    if (renaming_hovered) {
+    if (CheckCollisionPointRec(mouse, title_area) || CheckCollisionPointRec(mouse, pen_area)) {
         App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             SweatTrails::the()->bus.submit("st-rename-activity", JSONValue { });

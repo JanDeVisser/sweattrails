@@ -38,8 +38,7 @@ struct ActivityDataDisplay : public Widget {
     std::vector<ClickableField>        clickable { };
     Rectangle                          title_area { }; // Where draw() drew the title, in screen coordinates
     Texture2D                          pen_icon { };
-    Rectangle                          pen_area { };               // Where draw() drew the pen after the title, likewise
-    bool                               renaming_hovered { false }; // The mouse is over the title or the pen
+    Rectangle                          pen_area { }; // Where draw() drew the pen after the title, likewise
 
     explicit ActivityDataDisplay(pWidget const &parent);
     ~ActivityDataDisplay();
