@@ -37,6 +37,9 @@ struct ActivityDataDisplay : public Widget {
     Texture2D                          sport_icon;
     std::vector<ClickableField>        clickable { };
     Rectangle                          title_area { }; // Where draw() drew the title, in screen coordinates
+    Texture2D                          pen_icon { };
+    Rectangle                          pen_area { };               // Where draw() drew the pen after the title, likewise
+    bool                               renaming_hovered { false }; // The mouse is over the title or the pen
 
     explicit ActivityDataDisplay(pWidget const &parent);
     ~ActivityDataDisplay();
@@ -61,6 +64,7 @@ private:
         float                    fields_y;
     };
     [[nodiscard]] Rows rows(float width) const;
+    void               draw_pen(Rectangle const &title);
     void               draw_notes(std::vector<std::string> const &notes, float y);
     void               draw_fields(float y);
     void               draw_field(DataField const &field, float x, float value_x, float y, float height);

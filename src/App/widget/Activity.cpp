@@ -28,6 +28,7 @@ ActivityDataDisplay::ActivityDataDisplay(pWidget const &parent)
 ActivityDataDisplay::~ActivityDataDisplay()
 {
     UnloadTexture(sport_icon);
+    UnloadTexture(pen_icon);
 }
 
 void ActivityDataDisplay::initialize()
@@ -102,6 +103,7 @@ void ActivityDataDisplay::draw()
     auto const at = rows(viewport.width);
     auto const title_size = render_text(116, at.title_y, activity->activity.title, FontSize::Large, RAYWHITE);
     title_area = Rectangle { .x = viewport.x + 116, .y = viewport.y + at.title_y, .width = title_size.x, .height = title_size.y };
+    draw_pen(title_area);
     draw_notes(at.notes, at.notes_y);
     auto const summary = [this] {
         auto const &a = activity->activity;
@@ -115,6 +117,20 @@ void ActivityDataDisplay::draw()
     }() + (activity->compared ? compared_suffix(device_name(activity->compared->activity)) : std::string { });
     render_text(116, at.summary_y, summary, FontSize::Large, RAYWHITE);
     draw_fields(at.fields_y);
+}
+
+// The pen after the title, as high as it, says the title can be changed:
+// grey, so as not to be loud, and white while the mouse is over it or the
+// title.
+void ActivityDataDisplay::draw_pen(Rectangle const &title)
+{
+    if (pen_icon.id == 0) {
+        pen_icon = LoadTexture(SWEATTRAILS_DATADIR "/icons/pen-48.png");
+        SetTextureFilter(pen_icon, TEXTURE_FILTER_BILINEAR);
+    }
+    pen_area = Rectangle { .x = title.x + title.width + 10, .y = title.y, .width = title.height, .height = title.height };
+    Rectangle const source { .x = 0, .y = 0, .width = static_cast<float>(pen_icon.width), .height = static_cast<float>(pen_icon.height) };
+    DrawTexturePro(pen_icon, source, pen_area, Vector2 { }, 0, renaming_hovered ? RAYWHITE : GRAY);
 }
 
 void ActivityDataDisplay::draw_notes(std::vector<std::string> const &notes, float y)
@@ -196,15 +212,17 @@ void ActivityDataDisplay::resize()
 {
 }
 
-// Clicking the title renames the activity, as F2 does. Clicking a maximum
-// marks the record where it happened, as hovering over the graph does.
+// Clicking the title or the pen after it renames the activity, as F2
+// does. Clicking a maximum marks the record where it happened, as hovering
+// over the graph does.
 void ActivityDataDisplay::process_input()
 {
     if (activity == nullptr) {
         return;
     }
     auto const mouse = GetMousePosition();
-    if (CheckCollisionPointRec(mouse, title_area)) {
+    renaming_hovered = CheckCollisionPointRec(mouse, title_area) || CheckCollisionPointRec(mouse, pen_area);
+    if (renaming_hovered) {
         App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             SweatTrails::the()->bus.submit("st-rename-activity", JSONValue { });
