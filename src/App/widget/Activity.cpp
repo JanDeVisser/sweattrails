@@ -53,17 +53,19 @@ ActivityDataDisplay::Rows ActivityDataDisplay::rows(float width) const
     auto const line_height = [](FontSize size) {
         return 6.0f * App::measure_text("Mg", size).y / 5.0f;
     };
-    auto const notes_width = width - 116 - 10;
+    // Room for the pen after the notes.
+    auto const notes_width = width - 116 - 10 - line_height(FontSize::Small) - 10;
     auto const measure = [](std::string_view text) {
         return App::measure_text(std::string { text }.c_str(), FontSize::Small).x;
     };
     Rows ret { .title_y = top + App::measure_text("Mg", FontSize::Small).y + 20 };
     ret.notes_y = ret.title_y + line_height(FontSize::Large);
     ret.notes = clamp_lines(wrap_words(activity->activity.notes, notes_width, measure), NotesLines, notes_width, measure);
-    ret.summary_y = ret.notes_y;
-    if (!ret.notes.empty()) {
-        ret.summary_y += (static_cast<float>(ret.notes.size()) + 0.5f) * line_height(FontSize::Small);
+    ret.placeholder = ret.notes.empty();
+    if (ret.placeholder) {
+        ret.notes = { "Add a description" };
     }
+    ret.summary_y = ret.notes_y + (static_cast<float>(ret.notes.size()) + 0.5f) * line_height(FontSize::Small);
     auto const icon_bottom = top + 96;
     ret.fields_y = std::max(icon_bottom, ret.summary_y + line_height(FontSize::Large)) + 10;
     return ret;
@@ -103,8 +105,8 @@ void ActivityDataDisplay::draw()
     auto const at = rows(viewport.width);
     auto const title_size = render_text(116, at.title_y, activity->activity.title, FontSize::Large, RAYWHITE);
     title_area = Rectangle { .x = viewport.x + 116, .y = viewport.y + at.title_y, .width = title_size.x, .height = title_size.y };
-    draw_pen(title_area);
-    draw_notes(at.notes, at.notes_y);
+    title_pen = draw_pen(title_area, title_area);
+    draw_notes(at);
     auto const summary = [this] {
         auto const &a = activity->activity;
         if (activity->lap) {
@@ -119,26 +121,35 @@ void ActivityDataDisplay::draw()
     draw_fields(at.fields_y);
 }
 
-// The pen after the title, as high as it, says the title can be changed:
-// grey, so as not to be loud, and white while the mouse is over it or the
-// title.
-void ActivityDataDisplay::draw_pen(Rectangle const &title)
+// A pen after a text, as high as it, says the text can be changed: grey,
+// so as not to be loud, and white while the mouse is over it or the
+// `clickable` part of the text. Returns where it is, in screen
+// coordinates.
+Rectangle ActivityDataDisplay::draw_pen(Rectangle const &after, Rectangle const &clickable) const
 {
-    pen_area = Rectangle { .x = title.x + title.width + 10, .y = title.y, .width = title.height, .height = title.height };
+    Rectangle const pen { .x = after.x + after.width + 10, .y = after.y, .width = after.height, .height = after.height };
     Rectangle const source { .x = 0, .y = 0, .width = static_cast<float>(pen_icon.width), .height = static_cast<float>(pen_icon.height) };
     // Not while a modal, such as the rename box, has the mouse.
     auto const mouse = GetMousePosition();
-    auto const hovered = App::the()->modals.empty() && (CheckCollisionPointRec(mouse, title) || CheckCollisionPointRec(mouse, pen_area));
-    DrawTexturePro(pen_icon, source, pen_area, Vector2 { }, 0, hovered ? RAYWHITE : GRAY);
+    auto const hovered = App::the()->modals.empty() && (CheckCollisionPointRec(mouse, clickable) || CheckCollisionPointRec(mouse, pen));
+    DrawTexturePro(pen_icon, source, pen, Vector2 { }, 0, hovered ? RAYWHITE : GRAY);
+    return pen;
 }
 
-void ActivityDataDisplay::draw_notes(std::vector<std::string> const &notes, float y)
+// The notes, or a grey "Add a description" where there are none, and the
+// pen after the last line, which edits them.
+void ActivityDataDisplay::draw_notes(Rows const &rows)
 {
     auto const line_height = 6.0f * App::measure_text("Mg", FontSize::Small).y / 5.0f;
-    for (auto const &line : notes) {
-        render_text(116, y, line, FontSize::Small, RAYWHITE);
+    auto       y = rows.notes_y;
+    Rectangle  last { };
+    for (auto const &line : rows.notes) {
+        auto const size = render_text(116, y, line, FontSize::Small, rows.placeholder ? GRAY : RAYWHITE);
+        last = Rectangle { .x = viewport.x + 116, .y = viewport.y + y, .width = size.x, .height = size.y };
         y += line_height;
     }
+    notes_area = rows.placeholder ? last : Rectangle { };
+    notes_pen = draw_pen(last, notes_area);
 }
 
 // Draws the fields, the selected lap's or the activity's, in two columns.
@@ -212,7 +223,8 @@ void ActivityDataDisplay::resize()
 }
 
 // Clicking the title or the pen after it renames the activity, as F2
-// does. Clicking a maximum marks the record where it happened, as hovering
+// does, and the pen after the description, or "Add a description", edits
+// that. Clicking a maximum marks the record where it happened, as hovering
 // over the graph does.
 void ActivityDataDisplay::process_input()
 {
@@ -220,11 +232,17 @@ void ActivityDataDisplay::process_input()
         return;
     }
     auto const mouse = GetMousePosition();
-    if (CheckCollisionPointRec(mouse, title_area) || CheckCollisionPointRec(mouse, pen_area)) {
+    auto const clicked = [&mouse](Rectangle const &text, Rectangle const &pen, char const *task) {
+        if (!CheckCollisionPointRec(mouse, text) && !CheckCollisionPointRec(mouse, pen)) {
+            return false;
+        }
         App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            SweatTrails::the()->bus.submit("st-rename-activity", JSONValue { });
+            SweatTrails::the()->bus.submit(task, JSONValue { });
         }
+        return true;
+    };
+    if (clicked(title_area, title_pen, "st-rename-activity") || clicked(notes_area, notes_pen, "st-edit-description")) {
         return;
     }
     for (auto const &[area, mark_at] : clickable) {
