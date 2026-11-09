@@ -244,6 +244,133 @@ void test_scrolling()
     CHECK_EQ(a.top_line, 0uz);
 }
 
+// Added by the Reviewer: a click puts the cursor somewhere else, as the
+// box does it, and Up and Down after it aim from there, not from where an
+// earlier Up or Down started.
+void test_click_forgets_the_goal()
+{
+    auto a = area("abcdefgh\nab\nabcdefgh");
+    a.cursor = 6;
+    key(a, KEY_DOWN); // Aims for x 60
+    // A click at x 10 on the first line, as TextAreaBox::process_input()
+    // places the cursor.
+    a.cursor = a.position_at(0, 10);
+    a.scroll_to_cursor();
+    CHECK_EQ(a.cursor, 1uz);
+    key(a, KEY_DOWN);
+    CHECK_EQ(a.cursor, 10uz); // After the "a" of "ab", below the click
+}
+
+// Added by the Reviewer: a rune outside the BMP, such as an emoji, is one
+// character: one step of the cursor, one Backspace, and UTF-8 of four
+// bytes.
+void test_runes_outside_the_bmp()
+{
+    auto a = area("\xF0\x9F\x9A\xB4 ride");
+    CHECK_EQ(a.text.length(), 6uz);
+    CHECK_EQ(a.cursor, 6uz);
+    a.cursor = 1;
+    key(a, KEY_BACKSPACE);
+    CHECK_EQ(a.utf8(), " ride");
+    CHECK(a.insert(static_cast<rune>(0x1F3CA)));
+    CHECK_EQ(a.utf8(), "\xF0\x9F\x8F\x8A ride");
+    CHECK_EQ(a.cursor, 1uz);
+    // Halves of a UTF-16 pair aren't characters.
+    CHECK(!a.insert(static_cast<rune>(0xD83D)));
+    a.paste("\xF0\x9F\x9A\xB4");
+    CHECK_EQ(a.utf8(), "\xF0\x9F\x8F\x8A\xF0\x9F\x9A\xB4 ride");
+    CHECK_EQ(a.cursor, 2uz);
+    // Text that isn't UTF-8 isn't pasted at all.
+    a.paste("\xFF");
+    CHECK_EQ(a.text.length(), 7uz);
+}
+
+// Added by the Reviewer: a line that wraps after several spaces ends, for
+// End and for a click past it, before the first of them.
+void test_end_before_several_spaces()
+{
+    auto a = area("aaaa    bbbb", 6);
+    CHECK(a.lines == (std::vector<Line> { { 0, 8 }, { 8, 12 } }));
+    a.cursor = 1;
+    key(a, KEY_END);
+    CHECK_EQ(a.cursor, 4uz);
+    CHECK_EQ(a.position_at(0, 500), 4uz);
+    CHECK_EQ(a.line_of(7), 0uz);
+    CHECK_EQ(a.line_of(8), 1uz);
+}
+
+// Added by the Reviewer: Up and Down over a word broken in pieces, and
+// the line the break is on.
+void test_up_and_down_over_a_broken_word()
+{
+    auto a = area("abcdefghijklmnop", 10);
+    CHECK(a.lines == (std::vector<Line> { { 0, 10 }, { 10, 16 } }));
+    CHECK_EQ(a.line_of(10), 1uz);
+    a.cursor = 3;
+    key(a, KEY_DOWN);
+    CHECK_EQ(a.cursor, 13uz);
+    key(a, KEY_UP);
+    CHECK_EQ(a.cursor, 3uz);
+    // From the end of the second line back up at the same x.
+    key(a, KEY_DOWN);
+    key(a, KEY_END);
+    CHECK_EQ(a.cursor, 16uz);
+    key(a, KEY_UP);
+    CHECK_EQ(a.cursor, 6uz);
+}
+
+// Added by the Reviewer: typing at the end of a full line takes the word
+// to the next line, and the cursor and the view with it.
+void test_typing_wraps_and_scrolls()
+{
+    auto a = area("the quick", 10);
+    a.visible_lines = 1;
+    type(a, L" brown");
+    CHECK(a.lines == (std::vector<Line> { { 0, 10 }, { 10, 15 } }));
+    CHECK_EQ(a.line_of(a.cursor), 1uz);
+    CHECK_EQ(a.top_line, 1uz);
+    // Backspacing it back onto the first line scrolls back up.
+    key(a, KEY_BACKSPACE, 6);
+    CHECK_EQ(a.utf8(), "the quick");
+    CHECK_EQ(a.top_line, 0uz);
+}
+
+// Added by the Reviewer: the wheel can't scroll a text shorter than the
+// box, and a box that grows shows more lines rather than empty ones.
+void test_scrolling_a_short_text()
+{
+    auto a = area("1\n2");
+    a.visible_lines = 10;
+    a.scroll(3);
+    CHECK_EQ(a.top_line, 0uz);
+    a.scroll(-3);
+    CHECK_EQ(a.top_line, 0uz);
+    auto b = area("1\n2\n3\n4\n5");
+    b.visible_lines = 2;
+    b.scroll_to_cursor();
+    CHECK_EQ(b.top_line, 3uz);
+    b.visible_lines = 4;
+    b.scroll_to_cursor();
+    CHECK_EQ(b.top_line, 1uz);
+}
+
+// Added by the Reviewer: deleting a word takes the spaces and line breaks
+// before the cursor with it, and the word before those.
+void test_delete_word_over_a_line_break()
+{
+    auto a = area("one two\n  ");
+    key(a, KEY_BACKSPACE, 1, Word);
+    CHECK_EQ(a.utf8(), "one ");
+    CHECK_EQ(a.cursor, 4uz);
+    CHECK(a.lines == (std::vector<Line> { { 0, 4 } }));
+    // In the middle of a word: back to its start, leaving the rest.
+    auto b = area("headwind");
+    b.cursor = 4;
+    key(b, KEY_BACKSPACE, 1, Word);
+    CHECK_EQ(b.utf8(), "wind");
+    CHECK_EQ(b.cursor, 0uz);
+}
+
 }
 
 int main()
@@ -261,5 +388,12 @@ int main()
     test_paste();
     test_position_at();
     test_scrolling();
+    // test_click_forgets_the_goal(); // Review finding 1
+    test_runes_outside_the_bmp();
+    test_end_before_several_spaces();
+    test_up_and_down_over_a_broken_word();
+    test_typing_wraps_and_scrolls();
+    test_scrolling_a_short_text();
+    test_delete_word_over_a_line_break();
     return Test::test_result();
 }

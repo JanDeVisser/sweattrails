@@ -204,4 +204,88 @@ None.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: after a click, Up and Down aim for where an earlier Up or
+   Down started, not for the click.** `TextAreaBox::process_input()`
+   (`TextAreaBox.h:167`) sets `area.cursor` directly, which leaves
+   `TextArea::m_goal_x` as it was. In "abcdefgh / ab / abcdefgh", with the
+   cursor after "abcdef": Down, then a click after the first "a" of the
+   first line, then Down puts the cursor after "ab" (x 60, the old goal)
+   instead of after its "a", under the click. The Architecture's
+   `cursor_at(line, x)` would have moved the cursor; what's there is
+   `position_at()`, which only computes a position, and `cursor` is a
+   public member that anything can set without the goal being reset.
+   A method that places the cursor, and resets the goal, fixes it.
+   Fails: `test_click_forgets_the_goal` in `test/TextAreaTest.cpp` (line
+   261), which does what the box does.
+2. **Bug: Strava's description, saved unchanged from the editor, is
+   copied into `"notes"` when it starts or ends with white space.**
+   `Activity::set_notes()` (`Activity.cpp:531-540`) compares the trimmed
+   text with the untrimmed `notes` and `original_notes`. Strava's
+   description is stored as Strava sends it (`Strava::description()`
+   doesn't trim), so a description of "Windy.\n", opened with the pen
+   and saved with Cmd+Enter, becomes the user's "Windy.". That's what the
+   spec says shouldn't happen, and from then on a new description from
+   Strava is hidden under the copy. Comparing with the trimmed
+   `original_notes` (and `notes`) fixes it. Fails:
+   `test_set_notes_on_stravas_untrimmed_description` in
+   `test/ActivityLoadTest.cpp` (line 624).
+3. **Bug (minor): pasting re-wraps the whole text once for each pasted
+   character.** `TextArea::paste()` calls `insert()` per character, and
+   each `insert()` calls `changed()`, which wraps all the text, so the
+   cost grows with the square of the length. With a measure that counts
+   its calls, pasting 1,000 characters measures 108,340 times, 2,000
+   characters 433,340 times and 5,000 characters 2,708,340 times. In the
+   box each measure is a UTF-8 conversion and a `MeasureTextEx()`, so a
+   long paste will stall the app noticeably (I couldn't time it with the
+   real font, without a window). Inserting all of it and then wrapping
+   once fixes it.
+4. **Missing test: the box's Esc question isn't tested, and can't be
+   without a window.** `text_area_box()` measures text through
+   `App::measure_text()`, which dereferences a font a test doesn't have,
+   and so does `query_box()`'s `ListBox::resize()`. I added
+   `test/TextAreaBoxTest.cpp` for what can run: Cmd+Enter saving,
+   Enter's line breaks, Esc on an unchanged text, Alt+Backspace, control
+   characters through `character()`, and the box keeping keys, all on
+   texts of only line breaks, which aren't measured. Esc on a changed
+   text, with Yes and No, is left to testing by hand. A box that takes
+   its measure from outside, as `TextArea` does, would make all of it
+   testable.
+5. **Suggestion: End, and a click past a line's end, stop before the
+   last character of a line that breaks a long word.** For
+   "abcdefghijklmnop" 10 characters wide, End on the first line puts the
+   cursor between "i" and "j", and typing goes in there. The header says
+   this is on purpose (`last_position()`: the position after "j" is the
+   start of the next line), but it doesn't match "End to the end of the
+   line", and long words do happen in descriptions, such as URLs.
+   Remembering which line a position at a wrap belongs to would fix it.
+   In the same way, a line wrapped after several spaces lets Right
+   go past its end, into the spaces, drawing the cursor past the box's
+   width.
+6. **Suggestion: `TextArea::set()` keeps `\r`, where `paste()` makes
+   line breaks of it.** If a description from Strava or a `.strava` file
+   has `\r\n` line breaks, the editor shows each `\r` as a character of
+   its own, a space as far as wrapping is concerned, drawn as whatever
+   the font has for U+000D. Treating `\r\n` in `set()` as `paste()` does,
+   and comparing on Esc with the text as set, would avoid that.
+7. **Suggestion: the panel's height doesn't follow a description that a
+   Strava sync brings for the activity on display.**
+   `SweatTrails::notif_titles_changed()` calls `read_names()` but doesn't
+   resize the display, as `cmd_edit_description()` does after saving. Now
+   that the placeholder is one line, a three-line description from
+   Strava pushes the summary and the fields down past the panel's height
+   until the next resize. This predates this feature, but is the same
+   problem as the one the save fixes.
+
+Tests added by the Reviewer (in the working tree, not committed):
+`test/TextAreaTest.cpp` (`test_click_forgets_the_goal`,
+`test_runes_outside_the_bmp`, `test_end_before_several_spaces`,
+`test_up_and_down_over_a_broken_word`, `test_typing_wraps_and_scrolls`,
+`test_scrolling_a_short_text`, `test_delete_word_over_a_line_break`),
+the new `test/TextAreaBoxTest.cpp` (`text_area_box_test`, registered in
+`CMakeLists.txt`), `test/ActivityLoadTest.cpp`
+(`test_set_notes_on_stravas_untrimmed_description`,
+`test_set_notes_over_a_strava_file`, `test_set_notes_without_a_sidecar`,
+`test_set_notes_that_fails`, `test_strava_after_the_users_notes`) and
+`test/StravaTitlesTest.cpp` (`test_sync_keeps_the_users_notes`). With
+them, `text_area_test` and `activity_load_test` fail, for findings 1 and
+2; all other tests pass.

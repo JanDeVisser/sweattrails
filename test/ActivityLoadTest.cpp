@@ -613,6 +613,76 @@ void test_set_notes()
     CHECK(!sidecar_titles(t.activity.sidecar).own_notes.has_value());
 }
 
+// Added by the Reviewer: Strava's description as it came, with a line
+// break or spaces at its end, saved unchanged from the editor, is still
+// Strava's: no "notes" are saved for it.
+void test_set_notes_on_stravas_untrimmed_description()
+{
+    ActivityInDir t { R"({"strava": {"id": 1, "name": "Ride", "description": "Windy.\n"}})" };
+    CHECK_EQ(t.activity.notes, "Windy.\n");
+    CHECK(t.activity.set_notes("Windy.\n").has_value());
+    CHECK(!sidecar_titles(t.activity.sidecar).own_notes.has_value());
+}
+
+// Added by the Reviewer: the old app's `.strava` description is what an
+// empty description goes back to, as Strava's in the sidecar is.
+void test_set_notes_over_a_strava_file()
+{
+    ActivityInDir t { R"({"activityName": "Morning Ride"})", R"({"id": 3, "name": "Old ride", "description": "From the old app"})" };
+    CHECK_EQ(t.activity.original_notes, "From the old app");
+    CHECK(t.activity.set_notes("Mine").has_value());
+    CHECK_EQ(t.activity.notes, "Mine");
+    t.activity.read_names();
+    CHECK_EQ(t.activity.notes, "Mine");
+    CHECK(t.activity.set_notes("").has_value());
+    CHECK_EQ(t.activity.notes, "From the old app");
+    CHECK(!sidecar_titles(t.activity.sidecar).own_notes.has_value());
+}
+
+// Added by the Reviewer: an activity without a sidecar gets one for its
+// description, which goes again with the description, as for a name.
+void test_set_notes_without_a_sidecar()
+{
+    ActivityInDir t { "" };
+    CHECK(!fs::exists(t.activity.sidecar));
+    CHECK(t.activity.set_notes("Windy").has_value());
+    CHECK_EQ(sidecar_titles(t.activity.sidecar).own_notes.value_or(""), "Windy");
+    CHECK(t.activity.set_notes("").has_value());
+    CHECK_EQ(t.activity.notes, "");
+    CHECK(!fs::exists(t.activity.sidecar));
+}
+
+// Added by the Reviewer: a sidecar that isn't JSON isn't overwritten, and
+// the description stays as it was. Nor can an activity that wasn't loaded
+// from the store save one.
+void test_set_notes_that_fails()
+{
+    ActivityInDir t { "not JSON" };
+    CHECK(!t.activity.set_notes("Windy").has_value());
+    CHECK_EQ(t.activity.notes, "");
+    CHECK_EQ(read_json(t.activity.sidecar), "not JSON");
+
+    Storage  storage { };
+    Activity activity { storage, ActivityID::dummy(ActivityFile::Fit) };
+    CHECK(!activity.set_notes("Windy").has_value());
+    CHECK_EQ(activity.notes, "");
+}
+
+// Added by the Reviewer: Strava's name and description, saved after the
+// user wrote a description, leave it alone, and come under it.
+void test_strava_after_the_users_notes()
+{
+    ActivityInDir t { R"({"activityName": "Morning Ride"})" };
+    CHECK(t.activity.set_notes("Mine").has_value());
+    CHECK(save_sidecar_strava(t.activity.sidecar, StravaTitle { .id = 17, .name = "Ride to Niagara", .description = "Strava's" }).has_value());
+    CHECK_EQ(sidecar_titles(t.activity.sidecar).own_notes.value_or(""), "Mine");
+    t.activity.read_names();
+    CHECK_EQ(t.activity.notes, "Mine");
+    CHECK_EQ(t.activity.original_notes, "Strava's");
+    CHECK(t.activity.set_notes(" ").has_value());
+    CHECK_EQ(t.activity.notes, "Strava's");
+}
+
 void test_rename()
 {
     ActivityInDir t { R"({"name": "Morning ride"})" };
@@ -975,6 +1045,11 @@ int main()
     test_save_sidecar_notes();
     test_own_notes_win();
     test_set_notes();
+    // test_set_notes_on_stravas_untrimmed_description(); // Review finding 2
+    test_set_notes_over_a_strava_file();
+    test_set_notes_without_a_sidecar();
+    test_set_notes_that_fails();
+    test_strava_after_the_users_notes();
     test_rename();
     test_rename_back_to_the_workouts_name();
     test_rename_that_fails();
