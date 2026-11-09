@@ -649,8 +649,32 @@ void test_y_is_clamped()
     CHECK_EQ(graph_y(scale, 3.0f, 100.0f), 50.0f);
 }
 
+// The view's part of a series smoothed over all of it: the first value in
+// the view is averaged with the seconds before it.
+void test_view_series_keeps_the_smoothing_before_the_view()
+{
+    auto const        series = graph_series(with_power({ 100, 200, 300, 400, 500, 600, 700 }), GraphValue::Power);
+    auto const        view = view_series(series, GraphView { .first = 4, .end = 6 });
+    GraphSeries const expected { 300.0f, 400.0f };
+    CHECK(view == expected);
+}
+
+// A view past the series' end stops at it, and one that's empty or wholly
+// past it has nothing.
+void test_view_series_at_the_ends()
+{
+    GraphSeries const series { 1.0f, 2.0f, 3.0f };
+    GraphSeries const tail { 2.0f, 3.0f };
+    CHECK(view_series(series, GraphView { .first = 1, .end = 10 }) == tail);
+    CHECK(view_series(series, GraphView { .first = 0, .end = 3 }) == series);
+    CHECK(view_series(series, GraphView { .first = 2, .end = 2 }).empty());
+    CHECK(view_series(series, GraphView { .first = 5, .end = 8 }).empty());
+}
+
 int main()
 {
+    test_view_series_keeps_the_smoothing_before_the_view();
+    test_view_series_at_the_ends();
     test_time_ticks_zoomed_to_the_specs_example();
     test_time_ticks_with_seconds_over_the_hour();
     test_ticks_of_odd_views();

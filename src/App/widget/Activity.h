@@ -146,9 +146,8 @@ private:
     [[nodiscard]] float        plot_height() const;
     // Draws the lines into `image`, and works out the legend and labels,
     // for the activity and the plot's size.
-    void                      render();
-    void                      render_lines(int width, int height);
-    [[nodiscard]] GraphSeries in_view(GraphSeries const &series) const;
+    void render();
+    void render_lines(int width, int height);
     // While comparing: power, heart rate and cadence of both recordings,
     // the other's lighter, on one scale for both.
     void render_compared(int width, int height);

@@ -52,6 +52,11 @@ constexpr float GraphTickSpacing = 80.0f;
 // back.
 [[nodiscard]] GraphSeries graph_series(std::span<record const> recorded, GraphValue value);
 
+// The part of `series` in the view. The series is worked out over all the
+// records, so that the smoothing at the view's left edge has the seconds
+// before it.
+[[nodiscard]] GraphSeries view_series(GraphSeries const &series, GraphView const &view);
+
 // The series in `width` pixel columns: each the average of its records'
 // values, or one record's over several columns if there are fewer
 // records than columns. None for a column without values.

@@ -542,18 +542,6 @@ void ActivityGraph::render()
     texture = LoadTextureFromImage(image);
 }
 
-// The part of a series over all the records that's in the view. The series
-// is worked out over all of them, so that the smoothing at the view's left
-// edge has the seconds before it.
-GraphSeries ActivityGraph::in_view(GraphSeries const &series) const
-{
-    auto const end = std::min(rendered_view.end, series.size());
-    if (rendered_view.first >= end) {
-        return { };
-    }
-    return GraphSeries(series.begin() + static_cast<std::ptrdiff_t>(rendered_view.first), series.begin() + static_cast<std::ptrdiff_t>(end));
-}
-
 // Altitude as an area under the lines, and speed, heart rate and power,
 // power on top.
 void ActivityGraph::render_lines(int width, int height)
@@ -565,7 +553,7 @@ void ActivityGraph::render_lines(int width, int height)
     for (auto const value : { GraphValue::Altitude, speed, GraphValue::HeartRate, GraphValue::Power }) {
         // The scale is the values', not the columns': a column averages
         // its records, and would hide the lowest and highest of them.
-        auto const series = in_view(graph_series(recorded, value));
+        auto const series = view_series(graph_series(recorded, value), rendered_view);
         auto const columns = graph_columns(series, width);
         auto const scale = graph_scale(value, std::span { &series, 1 });
         if (!scale) {
@@ -603,7 +591,7 @@ void ActivityGraph::render_compared(int width, int height)
                 paired[ix] = other_series[*pair];
             }
         }
-        std::array const series { in_view(graph_series(as_recorded(shown), value)), in_view(paired) };
+        std::array const series { view_series(graph_series(as_recorded(shown), value), rendered_view), view_series(paired, rendered_view) };
         std::array const columns { graph_columns(series[0], width), graph_columns(series[1], width) };
         auto const       scale = graph_scale(value, series);
         if (!scale) {

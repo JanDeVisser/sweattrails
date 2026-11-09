@@ -149,6 +149,15 @@ GraphSeries graph_series(std::span<record const> recorded, GraphValue value)
     return ret;
 }
 
+GraphSeries view_series(GraphSeries const &series, GraphView const &view)
+{
+    auto const end = std::min(view.end, series.size());
+    if (view.first >= end) {
+        return { };
+    }
+    return GraphSeries(series.begin() + static_cast<std::ptrdiff_t>(view.first), series.begin() + static_cast<std::ptrdiff_t>(end));
+}
+
 GraphSeries graph_columns(GraphSeries const &series, int width)
 {
     GraphSeries ret;
