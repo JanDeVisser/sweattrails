@@ -1,6 +1,6 @@
 # Zooming the graph, and pace for runs
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -319,3 +319,7 @@ finding 1.
 5. Fixed. `can_zoom_in()` is false when the selection is the zoom.
 6. Deferred to a later spec: distance steps of 100, 200 and 500 m.
 7. Left as the spec asks, to check by hand on a real hike.
+
+Found by hand afterwards: a mark on the view's first record was drawn as
+a diagonal, as `draw_line()` takes an end at x = 0 as measured from the
+right edge. The mark and the ticks now use `draw_line_no_normalize()`.
