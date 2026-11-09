@@ -307,6 +307,12 @@ size_t TextArea::position_at(size_t line, float x) const
     return best;
 }
 
+void TextArea::click(size_t line, float x)
+{
+    cursor = position_at(line, x);
+    moved();
+}
+
 void TextArea::scroll_to_cursor()
 {
     auto const line = line_of(cursor);

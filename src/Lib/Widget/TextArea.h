@@ -99,6 +99,10 @@ struct TextArea {
     // the spaces it wraps after, which would put it on the next line.
     [[nodiscard]] size_t position_at(size_t line, float x) const;
 
+    // Puts the cursor where a click at `x` on `line` is: up and down aim
+    // from there.
+    void click(size_t line, float x);
+
     // Scrolls just far enough to have the cursor's line in view, with no
     // empty lines below the last.
     void scroll_to_cursor();

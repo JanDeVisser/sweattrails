@@ -164,8 +164,7 @@ void text_area_box(std::shared_ptr<C> target, std::string_view const &prompt, Su
             }
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
                 auto const row = static_cast<size_t>(std::floor((mouse.y - on_screen.y) / row_height()));
-                area.cursor = area.position_at(area.top_line + row, mouse.x - on_screen.x);
-                area.scroll_to_cursor();
+                area.click(area.top_line + row, mouse.x - on_screen.x);
             }
         }
 

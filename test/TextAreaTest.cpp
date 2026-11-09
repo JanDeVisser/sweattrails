@@ -252,10 +252,8 @@ void test_click_forgets_the_goal()
     auto a = area("abcdefgh\nab\nabcdefgh");
     a.cursor = 6;
     key(a, KEY_DOWN); // Aims for x 60
-    // A click at x 10 on the first line, as TextAreaBox::process_input()
-    // places the cursor.
-    a.cursor = a.position_at(0, 10);
-    a.scroll_to_cursor();
+    // A click at x 10 on the first line.
+    a.click(0, 10);
     CHECK_EQ(a.cursor, 1uz);
     key(a, KEY_DOWN);
     CHECK_EQ(a.cursor, 10uz); // After the "a" of "ab", below the click
@@ -388,7 +386,7 @@ int main()
     test_paste();
     test_position_at();
     test_scrolling();
-    // test_click_forgets_the_goal(); // Review finding 1
+    test_click_forgets_the_goal();
     test_runes_outside_the_bmp();
     test_end_before_several_spaces();
     test_up_and_down_over_a_broken_word();
