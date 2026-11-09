@@ -43,6 +43,49 @@ std::string label_text(DataField const &field)
 
 }
 
+// The title, the notes under it in the small font, and the summary under
+// those in the title's font. The fields start below the sport icon, which
+// is 96 high, or below the summary, whichever is lower.
+ActivityDataDisplay::Rows ActivityDataDisplay::rows(float width) const
+{
+    auto const top = 20.0f;
+    auto const line_height = [](FontSize size) {
+        return 6.0f * App::measure_text("Mg", size).y / 5.0f;
+    };
+    auto const notes_width = width - 116 - 10;
+    auto const measure = [](std::string_view text) {
+        return App::measure_text(std::string { text }.c_str(), FontSize::Small).x;
+    };
+    Rows ret { .title_y = top + App::measure_text("Mg", FontSize::Small).y + 20 };
+    ret.notes_y = ret.title_y + line_height(FontSize::Large);
+    ret.notes = clamp_lines(wrap_words(activity->activity.notes, notes_width, measure), NotesLines, notes_width, measure);
+    ret.summary_y = ret.notes_y;
+    if (!ret.notes.empty()) {
+        ret.summary_y += (static_cast<float>(ret.notes.size()) + 0.5f) * line_height(FontSize::Small);
+    }
+    auto const icon_bottom = top + 96;
+    ret.fields_y = std::max(icon_bottom, ret.summary_y + line_height(FontSize::Large)) + 10;
+    return ret;
+}
+
+float ActivityDataDisplay::needed_height(float width) const
+{
+    if (activity == nullptr) {
+        return 0;
+    }
+    std::vector<std::optional<Comparison>> laps_compared;
+    std::optional<Comparison>              whole;
+    if (activity->compared) {
+        whole = activity->whole_comparison();
+        for (auto ix = 0uz; ix < activity->activity.laps.size(); ++ix) {
+            laps_compared.push_back(activity->lap_comparison(ix));
+        }
+    }
+    auto const lines = static_cast<float>(most_data_lines(activity->activity, whole, laps_compared));
+    auto const line_height = 6.0f * App::measure_text("Mg", FontSize::Medium).y / 5.0f;
+    return rows(width).fields_y + lines * line_height + 10;
+}
+
 void ActivityDataDisplay::draw()
 {
     if (activity == nullptr) {
@@ -50,19 +93,16 @@ void ActivityDataDisplay::draw()
     }
     auto const top = 20.0f;
     render_texture(10, top, sport_icon);
-    auto sz = render_text(
+    render_text(
         116, top,
         TextFormat("%s - %s", FIT::tag(activity->activity.sport), activity->activity.segment.start_time.format().c_str()),
         FontSize::Small,
         RAYWHITE);
 
-    // The title, the notes under it in the small font, and the summary
-    // under those in the title's font.
-    auto const line_height = 6.0f * App::measure_text("Mg", FontSize::Large).y / 5.0f;
-    auto const title_y = top + sz.y + 20;
-    auto const title_size = render_text(116, title_y, activity->activity.title, FontSize::Large, RAYWHITE);
-    title_area = Rectangle { .x = viewport.x + 116, .y = viewport.y + title_y, .width = title_size.x, .height = title_size.y };
-    auto const summary_y = draw_notes(title_y + line_height);
+    auto const at = rows(viewport.width);
+    auto const title_size = render_text(116, at.title_y, activity->activity.title, FontSize::Large, RAYWHITE);
+    title_area = Rectangle { .x = viewport.x + 116, .y = viewport.y + at.title_y, .width = title_size.x, .height = title_size.y };
+    draw_notes(at.notes, at.notes_y);
     auto const summary = [this] {
         auto const &a = activity->activity;
         if (activity->lap) {
@@ -73,32 +113,17 @@ void ActivityDataDisplay::draw()
         }
         return activity_summary(a);
     }() + (activity->compared ? compared_suffix(device_name(activity->compared->activity)) : std::string { });
-    render_text(116, summary_y, summary, FontSize::Large, RAYWHITE);
-
-    // The fields start below the icon, which is 96 high, or below the
-    // summary, whichever is lower.
-    auto const icon_bottom = top + 96;
-    draw_fields(std::max(icon_bottom, summary_y + line_height) + 10);
+    render_text(116, at.summary_y, summary, FontSize::Large, RAYWHITE);
+    draw_fields(at.fields_y);
 }
 
-// Draws the activity's notes at y, wrapped, NotesLines lines at most, and
-// returns where what's below them goes.
-float ActivityDataDisplay::draw_notes(float y)
+void ActivityDataDisplay::draw_notes(std::vector<std::string> const &notes, float y)
 {
-    auto const width = viewport.width - 116 - 10;
-    auto const measure = [](std::string_view text) {
-        return App::measure_text(std::string { text }.c_str(), FontSize::Small).x;
-    };
-    auto const lines = clamp_lines(wrap_words(activity->activity.notes, width, measure), NotesLines, width, measure);
-    if (lines.empty()) {
-        return y;
-    }
     auto const line_height = 6.0f * App::measure_text("Mg", FontSize::Small).y / 5.0f;
-    for (auto const &line : lines) {
+    for (auto const &line : notes) {
         render_text(116, y, line, FontSize::Small, RAYWHITE);
         y += line_height;
     }
-    return y + line_height / 2;
 }
 
 // Draws the fields, the selected lap's or the activity's, in two columns.
@@ -632,6 +657,8 @@ void ActivityDisplay::compare_with(std::optional<Activity> const &other)
     activity->compare_with(other);
     show_laps();
     graph->set_activity(activity);
+    // The data panel shows the comparison's fields.
+    resize();
 }
 
 void ActivityDisplay::switch_recording(Activity const &recording)
@@ -669,7 +696,7 @@ void ActivityDisplay::show_laps()
         }
         auto [columns, rows] = lap_table(activity->activity, compared);
         laps->set_rows(std::move(columns), std::move(rows));
-        laps->policy = SizePolicy::Characters;
+        laps->policy = SizePolicy::Stretch;
     } else {
         laps->set_rows({ }, { });
         laps->policy = SizePolicy::Hide;
@@ -720,14 +747,39 @@ void ActivityDisplay::on_resize()
     graph->policy_size = ActivityGraph::needed_height();
 }
 
+ActivityColumn::ActivityColumn(pWidget const &parent)
+    : Layout(parent, ContainerOrientation::Vertical)
+{
+}
+
+void ActivityColumn::initialize()
+{
+    data_display = add_widget<ActivityDataDisplay>();
+    laps = add_widget<Table>(1);
+    laps->policy = SizePolicy::Hide;
+}
+
+void ActivityColumn::on_resize()
+{
+    if (laps->policy == SizePolicy::Hide) {
+        data_display->policy = SizePolicy::Stretch;
+        return;
+    }
+    // On a small window the panel gives way: the layout needs room for
+    // the table, which stretches.
+    auto const least_table = 3 * 1.2f * App::the()->char_size().y;
+    data_display->policy = SizePolicy::Absolute;
+    data_display->policy_size = std::max(0.0f, std::min(data_display->needed_height(viewport.width), viewport.height - least_table));
+}
+
 void ActivityDisplay::initialize()
 {
     central = add_widget<Layout>(ContainerOrientation::Horizontal, SizePolicy::Stretch);
-    data_display = central->add_widget<ActivityDataDisplay>();
+    column = central->add_widget<ActivityColumn>();
     map = central->add_widget<ActivityMap>();
     preview = add_widget<OverlayPreview>();
-    laps = add_widget<Table>(LapTableRows);
-    laps->policy = SizePolicy::Hide;
+    data_display = column->data_display;
+    laps = column->laps;
     laps->on_click = [this](size_t row) {
         if (activity) {
             activity->toggle_lap(row);

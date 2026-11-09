@@ -45,11 +45,25 @@ struct ActivityDataDisplay : public Widget {
     void resize() override;
     void process_input() override;
     void set_activity(std::shared_ptr<DisplayedActivity> const &activity);
+    // As high as the panel is with the most fields it shows for the
+    // activity or any of its laps, `width` wide, so that what's under it
+    // doesn't move as laps are selected.
+    [[nodiscard]] float needed_height(float width) const;
 
 private:
-    float draw_notes(float y);
-    void  draw_fields(float y);
-    void  draw_field(DataField const &field, float x, float value_x, float y, float height);
+    // Where the panel's rows go, top to bottom, `width` wide: the title,
+    // the notes wrapped to that, the summary and the fields.
+    struct Rows {
+        float                    title_y;
+        std::vector<std::string> notes;
+        float                    notes_y;
+        float                    summary_y;
+        float                    fields_y;
+    };
+    [[nodiscard]] Rows rows(float width) const;
+    void               draw_notes(std::vector<std::string> const &notes, float y);
+    void               draw_fields(float y);
+    void               draw_field(DataField const &field, float x, float value_x, float y, float height);
 };
 
 struct ActivityMap : public Widget {
@@ -112,7 +126,7 @@ private:
 
 struct ActivityGraph : public Widget {
     // The plot's height, without the bands around it.
-    static constexpr float PlotHeight = 150.0f;
+    static constexpr float PlotHeight = 250.0f;
 
     std::shared_ptr<DisplayedActivity> activity;
     bool                               dragging { false };
@@ -161,11 +175,23 @@ private:
     void                    draw_legend() const;
 };
 
-struct ActivityDisplay : public Layout {
-    static constexpr int LapTableRows = 5;
+// The left of the screen, beside the map: the data panel, and the lap
+// table under it filling the rest (specs/40-activity-display-overhaul.md).
+struct ActivityColumn : public Layout {
+    std::shared_ptr<ActivityDataDisplay> data_display;
+    std::shared_ptr<Table>               laps;
 
+    explicit ActivityColumn(pWidget const &parent);
+    void initialize() override;
+    // The panel gets the height it needs at the column's width, and the
+    // table what's left, but at least its header and two rows.
+    void on_resize() override;
+};
+
+struct ActivityDisplay : public Layout {
     std::shared_ptr<DisplayedActivity>   activity;
-    std::shared_ptr<Layout>              central; // The data panel and the map
+    std::shared_ptr<Layout>              central; // The column and the map
+    std::shared_ptr<ActivityColumn>      column;
     std::shared_ptr<ActivityDataDisplay> data_display;
     std::shared_ptr<ActivityMap>         map;
     std::shared_ptr<OverlayPreview>      preview; // In the place of `central` when it's on

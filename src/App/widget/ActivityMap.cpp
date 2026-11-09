@@ -32,7 +32,7 @@ constexpr float TrackWidth = 3.0f;
 ActivityMap::ActivityMap(pWidget const &parent)
     : Widget(parent, SizePolicy::Relative, 0.33)
 {
-    padding = { 10, 10, 10, 10 };
+    padding = { 20, 20, 20, 20 };
 }
 
 ActivityMap::~ActivityMap()

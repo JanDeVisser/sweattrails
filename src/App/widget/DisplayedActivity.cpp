@@ -301,6 +301,11 @@ std::optional<Comparison> DisplayedActivity::comparison() const
     if (segment && range_stats) {
         return comparison_of(segment->min, segment->max + 1);
     }
+    return whole_comparison();
+}
+
+std::optional<Comparison> DisplayedActivity::whole_comparison() const
+{
     return comparison_of(0, activity.recorded.size());
 }
 
