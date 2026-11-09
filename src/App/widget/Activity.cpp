@@ -124,10 +124,6 @@ void ActivityDataDisplay::draw()
 // title.
 void ActivityDataDisplay::draw_pen(Rectangle const &title)
 {
-    if (pen_icon.id == 0) {
-        pen_icon = LoadTexture(SWEATTRAILS_DATADIR "/icons/pen-48.png");
-        SetTextureFilter(pen_icon, TEXTURE_FILTER_BILINEAR);
-    }
     pen_area = Rectangle { .x = title.x + title.width + 10, .y = title.y, .width = title.height, .height = title.height };
     Rectangle const source { .x = 0, .y = 0, .width = static_cast<float>(pen_icon.width), .height = static_cast<float>(pen_icon.height) };
     // Not while a modal, such as the rename box, has the mouse.
@@ -253,6 +249,13 @@ void ActivityDataDisplay::set_activity(std::shared_ptr<DisplayedActivity> const 
         auto const &a = activity->activity;
         auto const  icon = std::format(SWEATTRAILS_DATADIR "/icons/{}", sport_icon_file(a.sport, a.sub_sport));
         sport_icon = LoadTexture(icon.c_str());
+        // Once: if it's missing, as from a bundle that wasn't installed
+        // again, not every frame either.
+        if (!pen_loaded) {
+            pen_icon = LoadTexture(SWEATTRAILS_DATADIR "/icons/pen-48.png");
+            SetTextureFilter(pen_icon, TEXTURE_FILTER_BILINEAR);
+            pen_loaded = true;
+        }
     }
 }
 
