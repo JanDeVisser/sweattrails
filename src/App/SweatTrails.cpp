@@ -1075,11 +1075,7 @@ void cmd_graph_zoom_out(pSweatTrails const &sweattrails, JSONValue const &)
 void cmd_graph_zoom(pSweatTrails const &sweattrails, JSONValue const &)
 {
     if (auto activity = activity_for_keys(sweattrails)) {
-        if (activity->zoom) {
-            activity->zoom_out();
-        } else {
-            activity->zoom_in();
-        }
+        activity->toggle_zoom();
     }
 }
 
@@ -1981,7 +1977,7 @@ void SweatTrails::selection_menu(Vector2 at)
     });
     items.push_back(MenuItem {
         .title = "Zoom out",
-        .enabled = activity->zoom.has_value(),
+        .enabled = activity->can_zoom_out(),
         .action = [this]() { bus.submit("st-graph-zoom-out", JSONValue { }); },
     });
     popup_menu(at, std::move(items));

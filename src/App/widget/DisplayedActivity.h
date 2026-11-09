@@ -106,7 +106,12 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     // selection of one record isn't something to zoom to.
     void               zoom_in();
     [[nodiscard]] bool can_zoom_in() const;
+    // Back to the whole activity, but not while a drag is going on: the
+    // range being dragged is in the zoomed view.
     void               zoom_out();
+    [[nodiscard]] bool can_zoom_out() const;
+    // Zooms out when zoomed in, and in otherwise, as Z does.
+    void toggle_zoom();
     // The records the graph shows: the zoom, or the whole activity.
     [[nodiscard]] GraphView view() const;
 

@@ -790,6 +790,31 @@ void test_no_zoom_while_dragging_zoomed()
     CHECK(d.view() == (GraphView { .first = 10, .end = 40 }));
 }
 
+// Zoomed in, Z in the middle of a drag leaves the zoom and the drag as
+// they are: the range being dragged is in the zoomed view.
+void test_no_zoom_out_while_dragging()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    d.select_lap(1);
+    d.zoom_in();
+    d.start_segment(15);
+    d.set_segment(30);
+    CHECK(!d.can_zoom_out());
+    d.toggle_zoom();
+    CHECK(d.view() == (GraphView { .first = 10, .end = 40 }));
+    d.zoom_out();
+    CHECK(d.view() == (GraphView { .first = 10, .end = 40 }));
+    CHECK(d.anchor == std::optional<size_t> { 15 });
+    // Once the drag is done, Z zooms out, and in again.
+    d.end_segment();
+    CHECK(d.can_zoom_out());
+    d.toggle_zoom();
+    CHECK(!d.zoom.has_value());
+    d.toggle_zoom();
+    CHECK(d.view() == (GraphView { .first = 15, .end = 31 }));
+}
+
 // New laps, which leave the records as they are, leave the zoom; a zoom
 // past the records, which no selection can make, shows the whole activity.
 void test_zoom_after_the_laps_change()
@@ -820,6 +845,7 @@ int main()
     test_lap_spans_zoomed_inside_a_lap();
     test_zoom_to_a_selection_outside_the_zoom();
     test_no_zoom_while_dragging_zoomed();
+    test_no_zoom_out_while_dragging();
     test_zoom_after_the_laps_change();
     test_extend_a_range();
     test_extend_a_lap();

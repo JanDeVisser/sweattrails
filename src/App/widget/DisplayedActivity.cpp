@@ -168,9 +168,25 @@ void DisplayedActivity::zoom_in()
     }
 }
 
+bool DisplayedActivity::can_zoom_out() const
+{
+    return zoom && !anchor;
+}
+
 void DisplayedActivity::zoom_out()
 {
-    zoom.reset();
+    if (can_zoom_out()) {
+        zoom.reset();
+    }
+}
+
+void DisplayedActivity::toggle_zoom()
+{
+    if (zoom) {
+        zoom_out();
+    } else {
+        zoom_in();
+    }
 }
 
 GraphView DisplayedActivity::view() const
