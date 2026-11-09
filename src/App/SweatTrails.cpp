@@ -24,6 +24,7 @@
 #include <App.h>
 #include <Modal.h>
 #include <PopupMenu.h>
+#include <TextAreaBox.h>
 #include <Widget.h>
 
 #include <Http.h>
@@ -960,6 +961,24 @@ void cmd_rename_activity(pSweatTrails const &sweattrails, JSONValue const &)
         }
     };
     input_box(sweattrails, "Name", save, activity->activity.title);
+}
+
+// Opens a box with the activity's description (specs/41-edit-description.md).
+// One that can't be saved keeps the description it had, and the status
+// line says why. The panel's height goes with the description's lines.
+void cmd_edit_description(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    auto activity = activity_for_keys(sweattrails);
+    if (!activity) {
+        return;
+    }
+    auto save = [activity](pSweatTrails const &st, std::string const &text) {
+        if (auto const saved = activity->activity.set_notes(text); !saved) {
+            st->set_status(std::format("Couldn't save the description: {}", saved.error().to_string()));
+        }
+        st->activity_display->resize();
+    };
+    text_area_box(sweattrails, "Description", save, activity->activity.notes);
 }
 
 // The activity on display gets the laps `starts` make, the device's for
@@ -2249,6 +2268,9 @@ void SweatTrails::initialize()
     bus.add_task<SweatTrails>("st-device-laps", self(), cmd_device_laps)
         .titled("Back to the device's laps")
         .bind(KeyCombo { KEY_L, KModControl | KModAlt })
+        .when(on_activity_screen);
+    bus.add_task<SweatTrails>("st-edit-description", self(), cmd_edit_description)
+        .titled("Edit description")
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-rename-activity", self(), cmd_rename_activity)
         .titled("Rename activity")

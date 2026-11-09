@@ -177,6 +177,7 @@ add_library(
         src/Lib/Widget/Table.cpp
         src/Lib/Widget/TextArea.h
         src/Lib/Widget/TextArea.cpp
+        src/Lib/Widget/TextAreaBox.h
         src/Lib/Widget/TextLine.h
         src/Lib/Widget/TextLine.cpp
         src/Lib/Widget/Widget.h
