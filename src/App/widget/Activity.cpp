@@ -375,7 +375,7 @@ void ActivityGraph::draw_ticks(std::vector<GraphTick> const &ticks, float y, flo
         widths.push_back(w < width ? w : 0);
     }
     for (auto const ix : visible_labels(centres, widths, LabelGap)) {
-        draw_line(ticks[ix].x, tick_y, ticks[ix].x, tick_y + tick, ChartScaleColor);
+        draw_line_no_normalize(ticks[ix].x, tick_y, ticks[ix].x, tick_y + tick, ChartScaleColor);
         render_text(centres[ix] - widths[ix] / 2, y, ticks[ix].label, FontSize::Small, ChartLabelColor);
     }
 }
@@ -428,7 +428,7 @@ void ActivityGraph::draw()
     draw_ticks(time_labels, below + TickLength, below, TickLength);
     if (activity->mark && *activity->mark >= rendered_view.first && *activity->mark < rendered_view.end) {
         auto const x = view_x(rendered_view, *activity->mark, plot_width());
-        draw_line(x, top_band(), x, top_band() + height, MarkColor);
+        draw_line_no_normalize(x, top_band(), x, top_band() + height, MarkColor);
     }
     draw_legend();
 }

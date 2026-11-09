@@ -596,6 +596,7 @@ public:
     void    draw_hover_panel_(float x, float y, StringList const &text, Color bgcolor, Color textcolor, FontSize font_size = FontSize::Small) const;
     void    draw_rectangle_no_normalize_(float x, float y, float width, float height, Color color) const;
     void    draw_outline_no_normalize_(float x, float y, float width, float height, Color color) const;
+    void    draw_line_no_normalize_(float x0, float y0, float x1, float y1, Color color) const;
     bool    mouse_in() const;
 
     template<typename Tx, typename Ty>
@@ -744,6 +745,17 @@ public:
     void draw_outline_no_normalize(Tx x, Ty y, Tw width, Th height, Color color) const
     {
         draw_outline_no_normalize_(x, y, width, height, color);
+    }
+
+    // A line between two points in the widget, as they are: draw_line()
+    // takes an end at 0 or less as measured from the right or the bottom,
+    // which a line at the left edge, x = 0, isn't.
+    template<typename Tx0, typename Ty0, typename Tx1, typename Ty1>
+        requires(
+            std::convertible_to<Tx0, float> && std::convertible_to<Ty0, float> && std::convertible_to<Tx1, float> && std::convertible_to<Ty1, float>)
+    void draw_line_no_normalize(Tx0 x0, Ty0 y0, Tx1 x1, Ty1 y1, Color color) const
+    {
+        draw_line_no_normalize_(x0, y0, x1, y1, color);
     }
 
     template<typename C, typename... Args>

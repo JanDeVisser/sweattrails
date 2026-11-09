@@ -275,6 +275,11 @@ void Widget::draw_line_(float x0, float y0, float x1, float y1, Color color) con
         color);
 }
 
+void Widget::draw_line_no_normalize_(float x0, float y0, float x1, float y1, Color color) const
+{
+    DrawLineV(Vector2 { .x = viewport.x + x0, .y = viewport.y + y0 }, Vector2 { .x = viewport.x + x1, .y = viewport.y + y1 }, color);
+}
+
 void Widget::draw_circle_(float x, float y, float r, Color color) const
 {
     if (x < 0) {
