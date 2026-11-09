@@ -251,3 +251,18 @@ changes only the title, which is one line and doesn't change the height.
 The scissor in `Table::draw()` matches how `ActivityMap` and the overlay
 preview clip, and is harmless for the summaries' table, whose rows fit
 its viewport.
+
+### Resolution
+
+1. Fixed. `fit_rows()` allows for the float error, so a table sized in
+   characters shows all its rows, and the lap table its header and two
+   rows at least. `test_characters_table_shows_its_rows` passes.
+2. Fixed. `fit_rows()` clamps the scroll, so a table that grows shows
+   the rows above. `test_fit_rows_keeps_the_rows_filled` passes.
+3. Fixed. The window can't be made smaller than 800x600, its size at
+   start-up (`SetWindowMinSize()` in `App`), and the data panel's height
+   is never 0. Checked by hand, as it needs a window.
+4. Fixed. Whether the pen is hovered is worked out as it's drawn, and
+   not while a modal is open.
+5. Fixed. The pen is loaded once, when the first activity is shown.
+6. Kept: `test_pen_icon_files_exist`.
