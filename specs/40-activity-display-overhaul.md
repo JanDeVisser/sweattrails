@@ -172,4 +172,82 @@ None.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: a table sized by the Characters policy loses a row at some font
+   sizes, which breaks the summaries' table.** `Table::resize()` now calls
+   `fit_rows()` (src/Lib/Widget/Table.cpp:115-130), which sets
+   `scroll.lines` from the height. `Layout` gives a Characters widget
+   `ceilf(1.2 * n * char_y)`, worked out in double, while `row_height` is
+   `1.2f * char_y` in float, a hair more. When `1.2 * (rows + 1) * char_y`
+   is a whole number, the height divided by `row_height` comes out just
+   under `rows + 1`, and `floor()` drops a row. With `font_size` 25 in the
+   settings (or 45), the summaries' table (`TableRows` = 8) shows 7 rows and
+   a scrollbar; on main it showed 8, as `scroll.lines` kept the
+   constructor's value. The same arithmetic hits `ActivityColumn::on_resize()`
+   (src/App/widget/Activity.cpp:780-791): `least_table` is
+   `3 * 1.2f * char_y`, the layout floors what's left to the table, and at
+   the default font size 20 the table that's supposed to keep "its header
+   and two rows" (Activity.h) gets 72 px for rows of 24.000001 px: a header
+   and one row. A tolerance in `fit_rows()` (or one rounding of the row
+   height shared by `Layout` and `Table`) fixes both.
+   Failing test: `test_characters_table_shows_its_rows` in `table_test`.
+2. **Bug: a lap table that grows keeps empty lines under its last row
+   while rows above it are out of view.** `fit_rows()` (Table.cpp:121-130)
+   sets `scroll.lines` but doesn't clamp `top_line`, and `scroll_to()` only
+   moves it far enough to keep the selection in view. Sequence: 20 laps,
+   the table shows 5; scroll to the bottom (or select the last lap), so
+   `top_line` is 15; stop comparing, or make the window taller, so the table
+   now fits 11 rows. It shows laps 16 to 20 and six empty lines, and laps
+   10 to 15 are only reachable by scrolling up. This happens in the normal
+   flow, as the spec makes the table's height change when comparing starts
+   or stops. `fit_rows()` needs a `scroll.clamp()` after setting `lines`.
+   Failing test: `test_fit_rows_keeps_the_rows_filled` in `table_test`.
+3. **Bug (small windows): the data panel keeps a stale height when it has
+   to give way completely.** In `ActivityColumn::on_resize()`
+   (Activity.cpp:790) `policy_size` becomes 0 when the column is shorter
+   than `least_table` (about 72 px at font size 20, i.e. a window a little
+   over 400 px high now that the graph needs 250 px plus its bands). But
+   `Layout::resize()` only sets a widget's size when `sz > 0`
+   (Layout.cpp:73), so the panel keeps the height of the last resize, and
+   the table is placed below that, outside the column and over the graph,
+   where it still takes clicks (`Layout::process_input()` gives the column
+   input before the graph). Related, and not new but now reached at a
+   larger height for an activity with one lap: with no lap table and no
+   minimum window size, a window shorter than the graph's
+   `needed_height()` hits `assert(total > allocated)` in `Layout::resize()`
+   for `ActivityDisplay` in a Debug build. Before, that took a window under
+   150 px plus the bands; now it's 250 px plus the bands. A
+   `SetWindowMinSize()` would settle both.
+4. **Bug (minor): the pen stays white while the rename box is open.**
+   `renaming_hovered` is only updated in `ActivityDataDisplay::process_input()`
+   (Activity.cpp:224), which doesn't run while a modal is open. Clicking
+   the pen opens the input box, and the pen stays highlighted as if hovered
+   until the box closes and the mouse is processed again. The same happens
+   if the summaries are shown while the mouse is over the title and you
+   come back. Resetting it when the click submits the rename, or working
+   the colour out in `draw()` from the mouse position, avoids it.
+5. **Suggestion: load the pen icon once, as the architecture says.**
+   Decision 7 says the panel loads the pen with the sport icon; `draw_pen()`
+   (Activity.cpp:125-129) loads it lazily in `draw()` whenever `pen_icon.id`
+   is 0. If `pen-48.png` isn't in `build/share/icons`, which is the case
+   for a bundle that wasn't reinstalled after this branch (the install step
+   is the only thing that copies it), `LoadTexture()` fails and is retried
+   every frame, with a raylib file warning in the log each time, and no
+   pen. Loading it in `initialize()` or `set_activity()` tries once.
+6. **Missing test (added): the pen's files.** Nothing checked that
+   `share/icons/pen.svg` and `pen-48.png` are in the source tree, as
+   `sport_icon_test` does for the sport and app icons. Added
+   `test_pen_icon_files_exist` there; it passes.
+
+Checked and fine: `rows()` puts the title, notes, summary and fields
+where `draw()` on main did (the title's y used the measured date line,
+which is the font's height either way; the summary's half-line gap after
+the notes is kept). `needed_height()` uses the same field line height as
+`draw_fields()`, and the panel has no padding, so the column's width is
+the width the notes wrap to. The height is worked out again on every path
+the spec lists: `show()` (another activity, a recording, a reloaded
+activity with new notes), `laps_changed()`, `compare_with()`,
+`clear_activity()`, `show_preview()` and the window's resize; a rename
+changes only the title, which is one line and doesn't change the height.
+The scissor in `Table::draw()` matches how `ActivityMap` and the overlay
+preview clip, and is harmless for the summaries' table, whose rows fit
+its viewport.
