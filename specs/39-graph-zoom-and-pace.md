@@ -1,6 +1,6 @@
 # Zooming the graph, and pace for runs
 
-Status: Ready
+Status: In progress
 
 <!--
 Status is one of:
@@ -130,11 +130,85 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### What's there
+
+`ActivityGraph` (`src/App/widget/Activity.cpp`) maps x to records by
+dividing the plot's width by the number of records in seven places:
+
+- the lines, `render_lines()` and `render_compared()`;
+- the ticks, `time_ticks()` and `distance_ticks()` in `GraphData`;
+- the selected range;
+- the mark;
+- `record_at` for hovering and dragging;
+- the strip, `lap_spans()` and `lap_at()` in `DisplayedActivity`.
+
+### Decisions
+
+1. **A `GraphView` in `GraphData.h`**, the records on show:
+   `{ size_t first; size_t end; }`, the whole activity or the zoom. With
+   it go `view_x(view, record, width)` and `view_record(view, x, width)`,
+   so that the seven places map through one pair of functions instead
+   of each dividing by the record count. `lap_spans()` gets the view
+   too, and clips laps at its edges.
+2. **The zoom lives in `DisplayedActivity`**, as
+   `std::optional<RecordRange> zoom`, next to the selection it's made
+   from. It has `zoom_in()`, `zoom_out()`, `can_zoom_in()` and
+   `view()`. A new activity or recording makes a new
+   `DisplayedActivity`, so it zooms out without code of its own.
+   `zoom_in()` needs a selection of at least 2 records.
+3. **The graph renders again when the view changes**: `draw()` compares
+   the view with the one it rendered, as `resize()` compares the size.
+   Zooming happens in tasks, which don't know about the graph.
+4. **The lines over the view**: the series is worked out over the whole
+   activity, so the smoothing at the view's left edge has the seconds
+   before it, and then sliced to the view for `graph_columns()` and
+   `graph_scale()`.
+5. **Ticks take the view**: `time_ticks(records, view, width)` and
+   `distance_ticks(records, view, width)` count from the activity's
+   first record, and pick the step for the view's length.
+   - The time steps start at 10 and 30 seconds.
+   - Below a minute, a label has seconds, "1:12:30"; otherwise it stays
+     "1:12".
+6. **Pace is a `GraphValue::Pace`**, the speed series under another
+   name, used in place of `Speed` when `is_on_foot()`. Its scale's bottom
+   is the slowest speed, but no slower than `SlowestGraphPace`, 20:00
+   min/km.
+   - `graph_y()` clamps values below the scale to the plot's bottom.
+   - If all of it is slower than the limit, a walk up a mountain say,
+     the scale is the plain speed range, so that there's still a line.
+   - `legend_range()` gives "Pace 3:50–12:00 min/km".
+   - `legend_values()` gets the activity, to say "Pace 5:02 min/km", or
+     "Pace –" standing still.
+7. **Three tasks**, all `.when(on_activity_screen)`:
+   - `st-graph-zoom` on `Z`, which toggles, titled "Graph: zoom in or
+     out";
+   - `st-graph-zoom-in`, "Graph: zoom to the selection";
+   - `st-graph-zoom-out`, "Graph: zoom out".
+
+   The menu gets the last two, greyed out with `can_zoom_in()` and when
+   not zoomed. `Z` can only toggle, so zooming further in while zoomed
+   goes through the menu or the palette.
+
+Nothing new goes in `src/Lib/Widget`.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `graph_data_test`:
+  - `view_x()` and `view_record()`, whole and zoomed;
+  - ticks over a view: labels from the activity's start, the steps for
+    a short view, seconds in the labels below a minute;
+  - the lines sliced to a view, with the smoothing at its left edge
+    using the seconds before it;
+  - the pace scale: the limit, clamping, and a slow activity;
+  - the pace legend and hover values, "Pace –" included.
+- `displayed_activity_test`:
+  - zooming in and out, and nested;
+  - no zoom without a selection or for one record;
+  - the selection changing while zoomed;
+  - `lap_spans()` over a view, laps cut off at its edges, and `lap_at()`
+    on them.
+- By hand in the app: drawing zoomed, `Z`, the menu items, dragging and
+  the strip while zoomed, and pace on a run.
 
 ## Review notes
 
