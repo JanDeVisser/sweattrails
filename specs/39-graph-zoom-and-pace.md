@@ -144,7 +144,9 @@ dividing the plot's width by the number of records in seven places:
 
 ### Decisions
 
-1. **A `GraphView` in `GraphData.h`**, the records on show:
+1. **A `GraphView` in `src/App/widget/GraphView.h`**, a header of its
+   own so that `DisplayedActivity` doesn't need `GraphData`'s
+   dependencies, the records on show:
    `{ size_t first; size_t end; }`, the whole activity or the zoom. With
    it go `view_x(view, record, width)` and `view_record(view, x, width)`,
    so that the seven places map through one pair of functions instead
