@@ -119,6 +119,7 @@ private:
     void                 wrap();
     [[nodiscard]] float  measure(size_t start, size_t end) const;
     [[nodiscard]] size_t last_position(size_t line) const;
+    [[nodiscard]] bool   wraps(size_t line) const;
     [[nodiscard]] Line   wrap_line(size_t start, size_t paragraph_end) const;
     void                 moved();
 };

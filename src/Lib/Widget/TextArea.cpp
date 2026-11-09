@@ -130,9 +130,14 @@ void TextArea::delete_word()
     }
 }
 
+// Left and Right step over the spaces a line wraps after, from the end of
+// the one line to the start of the next.
 void TextArea::left()
 {
-    if (cursor > 0) {
+    auto const line = line_of(cursor);
+    if (line > 0 && cursor == lines[line].start && wraps(line - 1)) {
+        cursor = last_position(line - 1);
+    } else if (cursor > 0) {
         --cursor;
     }
     moved();
@@ -140,7 +145,10 @@ void TextArea::left()
 
 void TextArea::right()
 {
-    if (cursor < text.length()) {
+    auto const line = line_of(cursor);
+    if (wraps(line) && cursor == last_position(line)) {
+        cursor = lines[line].end;
+    } else if (cursor < text.length()) {
         ++cursor;
     }
     moved();
@@ -411,20 +419,27 @@ float TextArea::measure(size_t start, size_t end) const
     return m_measure ? m_measure(piece) : static_cast<float>(piece.length());
 }
 
-// The last position on a line that's still on it: a line that wraps ends
-// before the spaces it wraps after, and one that breaks a word before the
-// character the next one starts with.
+// Whether the line wraps onto the next, rather than ending its paragraph.
+bool TextArea::wraps(size_t line) const
+{
+    return line + 1 < lines.size() && lines[line + 1].start == lines[line].end && lines[line].end > lines[line].start;
+}
+
+// The last position on a line: one that wraps after spaces ends before
+// them, as a cursor after them would be past the line's width. One that
+// breaks a word ends where the next line starts, which is where the word
+// goes on.
 size_t TextArea::last_position(size_t line) const
 {
     auto const &[start, end] = lines[line];
-    if (line + 1 < lines.size() && lines[line + 1].start == end && end > start) {
-        auto last = end - 1;
-        while (last > start && is_space(text[last - 1])) {
-            --last;
-        }
-        return is_space(text[end - 1]) ? last : end - 1;
+    if (!wraps(line) || !is_space(text[end - 1])) {
+        return end;
     }
-    return end;
+    auto last = end;
+    while (last > start && is_space(text[last - 1])) {
+        --last;
+    }
+    return last;
 }
 
 }

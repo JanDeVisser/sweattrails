@@ -371,6 +371,29 @@ void test_delete_word_over_a_line_break()
 
 }
 
+// End on a line that breaks a word goes to the break, where typing goes
+// on with the word, and Left and Right step over the spaces a line wraps
+// after, rather than into them, past the line's width.
+void test_ends_of_wrapped_lines()
+{
+    auto a = area("abcdefghijklmnop", 10);
+    a.cursor = 3;
+    key(a, KEY_END);
+    CHECK_EQ(a.cursor, 10uz);
+    type(a, L"X");
+    CHECK_EQ(a.utf8(), "abcdefghijXklmnop");
+    CHECK_EQ(a.position_at(0, 500), 10uz);
+
+    auto w = area("aaaa    bbbb", 6);
+    w.cursor = 4;
+    key(w, KEY_RIGHT);
+    CHECK_EQ(w.cursor, 8uz);
+    key(w, KEY_LEFT);
+    CHECK_EQ(w.cursor, 4uz);
+    key(w, KEY_LEFT);
+    CHECK_EQ(w.cursor, 3uz);
+}
+
 // A long paste is wrapped once, not again after each character.
 void test_paste_wraps_once()
 {
@@ -404,6 +427,7 @@ int main()
     test_words();
     test_paste();
     test_paste_wraps_once();
+    test_ends_of_wrapped_lines();
     test_position_at();
     test_scrolling();
     test_click_forgets_the_goal();
