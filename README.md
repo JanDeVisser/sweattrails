@@ -98,6 +98,13 @@ of less than 10 seconds selects nothing.
 The laps are in a table under the data panel, beside the map: clicking
 one selects it, and clicking it again goes back to the whole activity.
 F2, or a click on the title or the pen after it, renames the activity.
+The pen after the description, "Add a description" where there's none,
+or "Edit description" in the command palette, opens the description in
+a box: Enter starts a new line, Cmd+Enter (Ctrl+Enter off macOS) saves,
+and Esc cancels, asking first if you changed it. A description you
+write wins over Strava's, and a Strava sync leaves it alone; saving it
+empty brings Strava's back. It's kept in the activity's `.json` file, and
+isn't sent to Strava.
 
 A right-click in the graph extends the selection, back from its start or
 on from its end, to the next whole km, lap or stop: "Back to the km",
@@ -443,7 +450,7 @@ request of its own for each activity. Strava allows 100 requests every 15
 minutes and 1,000 a day, so the descriptions of a long history come over
 a few runs: SweatTrails says how many are left, and from when it can
 fetch them. A description changed on Strava, without the name, isn't
-seen again.
+seen again. One you wrote in SweatTrails wins over Strava's.
 
 ## Video overlay
 
