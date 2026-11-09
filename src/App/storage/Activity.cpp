@@ -529,15 +529,17 @@ std::expected<void, LibCError> Activity::rename(std::string_view name)
 std::expected<void, LibCError> Activity::set_notes(std::string_view text)
 {
     auto const trimmed = std::string { strip(text) };
-    auto const new_notes = trimmed.empty() ? original_notes : trimmed;
+    // Strava's own text, saved as it was or typed in again, isn't the
+    // user's. Strava's is kept as Strava sent it, with its white space.
+    auto const stravas = trimmed.empty() || trimmed == strip(original_notes);
+    auto const new_notes = stravas ? original_notes : trimmed;
     if (new_notes == notes) {
         return { };
     }
     if (activity_sidecar.empty()) {
         return std::unexpected(LibCError { "`{}`'s description can't be saved: it wasn't loaded from the store", id.name });
     }
-    // Strava's own text, typed in again, isn't the user's.
-    TRY(save_sidecar_notes(activity_sidecar, new_notes == original_notes ? std::string_view { } : std::string_view { trimmed }));
+    TRY(save_sidecar_notes(activity_sidecar, stravas ? std::string_view { } : std::string_view { trimmed }));
     notes = new_notes;
     return { };
 }

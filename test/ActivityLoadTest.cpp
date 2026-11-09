@@ -1045,7 +1045,7 @@ int main()
     test_save_sidecar_notes();
     test_own_notes_win();
     test_set_notes();
-    // test_set_notes_on_stravas_untrimmed_description(); // Review finding 2
+    test_set_notes_on_stravas_untrimmed_description();
     test_set_notes_over_a_strava_file();
     test_set_notes_without_a_sidecar();
     test_set_notes_that_fails();
