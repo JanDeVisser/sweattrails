@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 
+#include <Emoji.h>
 #include <TextLine.h>
 
 #include <TestApp.h>
@@ -201,8 +202,39 @@ void test_set_resets_the_scroll()
 }
 }
 
+// An emoji is one character, also a flag or a family of several
+// codepoints (specs/42-emoji.md).
+void test_emoji_are_one_character()
+{
+    set_emoji_set(EmojiSet::from_names({
+        "1f44d.png",
+        "1f44d-1f3fd.png",
+        "1f1e8-1f1e6.png",
+        "1f468.png",
+        "1f469.png",
+        "1f467.png",
+        "1f468-200d-1f469-200d-1f467.png",
+    }));
+    TextLine line;
+    // a🇨🇦b👨‍👩‍👧
+    line.set("a\U0001F1E8\U0001F1E6b\U0001F468\u200D\U0001F469\u200D\U0001F467");
+    key(line, KEY_LEFT);
+    CHECK_EQ(line.cursor, 4uz);
+    key(line, KEY_LEFT, 2);
+    CHECK_EQ(line.cursor, 1uz);
+    key(line, KEY_RIGHT);
+    CHECK_EQ(line.cursor, 3uz);
+    key(line, KEY_BACKSPACE);
+    CHECK_EQ(line.utf8(), "ab\U0001F468\u200D\U0001F469\u200D\U0001F467");
+    key(line, KEY_RIGHT);
+    key(line, KEY_DELETE);
+    CHECK_EQ(line.utf8(), "ab");
+    set_emoji_set(EmojiSet { });
+}
+
 int main()
 {
+    test_emoji_are_one_character();
     test_typing_outside_ascii();
     test_set_and_utf8();
     test_moving_and_deleting();

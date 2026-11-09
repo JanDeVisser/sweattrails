@@ -115,6 +115,9 @@ private:
     float                m_width { std::numeric_limits<float>::max() };
     Measure              m_measure { };
     std::optional<float> m_goal_x { }; // Where up() and down() aim for
+    // Where the cursor goes a character on or back: over all of an emoji.
+    [[nodiscard]] size_t next(size_t position) const;
+    [[nodiscard]] size_t previous(size_t position) const;
     bool                 put(rune ch);
     void                 changed();
     void                 wrap();
