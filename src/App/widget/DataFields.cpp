@@ -59,14 +59,6 @@ std::string format_elapsed_time(Duration const &elapsed)
     return std::format("{}:{:02}:{:02}", elapsed.hours, elapsed.minutes, elapsed.seconds);
 }
 
-std::string format_pace(float32 seconds_per_km)
-{
-    // All of it in minutes, however slow: a watch that logged next to no
-    // distance gives a pace of hours, or days, per km.
-    Duration const pace { seconds_per_km };
-    return std::format("{}:{:02} min/km", pace.elapsed / 60, pace.elapsed % 60);
-}
-
 std::string format_speed(float32 meters_per_second)
 {
     return std::format("{:.1f} km/h", meters_per_second * 3.6f);
@@ -77,11 +69,6 @@ std::string format_speed(float32 meters_per_second)
 bool is_ride(Activity const &activity)
 {
     return activity.sport == sport::Cycling || activity.sport == sport::E_biking;
-}
-
-bool is_on_foot(Activity const &activity)
-{
-    return activity.sport == sport::Running || activity.sport == sport::Walking || activity.sport == sport::Hiking;
 }
 
 // The lines below take the segment whose fields they add, the activity's
@@ -253,6 +240,19 @@ std::string segment_summary(Activity const &activity, Segment const &segment)
     return summary;
 }
 
+}
+
+std::string format_pace(float32 seconds_per_km)
+{
+    // All of it in minutes, however slow: a watch that logged next to no
+    // distance gives a pace of hours, or days, per km.
+    Duration const pace { seconds_per_km };
+    return std::format("{}:{:02} min/km", pace.elapsed / 60, pace.elapsed % 60);
+}
+
+bool is_on_foot(Activity const &activity)
+{
+    return activity.sport == sport::Running || activity.sport == sport::Walking || activity.sport == sport::Hiking;
 }
 
 std::string device_name(Activity const &activity)

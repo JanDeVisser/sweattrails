@@ -29,6 +29,7 @@ std::optional<float> value_of(record const &rec, GraphValue value)
     case GraphValue::Altitude:
         return as_float(rec.altitude);
     case GraphValue::Speed:
+    case GraphValue::Pace:
         return as_float(rec.speed);
     case GraphValue::HeartRate:
         return as_float(real_heart_rate(rec));
@@ -40,9 +41,16 @@ std::optional<float> value_of(record const &rec, GraphValue value)
     return { };
 }
 
+// A speed's pace, "3:50", without the unit.
+std::string pace_text(float metres_per_second)
+{
+    auto const seconds = std::lround(1000 / metres_per_second);
+    return std::format("{}:{:02}", seconds / 60, seconds % 60);
+}
+
 bool smoothed(GraphValue value)
 {
-    return value == GraphValue::Speed || value == GraphValue::Power;
+    return value == GraphValue::Speed || value == GraphValue::Pace || value == GraphValue::Power;
 }
 
 bool from_zero(GraphValue value)
@@ -181,6 +189,16 @@ std::optional<GraphScale> graph_scale(GraphValue value, std::span<GraphSeries co
             ret->top = std::max(ret->top, *v);
         }
     }
+    if (ret && value == GraphValue::Pace) {
+        if (ret->top <= 0) {
+            return { };
+        }
+        // Unless all of it is slower, a stroll in the mountains say.
+        auto const slowest = 1000 / SlowestGraphPace;
+        if (ret->top > slowest) {
+            ret->bottom = std::max(ret->bottom, slowest);
+        }
+    }
     if (ret && from_zero(value)) {
         if (ret->top <= 0) {
             return { };
@@ -195,7 +213,7 @@ float graph_y(GraphScale const &scale, float value, float height)
     if (scale.top <= scale.bottom) {
         return height / 2;
     }
-    return height - (value - scale.bottom) * height / (scale.top - scale.bottom);
+    return std::clamp(height - (value - scale.bottom) * height / (scale.top - scale.bottom), 0.0f, height);
 }
 
 std::vector<GraphTick> time_ticks(std::span<record const> records, GraphView const &view, float width)
@@ -246,6 +264,14 @@ GraphLabel legend_range(Activity const &activity, GraphValue value, GraphScale c
         return label("Alt", "m", 1, AltitudeColor);
     case GraphValue::Speed:
         return label("Spd", "km/h", 3.6f, SpeedColor);
+    case GraphValue::Pace: {
+        // Fastest first, as the line goes from top to bottom.
+        auto const fastest = pace_text(scale.top);
+        if (scale.bottom <= 0 || scale.bottom >= scale.top) {
+            return GraphLabel { std::format("Pace {} min/km", fastest), SpeedColor };
+        }
+        return GraphLabel { std::format("Pace {}–{} min/km", fastest, pace_text(scale.bottom)), SpeedColor };
+    }
     case GraphValue::HeartRate:
         return label("HR", "bpm", 1, HeartRateColor);
     case GraphValue::Power:
@@ -274,13 +300,16 @@ std::vector<GraphLabel> mark_position(std::span<record const> records, size_t ma
     return ret;
 }
 
-std::vector<GraphLabel> legend_values(record const &recorded)
+std::vector<GraphLabel> legend_values(Activity const &activity, record const &recorded)
 {
     std::vector<GraphLabel> ret;
     if (recorded.altitude) {
         ret.push_back({ std::format("Alt {} m", std::lround(*recorded.altitude)), AltitudeColor });
     }
-    if (recorded.speed) {
+    if (recorded.speed && is_on_foot(activity)) {
+        auto const moving = *recorded.speed >= RangeMovingSpeed;
+        ret.push_back({ moving ? std::format("Pace {}", format_pace(1000 / *recorded.speed)) : std::string { "Pace –" }, SpeedColor });
+    } else if (recorded.speed) {
         ret.push_back({ std::format("Spd {:.1f} km/h", *recorded.speed * 3.6), SpeedColor });
     }
     if (auto const hr = real_heart_rate(recorded); hr) {

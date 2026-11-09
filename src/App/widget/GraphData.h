@@ -24,6 +24,7 @@ namespace ST {
 enum class GraphValue {
     Altitude,
     Speed,
+    Pace, // The speed, on foot, with its scale in min/km
     HeartRate,
     Power,
     Cadence,
@@ -36,6 +37,11 @@ using GraphSeries = std::vector<std::optional<float>>;
 // Power and speed are averaged over this many seconds, so that the lines
 // aren't one-second noise.
 constexpr u32 GraphSmoothing = 5;
+
+// Pace's scale goes no slower than this, 20:00 min/km: a walk up a steep
+// hill, or standing still, is drawn at the bottom, so that the running
+// fills the plot.
+constexpr float SlowestGraphPace = 1200; // s/km
 
 // Labels along the graph are about this far apart, in pixels, at least.
 constexpr float GraphTickSpacing = 80.0f;
@@ -63,11 +69,13 @@ struct GraphScale {
 
 // The scale of one or more series of a value, those of two recordings
 // while comparing. None without values, or without any above 0 where it
-// goes from 0.
+// goes from 0. Pace's goes from the slowest speed, but none slower than
+// SlowestGraphPace, unless all of it is.
 [[nodiscard]] std::optional<GraphScale> graph_scale(GraphValue value, std::span<GraphSeries const> series);
 
 // Where `value` goes in a plot `height` high, from the top: the middle
-// for a flat line.
+// for a flat line, and the bottom for one below the scale, as a pace
+// slower than SlowestGraphPace is.
 [[nodiscard]] float graph_y(GraphScale const &scale, float value, float height);
 
 struct GraphTick {
@@ -89,11 +97,12 @@ struct GraphTick {
 // Distance, "5 km". None without distances.
 [[nodiscard]] std::vector<GraphTick> distance_ticks(std::span<record const> records, GraphView const &view, float width);
 
-// The legend's entry for a line: "Pwr 0–612 W".
+// The legend's entry for a line: "Pwr 0–612 W", "Pace 3:50–12:00 min/km".
 [[nodiscard]] GraphLabel legend_range(Activity const &activity, GraphValue value, GraphScale const &scale);
 // The legend while hovering: the record's values, "Alt 45 m",
-// "Spd 32.4 km/h", "HR 145 bpm", "Pwr 245 W", for those it has.
-[[nodiscard]] std::vector<GraphLabel> legend_values(record const &recorded);
+// "Spd 32.4 km/h", "HR 145 bpm", "Pwr 245 W", for those it has. On foot,
+// "Pace 5:02 min/km" in place of the speed, or "Pace –" standing still.
+[[nodiscard]] std::vector<GraphLabel> legend_values(Activity const &activity, record const &recorded);
 // After them, where the marked record is: the time since the first
 // record, "0:42:10", and its distance, "12.34 km", if it has one. None
 // for a mark past the records.

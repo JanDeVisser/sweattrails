@@ -338,7 +338,8 @@ void test_legend_values()
     rec.speed = 9.0f;
     rec.heart_rate = 145;
     rec.power = 245;
-    auto const               labels = legend_values(rec);
+    TestActivity const       ride { sport::Cycling };
+    auto const               labels = legend_values(ride.activity, rec);
     std::vector<std::string> texts;
     for (auto const &label : labels) {
         texts.push_back(label.text);
@@ -349,7 +350,7 @@ void test_legend_values()
     record sparse { };
     sparse.heart_rate = 0;
     sparse.power = 0;
-    auto const only_power = legend_values(sparse);
+    auto const only_power = legend_values(ride.activity, sparse);
     CHECK_EQ(only_power.size(), 1uz);
     if (!only_power.empty()) {
         CHECK_EQ(only_power.front().text, "Pwr 0 W");
@@ -488,6 +489,60 @@ void test_mark_position()
 
 }
 
+// 5:00 to 4:00 min/km, and standing still: the scale stops at 20:00, and
+// the standstill is drawn at the bottom.
+void test_pace_scale()
+{
+    std::vector<GraphSeries> const run { { 1000.0f / 300, 1000.0f / 240, 0.0f } };
+    auto const                     scale = graph_scale(GraphValue::Pace, run);
+    CHECK(scale.has_value());
+    if (scale) {
+        CHECK(near(scale->top, 1000.0f / 240));
+        CHECK(near(scale->bottom, 1000.0f / SlowestGraphPace));
+        CHECK_EQ(graph_y(*scale, 0.0f, 100.0f), 100.0f);
+    }
+    std::vector<GraphSeries> const steady { { 1000.0f / 300, 1000.0f / 240 } };
+    auto const                     faster = graph_scale(GraphValue::Pace, steady);
+    CHECK(faster.has_value() && near(faster->bottom, 1000.0f / 300));
+}
+
+// All of it slower than 20:00 min/km: the plain speed range, so that
+// there's a line to see.
+void test_pace_scale_of_a_slow_hike()
+{
+    std::vector<GraphSeries> const hike { { 0.5f, 0.7f } };
+    auto const                     scale = graph_scale(GraphValue::Pace, hike);
+    CHECK(scale == (GraphScale { .bottom = 0.5f, .top = 0.7f }));
+    std::vector<GraphSeries> const still { { 0.0f, 0.0f } };
+    CHECK(!graph_scale(GraphValue::Pace, still).has_value());
+}
+
+void test_pace_legend()
+{
+    TestActivity const run { sport::Running };
+    auto const         range = legend_range(run.activity, GraphValue::Pace, { .bottom = 1000.0f / 720, .top = 1000.0f / 230 });
+    CHECK_EQ(range.text, "Pace 3:50–12:00 min/km");
+    CHECK(ColorIsEqual(range.color, SpeedColor));
+
+    record rec { };
+    rec.speed = 1000.0f / 302;
+    rec.heart_rate = 150;
+    auto const labels = legend_values(run.activity, rec);
+    CHECK(!labels.empty() && labels.front().text == "Pace 5:02 min/km");
+    rec.speed = 0.2f;
+    auto const still = legend_values(run.activity, rec);
+    CHECK(!still.empty() && still.front().text == "Pace –");
+}
+
+// The series over a view: the smoothing at its left edge has the seconds
+// before it.
+void test_series_smoothed_before_the_view()
+{
+    auto const series = graph_series(with_power({ 100, 200, 300, 400, 500, 600 }), GraphValue::Power);
+    // At record 5, the view's first, the average is of records 1 to 5.
+    CHECK(series.size() == 6 && series[5] == std::optional { 400.0f });
+}
+
 int main()
 {
     test_power_is_averaged_over_five_seconds();
@@ -520,5 +575,9 @@ int main()
     test_time_ticks_zoomed();
     test_time_ticks_with_seconds();
     test_distance_ticks_zoomed();
+    test_pace_scale();
+    test_pace_scale_of_a_slow_hike();
+    test_pace_legend();
+    test_series_smoothed_before_the_view();
     return Test::test_result();
 }

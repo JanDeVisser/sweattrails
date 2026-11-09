@@ -395,7 +395,7 @@ void ActivityGraph::draw_legend() const
             auto const other = pair && *pair < other_recorded.size() ? std::optional { other_recorded[*pair] } : std::nullopt;
             labels = compare_banner(activity->activity, recorded[*mark], other);
         } else {
-            labels = legend_values(recorded[*mark]);
+            labels = legend_values(activity->activity, recorded[*mark]);
         }
         auto position = mark_position(activity->activity.records, *mark);
         labels.insert(labels.end(), position.begin(), position.end());
@@ -561,7 +561,8 @@ void ActivityGraph::render_lines(int width, int height)
     auto const &shown = activity->activity;
     auto const  recorded = as_recorded(shown);
     auto const  h = static_cast<float>(height);
-    for (auto const value : { GraphValue::Altitude, GraphValue::Speed, GraphValue::HeartRate, GraphValue::Power }) {
+    auto const  speed = is_on_foot(shown) ? GraphValue::Pace : GraphValue::Speed;
+    for (auto const value : { GraphValue::Altitude, speed, GraphValue::HeartRate, GraphValue::Power }) {
         // The scale is the values', not the columns': a column averages
         // its records, and would hide the lowest and highest of them.
         auto const series = in_view(graph_series(recorded, value));
