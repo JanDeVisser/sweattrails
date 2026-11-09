@@ -101,10 +101,14 @@ Two improvements to the activity screen's graph that were deferred from
 - **The scale runs from the fastest pace to the slowest**, but no slower
   than 20:00 min/km, 3 km/h. That's the line's bottom: anything slower,
   a walk up a steep hill or standing still, is drawn at the bottom. So
-  the running fills the plot's height.
+  the running fills the plot's height. When all of it is slower, a
+  steep climb zoomed to say, the scale runs from its slowest moving
+  speed, `RangeMovingSpeed` or faster, and a rest is drawn at the bottom.
 - **The legend** says "Pace 3:50–12:00 min/km", fastest first, as the
   line goes from top to bottom; "Pace 3:50–20:00 min/km" when the
-  slowest is the limit.
+  slowest is the limit. Its ends are rounded to the second, as all paces
+  are, and a range whose ends read the same is one pace, "Pace 5:00
+  min/km".
 - **While hovering** it says "Pace 5:02 min/km", the record's own, as
   recorded, in `format_pace()`'s form. A record standing still, slower
   than `RangeMovingSpeed`, says "Pace –".
@@ -291,3 +295,27 @@ Tests added, not committed: in `graph_data_test`,
 `test_no_zoom_while_dragging_zoomed` and
 `test_zoom_after_the_laps_change`. All pass apart from the one for
 finding 1.
+
+### Resolution
+
+1. Fixed. All slower than the limit, the pace scale runs from the
+   slowest moving speed, and a rest is drawn at the bottom, so the
+   legend gives a range. `test_pace_legend_at_the_limit` had a hike
+   ending at 40:00 min/km, which is standing still by that rule; it now
+   ends at 30:00.
+2. Fixed. Slicing is `view_series(series, view)` in `GraphData`, which
+   `ActivityGraph` uses for its lines and for both series while
+   comparing. Tested: the smoothing before the view's edge, and views
+   past the series' end or empty. The scale over the view and the
+   comparison's slicing aren't tested apart from that, as they're in
+   the drawing.
+3. Fixed. `zoom_out()` does nothing during a drag, and `Z` is
+   `toggle_zoom()` in `DisplayedActivity`; "Zoom out" in the menu is
+   greyed out then too (`can_zoom_out()`).
+4. Fixed, by rounding: truncating made an even 30:00, worked out from
+   a speed, read 29:59. `pace_minutes()` in `DataFields` rounds to the
+   second, and `format_pace()`, the legend and the hover text use it,
+   so the data panel's paces are rounded now too. Equal ends merge.
+5. Fixed. `can_zoom_in()` is false when the selection is the zoom.
+6. Deferred to a later spec: distance steps of 100, 200 and 500 m.
+7. Left as the spec asks, to check by hand on a real hike.
