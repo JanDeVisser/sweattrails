@@ -41,13 +41,6 @@ std::optional<float> value_of(record const &rec, GraphValue value)
     return { };
 }
 
-// A speed's pace, "3:50", without the unit.
-std::string pace_text(float metres_per_second)
-{
-    auto const seconds = std::lround(1000 / metres_per_second);
-    return std::format("{}:{:02}", seconds / 60, seconds % 60);
-}
-
 bool smoothed(GraphValue value)
 {
     return value == GraphValue::Speed || value == GraphValue::Pace || value == GraphValue::Power;
@@ -289,12 +282,18 @@ GraphLabel legend_range(Activity const &activity, GraphValue value, GraphScale c
     case GraphValue::Speed:
         return label("Spd", "km/h", 3.6f, SpeedColor);
     case GraphValue::Pace: {
-        // Fastest first, as the line goes from top to bottom.
-        auto const fastest = pace_text(scale.top);
+        // Fastest first, as the line goes from top to bottom, and the
+        // same as the paces shown elsewhere, so that the ends are paces
+        // the hover text can show.
+        auto const fastest = pace_minutes(1000 / scale.top);
         if (scale.bottom <= 0 || scale.bottom >= scale.top) {
             return GraphLabel { std::format("Pace {} min/km", fastest), SpeedColor };
         }
-        return GraphLabel { std::format("Pace {}–{} min/km", fastest, pace_text(scale.bottom)), SpeedColor };
+        auto const slowest = pace_minutes(1000 / scale.bottom);
+        if (slowest == fastest) {
+            return GraphLabel { std::format("Pace {} min/km", fastest), SpeedColor };
+        }
+        return GraphLabel { std::format("Pace {}–{} min/km", fastest, slowest), SpeedColor };
     }
     case GraphValue::HeartRate:
         return label("HR", "bpm", 1, HeartRateColor);

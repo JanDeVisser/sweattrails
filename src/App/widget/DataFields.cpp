@@ -244,10 +244,16 @@ std::string segment_summary(Activity const &activity, Segment const &segment)
 
 std::string format_pace(float32 seconds_per_km)
 {
+    return std::format("{} min/km", pace_minutes(seconds_per_km));
+}
+
+std::string pace_minutes(float32 seconds_per_km)
+{
     // All of it in minutes, however slow: a watch that logged next to no
-    // distance gives a pace of hours, or days, per km.
-    Duration const pace { seconds_per_km };
-    return std::format("{}:{:02} min/km", pace.elapsed / 60, pace.elapsed % 60);
+    // distance gives a pace of hours, or days, per km. Rounded, as a pace
+    // worked out from a speed is a hair off: 30:00 is 1799.9999 s.
+    Duration const pace { std::round(seconds_per_km) };
+    return std::format("{}:{:02}", pace.elapsed / 60, pace.elapsed % 60);
 }
 
 bool is_on_foot(Activity const &activity)

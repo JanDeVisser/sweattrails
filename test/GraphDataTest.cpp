@@ -534,6 +534,21 @@ void test_pace_legend()
     CHECK(!still.empty() && still.front().text == "Pace –");
 }
 
+// The legend's ends are paces as the hover text shows them, rounded to
+// the second, and a range whose ends show the same is one pace.
+void test_pace_legend_as_the_hover_shows_it()
+{
+    TestActivity const run { sport::Running };
+    auto const         range = legend_range(run.activity, GraphValue::Pace, { .bottom = 1000.0f / 300.6f, .top = 1000.0f / 299.4f });
+    CHECK_EQ(range.text, "Pace 4:59–5:01 min/km");
+    auto const same = legend_range(run.activity, GraphValue::Pace, { .bottom = 1000.0f / 300.4f, .top = 1000.0f / 299.6f });
+    CHECK_EQ(same.text, "Pace 5:00 min/km");
+    record rec { };
+    rec.speed = 1000.0f / 299.6f;
+    auto const labels = legend_values(run.activity, rec);
+    CHECK(!labels.empty() && labels.front().text == "Pace 5:00 min/km");
+}
+
 // The series over a view: the smoothing at its left edge has the seconds
 // before it.
 void test_series_smoothed_before_the_view()
@@ -715,6 +730,7 @@ int main()
     test_pace_scale();
     test_pace_scale_of_a_slow_hike();
     test_pace_legend();
+    test_pace_legend_as_the_hover_shows_it();
     test_series_smoothed_before_the_view();
     return Test::test_result();
 }
