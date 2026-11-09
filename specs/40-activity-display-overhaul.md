@@ -1,6 +1,6 @@
 # Activity display overhaul: laps beside the map
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
