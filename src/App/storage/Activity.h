@@ -90,8 +90,9 @@ struct StravaTitle {
 
 // The names in a sidecar, from one read of it.
 struct SidecarTitles {
-    std::optional<std::string> service { }; // sidecar_title()
-    std::optional<std::string> own { };     // sidecar_own_title()
+    std::optional<std::string> service { };   // sidecar_title()
+    std::optional<std::string> own { };       // sidecar_own_title()
+    std::optional<std::string> own_notes { }; // The user's description, "notes"
     std::optional<StravaTitle> strava { };
 };
 
@@ -129,6 +130,11 @@ std::expected<void, LibCError> save_sidecar_laps(fs::path const &sidecar, std::o
 // Saves the user's name for the activity in its sidecar, with
 // update_sidecar(), or removes it for an empty `title`.
 std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::string_view title);
+
+// Saves the user's description of the activity in its sidecar, as
+// `"notes"`, with update_sidecar(), or removes it for empty `notes`. See
+// specs/41-edit-description.md.
+std::expected<void, LibCError> save_sidecar_notes(fs::path const &sidecar, std::string_view notes);
 
 struct Segment {
     DateTime                    start_time { };
@@ -193,6 +199,7 @@ struct Activity {
     std::string                      original_title { }; // Without the name the user gave it
     std::string                      fit_title { };      // The FIT file's: the workout's, or the start time
     std::string                      notes { };
+    std::string                      original_notes { }; // Without the user's description: Strava's
     Segment                          segment { };
     std::vector<record>              records { };  // Smoothed, for the graph
     std::vector<record>              recorded { }; // As recorded, for a range's stats
@@ -260,6 +267,10 @@ struct Activity {
     // Gives the activity the user's name, trimmed, and saves it in the
     // sidecar. An empty name goes back to the original title.
     std::expected<void, LibCError> rename(std::string_view name);
+    // Gives the activity the user's description, trimmed, and saves it in
+    // the sidecar. An empty one goes back to Strava's, and an unchanged
+    // one isn't saved, so that Strava's isn't copied into the user's.
+    std::expected<void, LibCError> set_notes(std::string_view text);
 
 private:
     Error<StorageError> analyze();

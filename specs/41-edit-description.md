@@ -1,6 +1,6 @@
 # Editing the description
 
-Status: Ready
+Status: Done
 
 <!--
 Status is one of:
@@ -116,12 +116,201 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### What's there
+
+- `Activity::read_names()` picks the title and the notes from the
+  sidecar (`sidecar_titles()`), the `.strava` file and the FIT file.
+  `Activity::rename()` trims, keeps `original_title` for an empty name,
+  does nothing for an unchanged one, and saves with
+  `save_sidecar_title()`, through `update_sidecar()`.
+- `TextLine` (`src/Lib/Widget`) is the model of a line being edited:
+  runes, a cursor, and the keys, with no drawing. `input_box()` in
+  `Modal.h` is the modal that draws one. `query_box()` asks Yes or No.
+- `App` sends a modal its characters through `character()` and its keys,
+  repeats too, through `process_key()`.
+- `wrap_words()` in `StringUtil` wraps text to strings, which lose where
+  the cursor is: the editor needs its lines as positions in the text.
+- `ActivityDataDisplay::rows()` places the notes, which spec 40 made the
+  one place both drawing and the panel's height go through.
+
+### Decisions
+
+1. **Storage.** `SidecarTitles` gets `own_notes`, the sidecar's
+   `"notes"`, and `save_sidecar_notes(sidecar, notes)` saves or removes
+   it, as `save_sidecar_title()` does the title. `read_names()` takes
+   `own_notes` over Strava's and the `.strava` file's, and keeps those in
+   a new `Activity::original_notes`, as `original_title` keeps the title.
+   `Activity::set_notes(text)` works as `rename()` does: it trims, goes
+   back to `original_notes` when empty, does nothing when unchanged (so
+   opening the editor on Strava's description and saving it doesn't copy
+   it into `"notes"`), and saves.
+2. **`TextArea`**, a new model in `src/Lib/Widget/TextArea.h`, next to
+   `TextLine`, and like it with no drawing:
+   - the text as runes with `\n` for line breaks, and the cursor;
+   - `wrap(width, measure)` gives the lines as wrapped, each a range of
+     the text, breaking after a space, and inside a word that's wider
+     than the line by itself. `measure` is a function, so that tests
+     pass one that counts characters, and the modal one that asks the
+     font. The model keeps the lines, wrapped again after each change;
+   - the keys of the spec, with the platform's modifiers as `TextLine`
+     has them (Alt or Ctrl for words, Cmd+Up and Down or Ctrl+Home and
+     End for the text's ends). Up and Down remember the x they started
+     from, so that a short line in between doesn't pull the cursor left;
+   - `cursor_at(line, x)` for a click, and `scroll_to_cursor()` and
+     `scroll(lines)` for the box's `top_line` and its visible lines.
+3. **The modal**, `text_area_box(target, prompt, submit, text)`, in a
+   new `src/Lib/Widget/TextAreaBox.h`, as `input_box()` is in `Modal.h`:
+   draws the `TextArea`, half the screen wide and ten lines high, takes
+   characters, keys, clicks and the wheel, saves with Cmd+Enter or
+   Ctrl+Enter, and on Esc with the text changed asks "Discard the
+   changes?" with `query_box()`. It's the library's, so a generic
+   editor of long texts. Both headers go in `.clang-format`'s Widget
+   list.
+4. **The task** `st-edit-description`, "Edit description", on the
+   activity screen, opens the modal on the displayed activity's notes;
+   saving calls `set_notes()`, says what went wrong on the status line as
+   the rename does, and resizes the activity display, as the notes can
+   change the panel's height.
+5. **The panel.** `rows()` gives the notes' lines, or "Add a
+   description" as one line when there are none, and draws that in
+   `GRAY`. The pen, the same texture as the title's, goes after the last
+   line, and a click on it, or on the placeholder, submits
+   `st-edit-description`. The hover and drawing are the title's pen's,
+   made a function both use.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `activity_load_test` (or where `rename` is tested):
+  - `save_sidecar_notes()` saves and removes `"notes"`, keeping the rest
+    of the sidecar;
+  - `read_names()`: the user's notes over Strava's, and Strava's back
+    once they're removed;
+  - `set_notes()` trims, saves, does nothing unchanged (no `"notes"` for
+    Strava's own text), and goes back to Strava's when empty.
+- `text_area_test`, new, with a measure of 10 px a character:
+  - typing, Enter, Backspace and Delete, also across a line break;
+  - wrapping: at spaces, a word wider than the line broken, line
+    breaks, an empty last line after a break;
+  - Left and Right, Up and Down across wrapped lines and breaks, with
+    the x remembered over a short line; Home and End of a wrapped line;
+    the text's start and end;
+  - word moves and Alt+Backspace;
+  - pasting `\r\n`, `\r` and tabs;
+  - `cursor_at()` for clicks past a line's end and below the last line;
+  - scrolling to the cursor, and with the wheel, within the text.
+- By hand: the pen and the placeholder, the editor's look, keys and
+  mouse, Esc's question, saving and the panel afterwards, a Strava sync
+  leaving the user's notes alone.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: after a click, Up and Down aim for where an earlier Up or
+   Down started, not for the click.** `TextAreaBox::process_input()`
+   (`TextAreaBox.h:167`) sets `area.cursor` directly, which leaves
+   `TextArea::m_goal_x` as it was. In "abcdefgh / ab / abcdefgh", with the
+   cursor after "abcdef": Down, then a click after the first "a" of the
+   first line, then Down puts the cursor after "ab" (x 60, the old goal)
+   instead of after its "a", under the click. The Architecture's
+   `cursor_at(line, x)` would have moved the cursor; what's there is
+   `position_at()`, which only computes a position, and `cursor` is a
+   public member that anything can set without the goal being reset.
+   A method that places the cursor, and resets the goal, fixes it.
+   Fails: `test_click_forgets_the_goal` in `test/TextAreaTest.cpp` (line
+   261), which does what the box does.
+2. **Bug: Strava's description, saved unchanged from the editor, is
+   copied into `"notes"` when it starts or ends with white space.**
+   `Activity::set_notes()` (`Activity.cpp:531-540`) compares the trimmed
+   text with the untrimmed `notes` and `original_notes`. Strava's
+   description is stored as Strava sends it (`Strava::description()`
+   doesn't trim), so a description of "Windy.\n", opened with the pen
+   and saved with Cmd+Enter, becomes the user's "Windy.". That's what the
+   spec says shouldn't happen, and from then on a new description from
+   Strava is hidden under the copy. Comparing with the trimmed
+   `original_notes` (and `notes`) fixes it. Fails:
+   `test_set_notes_on_stravas_untrimmed_description` in
+   `test/ActivityLoadTest.cpp` (line 624).
+3. **Bug (minor): pasting re-wraps the whole text once for each pasted
+   character.** `TextArea::paste()` calls `insert()` per character, and
+   each `insert()` calls `changed()`, which wraps all the text, so the
+   cost grows with the square of the length. With a measure that counts
+   its calls, pasting 1,000 characters measures 108,340 times, 2,000
+   characters 433,340 times and 5,000 characters 2,708,340 times. In the
+   box each measure is a UTF-8 conversion and a `MeasureTextEx()`, so a
+   long paste will stall the app noticeably (I couldn't time it with the
+   real font, without a window). Inserting all of it and then wrapping
+   once fixes it.
+4. **Missing test: the box's Esc question isn't tested, and can't be
+   without a window.** `text_area_box()` measures text through
+   `App::measure_text()`, which dereferences a font a test doesn't have,
+   and so does `query_box()`'s `ListBox::resize()`. I added
+   `test/TextAreaBoxTest.cpp` for what can run: Cmd+Enter saving,
+   Enter's line breaks, Esc on an unchanged text, Alt+Backspace, control
+   characters through `character()`, and the box keeping keys, all on
+   texts of only line breaks, which aren't measured. Esc on a changed
+   text, with Yes and No, is left to testing by hand. A box that takes
+   its measure from outside, as `TextArea` does, would make all of it
+   testable.
+5. **Suggestion: End, and a click past a line's end, stop before the
+   last character of a line that breaks a long word.** For
+   "abcdefghijklmnop" 10 characters wide, End on the first line puts the
+   cursor between "i" and "j", and typing goes in there. The header says
+   this is on purpose (`last_position()`: the position after "j" is the
+   start of the next line), but it doesn't match "End to the end of the
+   line", and long words do happen in descriptions, such as URLs.
+   Remembering which line a position at a wrap belongs to would fix it.
+   In the same way, a line wrapped after several spaces lets Right
+   go past its end, into the spaces, drawing the cursor past the box's
+   width.
+6. **Suggestion: `TextArea::set()` keeps `\r`, where `paste()` makes
+   line breaks of it.** If a description from Strava or a `.strava` file
+   has `\r\n` line breaks, the editor shows each `\r` as a character of
+   its own, a space as far as wrapping is concerned, drawn as whatever
+   the font has for U+000D. Treating `\r\n` in `set()` as `paste()` does,
+   and comparing on Esc with the text as set, would avoid that.
+7. **Suggestion: the panel's height doesn't follow a description that a
+   Strava sync brings for the activity on display.**
+   `SweatTrails::notif_titles_changed()` calls `read_names()` but doesn't
+   resize the display, as `cmd_edit_description()` does after saving. Now
+   that the placeholder is one line, a three-line description from
+   Strava pushes the summary and the fields down past the panel's height
+   until the next resize. This predates this feature, but is the same
+   problem as the one the save fixes.
+
+Tests added by the Reviewer (in the working tree, not committed):
+`test/TextAreaTest.cpp` (`test_click_forgets_the_goal`,
+`test_runes_outside_the_bmp`, `test_end_before_several_spaces`,
+`test_up_and_down_over_a_broken_word`, `test_typing_wraps_and_scrolls`,
+`test_scrolling_a_short_text`, `test_delete_word_over_a_line_break`),
+the new `test/TextAreaBoxTest.cpp` (`text_area_box_test`, registered in
+`CMakeLists.txt`), `test/ActivityLoadTest.cpp`
+(`test_set_notes_on_stravas_untrimmed_description`,
+`test_set_notes_over_a_strava_file`, `test_set_notes_without_a_sidecar`,
+`test_set_notes_that_fails`, `test_strava_after_the_users_notes`) and
+`test/StravaTitlesTest.cpp` (`test_sync_keeps_the_users_notes`). With
+them, `text_area_test` and `activity_load_test` fail, for findings 1 and
+2; all other tests pass.
+
+### Resolution
+
+1. Fixed. `TextArea::click(line, x)` places the cursor and forgets the
+   x Up and Down aim for; the box uses it. It's the Architecture's
+   `cursor_at()`, under another name. `test_click_forgets_the_goal`
+   passes, calling `click()`, which the old code didn't have.
+2. Fixed. `set_notes()` compares with Strava's description trimmed.
+   `test_set_notes_on_stravas_untrimmed_description` passes.
+3. Fixed. A paste puts its characters in and wraps once:
+   `test_paste_wraps_once` counts the measures, and failed on the old
+   code.
+4. Kept `text_area_box_test`. Esc with changes and "Discard the
+   changes?" are checked by hand.
+5. Fixed. End, and a click past the end, on a line that breaks a word
+   go to the break, where typing goes on with the word, shown at the
+   start of the next line. Right and Left step over the spaces a line
+   wraps after. `test_ends_of_wrapped_lines`.
+6. Fixed. `set()` goes through `paste()`, so `\r\n` and `\r` are line
+   breaks, and wraps again for text that isn't UTF-8.
+   `test_set_with_carriage_returns`.
+7. Fixed. `notif_titles_changed()` lays the activity screen out again
+   after reading the names, as saving a description does. Checked by
+   hand.
+

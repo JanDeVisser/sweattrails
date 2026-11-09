@@ -175,6 +175,9 @@ add_library(
         src/Lib/Widget/Scroll.cpp
         src/Lib/Widget/Table.h
         src/Lib/Widget/Table.cpp
+        src/Lib/Widget/TextArea.h
+        src/Lib/Widget/TextArea.cpp
+        src/Lib/Widget/TextAreaBox.h
         src/Lib/Widget/TextLine.h
         src/Lib/Widget/TextLine.cpp
         src/Lib/Widget/Widget.h
@@ -340,6 +343,8 @@ sweattrails_test(table_test test/TableTest.cpp)
 sweattrails_test(bar_chart_test test/BarChartTest.cpp)
 sweattrails_test(line_chart_test test/LineChartTest.cpp)
 sweattrails_test(text_line_test test/TextLineTest.cpp)
+sweattrails_test(text_area_test test/TextAreaTest.cpp)
+sweattrails_test(text_area_box_test test/TextAreaBoxTest.cpp)
 sweattrails_test(colors_test test/ColorsTest.cpp)
 sweattrails_test(window_test test/WindowTest.cpp)
 sweattrails_test(font_cache_test test/FontCacheTest.cpp)

@@ -39,7 +39,9 @@ struct ActivityDataDisplay : public Widget {
     Rectangle                          title_area { }; // Where draw() drew the title, in screen coordinates
     Texture2D                          pen_icon { };
     bool                               pen_loaded { false };
-    Rectangle                          pen_area { }; // Where draw() drew the pen after the title, likewise
+    Rectangle                          title_pen { };  // The pen after it, likewise
+    Rectangle                          notes_area { }; // The "Add a description" line, where there's no description
+    Rectangle                          notes_pen { };  // The pen after the description
 
     explicit ActivityDataDisplay(pWidget const &parent);
     ~ActivityDataDisplay();
@@ -58,16 +60,17 @@ private:
     // the notes wrapped to that, the summary and the fields.
     struct Rows {
         float                    title_y;
-        std::vector<std::string> notes;
+        std::vector<std::string> notes; // "Add a description" when there's none
+        bool                     placeholder;
         float                    notes_y;
         float                    summary_y;
         float                    fields_y;
     };
-    [[nodiscard]] Rows rows(float width) const;
-    void               draw_pen(Rectangle const &title);
-    void               draw_notes(std::vector<std::string> const &notes, float y);
-    void               draw_fields(float y);
-    void               draw_field(DataField const &field, float x, float value_x, float y, float height);
+    [[nodiscard]] Rows      rows(float width) const;
+    [[nodiscard]] Rectangle draw_pen(Rectangle const &after, Rectangle const &clickable) const;
+    void                    draw_notes(Rows const &rows);
+    void                    draw_fields(float y);
+    void                    draw_field(DataField const &field, float x, float value_x, float y, float height);
 };
 
 struct ActivityMap : public Widget {

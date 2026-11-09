@@ -295,12 +295,19 @@ void Activity::read_names()
     } else {
         notes = old_strava.description.value_or("");
     }
+    original_notes = notes;
+    if (names.own_notes) {
+        notes = *names.own_notes;
+    }
 }
 
 namespace {
 
 // SweatTrails' own key in the sidecar, for the name the user gave it.
 constexpr char const OwnTitleKey[] = "title";
+
+// And for the description the user gave it.
+constexpr char const OwnNotesKey[] = "notes";
 
 // And for what Strava has for it.
 constexpr char const StravaKey[] = "strava";
@@ -381,7 +388,11 @@ SidecarTitles sidecar_titles(fs::path const &sidecar)
     if (!json) {
         return { };
     }
-    SidecarTitles ret { .service = service_title(*json), .own = non_empty_string(*json, OwnTitleKey) };
+    SidecarTitles ret {
+        .service = service_title(*json),
+        .own = non_empty_string(*json, OwnTitleKey),
+        .own_notes = non_empty_string(*json, OwnNotesKey),
+    };
     if (auto const strava = json->get(StravaKey); strava) {
         if (auto decoded = StravaTitle::decode(*strava); decoded) {
             ret.strava = std::move(*decoded);
@@ -455,6 +466,17 @@ std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::
     });
 }
 
+std::expected<void, LibCError> save_sidecar_notes(fs::path const &sidecar, std::string_view notes)
+{
+    return update_sidecar(sidecar, [notes](JSONValue &json) {
+        if (notes.empty()) {
+            json.erase(OwnNotesKey);
+        } else {
+            json.set(OwnNotesKey, JSONValue { std::string { notes } });
+        }
+    });
+}
+
 std::expected<void, LibCError> save_sidecar_strava(fs::path const &sidecar, StravaTitle const &strava)
 {
     return update_sidecar(sidecar, [&strava](JSONValue &json) {
@@ -501,6 +523,24 @@ std::expected<void, LibCError> Activity::rename(std::string_view name)
     }
     TRY(save_sidecar_title(activity_sidecar, trimmed));
     title = new_title;
+    return { };
+}
+
+std::expected<void, LibCError> Activity::set_notes(std::string_view text)
+{
+    auto const trimmed = std::string { strip(text) };
+    // Strava's own text, saved as it was or typed in again, isn't the
+    // user's. Strava's is kept as Strava sent it, with its white space.
+    auto const stravas = trimmed.empty() || trimmed == strip(original_notes);
+    auto const new_notes = stravas ? original_notes : trimmed;
+    if (new_notes == notes) {
+        return { };
+    }
+    if (activity_sidecar.empty()) {
+        return std::unexpected(LibCError { "`{}`'s description can't be saved: it wasn't loaded from the store", id.name });
+    }
+    TRY(save_sidecar_notes(activity_sidecar, stravas ? std::string_view { } : std::string_view { trimmed }));
+    notes = new_notes;
     return { };
 }
 

@@ -396,6 +396,22 @@ void test_activity_filed_in_another_time_zone()
     tzset();
 }
 
+// Added by the Reviewer: a sync writes Strava's name and description into
+// a sidecar with the user's own title and description, and leaves those.
+void test_sync_keeps_the_users_notes()
+{
+    StravaStore t;
+    MUST(write_file_by_name(t.store.storage.sidecar_of(Ride).string(), std::string_view { R"({"activityName": "Morning Ride", "title": "Niagara", "notes": "Mine"})" }));
+    t.list({ strava_activity(101, "2026-10-27T12:05:30Z", "Ride to Niagara") });
+    t.describe(101, R"("With Anna")");
+    auto const update = t.update();
+    CHECK_EQ(update.descriptions, 1u);
+    auto const names = sidecar_titles(t.store.storage.sidecar_of(Ride));
+    CHECK_EQ(names.own.value_or(""), "Niagara");
+    CHECK_EQ(names.own_notes.value_or(""), "Mine");
+    CHECK((names.strava == StravaTitle { .id = 101, .name = "Ride to Niagara", .description = "With Anna" }));
+}
+
 }
 
 int main()
@@ -414,5 +430,6 @@ int main()
     test_list_rate_limited();
     test_two_devices_get_the_description();
     test_activity_filed_in_another_time_zone();
+    test_sync_keeps_the_users_notes();
     return ST::Test::test_result();
 }
