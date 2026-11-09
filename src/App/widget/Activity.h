@@ -122,6 +122,7 @@ struct ActivityGraph : public Widget {
     std::vector<GraphLabel>            ranges { };   // The legend, while not hovering
     std::vector<GraphTick>             time_labels { };
     std::vector<GraphTick>             km_labels { };
+    GraphView                          rendered_view { }; // The records the graph was drawn for
 
     explicit ActivityGraph(pWidget const &parent);
     ~ActivityGraph();

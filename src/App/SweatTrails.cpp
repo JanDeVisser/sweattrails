@@ -1055,6 +1055,30 @@ void extend_selection(pSweatTrails const &sweattrails, Extension const &extensio
     }
 }
 
+// Zooms the graph to the selection, or out (specs/39-graph-zoom-and-pace.md).
+// Z toggles, so it can't zoom further in while zoomed: the menu and the
+// palette can.
+void cmd_graph_zoom_in(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (auto activity = activity_for_keys(sweattrails)) {
+        activity->zoom_in();
+    }
+}
+
+void cmd_graph_zoom_out(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (auto activity = activity_for_keys(sweattrails)) {
+        activity->zoom_out();
+    }
+}
+
+void cmd_graph_zoom(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (auto activity = activity_for_keys(sweattrails)) {
+        activity->toggle_zoom();
+    }
+}
+
 // Asks how to split the activity into laps, such as every "1 km", and
 // splits it.
 void cmd_split_laps(pSweatTrails const &sweattrails, JSONValue const &)
@@ -1946,6 +1970,16 @@ void SweatTrails::selection_menu(Vector2 at)
             .action = [this, task = extension.task, arguments]() { bus.submit(task, arguments); },
         });
     }
+    items.push_back(MenuItem {
+        .title = "Zoom to selection",
+        .enabled = activity->can_zoom_in(),
+        .action = [this]() { bus.submit("st-graph-zoom-in", JSONValue { }); },
+    });
+    items.push_back(MenuItem {
+        .title = "Zoom out",
+        .enabled = activity->can_zoom_out(),
+        .action = [this]() { bus.submit("st-graph-zoom-out", JSONValue { }); },
+    });
     popup_menu(at, std::move(items));
 }
 
@@ -2198,6 +2232,16 @@ void SweatTrails::initialize()
             .titled(extension.title)
             .when(on_activity_screen);
     }
+    bus.add_task<SweatTrails>("st-graph-zoom", self(), cmd_graph_zoom)
+        .titled("Graph: zoom in or out")
+        .bind(KeyCombo { KEY_Z, KModNone })
+        .when(on_activity_screen);
+    bus.add_task<SweatTrails>("st-graph-zoom-in", self(), cmd_graph_zoom_in)
+        .titled("Graph: zoom to the selection")
+        .when(on_activity_screen);
+    bus.add_task<SweatTrails>("st-graph-zoom-out", self(), cmd_graph_zoom_out)
+        .titled("Graph: zoom out")
+        .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-split-laps", self(), cmd_split_laps)
         .titled("Split into laps")
         .bind(KeyCombo { KEY_L, KModControl | KModShift })

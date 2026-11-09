@@ -156,6 +156,47 @@ void DisplayedActivity::whole_activity()
     clear_segment();
 }
 
+bool DisplayedActivity::can_zoom_in() const
+{
+    return segment && !anchor && segment->max > segment->min && segment->max < activity.records.size() && segment != zoom;
+}
+
+void DisplayedActivity::zoom_in()
+{
+    if (can_zoom_in()) {
+        zoom = segment;
+    }
+}
+
+bool DisplayedActivity::can_zoom_out() const
+{
+    return zoom && !anchor;
+}
+
+void DisplayedActivity::zoom_out()
+{
+    if (can_zoom_out()) {
+        zoom.reset();
+    }
+}
+
+void DisplayedActivity::toggle_zoom()
+{
+    if (zoom) {
+        zoom_out();
+    } else {
+        zoom_in();
+    }
+}
+
+GraphView DisplayedActivity::view() const
+{
+    if (zoom && zoom->max < activity.records.size()) {
+        return GraphView { .first = zoom->min, .end = zoom->max + 1 };
+    }
+    return GraphView { .first = 0, .end = activity.records.size() };
+}
+
 std::optional<DisplayedActivity::RecordRange> DisplayedActivity::extension_base(std::optional<size_t> from) const
 {
     // Not while a drag is going on: the range isn't there yet.
@@ -203,15 +244,15 @@ bool DisplayedActivity::extend(Boundary boundary, Direction direction, std::opti
     return true;
 }
 
-std::vector<LapSpan> lap_spans(Activity const &activity, float width)
+std::vector<LapSpan> lap_spans(Activity const &activity, GraphView const &view, float width)
 {
     std::vector<LapSpan> spans;
-    if (activity.records.empty()) {
+    if (view.count() == 0) {
         return spans;
     }
-    auto const dt = width / static_cast<float>(activity.records.size());
+    auto const clip = [&view](size_t ix) { return std::clamp(ix, view.first, view.end); };
     for (auto const &lap : activity.laps) {
-        spans.push_back({ .x0 = static_cast<float>(lap.first_record) * dt, .x1 = static_cast<float>(lap.end_record) * dt });
+        spans.push_back({ .x0 = view_x(view, clip(lap.first_record), width), .x1 = view_x(view, clip(lap.end_record), width) });
     }
     return spans;
 }
@@ -219,6 +260,10 @@ std::vector<LapSpan> lap_spans(Activity const &activity, float width)
 std::optional<size_t> lap_at(std::vector<LapSpan> const &spans, float x)
 {
     for (auto ix = 0uz; ix < spans.size(); ++ix) {
+        // A lap outside the view, or without records, has nothing to click.
+        if (spans[ix].x1 <= spans[ix].x0) {
+            continue;
+        }
         auto const last = ix + 1 == spans.size();
         if (x >= spans[ix].x0 && (x < spans[ix].x1 || (last && x <= spans[ix].x1))) {
             return ix;

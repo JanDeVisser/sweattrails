@@ -29,6 +29,7 @@ std::optional<float> value_of(record const &rec, GraphValue value)
     case GraphValue::Altitude:
         return as_float(rec.altitude);
     case GraphValue::Speed:
+    case GraphValue::Pace:
         return as_float(rec.speed);
     case GraphValue::HeartRate:
         return as_float(real_heart_rate(rec));
@@ -42,7 +43,7 @@ std::optional<float> value_of(record const &rec, GraphValue value)
 
 bool smoothed(GraphValue value)
 {
-    return value == GraphValue::Speed || value == GraphValue::Power;
+    return value == GraphValue::Speed || value == GraphValue::Pace || value == GraphValue::Power;
 }
 
 bool from_zero(GraphValue value)
@@ -83,26 +84,32 @@ struct RollingAverage {
     }
 };
 
-// A tick at the first record at or past each step from 0, for a position
-// that grows with the records.
-std::vector<GraphTick> ticks_at(std::span<record const> records, float width, std::vector<double> const &steps,
-    std::function<std::optional<double>(record const &)> const &position, std::function<std::string(double)> const &label)
+// A tick at the first record at or past each step within the view, for a
+// position that grows with the records.
+std::vector<GraphTick> ticks_at(std::span<record const> records, GraphView const &view, float width, std::vector<double> const &steps,
+    std::function<std::optional<double>(record const &)> const &position, std::function<std::string(double, double)> const &label)
 {
     std::vector<GraphTick> ret;
-    std::optional<double>  last;
-    for (auto const &rec : records) {
+    if (view.count() == 0 || view.end > records.size() || width <= 0) {
+        return ret;
+    }
+    auto const            shown = records.subspan(view.first, view.count());
+    std::optional<double> first;
+    std::optional<double> last;
+    for (auto const &rec : shown) {
         if (auto const p = position(rec); p) {
+            first = first.value_or(*p);
             last = std::max(last.value_or(*p), *p);
         }
     }
-    if (records.empty() || width <= 0 || !last || *last <= 0) {
+    if (!first || *last <= *first) {
         return ret;
     }
     auto const ticks = std::max(1, static_cast<int>(width / GraphTickSpacing));
-    auto const step = nice_span(0, *last, ticks, steps).step;
-    auto const dt = width / static_cast<float>(records.size());
-    auto       next = step;
-    for (auto ix = 0uz; ix < records.size() && next <= *last; ++ix) {
+    auto const step = nice_span(*first, *last, ticks, steps).step;
+    // Not one at the left edge, where the view starts.
+    auto next = std::floor(*first / step) * step + step;
+    for (auto ix = view.first; ix < view.end && next <= *last; ++ix) {
         auto const p = position(records[ix]);
         if (!p || *p < next) {
             continue;
@@ -110,7 +117,7 @@ std::vector<GraphTick> ticks_at(std::span<record const> records, float width, st
         // After a pause that recorded nothing for longer than a step, the
         // record is past several: it gets the last of them.
         auto const passed = std::floor(*p / step) * step;
-        ret.push_back({ .x = dt * static_cast<float>(ix), .label = label(passed) });
+        ret.push_back({ .x = view_x(view, ix, width), .label = label(passed, step) });
         next = passed + step;
     }
     return ret;
@@ -133,6 +140,15 @@ GraphSeries graph_series(std::span<record const> recorded, GraphValue value)
         ret.emplace_back(smoothed(value) ? average.add(rec.timestamp.timestamp, *v) : *v);
     }
     return ret;
+}
+
+GraphSeries view_series(GraphSeries const &series, GraphView const &view)
+{
+    auto const end = std::min(view.end, series.size());
+    if (view.first >= end) {
+        return { };
+    }
+    return GraphSeries(series.begin() + static_cast<std::ptrdiff_t>(view.first), series.begin() + static_cast<std::ptrdiff_t>(end));
 }
 
 GraphSeries graph_columns(GraphSeries const &series, int width)
@@ -175,6 +191,31 @@ std::optional<GraphScale> graph_scale(GraphValue value, std::span<GraphSeries co
             ret->top = std::max(ret->top, *v);
         }
     }
+    if (ret && value == GraphValue::Pace) {
+        if (ret->top <= 0) {
+            return { };
+        }
+        // Unless all of it is slower, a climb in the mountains say: then
+        // from its slowest moving speed, with a rest drawn at the bottom,
+        // as a pace that's infinite.
+        auto const slowest = 1000 / SlowestGraphPace;
+        if (ret->top > slowest) {
+            ret->bottom = std::max(ret->bottom, slowest);
+        } else {
+            std::optional<float> moving;
+            for (auto const &s : series) {
+                for (auto const &v : s) {
+                    if (v && *v >= RangeMovingSpeed) {
+                        moving = std::min(moving.value_or(*v), *v);
+                    }
+                }
+            }
+            if (!moving) {
+                return { };
+            }
+            ret->bottom = *moving;
+        }
+    }
     if (ret && from_zero(value)) {
         if (ret->top <= 0) {
             return { };
@@ -189,34 +230,38 @@ float graph_y(GraphScale const &scale, float value, float height)
     if (scale.top <= scale.bottom) {
         return height / 2;
     }
-    return height - (value - scale.bottom) * height / (scale.top - scale.bottom);
+    return std::clamp(height - (value - scale.bottom) * height / (scale.top - scale.bottom), 0.0f, height);
 }
 
-std::vector<GraphTick> time_ticks(std::span<record const> records, float width)
+std::vector<GraphTick> time_ticks(std::span<record const> records, GraphView const &view, float width)
 {
     if (records.empty()) {
         return { };
     }
     auto const start = records.front().timestamp.timestamp;
     return ticks_at(
-        records, width, { 60, 120, 300, 600, 900, 1800, 3600, 7200 },
+        records, view, width, { 10, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200 },
         [start](record const &rec) -> std::optional<double> {
             return static_cast<double>(rec.timestamp.timestamp) - static_cast<double>(start);
         },
-        [](double seconds) {
-            auto const minutes = static_cast<int>(std::lround(seconds / 60));
+        [](double seconds, double step) {
+            auto const s = std::lround(seconds);
+            if (step < 60) {
+                return std::format("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60);
+            }
+            auto const minutes = std::lround(seconds / 60);
             return std::format("{}:{:02}", minutes / 60, minutes % 60);
         });
 }
 
-std::vector<GraphTick> distance_ticks(std::span<record const> records, float width)
+std::vector<GraphTick> distance_ticks(std::span<record const> records, GraphView const &view, float width)
 {
     return ticks_at(
-        records, width, { 1000, 2000, 5000, 10000, 20000, 50000, 100000 },
+        records, view, width, { 1000, 2000, 5000, 10000, 20000, 50000, 100000 },
         [](record const &rec) -> std::optional<double> {
             return rec.distance ? std::optional { static_cast<double>(*rec.distance) } : std::nullopt;
         },
-        [](double metres) {
+        [](double metres, double) {
             return std::format("{} km", std::lround(metres / 1000));
         });
 }
@@ -236,6 +281,20 @@ GraphLabel legend_range(Activity const &activity, GraphValue value, GraphScale c
         return label("Alt", "m", 1, AltitudeColor);
     case GraphValue::Speed:
         return label("Spd", "km/h", 3.6f, SpeedColor);
+    case GraphValue::Pace: {
+        // Fastest first, as the line goes from top to bottom, and the
+        // same as the paces shown elsewhere, so that the ends are paces
+        // the hover text can show.
+        auto const fastest = pace_minutes(1000 / scale.top);
+        if (scale.bottom <= 0 || scale.bottom >= scale.top) {
+            return GraphLabel { std::format("Pace {} min/km", fastest), SpeedColor };
+        }
+        auto const slowest = pace_minutes(1000 / scale.bottom);
+        if (slowest == fastest) {
+            return GraphLabel { std::format("Pace {} min/km", fastest), SpeedColor };
+        }
+        return GraphLabel { std::format("Pace {}–{} min/km", fastest, slowest), SpeedColor };
+    }
     case GraphValue::HeartRate:
         return label("HR", "bpm", 1, HeartRateColor);
     case GraphValue::Power:
@@ -264,13 +323,16 @@ std::vector<GraphLabel> mark_position(std::span<record const> records, size_t ma
     return ret;
 }
 
-std::vector<GraphLabel> legend_values(record const &recorded)
+std::vector<GraphLabel> legend_values(Activity const &activity, record const &recorded)
 {
     std::vector<GraphLabel> ret;
     if (recorded.altitude) {
         ret.push_back({ std::format("Alt {} m", std::lround(*recorded.altitude)), AltitudeColor });
     }
-    if (recorded.speed) {
+    if (recorded.speed && is_on_foot(activity)) {
+        auto const moving = *recorded.speed >= RangeMovingSpeed;
+        ret.push_back({ moving ? std::format("Pace {}", format_pace(1000 / *recorded.speed)) : std::string { "Pace –" }, SpeedColor });
+    } else if (recorded.speed) {
         ret.push_back({ std::format("Spd {:.1f} km/h", *recorded.speed * 3.6), SpeedColor });
     }
     if (auto const hr = real_heart_rate(recorded); hr) {

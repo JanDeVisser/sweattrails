@@ -86,6 +86,13 @@ struct GraphLabel {
     Color       color { };
 };
 
+// Runs, walks and hikes, which give pace rather than speed.
+[[nodiscard]] bool is_on_foot(Activity const &activity);
+// "5:02 min/km".
+[[nodiscard]] std::string format_pace(float32 seconds_per_km);
+// The same pace without the unit, "5:02".
+[[nodiscard]] std::string pace_minutes(float32 seconds_per_km);
+
 // FIT has a cadence on foot per leg: steps a minute are twice it.
 struct CadenceUnit {
     std::string_view unit;

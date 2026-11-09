@@ -112,7 +112,16 @@ seconds. The legend above it gives each line's range, "HR 102–178 bpm",
 and while the mouse is over the graph, the values of the second under
 it, marked by a gold line, as recorded, then its time and distance. A pause that recorded nothing takes no room, so the
 time labels bunch on either side of it, and a dropout in a sensor's data
-is a gap in its line.
+is a gap in its line. Runs, walks and hikes show pace in place of
+speed, in min/km, faster higher, down to 20:00 min/km.
+
+Z zooms the graph to the selection, so that a lap or a dragged range
+fills its width, and Z again zooms out to the whole activity. The
+right-click menu has "Zoom to selection" and "Zoom out" too, and can
+zoom further in while zoomed. Zoomed in, the lines fill the graph's
+height over the part shown, the labels still count from the activity's
+start, and dragging and the lap strip work as before. Changing the
+selection leaves the zoom; another activity zooms out.
 
 You can give an activity laps afterwards, in place of the device's.
 Ctrl+Shift+L splits it every distance or time, such as "1 km" or "10

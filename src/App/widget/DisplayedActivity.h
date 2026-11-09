@@ -17,6 +17,7 @@
 #include <storage/Activity.h>
 #include <storage/Boundaries.h>
 #include <storage/Comparison.h>
+#include <widget/GraphView.h>
 
 namespace ST {
 
@@ -28,6 +29,8 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     struct RecordRange {
         size_t min;
         size_t max;
+
+        bool operator==(RecordRange const &) const = default;
     };
 
     // While comparing (specs/33-comparing-recordings.md): the other
@@ -47,6 +50,9 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     // Where a drag in the graph started, while it goes on.
     std::optional<size_t>            anchor { };
     std::optional<ComparedRecording> compared { };
+    // The records the graph is zoomed to (specs/39-graph-zoom-and-pace.md),
+    // apart from the selection: changing that leaves the zoom.
+    std::optional<RecordRange> zoom { };
 
     explicit DisplayedActivity(Activity const &activity);
     void clear_segment();
@@ -98,6 +104,20 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     // Whether extend() would change the selection.
     [[nodiscard]] bool can_extend(Boundary boundary, Direction direction, std::optional<size_t> from = { }) const;
 
+    // Zooms the graph to the selection, also when zoomed in already. A
+    // selection of one record, or the one zoomed to, isn't something to
+    // zoom to.
+    void               zoom_in();
+    [[nodiscard]] bool can_zoom_in() const;
+    // Back to the whole activity, but not while a drag is going on: the
+    // range being dragged is in the zoomed view.
+    void               zoom_out();
+    [[nodiscard]] bool can_zoom_out() const;
+    // Zooms out when zoomed in, and in otherwise, as Z does.
+    void toggle_zoom();
+    // The records the graph shows: the zoom, or the whole activity.
+    [[nodiscard]] GraphView view() const;
+
     // Compares the activity with `other`, another recording of it, or stops.
     void compare_with(std::optional<Activity> const &other);
     // The comparison of what's selected: the lap, the dragged range once
@@ -129,8 +149,10 @@ struct LapSpan {
     float x1;
 };
 
-// The laps' parts of a strip `width` wide, a span per lap.
-std::vector<LapSpan> lap_spans(Activity const &activity, float width);
+// The laps' parts of a strip `width` wide under a graph showing `view`, a
+// span per lap. A lap partly outside the view is cut off at its edge, and
+// one wholly outside it is an empty span there.
+std::vector<LapSpan> lap_spans(Activity const &activity, GraphView const &view, float width);
 
 // The lap whose part of the strip `x` is in, if any.
 std::optional<size_t> lap_at(std::vector<LapSpan> const &spans, float x);
