@@ -29,6 +29,8 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     struct RecordRange {
         size_t min;
         size_t max;
+
+        bool operator==(RecordRange const &) const = default;
     };
 
     // While comparing (specs/33-comparing-recordings.md): the other
@@ -103,7 +105,8 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
     [[nodiscard]] bool can_extend(Boundary boundary, Direction direction, std::optional<size_t> from = { }) const;
 
     // Zooms the graph to the selection, also when zoomed in already. A
-    // selection of one record isn't something to zoom to.
+    // selection of one record, or the one zoomed to, isn't something to
+    // zoom to.
     void               zoom_in();
     [[nodiscard]] bool can_zoom_in() const;
     // Back to the whole activity, but not while a drag is going on: the

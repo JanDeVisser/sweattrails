@@ -158,7 +158,7 @@ void DisplayedActivity::whole_activity()
 
 bool DisplayedActivity::can_zoom_in() const
 {
-    return segment && !anchor && segment->max > segment->min && segment->max < activity.records.size();
+    return segment && !anchor && segment->max > segment->min && segment->max < activity.records.size() && segment != zoom;
 }
 
 void DisplayedActivity::zoom_in()

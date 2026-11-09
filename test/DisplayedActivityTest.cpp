@@ -692,6 +692,8 @@ void test_zoom()
     CHECK(d.can_zoom_in());
     d.zoom_in();
     CHECK(d.view() == (GraphView { .first = 10, .end = 40 }));
+    // Zoomed to the selection, there's nothing more to zoom to.
+    CHECK(!d.can_zoom_in());
     // The selection changes, the zoom stays.
     d.next_lap();
     d.whole_activity();
