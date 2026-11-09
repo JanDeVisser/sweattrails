@@ -128,6 +128,8 @@ void Table::fit_rows()
     // a hair short of it.
     auto const fit = std::floor(viewport.height / row_height + 0.001f);
     scroll.lines = std::max(0, static_cast<int>(fit) - 1);
+    // A table that grew shows rows above, rather than empty lines below.
+    scroll.clamp();
     if (selection) {
         scroll.scroll_to(static_cast<int>(*selection));
     }
