@@ -1835,6 +1835,8 @@ void SweatTrails::notif_titles_changed(Notification::Payload const &data)
     auto &activity = displayed->activity;
     if (std::ranges::any_of(changed.starts, [&activity](i64 start) { return activity.id.name == std::to_string(start); })) {
         activity.read_names();
+        // A new description can change the data panel's height.
+        SweatTrails::the()->activity_display->resize();
     }
 }
 
