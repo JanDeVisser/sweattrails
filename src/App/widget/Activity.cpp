@@ -784,10 +784,11 @@ void ActivityColumn::on_resize()
         return;
     }
     // On a small window the panel gives way: the layout needs room for
-    // the table, which stretches.
+    // the table, which stretches. Not to 0, which the layout takes as
+    // keeping the size it had.
     auto const least_table = 3 * 1.2f * App::the()->char_size().y;
     data_display->policy = SizePolicy::Absolute;
-    data_display->policy_size = std::max(0.0f, std::min(data_display->needed_height(viewport.width), viewport.height - least_table));
+    data_display->policy_size = std::max(1.0f, std::min(data_display->needed_height(viewport.width), viewport.height - least_table));
 }
 
 void ActivityDisplay::initialize()

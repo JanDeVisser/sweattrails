@@ -150,6 +150,9 @@ struct App : public Layout {
         // macOS covers the menu bar, the Dock and the other apps. The
         // monitors can only be asked about once there's a window.
         InitWindow(800, 600, app->window_title());
+        // Smaller, the layouts run out of room for what has a fixed size,
+        // such as the activity's graph.
+        SetWindowMinSize(800, 600);
         app->monitor = start_monitor(app->monitor, GetMonitorCount());
         // Where the window goes when it's un-maximized, too. Without one,
         // it stays at 800x600, which is still something to grab.
