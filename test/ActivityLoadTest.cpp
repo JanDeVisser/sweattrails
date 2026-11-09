@@ -556,6 +556,63 @@ void test_save_refuses_a_sidecar_that_isnt_an_object()
     }
 }
 
+// The user's description is "notes" in the sidecar, next to the rest,
+// and empty notes take it out again.
+void test_save_sidecar_notes()
+{
+    ActivityInDir t { R"({"activityName": "Morning Ride", "title": "Ride to Niagara"})" };
+    auto const    sidecar = t.dir / "dummy.json";
+    CHECK(save_sidecar_notes(sidecar, "Windy.\nCoffee in Lincoln.").has_value());
+    auto const json = JSONValue::deserialize(read_json(sidecar));
+    CHECK(json.has_value());
+    if (json) {
+        CHECK_EQ(json->try_get<std::string>("notes").value_or(""), "Windy.\nCoffee in Lincoln.");
+        CHECK_EQ(json->try_get<std::string>("title").value_or(""), "Ride to Niagara");
+        CHECK_EQ(json->size(), 3uz);
+    }
+    CHECK_EQ(sidecar_titles(sidecar).own_notes.value_or(""), "Windy.\nCoffee in Lincoln.");
+    CHECK(save_sidecar_notes(sidecar, "").has_value());
+    CHECK(!sidecar_titles(sidecar).own_notes.has_value());
+    CHECK_EQ(sidecar_own_title(sidecar).value_or(""), "Ride to Niagara");
+}
+
+// The user's description wins over Strava's, which comes back once the
+// user's is gone.
+void test_own_notes_win()
+{
+    ActivityInDir t { R"({"strava": {"id": 1, "name": "Ride", "description": "Strava's"}, "notes": "Mine"})" };
+    CHECK(t.loaded);
+    CHECK_EQ(t.activity.notes, "Mine");
+    CHECK_EQ(t.activity.original_notes, "Strava's");
+    CHECK(save_sidecar_notes(t.activity.sidecar, "").has_value());
+    t.activity.read_names();
+    CHECK_EQ(t.activity.notes, "Strava's");
+}
+
+void test_set_notes()
+{
+    ActivityInDir t { R"({"strava": {"id": 1, "name": "Ride", "description": "Strava's"}})" };
+    // Strava's, saved as it was, stays Strava's.
+    CHECK(t.activity.set_notes("Strava's").has_value());
+    CHECK(!sidecar_titles(t.activity.sidecar).own_notes.has_value());
+    CHECK(t.activity.set_notes("  Headwind.\n\nTailwind back.\n ").has_value());
+    CHECK_EQ(t.activity.notes, "Headwind.\n\nTailwind back.");
+    CHECK_EQ(sidecar_titles(t.activity.sidecar).own_notes.value_or(""), "Headwind.\n\nTailwind back.");
+    // Loaded again, it has the description.
+    Activity again { t.storage, ActivityID::dummy(ActivityFile::Fit) };
+    again.depth = LoadingDepth::Deep;
+    CHECK(again.load_from_dir(t.dir).value_or(false));
+    CHECK_EQ(again.notes, "Headwind.\n\nTailwind back.");
+    // Only white space: Strava's again, and the user's gone.
+    CHECK(t.activity.set_notes(" \n ").has_value());
+    CHECK_EQ(t.activity.notes, "Strava's");
+    CHECK(!sidecar_titles(t.activity.sidecar).own_notes.has_value());
+    // Typing Strava's in again takes the user's out too.
+    CHECK(t.activity.set_notes("Mine").has_value());
+    CHECK(t.activity.set_notes("Strava's").has_value());
+    CHECK(!sidecar_titles(t.activity.sidecar).own_notes.has_value());
+}
+
 void test_rename()
 {
     ActivityInDir t { R"({"name": "Morning ride"})" };
@@ -915,6 +972,9 @@ int main()
     test_save_keeps_the_rest_of_the_sidecar();
     test_save_without_a_sidecar();
     test_save_refuses_a_sidecar_that_isnt_an_object();
+    test_save_sidecar_notes();
+    test_own_notes_win();
+    test_set_notes();
     test_rename();
     test_rename_back_to_the_workouts_name();
     test_rename_that_fails();
