@@ -465,6 +465,17 @@ std::vector<DataLine> data_fields(Activity const &activity)
     return data_fields(activity, activity.segment, 0);
 }
 
+size_t most_data_lines(Activity const &activity, std::optional<Comparison> const &whole, std::vector<std::optional<Comparison>> const &laps_compared)
+{
+    auto most = data_fields(activity, activity.segment, 0, whole).size();
+    for (auto ix = 0uz; ix < activity.laps.size(); ++ix) {
+        auto const &lap = activity.laps[ix];
+        auto const  compared = ix < laps_compared.size() ? laps_compared[ix] : std::nullopt;
+        most = std::max(most, data_fields(activity, lap.segment, lap.first_record, compared).size());
+    }
+    return most;
+}
+
 // A column for each kind of data the activity has. The activity's segment
 // decides, so that a column doesn't come and go with the laps on screen.
 LapTable lap_table(Activity const &activity, std::vector<std::optional<Comparison>> const &laps_compared)

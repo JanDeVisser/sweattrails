@@ -1266,8 +1266,59 @@ void test_data_fields_compared_without_values()
     CHECK(std::ranges::find(labels, "Max HR") != labels.end());
 }
 
+// The data panel is as high as the most lines it shows: the activity's,
+// or a lap's with more.
+void test_most_data_lines()
+{
+    // Power all through, heart rate in the second lap only. The activity
+    // has NP, IF and VI, which the short laps haven't: it has the most.
+    auto records = records_with(60, set_power, 0, u16 { 200 }, u16 { 200 });
+    for (auto ix = 30uz; ix < records.size(); ++ix) {
+        records[ix].heart_rate = 140;
+    }
+    TestActivity ride { sport::Cycling, records, { { 0, 30, 10000, 1200 }, { 30, 60, 10000, 1200 } } };
+    auto const   whole = data_fields(ride.activity).size();
+    CHECK(whole > data_fields(ride.activity, ride.activity.laps[1].segment, 30).size());
+    CHECK_EQ(most_data_lines(ride.activity), whole);
+
+    // Without power, the laps' distance, which the activity hasn't, gives
+    // them a line more. The first lap, without heart rate, has fewer.
+    for (auto &rec : records) {
+        rec.power.reset();
+    }
+    TestActivity t { sport::Cycling, records, { { 0, 30, 10000, 1200 }, { 30, 60, 10000, 1200 } } };
+    auto const   first = data_fields(t.activity, t.activity.laps[0].segment, 0).size();
+    auto const   second = data_fields(t.activity, t.activity.laps[1].segment, 30).size();
+    CHECK(second > data_fields(t.activity).size());
+    CHECK(second > first);
+    CHECK_EQ(most_data_lines(t.activity), second);
+
+    // Without laps, the activity's.
+    TestActivity none { sport::Cycling, records };
+    CHECK_EQ(most_data_lines(none.activity), data_fields(none.activity).size());
+}
+
+// While comparing, the comparisons' lines count.
+void test_most_data_lines_compared()
+{
+    auto             records = records_with(60, set_power, 0, u16 { 200 }, u16 { 200 });
+    TestActivity     t { sport::Cycling, records, { { 0, 30, 0, 1200 }, { 30, 60, 0, 1200 } } };
+    Comparison const comparison {
+        .avg_power = { .shown = 200, .other = 190 },
+        .max_power = { .shown = 200, .other = 195 },
+        .avg_cadence = { .shown = 85, .other = 85 },
+        .avg_hr = { .shown = 140, .other = 138 },
+    };
+    auto const compared = data_fields(t.activity, t.activity.laps[1].segment, 30, comparison).size();
+    CHECK(compared != most_data_lines(t.activity));
+    CHECK_EQ(most_data_lines(t.activity, { }, { std::nullopt, comparison }), std::max(compared, most_data_lines(t.activity)));
+    CHECK_EQ(most_data_lines(t.activity, comparison), std::max(compared, data_fields(t.activity, t.activity.segment, 0, comparison).size()));
+}
+
 int main()
 {
+    test_most_data_lines();
+    test_most_data_lines_compared();
     test_range_max_at_is_the_index_passed();
     test_range_summary();
     test_range_fields_mark_the_activitys_records();

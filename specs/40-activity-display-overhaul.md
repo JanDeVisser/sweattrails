@@ -133,9 +133,12 @@ None.
    lines. The rows' positions move out of `draw()` into one private
    `rows(width)`, so that the two can't drift apart. Measuring needs
    fonts, so this part is checked by hand.
-3. **The most field lines** is `DisplayedActivity::most_field_lines()`,
-   which tests reach: the most lines `data_fields()` gives for the whole
-   activity or any lap, each with its comparison while comparing.
+3. **The most field lines** is `most_data_lines(activity, whole,
+   laps_compared)` in `DataFields`, next to `data_fields()`, which tests
+   reach: the most lines `data_fields()` gives for the whole activity or
+   any lap, each with its comparison while comparing, which it takes as
+   `lap_table()` does. In `DisplayedActivity` it would have made that
+   depend on `DataFields`.
 4. **The table clips** its drawing to its viewport, in `Table::draw()`
    in the widget library, so that a table wider than its column is cut
    off there rather than drawn under the map.
@@ -150,12 +153,12 @@ None.
 
 ## Test plan
 
-- `displayed_activity_test`:
-  - `most_field_lines()` of an activity whose laps have the same fields
-    is the activity's.
+- `data_fields_test`:
+  - `most_data_lines()` of an activity with more lines than its laps is
+    the activity's.
   - A lap with a field the activity lacks makes it more; one with fewer
-    fields doesn't make it less.
-  - While comparing, the comparison's lines count.
+    fields doesn't make it less. Without laps, the activity's.
+  - While comparing, the comparisons' lines count.
 - By hand, after `ninja -C build install`:
   - a run with laps: the table under the fields, beside the map, filling
     down to the graph, and scrolling with many laps;
