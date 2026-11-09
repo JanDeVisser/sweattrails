@@ -35,8 +35,10 @@ bool is_space(rune ch)
 
 void TextArea::set(std::string_view const &utf8)
 {
-    text = to_wstring(utf8).value_or(rune_string { });
-    cursor = text.length();
+    text.clear();
+    cursor = 0;
+    paste(utf8);
+    // Also for text that isn't UTF-8, which pastes nothing.
     changed();
 }
 

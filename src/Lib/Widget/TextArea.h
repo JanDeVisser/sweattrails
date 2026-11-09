@@ -44,7 +44,8 @@ struct TextArea {
     size_t            top_line { 0 };      // The first line in view
     size_t            visible_lines { 1 }; // How many lines are in view
 
-    // The text, with the cursor at its end, scrolled to it.
+    // The text, with the cursor at its end, scrolled to it. Its line
+    // breaks, tabs and control characters go as they do in a paste.
     void                      set(std::string_view const &utf8);
     [[nodiscard]] std::string utf8() const;
 

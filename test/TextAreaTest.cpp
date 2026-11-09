@@ -394,6 +394,21 @@ void test_ends_of_wrapped_lines()
     CHECK_EQ(w.cursor, 3uz);
 }
 
+// A text from elsewhere, such as Strava, has its \r\n and \r line breaks
+// as line breaks, not stray characters.
+void test_set_with_carriage_returns()
+{
+    auto const a = area("one\r\ntwo\rthree");
+    CHECK_EQ(a.utf8(), "one\ntwo\nthree");
+    CHECK_EQ(a.lines.size(), 3uz);
+    CHECK_EQ(a.cursor, 13uz);
+    // Text that isn't UTF-8 is none.
+    auto b = area("one\ntwo");
+    b.set("\xff\xfe");
+    CHECK(b.text.empty());
+    CHECK(b.lines == (std::vector<Line> { { 0, 0 } }));
+}
+
 // A long paste is wrapped once, not again after each character.
 void test_paste_wraps_once()
 {
@@ -428,6 +443,7 @@ int main()
     test_paste();
     test_paste_wraps_once();
     test_ends_of_wrapped_lines();
+    test_set_with_carriage_returns();
     test_position_at();
     test_scrolling();
     test_click_forgets_the_goal();
