@@ -279,3 +279,27 @@ word moves and wrapping never land inside an emoji.
 9. **Suggestion: an unrelated commit is on the branch.** 98a0d58 ("Run
    the reviewer on Sonnet") changes `.claude/agents/reviewer.md`, which
    has nothing to do with emoji. It belongs on its own branch.
+
+### Resolution
+
+1. Fixed. The matching stops once no sequence starts with its key, text
+   whose characters the font all has is one run without matching, and
+   `App::measure_text()` measures ASCII without converting it. Checked
+   by the existing tests and `emoji_pack_test`, which matches the real
+   pack; the timing isn't tested.
+2. Fixed. `TextArea` keeps its text's runs and splits again only when
+   the text has changed; `next_character()` and `previous_character()`
+   take the runs. `TextLine` steps once a key press, so it still splits
+   each time.
+3. Fixed. The cursor steps over a hidden character with the one next to
+   it. `test_no_invisible_cursor_stops` passes; it failed before.
+4. Fixed. U+FE0E and the tags U+E0020 to U+E007F are hidden too.
+   `test_text_form_and_tags_are_hidden`.
+5. Fixed. `char_ends()` in `Modal.h` says where each character ends,
+   an emoji as one, and the list's rows and the search's Backspace go by
+   it. `test_first_chars` covers a family and a flag.
+6. Fixed. The hover panel measures every line and takes the widest.
+   Not tested: nothing calls it, and it needs fonts.
+7. and 8. Kept the reviewer's tests.
+9. Kept on the branch: Jan asked for it, and it reaches main with the
+   merge.
