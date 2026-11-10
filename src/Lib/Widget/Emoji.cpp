@@ -16,6 +16,12 @@ namespace {
 
 std::optional<EmojiSet> the_set { };
 
+// Drawn as nothing when not part of an emoji.
+bool is_hidden(rune ch)
+{
+    return ch == VariationSelector16 || ch == ZeroWidthJoiner;
+}
+
 // "1f44d-1f3fd.png" as its characters; none for a name that isn't one.
 std::optional<rune_string> sequence_of(std::string_view name)
 {
@@ -61,7 +67,12 @@ std::optional<Match> match_at(rune_view text, size_t start, EmojiSet const &set,
             continue;
         }
         key.push_back(text[ix]);
-        if (auto const it = set.sequences.find(key); it != set.sequences.end()) {
+        // The first sequence from `key` on starts with it, if any does.
+        auto const it = set.sequences.lower_bound(key);
+        if (it == set.sequences.end() || !it->first.starts_with(key)) {
+            break;
+        }
+        if (it->first == key) {
             best = Match { .end = ix + 1, .image = it->second };
             best_length = key.size();
         }
@@ -110,6 +121,14 @@ void set_emoji_set(EmojiSet set)
 
 std::vector<TextRun> split_emoji(rune_view text, EmojiSet const &set, HasGlyph const &has_glyph)
 {
+    // Every emoji has a character the font lacks: a single one the font
+    // has is only an emoji with U+FE0F, which the font lacks.
+    if (text.empty()) {
+        return { };
+    }
+    if (has_glyph && std::ranges::all_of(text, [&has_glyph](rune ch) { return has_glyph(ch) && !is_hidden(ch); })) {
+        return { TextRun { .kind = RunKind::Text, .start = 0, .end = text.size() } };
+    }
     std::vector<TextRun> ret;
     auto const           add = [&ret](RunKind kind, size_t start, size_t end, std::string image = { }) {
         // Text after text is one run.
@@ -123,7 +142,7 @@ std::vector<TextRun> split_emoji(rune_view text, EmojiSet const &set, HasGlyph c
         if (auto match = match_at(text, ix, set, has_glyph); match) {
             add(RunKind::Emoji, ix, match->end, std::move(match->image));
             ix = match->end;
-        } else if (text[ix] == VariationSelector16 || text[ix] == ZeroWidthJoiner) {
+        } else if (is_hidden(text[ix])) {
             add(RunKind::Hidden, ix, ix + 1);
             ++ix;
         } else {

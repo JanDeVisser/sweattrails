@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <algorithm>
 #include <vector>
 
 #include <raylib.h>
@@ -111,7 +112,9 @@ Vector2 App::measure_text(char const *text, FontSize size)
     auto const  font = *the()->font(size);
     auto const  font_size = static_cast<float>(the()->font_sizes[static_cast<size_t>(size)]);
     auto const *set = emoji_set();
-    if (set == nullptr) {
+    // No emoji is all ASCII.
+    auto const ascii = std::ranges::all_of(std::string_view { text }, [](char ch) { return static_cast<unsigned char>(ch) < 0x80; });
+    if (set == nullptr || ascii) {
         return MeasureTextEx(font, text, font_size, 2);
     }
     auto const runes = to_wstring(text).value_or(rune_string { });
