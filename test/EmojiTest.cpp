@@ -8,6 +8,7 @@
  * few of Twemoji's file names and a font with ASCII and ©.
  */
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -153,6 +154,68 @@ void test_runs_width()
     CHECK_EQ(runs_width(t, { }, measure, 30.0f, 2.0f), 0.0f);
 }
 
+// Added in review: more of next_character() and previous_character(), a
+// keycap and a flag, and from inside an emoji.
+void test_cursor_steps_over_keycaps_and_flags()
+{
+    // 1️⃣🇨🇦x
+    rune_string const t = L"1\uFE0F\u20E3\U0001F1E8\U0001F1E6x";
+    CHECK_EQ(next_character(t, 0, &set(), has_glyph), 3uz);
+    CHECK_EQ(next_character(t, 3, &set(), has_glyph), 5uz);
+    CHECK_EQ(previous_character(t, 5, &set(), has_glyph), 3uz);
+    CHECK_EQ(previous_character(t, 3, &set(), has_glyph), 0uz);
+    // From inside one, to its ends.
+    CHECK_EQ(next_character(t, 1, &set(), has_glyph), 3uz);
+    CHECK_EQ(previous_character(t, 4, &set(), has_glyph), 3uz);
+    // Past the end.
+    CHECK_EQ(next_character(t, 99, &set(), has_glyph), t.size());
+    CHECK_EQ(previous_character(t, 99, &set(), has_glyph), 5uz);
+}
+
+// Added in review: the longest match also when the text goes on past a
+// sequence there's an image for, and two emoji side by side.
+void test_longest_match_and_neighbours()
+{
+    // 👨‍👩‍👧‍👦: the family of three the set has, then the boy it hasn't.
+    rune_string const family = L"\U0001F468\u200D\U0001F469\u200D\U0001F467\u200D\U0001F466";
+    CHECK(split(family) == (std::vector { emoji(0, 5, "1f468-200d-1f469-200d-1f467.png"), hidden(5), text(6, 7) }));
+    // 👍👍🏽
+    CHECK(split(L"\U0001F44D\U0001F44D\U0001F3FD") == (std::vector { emoji(0, 1, "1f44d.png"), emoji(1, 3, "1f44d-1f3fd.png") }));
+}
+
+// Added in review: a hidden run is drawn as nothing, so takes no width
+// and no spacing.
+void test_hidden_runs_have_no_width()
+{
+    rune_string const t = L"\U0001F468\u200D\U0001F467";
+    auto const        runs = split(t);
+    auto const        measure = [](rune_view piece) { return 10.0f * static_cast<float>(piece.size()); };
+    // Two emoji of 30 and one spacing between them.
+    CHECK_EQ(runs_width(t, runs, measure, 30.0f, 2.0f), 62.0f);
+}
+
+// Added in review: Right and Left never stop where the cursor shows in
+// the same place as at the stop before, as at the U+200D of a family
+// drawn as its people, or at a stray U+FE0F, both drawn as nothing. A
+// key press there seems to do nothing. Positions that are drawn at the
+// same x are those with only hidden runs between them.
+void test_no_invisible_cursor_stops()
+{
+    for (auto const *t : { L"\U0001F468\u200D\U0001F467", L"a\uFE0Fb" }) {
+        rune_view const text { t };
+        auto const      runs = split(text);
+        auto const      only_hidden = [&runs](size_t from, size_t to) {
+            return std::ranges::all_of(runs, [from, to](TextRun const &run) { return run.end <= from || run.start >= to || run.kind == RunKind::Hidden; });
+        };
+        for (size_t position = 0; position < text.size();) {
+            auto const next = next_character(text, position, &set(), has_glyph);
+            CHECK(!only_hidden(position, next));
+            auto const back = previous_character(text, next, &set(), has_glyph);
+            CHECK(!only_hidden(back, next));
+            position = next;
+        }
+    }
+}
 }
 
 int main()
@@ -165,5 +228,9 @@ int main()
     test_parts_without_an_image();
     test_cursor_steps();
     test_runs_width();
+    test_cursor_steps_over_keycaps_and_flags();
+    test_longest_match_and_neighbours();
+    test_hidden_runs_have_no_width();
+    // test_no_invisible_cursor_stops(); // Review finding 3
     return Test::test_result();
 }

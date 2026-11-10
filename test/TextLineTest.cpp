@@ -232,6 +232,38 @@ void test_emoji_are_one_character()
     set_emoji_set(EmojiSet { });
 }
 
+// Added in review: pasting keeps all of a sequence, also the joiners and
+// tag characters, which aren't control characters; and Backspace at the
+// start and Delete at the end leave the text alone.
+void test_paste_emoji_and_the_ends()
+{
+    set_emoji_set(EmojiSet::from_names({
+        "1f3f4.png",
+        "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f.png",
+        "1f468-200d-1f469-200d-1f467.png",
+    }));
+    TextLine line;
+    // 🏴󠁧󠁢󠁥󠁮󠁧󠁿👨‍👩‍👧
+    std::string const both = "\U0001F3F4\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F\U0001F468\u200D\U0001F469\u200D\U0001F467";
+    line.paste(both);
+    CHECK_EQ(line.utf8(), both);
+    CHECK_EQ(line.cursor, 12uz);
+    key(line, KEY_LEFT);
+    CHECK_EQ(line.cursor, 7uz);
+    key(line, KEY_LEFT);
+    CHECK_EQ(line.cursor, 0uz);
+    key(line, KEY_BACKSPACE);
+    CHECK_EQ(line.utf8(), both);
+    CHECK_EQ(line.cursor, 0uz);
+    key(line, KEY_DELETE);
+    CHECK_EQ(line.cursor, 0uz);
+    CHECK_EQ(line.utf8(), "\U0001F468\u200D\U0001F469\u200D\U0001F467");
+    line.end();
+    key(line, KEY_DELETE);
+    CHECK_EQ(line.utf8(), "\U0001F468\u200D\U0001F469\u200D\U0001F467");
+    set_emoji_set(EmojiSet { });
+}
+
 int main()
 {
     test_emoji_are_one_character();
@@ -247,5 +279,6 @@ int main()
     test_editing_in_the_middle();
     test_paste_edge_cases();
     test_set_resets_the_scroll();
+    test_paste_emoji_and_the_ends();
     return ST::Test::test_result();
 }

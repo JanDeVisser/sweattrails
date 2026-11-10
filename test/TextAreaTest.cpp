@@ -466,6 +466,40 @@ void test_emoji_are_one_character()
     set_emoji_set(EmojiSet { });
 }
 
+// Added in review: the word moves over emoji (specs/42-emoji.md), which
+// the test plan names: Alt+Left, Alt+Right and Alt+Backspace go over a
+// flag and a family as over any word, and Up and Down don't land in one.
+void test_words_over_emoji()
+{
+    set_emoji_set(EmojiSet::from_names({
+        "1f1e8-1f1e6.png",
+        "1f468.png",
+        "1f469.png",
+        "1f467.png",
+        "1f468-200d-1f469-200d-1f467.png",
+    }));
+    // go 🇨🇦👨‍👩‍👧 now
+    auto a = area("go \U0001F1E8\U0001F1E6\U0001F468\u200D\U0001F469\u200D\U0001F467 now");
+    key(a, KEY_LEFT, 1, Word);
+    CHECK_EQ(a.cursor, 11uz);
+    key(a, KEY_LEFT, 1, Word);
+    CHECK_EQ(a.cursor, 3uz);
+    key(a, KEY_RIGHT, 1, Word);
+    CHECK_EQ(a.cursor, 10uz);
+    key(a, KEY_BACKSPACE, 1, Word);
+    CHECK_EQ(a.utf8(), "go  now");
+    CHECK_EQ(a.cursor, 3uz);
+    // Down from x 3 on "abcd" to a line of flags, 2 wide each: before or
+    // after a flag, not in it.
+    auto b = area("abcd\n\U0001F1E8\U0001F1E6\U0001F1E8\U0001F1E6");
+    b.cursor = 3;
+    key(b, KEY_DOWN);
+    CHECK((b.cursor - 5) % 2 == 0);
+    key(b, KEY_UP);
+    CHECK_EQ(b.cursor, 3uz);
+    set_emoji_set(EmojiSet { });
+}
+
 int main()
 {
     Test::ScopedTestApp app;
@@ -492,5 +526,6 @@ int main()
     test_typing_wraps_and_scrolls();
     test_scrolling_a_short_text();
     test_delete_word_over_a_line_break();
+    test_words_over_emoji();
     return Test::test_result();
 }

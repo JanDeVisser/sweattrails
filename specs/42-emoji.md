@@ -190,4 +190,92 @@ None.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+Overall the matching is right. I checked it against the real pack: every
+one of the 4,009 names is still unique once U+FE0F is left out, and the
+longest sequence is 10 codepoints. Skin tones, flags, keycaps with and
+without U+FE0F, 🏃‍♀️ and 🏳️‍🌈 with and without the U+FE0F in their
+names, and the England flag's tag sequence all find their PNG.
+Measuring and drawing agree on widths: `runs_width()` counts spacing as
+`MeasureTextEx()` does, and `draw_runs()` moves the pen by the same
+amounts. The input box's cursor and scrolling, `position_at()`, the
+word moves and wrapping never land inside an emoji.
+
+1. **Bug (medium): text that has no emoji still costs more, most of all
+   numbers.** Decision 4 says text whose characters the font all has
+   takes the old path. It doesn't: `App::measure_text()` (App.cpp:117)
+   and `runs_of()` (Widget.cpp:213, used for every `render_text()`)
+   always convert to runes and run `split_emoji()` first. Then
+   `match_at()` (Emoji.cpp:59) keeps making the key longer, up to
+   `set.longest` (10), with a `std::map` lookup and a copy each time,
+   even after no sequence can start with it. Digits, `#` and `*` start
+   keycaps, so they are in `starts`, and so every number in a table
+   pays the full cost. With the real pack in a debug build, splitting
+   1,800 characters of `"12:34:56 "` takes 3.3 ms, against 0.16 ms for
+   letters, and that happens on every measure and every draw, every
+   frame. Fix: check `std::ranges::all_of(runes, App::font_has)` before
+   splitting, and stop making the key longer once
+   `sequences.lower_bound(key)` doesn't start with it.
+2. **Bug (medium-low): editing a long word gets quadratically slower.**
+   `TextArea::next()`/`previous()` (TextArea.cpp:425) and TextLine's
+   steps call `split_emoji()` on the whole text for every single step.
+   Two places step once per character: `wrap_line()` on a word wider
+   than the line (TextArea.cpp:409), which runs on every keystroke, and
+   `position_at()` (TextArea.cpp:328). Pasting a 1,000-character URL or
+   other word with no spaces into the description editor makes each
+   keystroke take 174 ms; at 4,000 characters it's 2.8 s (debug build,
+   real pack). Fix: split once per wrap and reuse the runs, or split
+   only a window around the position.
+3. **Bug (low): some cursor stops are invisible, at a U+200D or U+FE0F
+   that is drawn as nothing.** When a ZWJ sequence has no image of its
+   own, its parts are drawn separately and the U+200D between them is a
+   hidden run. `next_character()` and `previous_character()`
+   (Emoji.cpp:137, 152) still step over that hidden run as a character
+   of its own. Scenario: 👨‍👧, which Twemoji has no image for (the same
+   happens with any sequence newer than Twemoji 17). Right from after 👨
+   stops before the ZWJ, which is drawn at the same x, so the key press
+   seems to do nothing. Backspace after 👧 deletes 👧, and the next
+   Backspace deletes the invisible ZWJ. The same happens with a stray
+   U+FE0F, as in `"a️b"`. The spec says an emoji is one character
+   "also when it's a sequence". Failing test:
+   `emoji_test`, `test_no_invisible_cursor_stops`.
+4. **Suggestion: U+FE0E and tag characters are drawn as "?".** Only
+   U+FE0F and U+200D become hidden runs (Emoji.cpp:126). In `"❤︎"`
+   (U+2764 U+FE0E, asking for the text form) the heart is drawn and the
+   U+FE0E after it shows as "?", and `"©︎"` shows as "©?". The same
+   happens to the tag characters (U+E0020 to U+E007F) of a subdivision
+   flag Twemoji has no image for: they come out as a row of "?" after
+   the black flag. Treat these as hidden too.
+5. **Suggestion: the list boxes cut and delete by codepoint.**
+   `draw_entries()` shortens a row with `first_chars(text, maxlen)`
+   (Modal.h:301), which counts codepoints. A long title in the activity
+   list, cut inside 👨‍👩‍👧, shows a lone 👨, and one cut inside a flag
+   shows a single letter box. In the palette's search, Backspace
+   (Modal.h:433) takes off one codepoint, so a flag typed with the
+   picker takes two Backspaces, with a letter box left in between.
+   Cutting at `next_character()` boundaries would fix both.
+6. **Suggestion: the hover panel's width uses the line with the most
+   bytes.** `draw_hover_panel_()` (Widget.cpp:396) picks that line and
+   measures only it. One emoji such as 👨‍👩‍👧 is 18 bytes, so a short line
+   with emoji wins over a wider line of text, and the panel comes out
+   too narrow. Nothing calls it today, but it is one of the places this
+   spec routes through `measure_text()`. Measuring every line and taking
+   the widest would fix it.
+7. **Missing test (added): the word moves.** The Test plan promises
+   tests of the word moves over a family and a flag, and there were none.
+   Added `text_area_test` `test_words_over_emoji`, which also covers Up
+   and Down onto a line of flags, and `text_line_test`
+   `test_paste_emoji_and_the_ends`, which covers pasting a tag-sequence
+   flag and a family, and Backspace at the start and Delete at the end
+   with emoji. Both pass.
+8. **Missing test (added): the committed pack.** Nothing checked that
+   `twemoji.zip`'s real names match the way the code reads them. Added
+   `emoji_pack_test`. It loads the pack through `App::set_emoji()`,
+   matches the spec's examples (and 🏳️‍🌈 and 🏴󠁧󠁢󠁥󠁮󠁧󠁿) to their entry
+   names, checks that `App::font_has` keeps ©, ‼ and numbers as text,
+   and unzips the PNGs. It passes. In `emoji_test` I also added stepping
+   over a keycap and a flag, and from inside one;
+   the longest match followed by a part without an image; two emoji side
+   by side; and that hidden runs take no width. These pass.
+9. **Suggestion: an unrelated commit is on the branch.** 98a0d58 ("Run
+   the reviewer on Sonnet") changes `.claude/agents/reviewer.md`, which
+   has nothing to do with emoji. It belongs on its own branch.
