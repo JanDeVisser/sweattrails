@@ -422,14 +422,24 @@ TextArea::Line TextArea::wrap_line(size_t start, size_t paragraph_end) const
     return Line { start, end };
 }
 
+std::vector<TextRun> const &TextArea::runs() const
+{
+    if (m_runs_text != text) {
+        m_runs_text = text;
+        auto const *set = emoji_set();
+        m_runs = (set != nullptr) ? split_emoji(text, *set, App::font_has) : std::vector { TextRun { .kind = RunKind::Text, .start = 0, .end = text.size() } };
+    }
+    return m_runs;
+}
+
 size_t TextArea::next(size_t position) const
 {
-    return next_character(text, position, emoji_set(), App::font_has);
+    return next_character(text, runs(), position);
 }
 
 size_t TextArea::previous(size_t position) const
 {
-    return previous_character(text, position, emoji_set(), App::font_has);
+    return previous_character(text, runs(), position);
 }
 
 float TextArea::measure(size_t start, size_t end) const

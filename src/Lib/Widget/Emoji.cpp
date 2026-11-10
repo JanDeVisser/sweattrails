@@ -153,35 +153,39 @@ std::vector<TextRun> split_emoji(rune_view text, EmojiSet const &set, HasGlyph c
     return ret;
 }
 
-size_t next_character(rune_view text, size_t position, EmojiSet const *set, HasGlyph const &has_glyph)
+size_t next_character(rune_view text, std::vector<TextRun> const &runs, size_t position)
 {
     if (position >= text.size()) {
         return text.size();
     }
-    if (set != nullptr) {
-        for (auto const &run : split_emoji(text, *set, has_glyph)) {
-            if (run.kind == RunKind::Emoji && run.start <= position && position < run.end) {
-                return run.end;
-            }
-        }
+    auto const it = std::ranges::find_if(runs, [position](TextRun const &run) { return run.start <= position && position < run.end; });
+    return (it != runs.end() && it->kind == RunKind::Emoji) ? it->end : position + 1;
+}
+
+size_t previous_character(rune_view text, std::vector<TextRun> const &runs, size_t position)
+{
+    position = std::min(position, text.size());
+    if (position == 0) {
+        return 0;
     }
-    return position + 1;
+    auto const it = std::ranges::find_if(runs, [position](TextRun const &run) { return run.start < position && position <= run.end; });
+    return (it != runs.end() && it->kind == RunKind::Emoji) ? it->start : position - 1;
+}
+
+size_t next_character(rune_view text, size_t position, EmojiSet const *set, HasGlyph const &has_glyph)
+{
+    if (set == nullptr) {
+        return std::min(position + 1, text.size());
+    }
+    return next_character(text, split_emoji(text, *set, has_glyph), position);
 }
 
 size_t previous_character(rune_view text, size_t position, EmojiSet const *set, HasGlyph const &has_glyph)
 {
-    if (position == 0) {
-        return 0;
+    if (set == nullptr) {
+        return (position == 0) ? 0 : std::min(position, text.size()) - 1;
     }
-    position = std::min(position, text.size());
-    if (set != nullptr) {
-        for (auto const &run : split_emoji(text, *set, has_glyph)) {
-            if (run.kind == RunKind::Emoji && run.start < position && position <= run.end) {
-                return run.start;
-            }
-        }
-    }
-    return position - 1;
+    return previous_character(text, split_emoji(text, *set, has_glyph), position);
 }
 
 float runs_width(rune_view text, std::vector<TextRun> const &runs, std::function<float(rune_view)> const &measure, float emoji_width, float spacing)

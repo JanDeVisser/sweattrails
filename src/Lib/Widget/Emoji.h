@@ -77,6 +77,11 @@ struct TextRun {
 [[nodiscard]] size_t next_character(rune_view text, size_t position, EmojiSet const *set, HasGlyph const &has_glyph);
 [[nodiscard]] size_t previous_character(rune_view text, size_t position, EmojiSet const *set, HasGlyph const &has_glyph);
 
+// The same, with the text's runs from split_emoji(), for an editor that
+// steps many times through the same text.
+[[nodiscard]] size_t next_character(rune_view text, std::vector<TextRun> const &runs, size_t position);
+[[nodiscard]] size_t previous_character(rune_view text, std::vector<TextRun> const &runs, size_t position);
+
 // How wide the runs are drawn side by side, with `spacing` between each
 // two characters and between the runs, as MeasureTextEx() counts it:
 // text as `measure` measures it, and each emoji `emoji_width`.
