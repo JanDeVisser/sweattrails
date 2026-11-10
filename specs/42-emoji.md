@@ -1,6 +1,6 @@
 # Emoji
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -303,3 +303,7 @@ word moves and wrapping never land inside an emoji.
 7. and 8. Kept the reviewer's tests.
 9. Kept on the branch: Jan asked for it, and it reaches main with the
    merge.
+
+Checked by hand: emoji show and edit as the spec says. The emoji picker
+(Ctrl+Cmd+Space) doesn't reach the app, so the README says to paste
+them.

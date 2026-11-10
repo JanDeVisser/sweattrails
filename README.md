@@ -107,9 +107,9 @@ empty brings Strava's back. It's kept in the activity's `.json` file, and
 isn't sent to Strava.
 
 Emoji in titles and descriptions show in colour, also skin tones, flags
-and families. Paste them in, or type them with the emoji picker
-(Ctrl+Cmd+Space on a Mac); an emoji is one character to the arrows and
-Backspace. The video overlay doesn't draw them yet.
+and families. Paste them in: the emoji picker (Ctrl+Cmd+Space) doesn't
+reach the app. An emoji is one character to the arrows and Backspace.
+The video overlay doesn't draw them yet.
 
 A right-click in the graph extends the selection, back from its start or
 on from its end, to the next whole km, lap or stop: "Back to the km",
