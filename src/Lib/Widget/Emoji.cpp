@@ -16,10 +16,11 @@ namespace {
 
 std::optional<EmojiSet> the_set { };
 
-// Drawn as nothing when not part of an emoji.
+// Drawn as nothing when not part of an emoji: the variation selectors,
+// the joiner, and the tags of a subdivision flag such as England's.
 bool is_hidden(rune ch)
 {
-    return ch == VariationSelector16 || ch == ZeroWidthJoiner;
+    return ch == VariationSelector15 || ch == VariationSelector16 || ch == ZeroWidthJoiner || (ch >= TagFirst && ch <= TagLast);
 }
 
 // "1f44d-1f3fd.png" as its characters; none for a name that isn't one.

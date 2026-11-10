@@ -21,10 +21,15 @@
 
 namespace ST {
 
+// Asks for a character's text form rather than its picture: ©︎.
+constexpr rune VariationSelector15 = 0xFE0E;
 // Asks for an emoji's picture rather than its text form: ©️ rather than ©.
 constexpr rune VariationSelector16 = 0xFE0F;
 // Joins emoji into one, such as the people of a family.
 constexpr rune ZeroWidthJoiner = 0x200D;
+// The tags that name a subdivision in its flag: England is 🏴 and "gbeng".
+constexpr rune TagFirst = 0xE0020;
+constexpr rune TagLast = 0xE007F;
 
 // The sequences there are images for, from the names of Twemoji's files,
 // "1f44d-1f3fd.png": the codepoints in hex, joined with "-". Matching
@@ -53,7 +58,7 @@ using HasGlyph = std::function<bool(rune)>;
 enum class RunKind {
     Text,
     Emoji,
-    Hidden, // A U+FE0F or U+200D that isn't part of an emoji: drawn as nothing
+    Hidden, // A U+FE0E, U+FE0F, U+200D or tag that isn't part of an emoji: drawn as nothing
 };
 
 // A part of a text: text[start, end).

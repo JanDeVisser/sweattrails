@@ -199,6 +199,14 @@ void test_hidden_runs_have_no_width()
 // drawn as its people, or at a stray U+FE0F, both drawn as nothing. A
 // key press there seems to do nothing. Positions that are drawn at the
 // same x are those with only hidden runs between them.
+// U+FE0E asks for the text form, and the tags of a flag there's no image
+// for are drawn as nothing, not as "?".
+void test_text_form_and_tags_are_hidden()
+{
+    CHECK(split(L"©\uFE0E") == (std::vector { text(0, 1), hidden(1) }));
+    CHECK(split(L"\U0001F44D\U000E0067") == (std::vector { emoji(0, 1, "1f44d.png"), hidden(1) }));
+}
+
 void test_no_invisible_cursor_stops()
 {
     for (auto const *t : { L"\U0001F468\u200D\U0001F467", L"a\uFE0Fb" }) {
@@ -232,5 +240,6 @@ int main()
     test_longest_match_and_neighbours();
     test_hidden_runs_have_no_width();
     test_no_invisible_cursor_stops();
+    test_text_form_and_tags_are_hidden();
     return Test::test_result();
 }
