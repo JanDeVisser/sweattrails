@@ -389,18 +389,14 @@ void Widget::draw_outline_no_normalize_(float x, float y, float width, float hei
 void Widget::draw_hover_panel_(float x, float y, StringList const &text, Color bgcolor, Color textcolor, FontSize font_size) const
 {
     assert(!text.empty());
-    size_t longest_line { 0 };
-    size_t maxlen { 0 };
-    for (size_t ix = 0; ix < text.size(); ++ix) {
-        auto const &line = text.at(ix);
-        if (line.length() > maxlen) {
-            maxlen = line.length();
-            longest_line = ix;
-        }
-    }
     auto f = App::the()->font(font_size);
     assert(f.has_value());
-    auto text_size { App::measure_text(text.at(longest_line).c_str(), font_size) };
+    // The widest line, which with emoji isn't the one with the most bytes.
+    Vector2 text_size { };
+    for (auto const &line : text) {
+        auto const line_size = App::measure_text(line.c_str(), font_size);
+        text_size = Vector2 { .x = std::max(text_size.x, line_size.x), .y = std::max(text_size.y, line_size.y) };
+    }
     auto width { static_cast<float>(text_size.x + 12) };
     auto height { (text_size.y + 2) * text.size() + 12 };
     draw_rectangle_no_normalize(x, y, width, height, bgcolor);
