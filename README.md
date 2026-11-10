@@ -106,6 +106,11 @@ write wins over Strava's, and a Strava sync leaves it alone; saving it
 empty brings Strava's back. It's kept in the activity's `.json` file, and
 isn't sent to Strava.
 
+Emoji in titles and descriptions show in colour, also skin tones, flags
+and families. Paste them in, or type them with the emoji picker
+(Ctrl+Cmd+Space on a Mac); an emoji is one character to the arrows and
+Backspace. The video overlay doesn't draw them yet.
+
 A right-click in the graph extends the selection, back from its start or
 on from its end, to the next whole km, lap or stop: "Back to the km",
 "On to the lap", "On to the stop", and so on. Choosing one again goes a
@@ -624,6 +629,11 @@ Project Authors, under the SIL Open Font License 1.1
 
 Activities' names and descriptions can come from
 [Strava](https://www.strava.com), through its API.
+
+The emoji are [Twemoji](https://github.com/jdecked/twemoji)'s, © Twitter,
+Inc and other contributors, under CC-BY 4.0
+(`share/emoji/LICENSE-GRAPHICS`). `share/emoji/make-emoji-pack.sh` makes
+`share/emoji/twemoji.zip` from a Twemoji release.
 
 The map tiles are from [OpenStreetMap](https://www.openstreetmap.org),
 © OpenStreetMap contributors.
