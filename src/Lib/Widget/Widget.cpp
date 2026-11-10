@@ -9,8 +9,10 @@
 #include <raylib.h>
 
 #include <JSON.h>
+#include <Utf8.h>
 
 #include <App.h>
+#include <Emoji.h>
 #include <Widget.h>
 
 namespace ST {
@@ -193,34 +195,102 @@ bool Widget::mouse_in() const
     return contains(GetMouseX(), GetMouseY());
 }
 
+namespace {
+
+// How big text is drawn in the font at `size`, a glyph at a time.
+Vector2 text_size(rune_view text, Font const &font, float size)
+{
+    Vector2 ret { };
+    for (auto const ch : text) {
+        auto const glyph = GetGlyphInfo(font, ch);
+        ret.x += static_cast<float>(glyph.advanceX) * size + 2;
+        ret.y = std::max(ret.y, static_cast<float>(glyph.offsetY + glyph.image.height) * size);
+    }
+    return ret;
+}
+
+// The text in runs of text and emoji, or as one run without emoji.
+std::vector<TextRun> runs_of(rune_view text)
+{
+    auto const *set = emoji_set();
+    if (set == nullptr) {
+        return { TextRun { .kind = RunKind::Text, .start = 0, .end = text.size() } };
+    }
+    return split_emoji(text, *set, App::font_has);
+}
+
+// Draws the runs from `pos`, in screen coordinates.
+void draw_runs(Vector2 pos, rune_view const &text, std::vector<TextRun> const &runs, Font const &font, float size, Color color)
+{
+    auto const emoji_size = static_cast<float>(font.baseSize) * size;
+    auto const piece = [&text](TextRun const &run) {
+        return text.substr(run.start, run.end - run.start);
+    };
+    static_assert(sizeof(rune) == sizeof(int));
+    for (auto const &run : runs) {
+        auto const runes = piece(run);
+        if (run.kind == RunKind::Text) {
+            DrawTextCodepoints(font, reinterpret_cast<int const *>(runes.data()), static_cast<int>(runes.size()), pos, emoji_size, 2, color);
+            pos.x += text_size(runes, font, size).x;
+        } else if (run.kind == RunKind::Emoji) {
+            if (auto const texture = App::the()->emoji_texture(run.image); texture) {
+                Rectangle const source { .x = 0, .y = 0, .width = static_cast<float>(texture->width), .height = static_cast<float>(texture->height) };
+                Rectangle const dest { .x = pos.x, .y = pos.y, .width = emoji_size, .height = emoji_size };
+                DrawTexturePro(*texture, source, dest, Vector2 { }, 0, WHITE);
+            } else {
+                DrawTextCodepoints(font, reinterpret_cast<int const *>(runes.data()), static_cast<int>(runes.size()), pos, emoji_size, 2, color);
+            }
+            pos.x += emoji_size + 2;
+        }
+    }
+}
+
+}
+
+// The text in runs of text and emoji (specs/42-emoji.md): the text in the
+// font, and each emoji as its picture, a square as high as the font's
+// size, in colour whatever the text's colour.
 Vector2 Widget::render_sized_text_(float x, float y, rune_view const &text, Font font, float size, Color color) const
 {
     if (text.empty()) {
         return { 0, 0 };
     }
-    auto        text_width = 0.0f;
-    auto        text_height = 0.0f;
-    rune_string t { text };
-
-    auto update_metrics = [&text_width, &text_height, &font, size](wchar_t ch) -> void {
-        auto glyph = GetGlyphInfo(font, ch);
-        text_width += glyph.advanceX * size + 2;
-        text_height = std::max(text_height, static_cast<float>(glyph.offsetY + glyph.image.height) * size);
+    auto const runs = runs_of(text);
+    auto const emoji_size = static_cast<float>(font.baseSize) * size;
+    auto const piece = [&text](TextRun const &run) {
+        return text.substr(run.start, run.end - run.start);
     };
 
-    for (auto &ch : t) {
-        update_metrics(ch);
+    Vector2 total { };
+    for (auto const &run : runs) {
+        if (run.kind == RunKind::Text) {
+            auto const run_size = text_size(piece(run), font, size);
+            total.x += run_size.x;
+            total.y = std::max(total.y, run_size.y);
+        } else if (run.kind == RunKind::Emoji) {
+            total.x += emoji_size + 2;
+            total.y = std::max(total.y, emoji_size);
+        }
     }
     if (x < 0) {
-        x = viewport.width - text_width + x;
+        x = viewport.width - total.x + x;
     }
     if (y < 0) {
-        y = viewport.height - text_height + y;
+        y = viewport.height - total.y + y;
     }
-    Vector2 pos { viewport.x + x, viewport.y + y };
-    assert(sizeof(rune) == sizeof(int));
-    DrawTextCodepoints(font, reinterpret_cast<int const *>(t.c_str()), t.length(), pos, (float) font.baseSize * size, 2, color);
-    return { text_width, text_height };
+    draw_runs(Vector2 { viewport.x + x, viewport.y + y }, text, runs, font, size, color);
+    return total;
+}
+
+Vector2 Widget::render_text_no_normalize_(float x, float y, rune_view const &text, FontSize font_size, Color color) const
+{
+    auto const font = App::the()->font(font_size);
+    if (!font || text.empty()) {
+        return { 0, 0 };
+    }
+    auto const runs = runs_of(text);
+    draw_runs(Vector2 { viewport.x + x, viewport.y + y }, text, runs, *font, 1.0f, color);
+    return App::measure_text(to_utf8(text).value_or(std::string { }).c_str(), font_size);
 }
 
 Vector2 Widget::render_sized_text_(float x, float y, rune_view const &text, FontSize font_size, Color color) const
@@ -319,18 +389,14 @@ void Widget::draw_outline_no_normalize_(float x, float y, float width, float hei
 void Widget::draw_hover_panel_(float x, float y, StringList const &text, Color bgcolor, Color textcolor, FontSize font_size) const
 {
     assert(!text.empty());
-    size_t longest_line { 0 };
-    size_t maxlen { 0 };
-    for (size_t ix = 0; ix < text.size(); ++ix) {
-        auto const &line = text.at(ix);
-        if (line.length() > maxlen) {
-            maxlen = line.length();
-            longest_line = ix;
-        }
-    }
     auto f = App::the()->font(font_size);
     assert(f.has_value());
-    auto text_size { MeasureTextEx(*f, text.at(longest_line).c_str(), f->baseSize, 2) };
+    // The widest line, which with emoji isn't the one with the most bytes.
+    Vector2 text_size { };
+    for (auto const &line : text) {
+        auto const line_size = App::measure_text(line.c_str(), font_size);
+        text_size = Vector2 { .x = std::max(text_size.x, line_size.x), .y = std::max(text_size.y, line_size.y) };
+    }
     auto width { static_cast<float>(text_size.x + 12) };
     auto height { (text_size.y + 2) * text.size() + 12 };
     draw_rectangle_no_normalize(x, y, width, height, bgcolor);

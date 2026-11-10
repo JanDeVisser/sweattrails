@@ -12,6 +12,8 @@
 
 #include <Utf8.h>
 
+#include <App.h>
+#include <Emoji.h>
 #include <TextArea.h>
 
 namespace ST {
@@ -105,11 +107,14 @@ void TextArea::paste(std::string_view const &utf8)
     changed();
 }
 
+// An emoji goes as one character, also one of several codepoints, such
+// as a flag (specs/42-emoji.md).
 void TextArea::backspace()
 {
     if (cursor > 0) {
-        text.erase(cursor - 1, 1);
-        --cursor;
+        auto const start = previous(cursor);
+        text.erase(start, cursor - start);
+        cursor = start;
         changed();
     }
 }
@@ -117,7 +122,7 @@ void TextArea::backspace()
 void TextArea::del()
 {
     if (cursor < text.length()) {
-        text.erase(cursor, 1);
+        text.erase(cursor, next(cursor) - cursor);
         changed();
     }
 }
@@ -139,8 +144,8 @@ void TextArea::left()
     auto const line = line_of(cursor);
     if (line > 0 && cursor == lines[line].start && wraps(line - 1)) {
         cursor = last_position(line - 1);
-    } else if (cursor > 0) {
-        --cursor;
+    } else {
+        cursor = previous(cursor);
     }
     moved();
 }
@@ -150,8 +155,8 @@ void TextArea::right()
     auto const line = line_of(cursor);
     if (wraps(line) && cursor == last_position(line)) {
         cursor = lines[line].end;
-    } else if (cursor < text.length()) {
-        ++cursor;
+    } else {
+        cursor = next(cursor);
     }
     moved();
 }
@@ -318,7 +323,9 @@ size_t TextArea::position_at(size_t line, float x) const
     line = std::min(line, lines.size() - 1);
     auto best = lines[line].start;
     auto best_distance = std::abs(x);
-    for (auto position = best + 1; position <= last_position(line); ++position) {
+    // A character at a time, so as not to land inside an emoji.
+    for (auto position = best; position < last_position(line);) {
+        position = std::min(next(position), last_position(line));
         auto const distance = std::abs(measure(lines[line].start, position) - x);
         if (distance < best_distance) {
             best = position;
@@ -399,9 +406,9 @@ TextArea::Line TextArea::wrap_line(size_t start, size_t paragraph_end) const
         if (measure(start, word_end) > m_width) {
             if (end == start) {
                 // A word too wide by itself: as much of it as fits.
-                auto fits = start + 1;
-                while (fits < word_end && measure(start, fits + 1) <= m_width) {
-                    ++fits;
+                auto fits = next(start);
+                while (fits < word_end && measure(start, next(fits)) <= m_width) {
+                    fits = next(fits);
                 }
                 return Line { start, fits };
             }
@@ -413,6 +420,26 @@ TextArea::Line TextArea::wrap_line(size_t start, size_t paragraph_end) const
         }
     }
     return Line { start, end };
+}
+
+std::vector<TextRun> const &TextArea::runs() const
+{
+    if (m_runs_text != text) {
+        m_runs_text = text;
+        auto const *set = emoji_set();
+        m_runs = (set != nullptr) ? split_emoji(text, *set, App::font_has) : std::vector { TextRun { .kind = RunKind::Text, .start = 0, .end = text.size() } };
+    }
+    return m_runs;
+}
+
+size_t TextArea::next(size_t position) const
+{
+    return next_character(text, runs(), position);
+}
+
+size_t TextArea::previous(size_t position) const
+{
+    return previous_character(text, runs(), position);
 }
 
 float TextArea::measure(size_t start, size_t end) const

@@ -588,6 +588,7 @@ public:
 
     Vector2 render_sized_text_(float x, float y, rune_view const &text, Font font, float size, Color color) const;
     Vector2 render_sized_text_(float x, float y, rune_view const &text, FontSize font_size, Color color) const;
+    Vector2 render_text_no_normalize_(float x, float y, rune_view const &text, FontSize font_size, Color color) const;
     void    render_text_bitmap_(float x, float y, std::string_view const &text, Color color) const;
     void    draw_rectangle_(float x, float y, float width, float height, Color color) const;
     void    draw_outline_(float x, float y, float width, float height, Color color) const;
@@ -729,6 +730,16 @@ public:
     void draw_hover_panel(Tx x, Ty y, StringList const &text, Color bgcolor, Color textcolor) const
     {
         draw_hover_panel_(x, y, text, bgcolor, textcolor);
+    }
+
+    // Text at x and y as they are: render_text() takes a negative x or y
+    // as measured from the right or the bottom, which text scrolled to the
+    // left isn't.
+    template<typename Tx, typename Ty>
+        requires(std::convertible_to<Tx, float> && std::convertible_to<Ty, float>)
+    Vector2 render_text_no_normalize(Tx x, Ty y, rune_view const &text, FontSize font_size, Color color) const
+    {
+        return render_text_no_normalize_(x, y, text, font_size, color);
     }
 
     template<typename Tx, typename Ty, typename Tw, typename Th>

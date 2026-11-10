@@ -12,6 +12,7 @@
 #include <string_view>
 #include <vector>
 
+#include <Emoji.h>
 #include <TextArea.h>
 
 #include <TestApp.h>
@@ -428,9 +429,81 @@ void test_paste_wraps_once()
     CHECK(measured < 2000);
 }
 
+// An emoji is one character, also a flag or a family of several
+// codepoints (specs/42-emoji.md): moving, deleting, clicking, and a line
+// broken in a word made of emoji.
+void test_emoji_are_one_character()
+{
+    set_emoji_set(EmojiSet::from_names({
+        "1f44d.png",
+        "1f44d-1f3fd.png",
+        "1f1e8-1f1e6.png",
+        "1f468.png",
+        "1f469.png",
+        "1f467.png",
+        "1f468-200d-1f469-200d-1f467.png",
+    }));
+    // a🇨🇦b👨‍👩‍👧
+    auto a = area("a\U0001F1E8\U0001F1E6b\U0001F468\u200D\U0001F469\u200D\U0001F467");
+    key(a, KEY_LEFT);
+    CHECK_EQ(a.cursor, 4uz);
+    key(a, KEY_LEFT, 2);
+    CHECK_EQ(a.cursor, 1uz);
+    key(a, KEY_RIGHT);
+    CHECK_EQ(a.cursor, 3uz);
+    key(a, KEY_BACKSPACE);
+    CHECK_EQ(a.utf8(), "ab\U0001F468\u200D\U0001F469\u200D\U0001F467");
+    key(a, KEY_RIGHT);
+    key(a, KEY_DELETE);
+    CHECK_EQ(a.utf8(), "ab");
+    // A click lands before or after the flag, not in it.
+    a.set("a\U0001F1E8\U0001F1E6b");
+    CHECK_EQ(a.position_at(0, 20), 1uz);
+    CHECK_EQ(a.position_at(0, 26), 3uz);
+    // Three flags on lines two characters wide: one flag a line.
+    auto narrow = area("\U0001F1E8\U0001F1E6\U0001F1E8\U0001F1E6\U0001F1E8\U0001F1E6", 3);
+    CHECK(narrow.lines == (std::vector<Line> { { 0, 2 }, { 2, 4 }, { 4, 6 } }));
+    set_emoji_set(EmojiSet { });
+}
+
+// Added in review: the word moves over emoji (specs/42-emoji.md), which
+// the test plan names: Alt+Left, Alt+Right and Alt+Backspace go over a
+// flag and a family as over any word, and Up and Down don't land in one.
+void test_words_over_emoji()
+{
+    set_emoji_set(EmojiSet::from_names({
+        "1f1e8-1f1e6.png",
+        "1f468.png",
+        "1f469.png",
+        "1f467.png",
+        "1f468-200d-1f469-200d-1f467.png",
+    }));
+    // go 🇨🇦👨‍👩‍👧 now
+    auto a = area("go \U0001F1E8\U0001F1E6\U0001F468\u200D\U0001F469\u200D\U0001F467 now");
+    key(a, KEY_LEFT, 1, Word);
+    CHECK_EQ(a.cursor, 11uz);
+    key(a, KEY_LEFT, 1, Word);
+    CHECK_EQ(a.cursor, 3uz);
+    key(a, KEY_RIGHT, 1, Word);
+    CHECK_EQ(a.cursor, 10uz);
+    key(a, KEY_BACKSPACE, 1, Word);
+    CHECK_EQ(a.utf8(), "go  now");
+    CHECK_EQ(a.cursor, 3uz);
+    // Down from x 3 on "abcd" to a line of flags, 2 wide each: before or
+    // after a flag, not in it.
+    auto b = area("abcd\n\U0001F1E8\U0001F1E6\U0001F1E8\U0001F1E6");
+    b.cursor = 3;
+    key(b, KEY_DOWN);
+    CHECK((b.cursor - 5) % 2 == 0);
+    key(b, KEY_UP);
+    CHECK_EQ(b.cursor, 3uz);
+    set_emoji_set(EmojiSet { });
+}
+
 int main()
 {
     Test::ScopedTestApp app;
+    test_emoji_are_one_character();
     test_typing();
     test_deleting_across_a_line_break();
     test_wrapping();
@@ -453,5 +526,6 @@ int main()
     test_typing_wraps_and_scrolls();
     test_scrolling_a_short_text();
     test_delete_word_over_a_line_break();
+    test_words_over_emoji();
     return Test::test_result();
 }

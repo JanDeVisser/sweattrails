@@ -334,6 +334,14 @@ void test_first_chars()
     CHECK_EQ(first_chars("abc", 10), "abc");
     CHECK_EQ(first_chars("abc", 0), "");
     CHECK_EQ(char_count("Télégraphe"), 10uz);
+
+    // An emoji isn't cut: 👨‍👩‍👧 and 🇨🇦 are one character each.
+    set_emoji_set(EmojiSet::from_names({ "1f468-200d-1f469-200d-1f467.png", "1f1e8-1f1e6.png" }));
+    std::string const family { "Ride \U0001F468\u200D\U0001F469\u200D\U0001F467\U0001F1E8\U0001F1E6!" };
+    CHECK_EQ(first_chars(family, 6), "Ride \U0001F468\u200D\U0001F469\u200D\U0001F467");
+    CHECK_EQ(first_chars(family, 7), "Ride \U0001F468\u200D\U0001F469\u200D\U0001F467\U0001F1E8\U0001F1E6");
+    CHECK_EQ(char_ends(family).size(), 8uz);
+    set_emoji_set(EmojiSet { });
 }
 
 void test_matches_words()

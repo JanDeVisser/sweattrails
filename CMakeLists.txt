@@ -167,6 +167,8 @@ add_library(
         src/Lib/Widget/PopupMenu.cpp
         src/Lib/Widget/Colors.h
         src/Lib/Widget/Colors.cpp
+        src/Lib/Widget/Emoji.h
+        src/Lib/Widget/Emoji.cpp
         src/Lib/Widget/FontCache.h
         src/Lib/Widget/FontCache.cpp
         src/Lib/Widget/Layout.cpp
@@ -344,6 +346,10 @@ sweattrails_test(bar_chart_test test/BarChartTest.cpp)
 sweattrails_test(line_chart_test test/LineChartTest.cpp)
 sweattrails_test(text_line_test test/TextLineTest.cpp)
 sweattrails_test(text_area_test test/TextAreaTest.cpp)
+sweattrails_test(emoji_test test/EmojiTest.cpp)
+sweattrails_test(emoji_pack_test test/EmojiPackTest.cpp)
+# The test reads the emoji pack from the source tree.
+target_compile_definitions(emoji_pack_test PRIVATE SWEATTRAILS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 sweattrails_test(text_area_box_test test/TextAreaBoxTest.cpp)
 sweattrails_test(colors_test test/ColorsTest.cpp)
 sweattrails_test(window_test test/WindowTest.cpp)

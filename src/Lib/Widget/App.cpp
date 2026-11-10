@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <algorithm>
 #include <vector>
 
 #include <raylib.h>
@@ -12,8 +13,11 @@
 #include <JSON.h>
 #include <Logging.h>
 #include <Options.h>
+#include <Utf8.h>
+#include <Zip.h>
 
 #include <App.h>
+#include <Emoji.h>
 #include <Widget.h>
 
 namespace ST {
@@ -47,15 +51,81 @@ std::vector<int> const &codepoints()
 {
     static std::vector<int> const ret = [] {
         std::vector<int> points;
-        for (auto ch = 32; ch < 1024; ++ch) {
-            points.push_back(ch);
-        }
-        for (auto ch = 0x2000; ch <= 0x206F; ++ch) {
-            points.push_back(ch);
+        for (auto ch = 32; ch <= 0x206F; ++ch) {
+            if (App::font_has(static_cast<rune>(ch))) {
+                points.push_back(ch);
+            }
         }
         return points;
     }();
     return ret;
+}
+
+bool App::font_has(rune ch)
+{
+    return (ch >= 32 && ch < 1024) || (ch >= 0x2000 && ch <= 0x206F);
+}
+
+void App::set_emoji(std::filesystem::path const &zip)
+{
+    // Once: the fonts, which call for it, change with the settings.
+    if (!emoji_zip.empty()) {
+        return;
+    }
+    auto contents = read_file_by_name<char>(zip.string());
+    if (!contents) {
+        warning(App, "No emoji: can't read `{}`: {}", zip.string(), contents.error().to_string());
+        return;
+    }
+    auto const names = zip_entry_names(*contents);
+    if (!names) {
+        warning(App, "No emoji: `{}` isn't a ZIP: {}", zip.string(), names.error().to_string());
+        return;
+    }
+    set_emoji_set(EmojiSet::from_names(*names));
+    emoji_zip = std::move(*contents);
+}
+
+std::optional<Texture2D> App::emoji_texture(std::string const &image)
+{
+    if (auto const it = emoji_textures.find(image); it != emoji_textures.end()) {
+        return it->second.id != 0 ? std::optional { it->second } : std::nullopt;
+    }
+    Texture2D texture { };
+    if (auto const png = unzip(emoji_zip, image); png) {
+        auto picture = LoadImageFromMemory(".png", reinterpret_cast<unsigned char const *>(png->data()), static_cast<int>(png->size()));
+        if (picture.data != nullptr) {
+            texture = LoadTextureFromImage(picture);
+            // Drawn at the text's height, mostly well under its 72 px.
+            GenTextureMipmaps(&texture);
+            SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
+            UnloadImage(picture);
+        }
+    }
+    // One that can't be loaded isn't tried again.
+    emoji_textures.emplace(image, texture);
+    return texture.id != 0 ? std::optional { texture } : std::nullopt;
+}
+
+Vector2 App::measure_text(char const *text, FontSize size)
+{
+    auto const  font = *the()->font(size);
+    auto const  font_size = static_cast<float>(the()->font_sizes[static_cast<size_t>(size)]);
+    auto const *set = emoji_set();
+    // No emoji is all ASCII.
+    auto const ascii = std::ranges::all_of(std::string_view { text }, [](char ch) { return static_cast<unsigned char>(ch) < 0x80; });
+    if (set == nullptr || ascii) {
+        return MeasureTextEx(font, text, font_size, 2);
+    }
+    auto const runes = to_wstring(text).value_or(rune_string { });
+    auto const runs = split_emoji(runes, *set, font_has);
+    if (runs.size() == 1 && runs.front().kind == RunKind::Text) {
+        return MeasureTextEx(font, text, font_size, 2);
+    }
+    auto const measure = [&font, font_size](rune_view piece) {
+        return MeasureTextEx(font, to_utf8(piece).value_or(std::string { }).c_str(), font_size, 2).x;
+    };
+    return Vector2 { .x = runs_width(runes, runs, measure, font_size, 2), .y = MeasureTextEx(font, "Mg", font_size, 2).y };
 }
 
 void App::set_fonts(std::string_view const &path)
@@ -112,6 +182,11 @@ App::~App()
     for (auto ix = static_cast<size_t>(FontSize::XSmall); ix <= static_cast<size_t>(FontSize::XLarge); ++ix) {
         if (auto f = fonts[ix]; f) {
             UnloadFont(*f);
+        }
+    }
+    for (auto const &[image, texture] : emoji_textures) {
+        if (texture.id != 0) {
+            UnloadTexture(texture);
         }
     }
 }

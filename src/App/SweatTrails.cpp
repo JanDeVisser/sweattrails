@@ -2486,6 +2486,7 @@ void SweatTrails::load_font()
     if (!load(font_name) && (font_name != default_font)) {
         assert(load(default_font));
     }
+    set_emoji(SWEATTRAILS_DATADIR "/emoji/twemoji.zip");
 }
 
 ImageFinder SweatTrails::image_finder()

@@ -8,6 +8,7 @@
 
 #include <array>
 #include <filesystem>
+#include <map>
 #include <memory>
 
 #include <raylib.h>
@@ -41,29 +42,31 @@ struct App : public Layout {
         }
     };
 
-    std::string                 app_name; // Names the per-user directories
-    std::deque<std::string>     arguments;
-    int                         monitor { 0 };
-    Fonts                       fonts { };
-    std::string                 font_path { };
-    FontSizes                   font_sizes = def_font_sizes;
-    pWidget                     focus { nullptr };
-    CharSizes                   char_sizes { };
-    std::string                 last_key;
-    bool                        quit { false };
-    double                      time { 0.0 };
-    std::vector<pWidget>        modals { };
-    size_t                      frame_count { 0 };
-    std::vector<DrawFloating>   floatings;
-    std::string                 title_string { "Sweattrails" };
-    std::string                 icon_file { }; // The window's icon, if any
-    CharSizes                   cells;
-    static std::shared_ptr<App> s_app;
-    std::set<int>               m_pressed_keys;
-    std::set<int>               m_new_keys; // Pressed this frame
-    MouseCursor                 default_cursor { MOUSE_CURSOR_IBEAM };
-    MouseCursor                 m_requested_cursor { MOUSE_CURSOR_IBEAM }; // For this frame
-    MouseCursor                 m_cursor { MOUSE_CURSOR_IBEAM };           // Shown now
+    std::string                      app_name; // Names the per-user directories
+    std::deque<std::string>          arguments;
+    int                              monitor { 0 };
+    Fonts                            fonts { };
+    std::string                      font_path { };
+    FontSizes                        font_sizes = def_font_sizes;
+    pWidget                          focus { nullptr };
+    CharSizes                        char_sizes { };
+    std::string                      last_key;
+    bool                             quit { false };
+    double                           time { 0.0 };
+    std::vector<pWidget>             modals { };
+    size_t                           frame_count { 0 };
+    std::vector<DrawFloating>        floatings;
+    std::string                      title_string { "Sweattrails" };
+    std::string                      icon_file { }; // The window's icon, if any
+    CharSizes                        cells;
+    static std::shared_ptr<App>      s_app;
+    std::set<int>                    m_pressed_keys;
+    std::set<int>                    m_new_keys; // Pressed this frame
+    MouseCursor                      default_cursor { MOUSE_CURSOR_IBEAM };
+    MouseCursor                      m_requested_cursor { MOUSE_CURSOR_IBEAM }; // For this frame
+    MouseCursor                      m_cursor { MOUSE_CURSOR_IBEAM };           // Shown now
+    std::string                      emoji_zip { };                             // Twemoji's PNGs: see set_emoji()
+    std::map<std::string, Texture2D> emoji_textures { };                        // Each loaded when it's first drawn
 
     explicit App(std::string_view const &app_name);
     ~App();
@@ -85,9 +88,18 @@ struct App : public Layout {
     void start_frame();
     void draw_floating(pWidget const &target, Draw const &draw);
     void set_fonts(std::string_view const &path);
-    void handle_keyboard(pWidget const &focus);
-    void push_modal(pWidget const &modal);
-    void pop_modal();
+    // Reads the emoji to draw from a ZIP of Twemoji's PNGs
+    // (specs/42-emoji.md). Without it, or if it can't be read, there are
+    // no emoji, and text is drawn as without them.
+    void set_emoji(std::filesystem::path const &zip);
+    // The emoji's picture, from the ZIP the first time it's drawn: none if
+    // it can't be loaded.
+    std::optional<Texture2D> emoji_texture(std::string const &image);
+    // Whether the app's fonts have a character: see codepoints().
+    static bool font_has(rune ch);
+    void        handle_keyboard(pWidget const &focus);
+    void        push_modal(pWidget const &modal);
+    void        pop_modal();
     // Closes `modal`, which needn't be on top: its submit function may have
     // opened another.
     void pop_modal(pWidget const &modal);
@@ -122,10 +134,9 @@ struct App : public Layout {
         return fonts[static_cast<size_t>(font_size)];
     }
 
-    static Vector2 measure_text(char const *text, FontSize size)
-    {
-        return MeasureTextEx(*(the()->font(size)), text, the()->font_sizes[static_cast<size_t>(size)], 2);
-    }
+    // How big `text` is drawn in the font, with its emoji as squares as
+    // high as the font's size.
+    static Vector2 measure_text(char const *text, FontSize size);
 
     template<class AppClass>
         requires std::derived_from<AppClass, App>

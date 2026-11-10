@@ -17,7 +17,10 @@
 
 #include <raylib.h>
 
+#include <Utf8.h>
+
 #include <App.h>
+#include <Emoji.h>
 #include <Scroll.h>
 #include <TextLine.h>
 #include <Widget.h>
@@ -82,17 +85,37 @@ struct ListBoxConfig {
 
 constexpr static ListBoxConfig DefaultListBoxConfig { };
 
+// Where each character of UTF-8 `text` ends, in bytes. An emoji is one
+// character, also one of several codepoints such as a flag
+// (specs/42-emoji.md); anything else is a codepoint.
+inline std::vector<size_t> char_ends(std::string_view text)
+{
+    std::vector<size_t> starts; // Where each codepoint starts, and the end
+    for (size_t ix = 0; ix < text.size(); ++ix) {
+        if ((static_cast<unsigned char>(text[ix]) & 0xC0) != 0x80) {
+            starts.push_back(ix);
+        }
+    }
+    starts.push_back(text.size());
+    auto const          runes = to_wstring(text).value_or(rune_string { });
+    auto const         *set = emoji_set();
+    auto const          runs = (set != nullptr && runes.size() + 1 == starts.size()) ? split_emoji(runes, *set, App::font_has) : std::vector<TextRun> { };
+    std::vector<size_t> ret;
+    for (size_t position = 0; position + 1 < starts.size();) {
+        position = runs.empty() ? position + 1 : next_character(runes, runs, position);
+        ret.push_back(starts[position]);
+    }
+    return ret;
+}
+
 // The first `count` characters of UTF-8 `text`, not cutting one in two.
 inline std::string_view first_chars(std::string_view text, size_t count)
 {
-    size_t ix = 0;
-    for (; ix < text.size() && count > 0; --count) {
-        ++ix;
-        while (ix < text.size() && (static_cast<unsigned char>(text[ix]) & 0xC0) == 0x80) {
-            ++ix;
-        }
+    auto const ends = char_ends(text);
+    if (count == 0) {
+        return text.substr(0, 0);
     }
-    return text.substr(0, ix);
+    return (count < ends.size()) ? text.substr(0, ends[count - 1]) : text;
 }
 
 // The number of characters in UTF-8 `text`.
@@ -333,8 +356,7 @@ struct ListBox : public Modal {
         if constexpr (Config.shrink && !Config.search) {
             scroll.lines = clamp(scroll.lines, 0, entries.size());
         }
-        auto    f = App::the()->font();
-        Vector2 m = MeasureTextEx(*f, prompt.c_str(), f->baseSize, 2);
+        auto const m = App::measure_text(prompt.c_str(), FontSize::Medium);
         if (m.x > viewport.width - 16) {
             viewport.width = m.x + 16;
             viewport.x = (screen.width - m.x) / 2;
@@ -431,7 +453,8 @@ struct ListBox : public Modal {
                 if constexpr (Config.search) {
                     if (!search.empty()) {
                         // A whole character, not a byte of one.
-                        search.resize(first_chars(search, char_count(search) - 1).size());
+                        auto const ends = char_ends(search);
+                        search.resize((ends.size() >= 2) ? ends[ends.size() - 2] : 0);
                         filter();
                     }
                     return true;
@@ -617,9 +640,7 @@ void input_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
             auto const scroll = line.scroll_for(cursor_x, text_width, width - 2);
 
             BeginScissorMode(viewport.x + left, viewport.y + y - 2, width, App::the()->cell().y + 4);
-            assert(sizeof(rune) == sizeof(int));
-            DrawTextCodepoints(*font, reinterpret_cast<int const *>(line.text.c_str()), static_cast<int>(line.text.length()),
-                Vector2 { viewport.x + left - scroll, viewport.y + y }, static_cast<float>(font->baseSize), 2, RAYWHITE);
+            render_text_no_normalize(left - scroll, y, rune_view { line.text }, FontSize::Medium, RAYWHITE);
             double t = GetTime();
             if ((t - floor(t)) < 0.5) {
                 draw_rectangle_no_normalize(left + cursor_x - scroll, y - 2, 2, App::the()->cell().y + 2, RAYWHITE);

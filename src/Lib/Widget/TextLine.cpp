@@ -11,6 +11,8 @@
 
 #include <Utf8.h>
 
+#include <App.h>
+#include <Emoji.h>
 #include <TextLine.h>
 
 namespace ST {
@@ -67,33 +69,28 @@ void TextLine::paste(std::string_view const &utf8)
     }
 }
 
+// An emoji goes as one character, also one of several codepoints, such
+// as a flag (specs/42-emoji.md).
 void TextLine::backspace()
 {
-    if (cursor > 0) {
-        text.erase(cursor - 1, 1);
-        --cursor;
-    }
+    auto const start = previous_character(text, cursor, emoji_set(), App::font_has);
+    text.erase(start, cursor - start);
+    cursor = start;
 }
 
 void TextLine::del()
 {
-    if (cursor < text.length()) {
-        text.erase(cursor, 1);
-    }
+    text.erase(cursor, next_character(text, cursor, emoji_set(), App::font_has) - cursor);
 }
 
 void TextLine::left()
 {
-    if (cursor > 0) {
-        --cursor;
-    }
+    cursor = previous_character(text, cursor, emoji_set(), App::font_has);
 }
 
 void TextLine::right()
 {
-    if (cursor < text.length()) {
-        ++cursor;
-    }
+    cursor = next_character(text, cursor, emoji_set(), App::font_has);
 }
 
 void TextLine::home()

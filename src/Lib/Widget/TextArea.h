@@ -18,6 +18,7 @@
 #include <string_view>
 #include <vector>
 
+#include <Emoji.h>
 #include <Widget.h>
 
 namespace ST {
@@ -115,6 +116,15 @@ private:
     float                m_width { std::numeric_limits<float>::max() };
     Measure              m_measure { };
     std::optional<float> m_goal_x { }; // Where up() and down() aim for
+    // The text's runs of text and emoji, kept as wrapping steps through
+    // the text a character at a time, and split again when the text has
+    // changed.
+    mutable rune_string                       m_runs_text { };
+    mutable std::vector<TextRun>              m_runs { };
+    [[nodiscard]] std::vector<TextRun> const &runs() const;
+    // Where the cursor goes a character on or back: over all of an emoji.
+    [[nodiscard]] size_t next(size_t position) const;
+    [[nodiscard]] size_t previous(size_t position) const;
     bool                 put(rune ch);
     void                 changed();
     void                 wrap();
