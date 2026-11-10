@@ -92,6 +92,13 @@ std::optional<Match> match_at(rune_view text, size_t start, EmojiSet const &set,
     return best;
 }
 
+// A hidden run is drawn as nothing, so the cursor doesn't stop before
+// one: it would stand where it stands after it.
+bool hidden_at(std::vector<TextRun> const &runs, size_t position)
+{
+    return std::ranges::any_of(runs, [position](TextRun const &run) { return run.kind == RunKind::Hidden && run.start == position; });
+}
+
 }
 
 EmojiSet EmojiSet::from_names(std::vector<std::string> const &names)
@@ -159,7 +166,11 @@ size_t next_character(rune_view text, std::vector<TextRun> const &runs, size_t p
         return text.size();
     }
     auto const it = std::ranges::find_if(runs, [position](TextRun const &run) { return run.start <= position && position < run.end; });
-    return (it != runs.end() && it->kind == RunKind::Emoji) ? it->end : position + 1;
+    auto       ret = (it != runs.end() && it->kind == RunKind::Emoji) ? it->end : position + 1;
+    while (ret < text.size() && hidden_at(runs, ret)) {
+        ++ret;
+    }
+    return ret;
 }
 
 size_t previous_character(rune_view text, std::vector<TextRun> const &runs, size_t position)
@@ -169,7 +180,8 @@ size_t previous_character(rune_view text, std::vector<TextRun> const &runs, size
         return 0;
     }
     auto const it = std::ranges::find_if(runs, [position](TextRun const &run) { return run.start < position && position <= run.end; });
-    return (it != runs.end() && it->kind == RunKind::Emoji) ? it->start : position - 1;
+    auto const ret = (it != runs.end() && it->kind == RunKind::Emoji) ? it->start : position - 1;
+    return hidden_at(runs, ret) ? previous_character(text, runs, ret) : ret;
 }
 
 size_t next_character(rune_view text, size_t position, EmojiSet const *set, HasGlyph const &has_glyph)

@@ -231,6 +231,6 @@ int main()
     test_cursor_steps_over_keycaps_and_flags();
     test_longest_match_and_neighbours();
     test_hidden_runs_have_no_width();
-    // test_no_invisible_cursor_stops(); // Review finding 3
+    test_no_invisible_cursor_stops();
     return Test::test_result();
 }

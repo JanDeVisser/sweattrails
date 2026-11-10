@@ -73,7 +73,8 @@ struct TextRun {
 [[nodiscard]] std::vector<TextRun> split_emoji(rune_view text, EmojiSet const &set, HasGlyph const &has_glyph);
 
 // Where the cursor goes from `position`, a character on or back: over all
-// of an emoji, or else over one rune.
+// of an emoji, or else over one rune, and over what's drawn as nothing
+// with it, so that each stop is a place of its own.
 [[nodiscard]] size_t next_character(rune_view text, size_t position, EmojiSet const *set, HasGlyph const &has_glyph);
 [[nodiscard]] size_t previous_character(rune_view text, size_t position, EmojiSet const *set, HasGlyph const &has_glyph);
 
