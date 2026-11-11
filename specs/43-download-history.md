@@ -1,6 +1,6 @@
 # Download history
 
-Status: In review
+Status: In progress, on branch feature/43-download-history
 
 <!--
 Status is one of:
@@ -67,37 +67,33 @@ user wants an older period. Builds on [07](07-garmin-download.md),
 
 ### A long download
 
-- "Everything" can be thousands of FIT files, and how long that takes,
-  or whether Garmin's Personal API slows it down, is unknown. The status
-  line counts, as for any download ("Downloading 412 of 2300 from Garmin
-  Connect").
-- There's no way to stop a download but quitting. That's enough, as
-  nothing is lost: what came in is in the inbox and is processed at the
-  next start, and running "Everything" again skips what the store has,
-  so it picks up where it stopped for the cost of the list requests. A
-  stop command *(deferred)*.
-
-### An empty store
-
-- **At startup, when the store has no activities and at least one source
-  is set up**, SweatTrails shows the same list instead of running the
-  quiet 30-day download, with a line above it: "There are no activities
-  yet. Download from…". Esc closes it and downloads nothing.
-- "Empty" is after the inbox is processed at startup: FIT files waiting
-  in the inbox, such as what an interrupted download left, count.
-- With no source set up, nothing is asked, as now.
-- Moving `activity/` away is all it takes to start over: nothing else in
-  the data folder has to go. `summaries.json` (the totals) keeps only
-  the summaries of FIT files that are in the store
-  (`plan_update()`, `storage/Summaries.cpp`), so it empties itself at the
-  next start. The `recordings-grouped` marker only says the once-over of
-  an older store for recordings (spec 31) is done; activities that come
-  in through the inbox are grouped as they come, so it can stay.
+- "Everything" can be thousands of FIT files. The status line counts, as
+  for any download ("Downloading 412 of 2300 from Garmin Connect").
+- **Downloads are paced.** Tried by hand, a download of a whole Garmin
+  Connect history stopped part way with an error: Garmin Connect throttles
+  a client that asks for too many files in a row, and the download took
+  any HTTP error but 403 and 404 as the end. So a download from Garmin
+  Connect or Wahoo pauses a minute after every 25 FIT files. A download
+  of 25 or fewer, as Ctrl+G's usually is, doesn't pause. While it pauses
+  the status line says so: "Pausing a minute between downloads from
+  Garmin Connect". About 2,000 activities take some 80 pauses, an hour
+  and a half on top of the downloads.
+- **A service that still says it's had too many requests** (HTTP 429) for
+  a FIT file gets a minute's wait, the same status line, and the file is
+  asked for again, up to 3 times, before the download stops with the
+  error as before. The activity lists aren't paced or retried: they're a
+  request per 100 (Garmin) or 30 (Wahoo) activities, and Wahoo's limit on
+  them resets after hours, not a minute.
+- There's no way to stop a download but quitting, which also works while
+  it pauses. Nothing is lost: what came in is in the inbox and is
+  processed at the next start, and running "Everything" again skips what
+  the store has, so it picks up where it stopped for the cost of the list
+  requests. A stop command *(deferred)*.
 
 ### Version 1 scope
 
-In: the `st-download-period` task and its list of four periods, and the
-list at startup for an empty store. Deferred: a way to stop a running
+In: the `st-download-period` task and its list of four periods, the list
+at startup for an empty store, and pacing the downloads of FIT files. Deferred: a way to stop a running
 download *(deferred)*; calendar years, such as all of 2025, which need
 an end date *(deferred)*.
 
@@ -199,6 +195,31 @@ None.
    and `st-wahoo-login` takes a `days` argument, falling back on
    `wahoo.days`.
 
+6. **Pacing**, added after Jan's first try. `storage/Pacing.h`:
+
+   ```cpp
+   // How a download of many files is paced: see
+   // specs/43-download-history.md.
+   struct Pacing {
+       size_t               batch { 25 };
+       std::chrono::seconds pause { 60 };
+       int                  retries { 3 }; // For HTTP 429, per file
+       std::function<void(std::chrono::seconds)> wait { }; // Sleeps
+   };
+
+   // Whether to pause before the file at `index`: after every batch.
+   bool pause_before(Pacing const &pacing, size_t index);
+   ```
+
+   `download_new_activities()` and `download_new_workouts()` take a
+   `Pacing` and use it the same way: a pause before each batch after the
+   first, and on a 429 for a FIT file, a wait and the same file again, up
+   to `retries` times. Without a `wait`, nothing waits, so the tests'
+   default is fast; they pass a `wait` that counts. The app's `wait`
+   sends the status line's message and sleeps with
+   `std::this_thread::sleep_for`: the job thread is the download's, and
+   blocks as it does for a request, and quitting doesn't wait for it.
+
 Nothing new in `src/Lib/Widget`: `list_box()` is the widget.
 
 ## Test plan
@@ -218,6 +239,11 @@ and report:
   neither, and Strava alone, which is false.
 - `login_arguments()`: Wahoo's and Strava's days, and nothing for
   Garmin Connect, which has no login.
+- Pacing, in `GarminTest.cpp` and `WahooTest.cpp` with their fake
+  services and a `wait` that records: 60 files make 2 pauses, 25 none; a
+  429 for a file is waited for and retried, and the file comes in; 429s
+  past the retries stop the download with the error, with the files
+  before it in the inbox. `pause_before()` in `DownloadTest.cpp`.
 
 Not tested automatically: the startup check and the list, which need the
 app's job thread and a window. Checked by hand: moving `activity/` away

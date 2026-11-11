@@ -23,6 +23,7 @@
 #include <Logging.h>
 
 #include <Http.h>
+#include <storage/Pacing.h>
 
 namespace ST {
 
@@ -100,7 +101,8 @@ using GarminProgress = std::function<void(size_t index, size_t count)>;
 // `garmin-<id>.fit`. The inbox organizes them as any other file. Returns
 // how many were downloaded. An activity Garmin Connect won't hand over (403
 // or 404) is skipped with a warning; any other error stops the download.
-// Activities downloaded before an error stay in the inbox.
-GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage const &storage, std::string_view start_date, GarminProgress const &progress = { });
+// Activities downloaded before an error stay in the inbox. The FIT files
+// are downloaded as `pacing` says: see specs/43-download-history.md.
+GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage const &storage, std::string_view start_date, GarminProgress const &progress = { }, Pacing const &pacing = { });
 
 }

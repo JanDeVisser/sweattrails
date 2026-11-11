@@ -8,6 +8,7 @@
  */
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -352,6 +353,102 @@ void test_download_new_activities()
     CHECK(progress == (std::vector<std::pair<size_t, size_t>> { { 0, 1 } }));
 }
 
+// What a download's pacing did: the pauses, and where in the download
+// they came, as the index of the next progress call.
+struct PacingLog {
+    std::vector<std::chrono::seconds> pauses { };
+    std::vector<size_t>               at { };
+    size_t                            next { 0 };
+
+    Pacing pacing(size_t batch)
+    {
+        return Pacing {
+            .batch = batch,
+            .wait = [this](std::chrono::seconds pause) { pauses.push_back(pause); at.push_back(next); },
+        };
+    }
+
+    GarminProgress progress()
+    {
+        return [this](size_t index, size_t) { next = index + 1; };
+    }
+};
+
+// `count` new activities on Garmin Connect, ids 1 to `count`, each with a
+// FIT file.
+void list_new_activities(FakeGarmin &fake, u64 count)
+{
+    std::vector<JSONValue> entries;
+    for (u64 id = 1; id <= count; ++id) {
+        entries.push_back(list_entry(id, 1792000000 + static_cast<i64>(id) * 10000, "Ride"));
+        fake.answer(download_path(id), { .status = 200, .body = fit_zip(id, "ride") });
+    }
+    fake.answer(ListPath, { .status = 200, .body = list_of(entries) });
+}
+
+// A pause after every batch, and none in a download of one batch or less.
+void test_download_pauses_between_batches()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    list_new_activities(fake, 5);
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    PacingLog     log;
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23", log.progress(), log.pacing(2)).value_or(99), 5uz);
+    // Before the third and the fifth.
+    CHECK(log.at == (std::vector<size_t> { 2, 4 }));
+    CHECK(log.pauses == (std::vector<std::chrono::seconds> { std::chrono::seconds { 60 }, std::chrono::seconds { 60 } }));
+
+    TempStore  small_store;
+    FakeGarmin small;
+    list_new_activities(small, 25);
+    GarminConnect small_garmin { .fetch = small.fetch(), .token = "token" };
+    PacingLog     small_log;
+    CHECK_EQ(download_new_activities(small_garmin, small_store.storage, "2026-09-23", small_log.progress(), small_log.pacing(25)).value_or(99), 25uz);
+    CHECK(small_log.pauses.empty());
+}
+
+// Garmin Connect saying it's had too many requests gets a pause, and the
+// same file is asked for again.
+void test_too_many_requests_is_retried()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    fake.answer(download_path(5), { .status = 200, .body = fit_zip(5, "b") });
+    fake.answer(download_path(4), { .status = TooManyRequests, .body = "Too many requests" });
+    fake.answer(download_path(4), { .status = TooManyRequests, .body = "Too many requests" });
+    fake.answer(download_path(4), { .status = 200, .body = fit_zip(4, "a") });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    PacingLog     log;
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23", log.progress(), log.pacing(25)).value_or(99), 2uz);
+    CHECK_EQ(log.pauses.size(), 2uz);
+    CHECK_EQ(downloads(fake), 4uz);
+    CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-4.fit", "garmin-4.json", "garmin-5.fit", "garmin-5.json" }));
+}
+
+// Past the retries, the download stops with the error, and what came
+// before stays in the inbox.
+void test_too_many_requests_past_the_retries()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    fake.answer(download_path(5), { .status = 200, .body = fit_zip(5, "b") });
+    for (auto ix = 0; ix < 4; ++ix) {
+        fake.answer(download_path(4), { .status = TooManyRequests, .body = "Too many requests" });
+    }
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    PacingLog     log;
+    auto const    count = download_new_activities(garmin, store.storage, "2026-09-23", log.progress(), log.pacing(25));
+    CHECK(!count.has_value());
+    if (!count) {
+        CHECK_EQ(count.error().status, TooManyRequests);
+    }
+    CHECK_EQ(log.pauses.size(), 3uz);
+    CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-5.fit", "garmin-5.json" }));
+}
+
 // Run again before the inbox is processed, the download doesn't fetch what
 // the inbox already has.
 void test_download_skips_what_the_inbox_has()
@@ -459,6 +556,9 @@ int main()
     test_download_unzips_the_fit_file();
     test_download_without_a_fit_file();
     test_download_new_activities();
+    test_download_pauses_between_batches();
+    test_too_many_requests_is_retried();
+    test_too_many_requests_past_the_retries();
     test_download_skips_what_the_inbox_has();
     test_failed_download_keeps_the_earlier_ones();
     test_has_activity();

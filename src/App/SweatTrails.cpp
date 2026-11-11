@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <functional>
+#include <thread>
 #include <variant>
 
 #include <config.h>
@@ -84,6 +85,18 @@ std::optional<std::string> garmin_key()
     return read_api_key(variable ? std::optional<std::string_view> { variable } : std::nullopt, garmin_key_file());
 }
 
+// The pacing of a download from `source`, which says on the status line
+// when it pauses, and pauses the download's job.
+Pacing paced(pSweatTrails const &the, std::string const &source)
+{
+    return Pacing {
+        .wait = [the, source](std::chrono::seconds pause) {
+            the->notify_latest<NotificationType::Downloading>(Downloading { .source = source, .pausing = true });
+            std::this_thread::sleep_for(pause);
+        },
+    };
+}
+
 SourceOutcome download_from_garmin(pSweatTrails const &the, int days)
 {
     SourceOutcome outcome { .source = "Garmin Connect" };
@@ -102,7 +115,7 @@ SourceOutcome download_from_garmin(pSweatTrails const &the, int days)
     auto const on_activity = [&the](size_t index, size_t count) {
         the->notify_latest<NotificationType::Downloading>(Downloading { "Garmin Connect", index, count });
     };
-    auto const count = download_new_activities(garmin, the->storage, garmin_start_date(days, std::time(nullptr)), on_activity);
+    auto const count = download_new_activities(garmin, the->storage, garmin_start_date(days, std::time(nullptr)), on_activity, paced(the, "Garmin Connect"));
     if (!count) {
         return failed(outcome, count.error().to_string());
     }
@@ -131,7 +144,7 @@ SourceOutcome download_from_wahoo(pSweatTrails const &the, std::optional<std::st
         the->notify_latest<NotificationType::Downloading>(Downloading { "Wahoo", index, count });
     };
     auto const since = static_cast<i64>(std::time(nullptr)) - static_cast<i64>(days) * 24 * 60 * 60;
-    auto const count = download_new_workouts(wahoo, the->storage, since, on_workout);
+    auto const count = download_new_workouts(wahoo, the->storage, since, on_workout, paced(the, "Wahoo"));
     if (!count && count.error().kind == WahooError::Kind::NotLoggedIn) {
         outcome.kind = SourceOutcome::Kind::NeedsLogin;
         return outcome;
@@ -1821,6 +1834,10 @@ void SweatTrails::notif_importing_file(Notification::Payload const &data)
 void SweatTrails::notif_downloading(Notification::Payload const &data)
 {
     auto const &download = std::get<Downloading>(data);
+    if (download.pausing) {
+        SweatTrails::the()->set_status(std::format("Pausing a minute between downloads from {}", download.source));
+        return;
+    }
     SweatTrails::the()->set_status(std::format("Downloading {} of {} from {}", download.index + 1, download.count, download.source));
 }
 

@@ -15,6 +15,7 @@
 
 #include <storage/Download.h>
 #include <storage/Garmin.h>
+#include <storage/Pacing.h>
 #include <storage/Strava.h>
 #include <storage/Wahoo.h>
 
@@ -352,6 +353,18 @@ void test_login_arguments_make_a_request()
     CHECK_EQ(strava.strava_days, 500);
 }
 
+// A pause before each batch after the first; none with no batches.
+void test_pause_before()
+{
+    Pacing const pacing { .batch = 25 };
+    CHECK(!pause_before(pacing, 0));
+    CHECK(!pause_before(pacing, 24));
+    CHECK(pause_before(pacing, 25));
+    CHECK(!pause_before(pacing, 26));
+    CHECK(pause_before(pacing, 50));
+    CHECK(!pause_before(Pacing { .batch = 0 }, 25));
+}
+
 int main()
 {
     test_client_id();
@@ -371,6 +384,7 @@ int main()
     test_downloads_activities();
     test_download_periods();
     test_login_arguments();
+    test_pause_before();
     test_download_periods_at_daylight_saving_changes();
     test_login_arguments_make_a_request();
     return ST::Test::test_result();

@@ -221,7 +221,7 @@ GarminResult<std::string> GarminConnect::download_fit(u64 id)
     return std::unexpected(failed(std::format("The download of activity {} has no FIT file", id)));
 }
 
-GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage const &storage, std::string_view start_date, GarminProgress const &progress)
+GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage const &storage, std::string_view start_date, GarminProgress const &progress, Pacing const &pacing)
 {
     auto const listed = garmin.list_activities(start_date);
     if (!listed) {
@@ -239,10 +239,13 @@ GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage cons
     size_t downloaded { 0 };
     for (size_t ix = 0; ix < wanted.size(); ++ix) {
         auto const &activity = wanted[ix];
+        if (pause_before(pacing, ix)) {
+            pause(pacing);
+        }
         if (progress) {
             progress(ix, wanted.size());
         }
-        auto const fit = garmin.download_fit(activity.id);
+        auto const fit = fetch_paced(pacing, [&garmin, &activity] { return garmin.download_fit(activity.id); });
         if (!fit && unavailable(fit.error())) {
             warning(Garmin, "Skipping activity {}: {}", activity.id, fit.error().to_string());
             continue;

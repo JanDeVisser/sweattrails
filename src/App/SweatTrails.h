@@ -165,6 +165,7 @@ struct Downloading {
     std::string source { }; // "Garmin Connect", "Wahoo", "Strava"
     size_t      index { 0 };
     size_t      count { 0 };
+    bool        pausing { false }; // Between files, so as not to ask too much
 };
 
 // Sent when a login is over, however it ended, with what to tell the
