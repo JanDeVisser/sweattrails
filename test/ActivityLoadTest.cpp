@@ -135,6 +135,42 @@ void test_without_a_file_id()
     CHECK(!t.activity.manufacturer.has_value());
 }
 
+// The error loading `file` gives, if it's a FIT error; else what loading
+// did instead.
+std::string load_error(std::string const &file)
+{
+    Storage    storage { };
+    Activity   activity { storage, ActivityID::dummy(ActivityFile::Fit) };
+    auto const res = activity.load_from_slice(file);
+    if (res) {
+        return *res ? "loaded" : "not loaded";
+    }
+    auto const *fit_error = std::get_if<FIT::FITError>(&res.error().error);
+    return fit_error ? FIT::tag(*fit_error) : res.error().to_string();
+}
+
+// A data message for a local message type that no definition came before
+// is a broken file, which doesn't load, rather than one that crashes.
+void test_message_without_a_definition()
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    fit.message(5);
+    fit.u32_le(Start);
+    CHECK_EQ(load_error(fit.file()), "UndefinedLocalMessage");
+}
+
+// The same, with a compressed timestamp header: local message type 3,
+// 7 seconds on.
+void test_compressed_timestamp_without_a_definition()
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    fit.byte(0x80 | (3 << 5) | 7);
+    fit.u32_le(Start);
+    CHECK_EQ(load_error(fit.file()), "UndefinedLocalMessage");
+}
+
 void test_session_sub_sport_is_loaded()
 {
     FITBuilder fit;
@@ -1009,6 +1045,8 @@ int main()
     test_another_manufacturer();
     test_invalid_manufacturer();
     test_without_a_file_id();
+    test_message_without_a_definition();
+    test_compressed_timestamp_without_a_definition();
     test_session_total_ascent_is_loaded();
     test_session_without_total_ascent();
     test_session_sub_sport_is_loaded();

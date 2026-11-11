@@ -436,37 +436,38 @@ std::expected<FITDataField, FITError> FITFile::read_developer_field(LocalDefinit
 std::expected<FITDataRecord, FITError> FITFile::read_data_record(RecordHeader record_header)
 {
     std::optional<u32> compressed_timestamp { };
-    size_t             def_ix = std::visit(
+    u8 const           local_message_type = std::visit(
         overloaded {
-            [this](u8 const &data_header) -> size_t {
-                if (verbose) {
-                    std::println("message {} -> {} {}",
-                        data_header,
-                        definitions[current_definitions[data_header]].global_msg_num,
-                        tag(static_cast<mesg_num>(definitions[current_definitions[data_header]].global_msg_num)));
-                }
-                return current_definitions[data_header];
+            [](u8 const &data_header) -> u8 {
+                return data_header;
             },
-            [this, &compressed_timestamp](RecordHeader::CompressedTimestamp const &ts_header) -> size_t {
-                if (verbose) {
-                    std::println("compressed timestamp message {} -> {} {}",
-                        ts_header.local_message_type,
-                        definitions[current_definitions[ts_header.local_message_type]].global_msg_num,
-                        tag(static_cast<mesg_num>(definitions[current_definitions[ts_header.local_message_type]].global_msg_num)));
-                }
+            [this, &compressed_timestamp](RecordHeader::CompressedTimestamp const &ts_header) -> u8 {
                 // The header holds the low 5 bits of the timestamp. It rolls over
                 // when they are smaller than those of the last timestamp.
                 last_timestamp = (ts_header.time_offset >= (last_timestamp & 0x1F))
                     ? (last_timestamp & 0xFFFFFFE0) + ts_header.time_offset
                     : (last_timestamp & 0xFFFFFFE0) + ts_header.time_offset + 0x20;
                 compressed_timestamp = last_timestamp;
-                return current_definitions[ts_header.local_message_type];
+                return ts_header.local_message_type;
             },
-            [](auto const &) -> size_t {
+            [](auto const &) -> u8 {
                 std::unreachable();
             },
         },
         record_header.header);
+    // A data record for a local message type no definition came before: the
+    // file is broken, and there's no telling how long the record is.
+    auto const def_ix = current_definitions[local_message_type & 0x0F];
+    if (def_ix >= definitions.size()) {
+        return std::unexpected(FITError::UndefinedLocalMessage);
+    }
+    if (verbose) {
+        std::println("{}message {} -> {} {}",
+            compressed_timestamp ? "compressed timestamp " : "",
+            local_message_type,
+            definitions[def_ix].global_msg_num,
+            tag(static_cast<mesg_num>(definitions[def_ix].global_msg_num)));
+    }
     LocalDefinition &def = definitions[def_ix];
 
     std::vector<FITDataField> fields;
