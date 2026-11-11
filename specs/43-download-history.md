@@ -1,6 +1,6 @@
 # Download history
 
-Status: In progress, on branch feature/43-download-history
+Status: In review
 
 <!--
 Status is one of:
@@ -264,7 +264,9 @@ and starting, picking each period, Esc, and a start with activities.
 Review of 9f6870b (pacing):
 
 7. Suggestion: `src/App/storage/Garmin.cpp:146-167`, `SweatTrails.cpp:111`. The Garmin token is obtained once before the download. A paced "Everything" now takes an hour and a half or more, so if the token lives shorter than that, a 401 in the middle stops the download with "Garmin Connect rejected the API key: it may have expired", which sends the user to create a new key for no reason. Nothing is lost (rerun skips what's in the store), and the token's lifetime is unknown; worth checking by hand with a long run, and if short, getting a new token on a 401 once.
+   **Resolved:** checked on 2026-11-11 by decoding a fresh token: it's a JWT that lives 24 hours (`exp - iat` = 1440 minutes), far longer than any paced download. No change.
 8. Suggestion: `SweatTrails.cpp:91-97`, `Pacing.h:46-53`. After a 429 retry's pause the status line keeps saying "Pausing a minute between downloads" through the retried request, and if that is the last file, until DownloadDone clears it. The next file's progress call restores it otherwise. Cosmetic. The message also says "a minute" whatever `Pacing::pause` is; fine while it is 60 s.
+   **Resolved:** accepted as it is: the retry of the last file takes a request's time, and DownloadDone clears the status line right after.
 9. Suggestion: `Pacing.h:30`. `pause_before()` counts files in the list, including ones skipped (403/404), so a skipped file counts toward the 25 though it cost a request, which is what's wanted. Retries don't count toward the batch; after a 429 retry the next batch pause still comes at the same index. Fine as spec'd.
 10. Checked, no problem: `fetch_paced()` compiles for both `GarminError` and `WahooError` because both have `status`; a network failure has status 0 and isn't retried. Garmin's `get()` turns only 401 into `rejected()` (`is_rejection`), so a 429 reaches `fetch_paced()` as `Failed` with status 429, from the token endpoint as well (no retry there; the list likewise). A 429 for an activity list stops with "Garmin Connect answered HTTP 429 for ..." (Wahoo: "Wahoo's limit on requests is reached. Try again ..."), as the spec says. `notify_latest` replaces a queued Downloading, and the next file's progress call sets the count again after a batch pause, so the status line is right after a pause. The pause blocks the one job thread, as a request does; `AppBus::start` runs it as a plain `std::thread` that is never joined, so quitting doesn't wait for the sleep.
 11. Missing test, added: `GarminTest.cpp` `test_too_many_requests_for_the_list_is_not_retried` (a 429 for the list stops at once, no wait, not a key rejection) and `test_retries_are_per_file` (the retry count restarts for each file). Both pass.
