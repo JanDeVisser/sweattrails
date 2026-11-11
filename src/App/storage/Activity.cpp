@@ -647,7 +647,7 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
             return true;
         }
         segment.start_time = s->start_time;
-        segment.moving = Duration { s->total_timer_time };
+        segment.moving = Duration { s->total_timer_time.value_or(s->total_elapsed_time) };
         segment.elapsed = Duration { s->total_elapsed_time };
         segment.end_time = s->timestamp;
         if (s->sport) {
@@ -681,7 +681,7 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
             }
             Lap lap { };
             lap.segment.start_time = l->start_time;
-            lap.segment.moving = Duration { l->total_timer_time };
+            lap.segment.moving = Duration { l->total_timer_time.value_or(l->total_elapsed_time) };
             lap.segment.elapsed = Duration { l->total_elapsed_time };
             lap.segment.end_time = l->timestamp;
             if (l->total_distance) {

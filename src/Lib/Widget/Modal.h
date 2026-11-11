@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <functional>
 #include <map>
 #include <ranges>
 #include <string>
@@ -17,6 +18,7 @@
 
 #include <raylib.h>
 
+#include <StringUtil.h>
 #include <Utf8.h>
 
 #include <App.h>
@@ -76,6 +78,29 @@ struct Modal : public Widget {
         status = ModalStatus::Dormant;
     }
 };
+
+// How wide a list box is for its prompt, and the prompt's lines: half the
+// screen, wider for a longer prompt, up to MaxPromptShare of the screen,
+// past which the prompt wraps. A message such as a download's error can be
+// longer than the screen is wide.
+struct PromptLayout {
+    float                    width { 0 };
+    std::vector<std::string> lines { };
+};
+
+constexpr float MaxPromptShare = 0.8f;
+constexpr float PromptMargin = 16.0f; // 8 pixels left and right
+
+inline PromptLayout layout_prompt(std::string_view prompt, float screen_width, std::function<float(std::string_view)> const &measure)
+{
+    auto const widest = screen_width * MaxPromptShare;
+    auto const width = std::clamp(measure(prompt) + PromptMargin, screen_width / 2, std::max(widest, screen_width / 2));
+    auto       lines = wrap_words(prompt, width - PromptMargin, measure);
+    if (lines.empty()) {
+        lines.emplace_back();
+    }
+    return PromptLayout { .width = width, .lines = std::move(lines) };
+}
 
 struct ListBoxConfig {
     bool search { true };
@@ -166,7 +191,8 @@ struct ListBox : public Modal {
     ListBoxEntries                   entries { };
     ListBoxEntries                   matches { };
     std::string                      search { };
-    ScrollRange                      scroll { }; // Of the entries on display
+    std::vector<std::string>         prompt_lines { }; // The prompt, wrapped by resize()
+    ScrollRange                      scroll { };       // Of the entries on display
     Scrollbar                        scrollbar { };
     Rectangle                        track { };     // The scrollbar's, where draw() drew it
     Rectangle                        rows_area { }; // The entries', where draw() drew them
@@ -338,30 +364,41 @@ struct ListBox : public Modal {
         auto fg = RAYWHITE; // Theme::the().fg();
         draw_rectangle(0.0f, 0.0f, 0.0f, 0.0, bg);
         draw_outline(2ul, 2ul, -2.0f, -2.0f, fg);
-        render_text(8, 8, prompt, FontSize::Medium, fg);
+        auto const line_height = App::the()->cell().y + 2;
+        for (auto ix = 0uz; ix < prompt_lines.size(); ++ix) {
+            render_text(8, 8 + static_cast<float>(ix) * line_height, prompt_lines[ix], FontSize::Medium, fg);
+        }
         render_text(-8, 8, search, FontSize::Medium, fg);
-        draw_line(2, App::the()->cell().y + 10, -2, App::the()->cell().y + 10, fg);
-        draw_entries(App::the()->cell().y + 14);
+        auto const prompt_height = prompt_lines_height();
+        draw_line(2, prompt_height + 10, -2, prompt_height + 10, fg);
+        draw_entries(static_cast<size_t>(prompt_height + 14));
+    }
+
+    // The height of the prompt's lines, without the margins around them.
+    [[nodiscard]] float prompt_lines_height() const
+    {
+        auto const lines = static_cast<float>(std::max(prompt_lines.size(), 1uz));
+        return lines * App::the()->cell().y + (lines - 1) * 2;
     }
 
     void resize() override
     {
         auto const &screen = App::the()->viewport;
         auto const &cell = App::the()->cell();
-        viewport.x = screen.width / 4;
+        auto        layout = layout_prompt(prompt, screen.width, [](std::string_view text) {
+            return App::measure_text(std::string { text }.c_str(), FontSize::Medium).x;
+        });
+        prompt_lines = std::move(layout.lines);
+        auto const prompt_height = prompt_lines_height();
+        viewport.width = layout.width;
+        viewport.x = (screen.width - viewport.width) / 2;
         viewport.y = screen.height / 4;
-        viewport.width = screen.width / 2;
         viewport.height = screen.height / 2;
-        scroll.lines = (viewport.height - 19 + cell.y) / (cell.y + 2);
+        scroll.lines = (viewport.height - 19 - prompt_height + cell.y) / (cell.y + 2);
         if constexpr (Config.shrink && !Config.search) {
             scroll.lines = clamp(scroll.lines, 0, entries.size());
         }
-        auto const m = App::measure_text(prompt.c_str(), FontSize::Medium);
-        if (m.x > viewport.width - 16) {
-            viewport.width = m.x + 16;
-            viewport.x = (screen.width - m.x) / 2;
-        }
-        viewport.height = 19 + cell.y + scroll.lines * (cell.y + 2);
+        viewport.height = 19 + prompt_height + scroll.lines * (cell.y + 2);
         // The number of lines may have changed.
         scroll_to_selection();
     }

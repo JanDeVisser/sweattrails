@@ -50,7 +50,7 @@ StravaError not_logged_in()
 
 StravaError unreachable(LibCError const &error)
 {
-    return failed(std::format("Could not reach Strava: {}", error.to_string()));
+    return failed(std::format("Could not reach Strava: {}", error.description));
 }
 
 StravaError http_error(HttpResponse const &response, std::string_view what, i64 now)
@@ -243,10 +243,19 @@ StravaResult<HttpResponse> Strava::get(std::string const &path)
     if (auto const refreshed = refresh_if_expiring(); !refreshed) {
         return std::unexpected(refreshed.error());
     }
-    auto response = fetch(HttpRequest {
+    HttpRequest const request {
         .url = std::format("{}{}", StravaBaseUrl, path),
         .headers = { "Accept: application/json", std::format("Authorization: Bearer {}", tokens->access_token) },
-    });
+    };
+    auto response = fetch(request);
+    for (auto retry = 0; retry < retries && (!response || response->status >= 500); ++retry) {
+        warning(Strava, "Strava didn't answer `{}` ({}): asking again in {}", path,
+            response ? std::format("HTTP {}", response->status) : response.error().to_string(), retry_pause);
+        if (wait) {
+            wait(retry_pause);
+        }
+        response = fetch(request);
+    }
     if (!response) {
         return std::unexpected(unreachable(response.error()));
     }

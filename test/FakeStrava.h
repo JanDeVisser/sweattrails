@@ -29,7 +29,8 @@ constexpr i64 Now = 1793275500;
 // Strava, as far as the tests need it: answers by the request's path,
 // without its query, in the order the answers were given, and remembers
 // the requests. Out of answers, the list of activities is empty, and
-// anything else isn't found.
+// anything else isn't found. An answer with status 0 is no answer: the
+// request times out.
 struct FakeStrava {
     std::map<std::string, std::vector<HttpResponse>> responses { };
     std::vector<HttpRequest>                         requests { };
@@ -54,6 +55,9 @@ struct FakeStrava {
             }
             auto response = queue.front();
             queue.erase(queue.begin());
+            if (response.status == 0) {
+                return std::unexpected(LibCError { std::string { "Timeout was reached" } });
+            }
             return response;
         };
     }

@@ -17,6 +17,7 @@
 #include <vector>
 
 #include <JSON.h>
+#include <Logging.h>
 
 namespace ST {
 
@@ -38,6 +39,37 @@ std::optional<StravaClient> strava_client(JSONValue const &settings);
 // What to tell the user about Strava's setup: how to set it up without a
 // client, that the secret is missing without one, or nothing.
 std::optional<std::string> strava_setup_problem(std::optional<StravaClient> const &client);
+
+// Whether a source that brings in activities is set up: Garmin Connect
+// with a key, or Wahoo with a client ID. Strava brings in only titles.
+bool downloads_activities(JSONValue const &settings, bool has_garmin_key);
+
+// How far back "Everything" goes: before any GPS watch wrote a FIT file.
+constexpr int EverythingSinceYear = 1990;
+
+// A period "Download activities from…" offers.
+struct DownloadPeriod {
+    std::string text { };
+    int         days { 0 };
+};
+
+// The periods "Download activities from…" offers, each with the days it
+// looks back from `now`, a Unix time, in local time: see
+// specs/43-download-history.md.
+std::vector<DownloadPeriod> download_periods(i64 now);
+
+// Where a download from a source is, for the status line.
+enum class DownloadStep {
+    Starting,    // Asked for, and waiting for the jobs before it
+    Listing,     // Asking the source what there is to download
+    Downloading, // A file, of the ones to download
+    Pausing,     // Between files: see Pacing
+    Retrying,    // The source didn't answer, and is asked again after a wait
+};
+
+// What the status line says at `step` of a download from `source`, at the
+// file `index` of `count`.
+std::string download_status(DownloadStep step, std::string_view source = { }, size_t index = 0, size_t count = 0);
 
 // What a download is asked to do: the task's arguments, with the settings
 // filling in what they don't say.
@@ -99,5 +131,10 @@ struct DownloadReport {
 // Quiet, only failures are reported, and the login isn't offered. Of two
 // sources that need a login, the first is offered.
 DownloadReport download_report(std::vector<SourceOutcome> const &outcomes, bool quiet);
+
+// The arguments for the login a download's report offers, so that the
+// download after it looks back as far as this one: `days`, the request's
+// for that source.
+JSONValue login_arguments(DownloadRequest const &request, std::string_view source);
 
 }

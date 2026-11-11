@@ -235,7 +235,7 @@ struct lap {
     DateTime                     timestamp;
     DateTime                     start_time;
     f32                          total_elapsed_time;
-    f32                          total_timer_time;
+    std::optional<f32>           total_timer_time = { }; // Older files only have the elapsed time
     std::optional<f32>           total_distance = { };
     std::optional<u16>           total_calories = { };
     std::optional<sport>         sport = { };
@@ -249,7 +249,7 @@ struct session {
     std::optional<sport>     sport = { };
     std::optional<sub_sport> sub_sport = { };
     f32                      total_elapsed_time;
-    f32                      total_timer_time;
+    std::optional<f32>       total_timer_time = { }; // Older files only have the elapsed time
     std::optional<f32>       total_distance = { };
     std::optional<u16>       total_calories = { };
     std::optional<u16>       first_lap_index = { };
@@ -262,7 +262,7 @@ struct session {
 
 struct activity {
     DateTime                timestamp;
-    f32                     total_timer_time;
+    std::optional<f32>      total_timer_time = { };
     u16                     num_sessions;
     std::optional<DateTime> local_timestamp;
     std::vector<session>    sessions;

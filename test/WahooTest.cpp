@@ -8,6 +8,7 @@
  */
 
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <map>
 #include <string>
@@ -613,6 +614,44 @@ void test_failed_download_keeps_the_earlier_ones()
     CHECK_EQ(fake.count(cdn_url(3)), 0uz);
 }
 
+// A pause after every batch, and a workout Wahoo's CDN says it's had too
+// many requests for is asked for again after one.
+void test_download_is_paced()
+{
+    FakeWahoo fake;
+    TempDir   dir { "wahoo-paced" };
+    TempStore store;
+    auto      wahoo = logged_in(fake, dir);
+    fake.answer("/v1/workouts", { .status = 200, .body = page_of({ workout(1, starts(0), "a"), workout(2, starts(1), "b"), workout(3, starts(2), "c") }, 3) });
+    fake.answer(cdn_url(1), { .status = 200, .body = "fit 1" });
+    fake.answer(cdn_url(2), { .status = 200, .body = "fit 2" });
+    fake.answer(cdn_url(3), { .status = TooManyRequests, .body = "" });
+    fake.answer(cdn_url(3), { .status = 200, .body = "fit 3" });
+    size_t     pauses { 0 };
+    auto const count = download_new_workouts(wahoo, store.storage, 0, { }, Pacing { .batch = 2, .wait = [&pauses](std::chrono::seconds) { ++pauses; } });
+    CHECK_EQ(count.value_or(99), 3uz);
+    // One between the batches, one for the retry.
+    CHECK_EQ(pauses, 2uz);
+    CHECK_EQ(fake.count(cdn_url(3)), 2uz);
+}
+
+// Past the retries, the download stops with the error.
+void test_too_many_requests_past_the_retries()
+{
+    FakeWahoo fake;
+    TempDir   dir { "wahoo-too-many" };
+    TempStore store;
+    auto      wahoo = logged_in(fake, dir);
+    fake.answer("/v1/workouts", { .status = 200, .body = page_of({ workout(1, starts(0), "a") }, 1) });
+    for (auto ix = 0; ix < 4; ++ix) {
+        fake.answer(cdn_url(1), { .status = TooManyRequests, .body = "" });
+    }
+    size_t     pauses { 0 };
+    auto const count = download_new_workouts(wahoo, store.storage, 0, { }, Pacing { .wait = [&pauses](std::chrono::seconds) { ++pauses; } });
+    CHECK(!count.has_value() && count.error().status == TooManyRequests);
+    CHECK_EQ(pauses, 3uz);
+    CHECK_EQ(fake.count(cdn_url(1)), 4uz);
+}
 }
 
 int main()
@@ -642,5 +681,7 @@ int main()
     test_download_new_workouts();
     test_unavailable_file_is_skipped();
     test_failed_download_keeps_the_earlier_ones();
+    test_download_is_paced();
+    test_too_many_requests_past_the_retries();
     return ST::Test::test_result();
 }

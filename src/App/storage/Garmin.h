@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -23,6 +24,7 @@
 #include <Logging.h>
 
 #include <Http.h>
+#include <storage/Pacing.h>
 
 namespace ST {
 
@@ -43,6 +45,7 @@ struct GarminError {
     enum class Kind {
         NoKey,       // There's no key: the user hasn't set up Garmin Connect.
         KeyRejected, // Expired or revoked: the user has to make a new one.
+        NotFit,      // The activity's file isn't a FIT file, such as an uploaded TCX file.
         Failed,      // Anything else: no connection, an HTTP error, bad data.
     };
 
@@ -91,6 +94,15 @@ private:
     GarminResult<HttpResponse> get(std::string const &path, std::string accept);
 };
 
+// Where the activities Garmin Connect has no FIT file for are remembered,
+// so that a download doesn't ask for them again: a line each, with the
+// activity's ID and why. Deleting it asks for them all again. See
+// specs/43-download-history.md.
+fs::path garmin_unavailable_file(Storage const &storage);
+
+// The IDs in the file of unavailable activities; none if there's no file.
+std::set<u64> read_unavailable(fs::path const &file);
+
 // Called before each activity is downloaded, with its index and the number
 // of activities to download.
 using GarminProgress = std::function<void(size_t index, size_t count)>;
@@ -98,9 +110,16 @@ using GarminProgress = std::function<void(size_t index, size_t count)>;
 // Downloads the activities of the last `days` days that the store doesn't
 // have into its inbox: `garmin-<id>.json`, the activity's summary, and
 // `garmin-<id>.fit`. The inbox organizes them as any other file. Returns
-// how many were downloaded. An activity Garmin Connect won't hand over (403
-// or 404) is skipped with a warning; any other error stops the download.
-// Activities downloaded before an error stay in the inbox.
-GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage const &storage, std::string_view start_date, GarminProgress const &progress = { });
+// how many were downloaded. An activity Garmin Connect won't hand over (an
+// HTTP error other than 401 and 429), or whose file isn't a FIT file, is
+// skipped with a warning; any other error, such as no connection, stops
+// the download. One without a FIT file for good (a TCX file, 403, 404 or
+// 500) is remembered in garmin_unavailable_file(), and not asked for again. So is one the inbox set aside as a
+// duplicate before, as `duplicates/garmin-<id>.fit` or `-<n>.fit`: its start
+// time on Garmin Connect isn't the store's, and it would come again on every
+// download.
+// Activities downloaded before an error stay in the inbox. The FIT files
+// are downloaded as `pacing` says: see specs/43-download-history.md.
+GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage const &storage, std::string_view start_date, GarminProgress const &progress = { }, Pacing const &pacing = { });
 
 }

@@ -217,18 +217,20 @@ std::expected<void, FITError> FITFile::read_header()
 
     // read_slice() asserts that the data is there, so check the length of
     // the file before reading the header, and against the header after.
-    if (buffer.length() < 14) {
-        std::println("read_header: file is only {} bytes", buffer.length());
+    // The header is 12 bytes, or 14 with a CRC: older devices, and Garmin
+    // Connect's files of their activities, have the 12.
+    if (buffer.length() < 12) {
+        trace(FIT, "read_header: file is only {} bytes", buffer.length());
         return std::unexpected(FITError::Truncated);
     }
-    std::string_view header_data = read_slice(14);
+    std::string_view header_data = read_slice(12);
     u8 const         header_size = header_data[0];
-    if (header_size > 14) {
-        std::println("read_header: large header {}", header_size);
-        return std::unexpected(FITError::LargeHeaderSizeUnsupported);
+    if (header_size != 12 && header_size != 14) {
+        trace(FIT, "read_header: header size {}", header_size);
+        return std::unexpected(FITError::HeaderSizeUnsupported);
     }
     if (header_data.substr(8, 4) != ".FIT") {
-        std::println("read_header: header magic missing");
+        trace(FIT, "read_header: header magic missing");
         return std::unexpected(FITError::HeaderMagicMissing);
     }
 
@@ -238,11 +240,15 @@ std::expected<void, FITError> FITFile::read_header()
         .profile_version = fit_read<u16>(FITArchitecture::LittleEndian, header_data.substr(2)),
         .data_size = fit_read<u32>(FITArchitecture::LittleEndian, header_data.substr(4)),
     };
-    if (header_size >= 14) {
-        header.crc = fit_read<u16>(FITArchitecture::LittleEndian, header_data.substr(12));
+    if (header_size == 14) {
+        if (buffer.length() < 14) {
+            trace(FIT, "read_header: file is only {} bytes", buffer.length());
+            return std::unexpected(FITError::Truncated);
+        }
+        header.crc = fit_read<u16>(FITArchitecture::LittleEndian, read_slice(2));
     }
     if (static_cast<size_t>(header.header_size) + header.data_size > buffer.length()) {
-        std::println("read_header: header says {} data bytes, file has {}", header.data_size, buffer.length() - header.header_size);
+        trace(FIT, "read_header: header says {} data bytes, file has {}", header.data_size, buffer.length() - header.header_size);
         return std::unexpected(FITError::Truncated);
     }
     if (verbose) {
@@ -436,37 +442,38 @@ std::expected<FITDataField, FITError> FITFile::read_developer_field(LocalDefinit
 std::expected<FITDataRecord, FITError> FITFile::read_data_record(RecordHeader record_header)
 {
     std::optional<u32> compressed_timestamp { };
-    size_t             def_ix = std::visit(
+    u8 const           local_message_type = std::visit(
         overloaded {
-            [this](u8 const &data_header) -> size_t {
-                if (verbose) {
-                    std::println("message {} -> {} {}",
-                        data_header,
-                        definitions[current_definitions[data_header]].global_msg_num,
-                        tag(static_cast<mesg_num>(definitions[current_definitions[data_header]].global_msg_num)));
-                }
-                return current_definitions[data_header];
+            [](u8 const &data_header) -> u8 {
+                return data_header;
             },
-            [this, &compressed_timestamp](RecordHeader::CompressedTimestamp const &ts_header) -> size_t {
-                if (verbose) {
-                    std::println("compressed timestamp message {} -> {} {}",
-                        ts_header.local_message_type,
-                        definitions[current_definitions[ts_header.local_message_type]].global_msg_num,
-                        tag(static_cast<mesg_num>(definitions[current_definitions[ts_header.local_message_type]].global_msg_num)));
-                }
+            [this, &compressed_timestamp](RecordHeader::CompressedTimestamp const &ts_header) -> u8 {
                 // The header holds the low 5 bits of the timestamp. It rolls over
                 // when they are smaller than those of the last timestamp.
                 last_timestamp = (ts_header.time_offset >= (last_timestamp & 0x1F))
                     ? (last_timestamp & 0xFFFFFFE0) + ts_header.time_offset
                     : (last_timestamp & 0xFFFFFFE0) + ts_header.time_offset + 0x20;
                 compressed_timestamp = last_timestamp;
-                return current_definitions[ts_header.local_message_type];
+                return ts_header.local_message_type;
             },
-            [](auto const &) -> size_t {
+            [](auto const &) -> u8 {
                 std::unreachable();
             },
         },
         record_header.header);
+    // A data record for a local message type no definition came before: the
+    // file is broken, and there's no telling how long the record is.
+    auto const def_ix = current_definitions[local_message_type & 0x0F];
+    if (def_ix >= definitions.size()) {
+        return std::unexpected(FITError::UndefinedLocalMessage);
+    }
+    if (verbose) {
+        std::println("{}message {} -> {} {}",
+            compressed_timestamp ? "compressed timestamp " : "",
+            local_message_type,
+            definitions[def_ix].global_msg_num,
+            tag(static_cast<mesg_num>(definitions[def_ix].global_msg_num)));
+    }
     LocalDefinition &def = definitions[def_ix];
 
     std::vector<FITDataField> fields;

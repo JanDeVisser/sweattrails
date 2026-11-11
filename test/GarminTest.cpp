@@ -8,11 +8,13 @@
  */
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
 #include <format>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -352,6 +354,208 @@ void test_download_new_activities()
     CHECK(progress == (std::vector<std::pair<size_t, size_t>> { { 0, 1 } }));
 }
 
+// An activity uploaded as a TCX file has no FIT file to download: it's
+// skipped, and the ones after it still come. It used to stop the download.
+void test_activity_without_a_fit_file_is_skipped()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(6, 1792700000, "C"), list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    fake.answer(download_path(6), { .status = 200, .body = fit_zip(6, "c") });
+    fake.answer(download_path(5), { .status = 200, .body = make_zip({ { .name = "5_UNKNOWN.tcx", .contents = "<TrainingCenterDatabase/>" } }) });
+    fake.answer(download_path(4), { .status = 200, .body = fit_zip(4, "a") });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23").value_or(99), 2uz);
+    CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-4.fit", "garmin-4.json", "garmin-6.fit", "garmin-6.json" }));
+    fake.answer(download_path(5), { .status = 200, .body = make_zip({ { .name = "5_UNKNOWN.tcx", .contents = "<TrainingCenterDatabase/>" } }) });
+    auto const tcx = garmin.download_fit(5);
+    CHECK(!tcx.has_value() && tcx.error().kind == GarminError::Kind::NotFit);
+}
+
+// An activity the inbox set aside as a duplicate, once or more, isn't
+// downloaded again: its start time on Garmin Connect isn't the store's.
+void test_duplicates_set_aside_are_not_downloaded_again()
+{
+    TempStore  store;
+    auto const duplicates = store.storage.inbox_dir / "duplicates";
+    fs::create_directories(duplicates);
+    for (auto const *name : { "garmin-6.fit", "garmin-5-3.fit", "garmin-5-3.json", "wahoo-4.fit" }) {
+        MUST(write_file_by_name((duplicates / name).string(), std::string_view { "set aside" }));
+    }
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(6, 1792700000, "C"), list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    fake.answer(download_path(4), { .status = 200, .body = fit_zip(4, "a") });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23").value_or(99), 1uz);
+    CHECK_EQ(downloads(fake), 1uz);
+}
+
+// Activities without a FIT file for good, a TCX file and a 500, are
+// remembered and not asked for again; one a gateway's error kept back is
+// asked for again next time.
+void test_unavailable_activities_are_remembered()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    auto const list = list_of({ list_entry(7, 1792800000, "D"), list_entry(6, 1792700000, "C"), list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") });
+    fake.answer(ListPath, { .status = 200, .body = list });
+    fake.answer(download_path(7), { .status = 200, .body = make_zip({ { .name = "7_UNKNOWN.tcx", .contents = "<TrainingCenterDatabase/>" } }) });
+    fake.answer(download_path(6), { .status = 500, .body = "" });
+    fake.answer(download_path(5), { .status = 503, .body = "Busy" });
+    fake.answer(download_path(4), { .status = 200, .body = fit_zip(4, "a") });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23").value_or(99), 1uz);
+    CHECK(read_unavailable(garmin_unavailable_file(store.storage)) == (std::set<u64> { 6, 7 }));
+
+    fake.requests.clear();
+    fake.answer(ListPath, { .status = 200, .body = list });
+    fake.answer(download_path(5), { .status = 200, .body = fit_zip(5, "b") });
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23").value_or(99), 1uz);
+    CHECK_EQ(downloads(fake), 1uz);
+}
+
+void test_read_unavailable()
+{
+    TempStore store;
+    CHECK(read_unavailable(garmin_unavailable_file(store.storage)).empty());
+    MUST(write_file_by_name(garmin_unavailable_file(store.storage).string(), std::string_view { "12 The download of activity 12 has no FIT file\n\nnot an ID\n34 Garmin Connect answered HTTP 500\n" }));
+    CHECK(read_unavailable(garmin_unavailable_file(store.storage)) == (std::set<u64> { 12, 34 }));
+}
+
+// What a download's pacing did: the pauses, and where in the download
+// they came, as the index of the next progress call.
+struct PacingLog {
+    std::vector<std::chrono::seconds> pauses { };
+    std::vector<size_t>               at { };
+    size_t                            next { 0 };
+
+    Pacing pacing(size_t batch)
+    {
+        return Pacing {
+            .batch = batch,
+            .wait = [this](std::chrono::seconds pause) { pauses.push_back(pause); at.push_back(next); },
+        };
+    }
+
+    GarminProgress progress()
+    {
+        return [this](size_t index, size_t) { next = index + 1; };
+    }
+};
+
+// `count` new activities on Garmin Connect, ids 1 to `count`, each with a
+// FIT file.
+void list_new_activities(FakeGarmin &fake, u64 count)
+{
+    std::vector<JSONValue> entries;
+    for (u64 id = 1; id <= count; ++id) {
+        entries.push_back(list_entry(id, 1792000000 + static_cast<i64>(id) * 10000, "Ride"));
+        fake.answer(download_path(id), { .status = 200, .body = fit_zip(id, "ride") });
+    }
+    fake.answer(ListPath, { .status = 200, .body = list_of(entries) });
+}
+
+// A pause after every batch, and none in a download of one batch or less.
+void test_download_pauses_between_batches()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    list_new_activities(fake, 5);
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    PacingLog     log;
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23", log.progress(), log.pacing(2)).value_or(99), 5uz);
+    // Before the third and the fifth.
+    CHECK(log.at == (std::vector<size_t> { 2, 4 }));
+    CHECK(log.pauses == (std::vector<std::chrono::seconds> { std::chrono::seconds { 60 }, std::chrono::seconds { 60 } }));
+
+    TempStore  small_store;
+    FakeGarmin small;
+    list_new_activities(small, 25);
+    GarminConnect small_garmin { .fetch = small.fetch(), .token = "token" };
+    PacingLog     small_log;
+    CHECK_EQ(download_new_activities(small_garmin, small_store.storage, "2026-09-23", small_log.progress(), small_log.pacing(25)).value_or(99), 25uz);
+    CHECK(small_log.pauses.empty());
+}
+
+// Garmin Connect saying it's had too many requests gets a pause, and the
+// same file is asked for again.
+void test_too_many_requests_is_retried()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    fake.answer(download_path(5), { .status = 200, .body = fit_zip(5, "b") });
+    fake.answer(download_path(4), { .status = TooManyRequests, .body = "Too many requests" });
+    fake.answer(download_path(4), { .status = TooManyRequests, .body = "Too many requests" });
+    fake.answer(download_path(4), { .status = 200, .body = fit_zip(4, "a") });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    PacingLog     log;
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23", log.progress(), log.pacing(25)).value_or(99), 2uz);
+    CHECK_EQ(log.pauses.size(), 2uz);
+    CHECK_EQ(downloads(fake), 4uz);
+    CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-4.fit", "garmin-4.json", "garmin-5.fit", "garmin-5.json" }));
+}
+
+// Past the retries, the download stops with the error, and what came
+// before stays in the inbox.
+void test_too_many_requests_past_the_retries()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    fake.answer(download_path(5), { .status = 200, .body = fit_zip(5, "b") });
+    for (auto ix = 0; ix < 4; ++ix) {
+        fake.answer(download_path(4), { .status = TooManyRequests, .body = "Too many requests" });
+    }
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    PacingLog     log;
+    auto const    count = download_new_activities(garmin, store.storage, "2026-09-23", log.progress(), log.pacing(25));
+    CHECK(!count.has_value());
+    if (!count) {
+        CHECK_EQ(count.error().status, TooManyRequests);
+    }
+    CHECK_EQ(log.pauses.size(), 3uz);
+    CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-5.fit", "garmin-5.json" }));
+}
+
+// The activity list isn't paced or retried: a 429 for it stops the
+// download at once, with nothing waited for.
+void test_too_many_requests_for_the_list_is_not_retried()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = TooManyRequests, .body = "Too many requests" });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    PacingLog     log;
+    auto const    count = download_new_activities(garmin, store.storage, "2026-09-23", log.progress(), log.pacing(25));
+    CHECK(!count.has_value());
+    if (!count) {
+        CHECK_EQ(count.error().status, TooManyRequests);
+        CHECK(count.error().kind != GarminError::Kind::KeyRejected);
+    }
+    CHECK(log.pauses.empty());
+    CHECK(store.inbox().empty());
+}
+
+// The retries are per file: two files that each need one retry get it, with
+// one retry allowed.
+void test_retries_are_per_file()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    for (u64 id : { 5, 4 }) {
+        fake.answer(download_path(id), { .status = TooManyRequests, .body = "" });
+        fake.answer(download_path(id), { .status = 200, .body = fit_zip(id, "x") });
+    }
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    PacingLog     log;
+    auto          pacing = log.pacing(25);
+    pacing.retries = 1;
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23", log.progress(), pacing).value_or(99), 2uz);
+    CHECK_EQ(log.pauses.size(), 2uz);
+}
+
 // Run again before the inbox is processed, the download doesn't fetch what
 // the inbox already has.
 void test_download_skips_what_the_inbox_has()
@@ -365,18 +569,36 @@ void test_download_skips_what_the_inbox_has()
     CHECK_EQ(downloads(fake), 0uz);
 }
 
-// A failed download stops the download, but what came before it stays.
+// A failed download stops the download, but what came before it stays:
+// here the key, rejected half way.
 void test_failed_download_keeps_the_earlier_ones()
 {
     TempStore  store;
     FakeGarmin fake;
     fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
     fake.answer(download_path(5), { .status = 200, .body = fit_zip(5, "b") });
-    fake.answer(download_path(4), { .status = 503, .body = "Busy" });
+    fake.answer(download_path(4), { .status = 401, .body = "Unauthorized" });
     GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
     auto const    count = download_new_activities(garmin, store.storage, "2026-09-23");
-    CHECK(!count.has_value());
+    CHECK(!count.has_value() && count.error().kind == GarminError::Kind::KeyRejected);
     CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-5.fit", "garmin-5.json" }));
+}
+
+// Garmin Connect answers HTTP 500 for older activities without a file, such
+// as treadmill runs: they're skipped, as is any other HTTP error for one
+// activity, and the ones after them still come. They used to stop the
+// download.
+void test_server_error_for_one_activity_is_skipped()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(6, 1792700000, "C"), list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    fake.answer(download_path(6), { .status = 500, .body = "" });
+    fake.answer(download_path(5), { .status = 503, .body = "Busy" });
+    fake.answer(download_path(4), { .status = 200, .body = fit_zip(4, "a") });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23").value_or(99), 1uz);
+    CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-4.fit", "garmin-4.json" }));
 }
 
 // A downloaded activity goes through the inbox as any other: it's filed
@@ -459,8 +681,18 @@ int main()
     test_download_unzips_the_fit_file();
     test_download_without_a_fit_file();
     test_download_new_activities();
+    test_activity_without_a_fit_file_is_skipped();
+    test_duplicates_set_aside_are_not_downloaded_again();
+    test_download_pauses_between_batches();
+    test_too_many_requests_is_retried();
+    test_too_many_requests_past_the_retries();
+    test_too_many_requests_for_the_list_is_not_retried();
+    test_retries_are_per_file();
     test_download_skips_what_the_inbox_has();
     test_failed_download_keeps_the_earlier_ones();
+    test_server_error_for_one_activity_is_skipped();
+    test_unavailable_activities_are_remembered();
+    test_read_unavailable();
     test_has_activity();
     test_downloaded_activity_goes_through_the_inbox();
     return ST::Test::test_result();

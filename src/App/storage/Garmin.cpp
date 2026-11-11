@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <ctime>
 #include <format>
+#include <fstream>
+#include <set>
 #include <system_error>
 
 #include <IO.h>
@@ -54,10 +56,31 @@ GarminError http_error(long status, std::string message)
     return GarminError { .kind = GarminError::Kind::Failed, .message = std::move(message), .status = status };
 }
 
-// Garmin Connect won't hand over this one activity.
+// Garmin Connect won't hand over this one activity, or it isn't a FIT file.
+// Older activities without a file, such as treadmill runs entered by hand,
+// get an HTTP 500. Too many requests is waited for instead, and a rejected
+// key stops the download.
 bool unavailable(GarminError const &error)
 {
-    return error.status == 403 || error.status == 404;
+    return error.kind == GarminError::Kind::NotFit
+        || (error.kind == GarminError::Kind::Failed && error.status >= 400 && error.status != TooManyRequests);
+}
+
+// Whether an activity Garmin Connect won't hand over never will: it has
+// no FIT file. A gateway's error (502 to 504) says Garmin Connect itself
+// is in trouble, and the activity may come next time.
+bool unavailable_for_good(GarminError const &error)
+{
+    return error.kind == GarminError::Kind::NotFit || error.status == 403 || error.status == 404 || error.status == 500;
+}
+
+void remember_unavailable(Storage const &storage, u64 id, std::string_view why)
+{
+    std::ofstream file { garmin_unavailable_file(storage), std::ios::app };
+    file << id << ' ' << why << '\n';
+    if (!file) {
+        warning(Garmin, "Couldn't remember activity {} as unavailable in `{}`", id, garmin_unavailable_file(storage).string());
+    }
 }
 
 GarminResult<void> write_whole_file(fs::path const &path, std::string_view contents)
@@ -68,6 +91,49 @@ GarminResult<void> write_whole_file(fs::path const &path, std::string_view conte
     return { };
 }
 
+// The IDs of the activities the inbox set aside as duplicates:
+// `garmin-<id>.fit`, or `garmin-<id>-<n>.fit` for later copies.
+std::set<u64> set_aside_as_duplicates(Storage const &storage)
+{
+    std::set<u64>   ret;
+    std::error_code ec { };
+    for (fs::directory_iterator it { storage.inbox_dir / "duplicates", ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
+        auto const name = it->path().filename().string();
+        if (!name.starts_with("garmin-") || !name.ends_with(".fit")) {
+            continue;
+        }
+        auto const id = std::string_view { name }.substr(7, name.size() - 11);
+        if (auto const parsed = string_to_integer<u64>(id.substr(0, id.find('-')), 10); parsed) {
+            ret.insert(*parsed);
+        }
+    }
+    return ret;
+}
+
+}
+
+fs::path garmin_unavailable_file(Storage const &storage)
+{
+    return storage.data_dir / "garmin-unavailable.txt";
+}
+
+std::set<u64> read_unavailable(fs::path const &file)
+{
+    std::set<u64> ret;
+    auto const    contents = read_file_by_name(file.string());
+    if (!contents) {
+        return ret;
+    }
+    for (auto const &line : split(*contents, '\n')) {
+        // string_to_integer() takes an empty string for 0.
+        if (line.empty()) {
+            continue;
+        }
+        if (auto const id = string_to_integer<u64>(line.substr(0, line.find(' ')), 10); id) {
+            ret.insert(*id);
+        }
+    }
+    return ret;
 }
 
 fs::path garmin_key_file()
@@ -141,7 +207,7 @@ GarminResult<void> GarminConnect::obtain_token(std::string_view key)
         .headers = { "Accept: */*", std::format("Authorization: ApiKey {}", key) },
     });
     if (!response) {
-        return std::unexpected(failed(std::format("Could not reach Garmin Connect: {}", response.error().to_string())));
+        return std::unexpected(failed(std::format("Could not reach Garmin Connect: {}", response.error().description)));
     }
     if (is_rejection(response->status) || response->status == 403) {
         return std::unexpected(rejected());
@@ -160,7 +226,7 @@ GarminResult<HttpResponse> GarminConnect::get(std::string const &path, std::stri
         .headers = { std::format("Accept: {}", accept), std::format("Authorization: Bearer {}", token) },
     });
     if (!response) {
-        return std::unexpected(failed(std::format("Could not reach Garmin Connect: {}", response.error().to_string())));
+        return std::unexpected(failed(std::format("Could not reach Garmin Connect: {}", response.error().description)));
     }
     if (is_rejection(response->status)) {
         return std::unexpected(rejected());
@@ -218,33 +284,41 @@ GarminResult<std::string> GarminConnect::download_fit(u64 id)
             return std::move(*fit);
         }
     }
-    return std::unexpected(failed(std::format("The download of activity {} has no FIT file", id)));
+    return std::unexpected(GarminError { .kind = GarminError::Kind::NotFit, .message = std::format("The download of activity {} has no FIT file", id) });
 }
 
-GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage const &storage, std::string_view start_date, GarminProgress const &progress)
+GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage const &storage, std::string_view start_date, GarminProgress const &progress, Pacing const &pacing)
 {
     auto const listed = garmin.list_activities(start_date);
     if (!listed) {
         return std::unexpected(listed.error());
     }
+    auto const                  duplicates = set_aside_as_duplicates(storage);
+    auto const                  unavailable_ones = read_unavailable(garmin_unavailable_file(storage));
     std::vector<GarminActivity> wanted;
     for (auto const &activity : *listed) {
         // Downloaded before, but not organized yet: the inbox will.
         std::error_code ec { };
         auto const      in_inbox = fs::exists(storage.inbox_dir / std::format("garmin-{}.fit", activity.id), ec);
-        if (activity.has_file && !in_inbox && !storage.has_activity(activity.start_time)) {
+        if (activity.has_file && !in_inbox && !duplicates.contains(activity.id) && !unavailable_ones.contains(activity.id) && !storage.has_activity(activity.start_time)) {
             wanted.push_back(activity);
         }
     }
     size_t downloaded { 0 };
     for (size_t ix = 0; ix < wanted.size(); ++ix) {
         auto const &activity = wanted[ix];
+        if (pause_before(pacing, ix)) {
+            pause(pacing);
+        }
         if (progress) {
             progress(ix, wanted.size());
         }
-        auto const fit = garmin.download_fit(activity.id);
+        auto const fit = fetch_paced(pacing, [&garmin, &activity] { return garmin.download_fit(activity.id); });
         if (!fit && unavailable(fit.error())) {
             warning(Garmin, "Skipping activity {}: {}", activity.id, fit.error().to_string());
+            if (unavailable_for_good(fit.error())) {
+                remember_unavailable(storage, activity.id, fit.error().to_string());
+            }
             continue;
         }
         if (!fit) {

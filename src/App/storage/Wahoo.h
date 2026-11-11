@@ -25,6 +25,7 @@
 
 #include <Http.h>
 #include <OAuth.h>
+#include <storage/Pacing.h>
 
 namespace ST {
 
@@ -112,7 +113,8 @@ using WahooProgress = std::function<void(size_t index, size_t count)>;
 // `wahoo-<id>.fit`. Returns how many were downloaded. A workout without a
 // FIT file is skipped, and so is one whose FIT file Wahoo won't hand over
 // (403 or 404), with a warning; any other error stops the download.
-// Workouts downloaded before an error stay in the inbox.
-WahooResult<size_t> download_new_workouts(Wahoo &wahoo, Storage const &storage, i64 since, WahooProgress const &progress = { });
+// Workouts downloaded before an error stay in the inbox. The FIT files are
+// downloaded as `pacing` says: see specs/43-download-history.md.
+WahooResult<size_t> download_new_workouts(Wahoo &wahoo, Storage const &storage, i64 since, WahooProgress const &progress = { }, Pacing const &pacing = { });
 
 }

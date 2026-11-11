@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <ctime>
 #include <expected>
 #include <filesystem>
@@ -94,6 +95,13 @@ struct Strava {
     fs::path                   tokens_file { };
     std::optional<OAuthTokens> tokens { };
     std::function<i64()>       now { [] { return static_cast<i64>(std::time(nullptr)); } };
+    // A request Strava doesn't answer, in time or at all, or answers with
+    // a server error, is asked again after `retry_pause`, `retries` times:
+    // a download of a whole history asks for many pages, and Strava is
+    // sometimes slow. Without `wait`, nothing waits, as in the tests.
+    int                                       retries { 3 };
+    std::chrono::seconds                      retry_pause { 30 };
+    std::function<void(std::chrono::seconds)> wait { };
 
     // Where the browser goes to log in. `state` comes back with the code.
     [[nodiscard]] std::string authorize_url(std::string_view state) const;

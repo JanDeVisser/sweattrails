@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <functional>
+#include <thread>
 #include <variant>
 
 #include <config.h>
@@ -77,11 +78,29 @@ SourceOutcome failed(SourceOutcome outcome, std::string message)
     return outcome;
 }
 
+// The Garmin Connect API key, where Garmin's own client looks for it.
+std::optional<std::string> garmin_key()
+{
+    auto const *variable = std::getenv(GarminKeyVariable);
+    return read_api_key(variable ? std::optional<std::string_view> { variable } : std::nullopt, garmin_key_file());
+}
+
+// The pacing of a download from `source`, which says on the status line
+// when it pauses, and pauses the download's job.
+Pacing paced(pSweatTrails const &the, std::string const &source)
+{
+    return Pacing {
+        .wait = [the, source](std::chrono::seconds pause) {
+            the->notify_latest<NotificationType::Downloading>(Downloading { .source = source, .step = DownloadStep::Pausing });
+            std::this_thread::sleep_for(pause);
+        },
+    };
+}
+
 SourceOutcome download_from_garmin(pSweatTrails const &the, int days)
 {
     SourceOutcome outcome { .source = "Garmin Connect" };
-    auto const   *variable = std::getenv(GarminKeyVariable);
-    auto const    key = read_api_key(variable ? std::optional<std::string_view> { variable } : std::nullopt, garmin_key_file());
+    auto const    key = garmin_key();
     if (!key) {
         outcome.kind = SourceOutcome::Kind::NotSetUp;
         outcome.message = std::format(
@@ -89,6 +108,7 @@ SourceOutcome download_from_garmin(pSweatTrails const &the, int days)
             garmin_key_file().string());
         return outcome;
     }
+    the->notify_latest<NotificationType::Downloading>(Downloading { .source = outcome.source, .step = DownloadStep::Listing });
     GarminConnect garmin { .fetch = http_fetch };
     if (auto const token = garmin.obtain_token(*key); !token) {
         return failed(outcome, token.error().to_string());
@@ -96,7 +116,7 @@ SourceOutcome download_from_garmin(pSweatTrails const &the, int days)
     auto const on_activity = [&the](size_t index, size_t count) {
         the->notify_latest<NotificationType::Downloading>(Downloading { "Garmin Connect", index, count });
     };
-    auto const count = download_new_activities(garmin, the->storage, garmin_start_date(days, std::time(nullptr)), on_activity);
+    auto const count = download_new_activities(garmin, the->storage, garmin_start_date(days, std::time(nullptr)), on_activity, paced(the, "Garmin Connect"));
     if (!count) {
         return failed(outcome, count.error().to_string());
     }
@@ -114,6 +134,7 @@ SourceOutcome download_from_wahoo(pSweatTrails const &the, std::optional<std::st
                           "\"wahoo\": { \"client_id\": \"...\" }. The README says how.";
         return outcome;
     }
+    the->notify_latest<NotificationType::Downloading>(Downloading { .source = outcome.source, .step = DownloadStep::Listing });
     auto const tokens_file = wahoo_tokens_file(the->user_config_dir);
     Wahoo      wahoo {
         .fetch = http_fetch,
@@ -125,7 +146,7 @@ SourceOutcome download_from_wahoo(pSweatTrails const &the, std::optional<std::st
         the->notify_latest<NotificationType::Downloading>(Downloading { "Wahoo", index, count });
     };
     auto const since = static_cast<i64>(std::time(nullptr)) - static_cast<i64>(days) * 24 * 60 * 60;
-    auto const count = download_new_workouts(wahoo, the->storage, since, on_workout);
+    auto const count = download_new_workouts(wahoo, the->storage, since, on_workout, paced(the, "Wahoo"));
     if (!count && count.error().kind == WahooError::Kind::NotLoggedIn) {
         outcome.kind = SourceOutcome::Kind::NeedsLogin;
         return outcome;
@@ -164,6 +185,10 @@ SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<Strava
         .client_secret = client->secret,
         .tokens_file = tokens_file,
         .tokens = read_tokens(tokens_file),
+        .wait = [&the](std::chrono::seconds pause) {
+            the->notify_latest<NotificationType::Downloading>(Downloading { .source = "Strava", .step = DownloadStep::Retrying });
+            std::this_thread::sleep_for(pause);
+        },
     };
     auto const on_description = [&the](size_t index, size_t count) {
         the->notify_latest<NotificationType::Downloading>(Downloading { "Strava", index, count });
@@ -322,13 +347,15 @@ void run_downloads(pSweatTrails const &the, DownloadRequest const &request)
     });
     if (brought_any) {
         process_inbox(the);
-        the->schedule<JobType::FindNewestActivity>(std::monostate { });
+        the->schedule<JobType::FindNewestActivity>(FindNewest { });
     }
     if (request.strava) {
         auto const after = static_cast<i64>(std::time(nullptr)) - static_cast<i64>(request.strava_days) * 24 * 60 * 60;
         outcomes.push_back(download_from_strava(the, request.strava_client, after));
     }
-    the->notify<NotificationType::DownloadDone>(download_report(outcomes, request.quiet));
+    auto report = download_report(outcomes, request.quiet);
+    report.login_arguments = login_arguments(request, report.ask_login);
+    the->notify<NotificationType::DownloadDone>(report);
 }
 
 }
@@ -378,21 +405,22 @@ void SweatTrails::job_find_current_folder(Job::Payload const &)
     SweatTrails::the()->notify<NotificationType::ActivityList>(*activities);
 }
 
-void SweatTrails::job_find_newest_activity(Job::Payload const &)
+void SweatTrails::job_find_newest_activity(Job::Payload const &data)
 {
-    auto res = SweatTrails::the()->storage.find_newest();
+    auto const at_startup = std::get<FindNewest>(data).at_startup;
+    auto const the = SweatTrails::the();
+    auto       res = the->storage.find_newest();
     if (!res) {
-        SweatTrails::the()->notify<NotificationType::Message>(
-            std::format("Error finding newest activity: {}", res.error().to_string()));
-        return;
+        the->notify<NotificationType::Message>(std::format("Error finding newest activity: {}", res.error().to_string()));
+    } else if (*res) {
+        the->notify<NotificationType::Activity>(**res);
     }
-    auto activity = res.value();
-    if (!activity) {
-        SweatTrails::the()->notify<NotificationType::Message>(
-            std::string { "No activities found" });
-        return;
+    // The UI says there are none, unless it offers to download them.
+    if (at_startup) {
+        the->notify<NotificationType::StoreChecked>(StoreChecked { .empty = res && !*res });
+    } else if (res && !*res) {
+        the->notify<NotificationType::Message>(std::string { "No activities found" });
     }
-    SweatTrails::the()->notify<NotificationType::Activity>(*activity);
 }
 
 void SweatTrails::job_process_inbox(Job::Payload const &)
@@ -662,17 +690,48 @@ void cmd_quit(pSweatTrails const &sweattrails, JSONValue const &)
 void start_download(pSweatTrails const &sweattrails, JSONValue const &arguments, Sources sources)
 {
     // Not under a modal, as in cmd_quit, and not while a download runs:
-    // another would only list what this one is downloading.
-    if (!sweattrails->modals.empty() || sweattrails->downloading) {
+    // another would only list what this one is downloading. The quiet one
+    // at startup isn't a key pressed under a modal: it runs under a
+    // message from the startup, such as "No activities found".
+    auto const request = make_download_request(sweattrails->settings, arguments, sources);
+    if ((!request.quiet && !sweattrails->modals.empty()) || sweattrails->downloading) {
         return;
     }
     sweattrails->downloading = true;
-    sweattrails->schedule<JobType::Download>(make_download_request(sweattrails->settings, arguments, sources));
+    // The download can wait behind other jobs, and asks for lists before
+    // it downloads anything: say right away that it's coming.
+    if (!request.quiet) {
+        sweattrails->set_status(download_status(DownloadStep::Starting));
+    }
+    sweattrails->schedule<JobType::Download>(request);
 }
 
 void cmd_download(pSweatTrails const &sweattrails, JSONValue const &arguments)
 {
     start_download(sweattrails, arguments, Sources { .garmin = true, .wahoo = true, .strava = true });
+}
+
+// Offers the periods to download: see specs/43-download-history.md.
+void offer_download_periods(pSweatTrails const &sweattrails, std::string_view prompt)
+{
+    std::vector<std::pair<std::string, int>> entries;
+    for (auto const &period : download_periods(static_cast<i64>(std::time(nullptr)))) {
+        entries.emplace_back(period.text, period.days);
+    }
+    auto const download = [](pSweatTrails const &the, int days) {
+        auto arguments = JSONValue::object();
+        arguments.set("days", JSONValue { days });
+        the->bus.submit("st-download", arguments);
+    };
+    list_box(sweattrails, prompt, entries, download);
+}
+
+void cmd_download_period(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (!sweattrails->modals.empty() || sweattrails->downloading) {
+        return;
+    }
+    offer_download_periods(sweattrails, "Download activities from…");
 }
 
 void cmd_garmin_download(pSweatTrails const &sweattrails, JSONValue const &arguments)
@@ -772,7 +831,9 @@ bool can_log_in(pSweatTrails const &sweattrails)
     return true;
 }
 
-void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &)
+// Logs in to Wahoo, and then downloads. Arguments: `days`, how far back,
+// else `wahoo.days` from the settings.
+void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &arguments)
 {
     if (!can_log_in(sweattrails)) {
         return;
@@ -783,7 +844,7 @@ void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &)
                     "\"wahoo\": { \"client_id\": \"...\" }. The README says how.");
         return;
     }
-    auto const days = make_download_request(sweattrails->settings, JSONValue { }, Sources { .wahoo = true }).wahoo_days;
+    auto const days = make_download_request(sweattrails->settings, arguments, Sources { .wahoo = true }).wahoo_days;
     auto const pkce = Pkce::make();
     auto const state = random_token(16);
     start_login(sweattrails,
@@ -1784,7 +1845,7 @@ void SweatTrails::notif_importing_file(Notification::Payload const &data)
 void SweatTrails::notif_downloading(Notification::Payload const &data)
 {
     auto const &download = std::get<Downloading>(data);
-    SweatTrails::the()->set_status(std::format("Downloading {} of {} from {}", download.index + 1, download.count, download.source));
+    SweatTrails::the()->set_status(download_status(download.step, download.source, download.index, download.count));
 }
 
 void SweatTrails::notif_download_done(Notification::Payload const &data)
@@ -1949,6 +2010,25 @@ void SweatTrails::notif_recordings_grouped(Notification::Payload const &data)
     } else {
         the->set_status("");
     }
+}
+
+// At startup, after the inbox: an empty store, with a source that brings
+// in activities, is offered its history; else the quiet download of the
+// last days runs, as at every start.
+void SweatTrails::notif_store_checked(Notification::Payload const &data)
+{
+    auto const the = SweatTrails::the();
+    auto const empty = std::get<StoreChecked>(data).empty;
+    if (empty && downloads_activities(the->settings, garmin_key().has_value())) {
+        offer_download_periods(the, "There are no activities yet. Download from…");
+        return;
+    }
+    if (empty) {
+        message_box("No activities found");
+    }
+    auto quiet = JSONValue::object();
+    quiet["quiet"] = JSONValue { true };
+    the->bus.submit("st-download", quiet);
 }
 
 void SweatTrails::notif_recordings_changed(Notification::Payload const &data)
@@ -2148,6 +2228,8 @@ void SweatTrails::initialize()
     bus.add_task<SweatTrails>("st-download", self(), cmd_download)
         .titled("Download new activities")
         .bind(KeyCombo { KEY_G, KModControl });
+    bus.add_task<SweatTrails>("st-download-period", self(), cmd_download_period)
+        .titled("Download activities from…");
     bus.add_task<SweatTrails>("st-garmin-download", self(), cmd_garmin_download)
         .titled("Download from Garmin Connect");
     bus.add_task<SweatTrails>("st-wahoo-download", self(), cmd_wahoo_download)
@@ -2342,19 +2424,19 @@ void SweatTrails::initialize()
     // Jobs run one at a time in the order they're scheduled: the newest
     // activity shows before Garmin Connect or Wahoo is asked for anything,
     // which can take a while, and again after the download if it brought
-    // anything. The once over the store for recordings comes before the
-    // summaries' update, and does it when it's done.
+    // anything. The download is started when the newest activity has been
+    // looked for: an empty store is offered its history instead. The once
+    // over the store for recordings comes before the summaries' update, and
+    // does it when it's done; as its chunks schedule each other, the
+    // startup download waits for the last of them.
     std::error_code ec { };
     grouping_recordings = !std::filesystem::exists(recordings_grouped_marker(storage), ec);
     bus.schedule(make_job<JobType::ProcessInbox>(std::monostate { }));
     if (grouping_recordings) {
         schedule<JobType::GroupRecordings>(GroupingProgress { });
     }
-    bus.schedule(make_job<JobType::FindNewestActivity>(std::monostate { }));
+    bus.schedule(make_job<JobType::FindNewestActivity>(FindNewest { .at_startup = true }));
     update_summaries();
-    auto quiet = JSONValue::object();
-    quiet["quiet"] = JSONValue { true };
-    bus.submit("st-download", quiet);
     if (!settings_error.empty()) {
         message_box(std::format("{}. SweatTrails starts without those settings.", settings_error));
     }

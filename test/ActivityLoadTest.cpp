@@ -135,6 +135,148 @@ void test_without_a_file_id()
     CHECK(!t.activity.manufacturer.has_value());
 }
 
+// The error loading `file` gives, if it's a FIT error; else what loading
+// did instead.
+std::string load_error(std::string const &file)
+{
+    Storage  storage { };
+    Activity activity { storage, ActivityID::dummy(ActivityFile::Fit) };
+    // Deep, as the totals load activities: a shallow load skips records.
+    activity.depth = LoadingDepth::Deep;
+    auto const res = activity.load_from_slice(file);
+    if (res) {
+        return *res ? "loaded" : "not loaded";
+    }
+    auto const *fit_error = std::get_if<FIT::FITError>(&res.error().error);
+    return fit_error ? FIT::tag(*fit_error) : res.error().to_string();
+}
+
+// A data message for a local message type that no definition came before
+// is a broken file, which doesn't load, rather than one that crashes.
+void test_message_without_a_definition()
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    fit.message(5);
+    fit.u32_le(Start);
+    CHECK_EQ(load_error(fit.file()), "UndefinedLocalMessage");
+}
+
+// The same, with a compressed timestamp header: local message type 3,
+// 7 seconds on.
+void test_compressed_timestamp_without_a_definition()
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    fit.byte(0x80 | (3 << 5) | 7);
+    fit.u32_le(Start);
+    CHECK_EQ(load_error(fit.file()), "UndefinedLocalMessage");
+}
+
+// `fit`'s file with a header of `size` bytes rather than 14: 12 is the
+// older header, without its CRC.
+std::string with_header_size(FITBuilder const &fit, u8 size)
+{
+    auto file = fit.file();
+    file[0] = static_cast<char>(size);
+    return file.substr(0, 12) + std::string(size > 12 ? size - 12 : 0, '\0') + file.substr(14);
+}
+
+// Older devices, and Garmin Connect's files of their activities, have a
+// 12-byte header. Reading 14 took the first definition's first two bytes,
+// and the file didn't load.
+void test_twelve_byte_header()
+{
+    FITBuilder fit;
+    add_file_id(fit, 260);
+    add_session(fit, 3600, 345);
+    CHECK_EQ(load_error(with_header_size(fit, 12)), "loaded");
+    LoadedActivity t { with_header_size(fit, 12) };
+    CHECK(t.activity.manufacturer == FIT::manufacturer::zwift);
+    CHECK_EQ(t.activity.segment.total_ascent.value_or(0), 345);
+}
+
+void test_unsupported_header_size()
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    add_session(fit, 3600, 345);
+    CHECK_EQ(load_error(with_header_size(fit, 13)), "HeaderSizeUnsupported");
+}
+
+// A session and a lap with only the elapsed time, and not the timer time,
+// as Garmin Connect's files of older activities have: they load, moving for
+// as long as they took. They used to be rejected, which left the file in
+// the inbox.
+void test_session_without_timer_time()
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    fit.definition(3, 19,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 2, .size = 4, .base_type = Uint32 },
+            { .num = 7, .size = 4, .base_type = Uint32 },
+        });
+    fit.message(3);
+    fit.u32_le(Start + 1800);
+    fit.u32_le(Start);
+    fit.u32_le(1800 * 1000);
+    fit.definition(0, 18,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 2, .size = 4, .base_type = Uint32 },
+            { .num = 7, .size = 4, .base_type = Uint32 },
+        });
+    fit.message(0);
+    fit.u32_le(Start + 1800);
+    fit.u32_le(Start);
+    fit.u32_le(1800 * 1000);
+    LoadedActivity t { fit.file() };
+    CHECK(t.loaded);
+    CHECK_EQ(t.activity.segment.moving.elapsed, 1800u);
+    CHECK_EQ(t.activity.segment.elapsed.elapsed, 1800u);
+    CHECK_EQ(t.activity.laps.size(), 1uz);
+    if (!t.activity.laps.empty()) {
+        CHECK_EQ(t.activity.laps[0].segment.moving.elapsed, 1800u);
+    }
+}
+
+// A record with compressed speed and distance (field 8) of base type
+// `base_type`, three bytes.
+std::string compressed_speed_record(u8 base_type, u8 b0, u8 b1, u8 b2)
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    fit.definition(2, 20,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 8, .size = 3, .base_type = base_type },
+        });
+    fit.message(2);
+    fit.u32_le(Start);
+    fit.byte(b0);
+    fit.byte(b1);
+    fit.byte(b2);
+    add_session(fit, 1, 0);
+    return fit.file();
+}
+
+// Compressed speed and distance written as an array of uint8 rather than
+// bytes, as an older device did, loads without its speed: it used to fail
+// an assert.
+void test_compressed_speed_of_another_type()
+{
+    CHECK_EQ(load_error(compressed_speed_record(Uint8, 0x01, 0x23, 0x45)), "loaded");
+}
+
+// Bytes the reader cuts short at a 0xFF are too short to decode, and load
+// without the speed.
+void test_compressed_speed_cut_short()
+{
+    CHECK_EQ(load_error(compressed_speed_record(0x0D, 0x01, 0xFF, 0x45)), "loaded");
+}
+
 void test_session_sub_sport_is_loaded()
 {
     FITBuilder fit;
@@ -1009,6 +1151,13 @@ int main()
     test_another_manufacturer();
     test_invalid_manufacturer();
     test_without_a_file_id();
+    test_message_without_a_definition();
+    test_compressed_timestamp_without_a_definition();
+    test_compressed_speed_of_another_type();
+    test_twelve_byte_header();
+    test_session_without_timer_time();
+    test_unsupported_header_size();
+    test_compressed_speed_cut_short();
     test_session_total_ascent_is_loaded();
     test_session_without_total_ascent();
     test_session_sub_sport_is_loaded();

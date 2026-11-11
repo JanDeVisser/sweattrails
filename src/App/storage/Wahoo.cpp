@@ -107,7 +107,7 @@ WahooError token_error(std::string_view body)
 
 WahooError unreachable(LibCError const &error)
 {
-    return failed(std::format("Could not reach Wahoo: {}", error.to_string()));
+    return failed(std::format("Could not reach Wahoo: {}", error.description));
 }
 
 // Wahoo won't hand over this one FIT file.
@@ -323,7 +323,7 @@ WahooResult<std::string> Wahoo::download_fit(std::string const &url)
     return std::move(response->body);
 }
 
-WahooResult<size_t> download_new_workouts(Wahoo &wahoo, Storage const &storage, i64 since, WahooProgress const &progress)
+WahooResult<size_t> download_new_workouts(Wahoo &wahoo, Storage const &storage, i64 since, WahooProgress const &progress, Pacing const &pacing)
 {
     auto const listed = wahoo.list_workouts(since);
     if (!listed) {
@@ -341,10 +341,13 @@ WahooResult<size_t> download_new_workouts(Wahoo &wahoo, Storage const &storage, 
     size_t downloaded { 0 };
     for (size_t ix = 0; ix < wanted.size(); ++ix) {
         auto const &workout = wanted[ix];
+        if (pause_before(pacing, ix)) {
+            pause(pacing);
+        }
         if (progress) {
             progress(ix, wanted.size());
         }
-        auto const fit = wahoo.download_fit(workout.file_url);
+        auto const fit = fetch_paced(pacing, [&wahoo, &workout] { return wahoo.download_fit(workout.file_url); });
         if (!fit && unavailable(fit.error())) {
             warning(Wahoo, "Skipping workout {}: {}", workout.id, fit.error().to_string());
             continue;

@@ -117,9 +117,15 @@ struct RecordingsRequest {
     std::filesystem::path fit { };
 };
 
+// The FindNewestActivity job. At startup, it also tells the UI whether
+// the store is empty, which then offers to download its history.
+struct FindNewest {
+    bool at_startup { false };
+};
+
 #define JOBTYPE(S)                        \
     S(FindCurrentFolder, std::monostate)  \
-    S(FindNewestActivity, std::monostate) \
+    S(FindNewestActivity, FindNewest)     \
     S(ProcessInbox, std::monostate)       \
     S(DownloadTiles, pTileDownload)       \
     S(Download, DownloadRequest)          \
@@ -154,11 +160,13 @@ struct ImportingFile {
     size_t      count { 0 };
 };
 
-// Sent by a download before each activity.
+// Sent by a download when it asks a source what there is, before each
+// activity, and when it pauses.
 struct Downloading {
-    std::string source { }; // "Garmin Connect", "Wahoo", "Strava"
-    size_t      index { 0 };
-    size_t      count { 0 };
+    std::string  source { }; // "Garmin Connect", "Wahoo", "Strava"
+    size_t       index { 0 };
+    size_t       count { 0 };
+    DownloadStep step { DownloadStep::Downloading };
 };
 
 // Sent when a login is over, however it ended, with what to tell the
@@ -204,6 +212,11 @@ struct RecordingsChanged {
     std::string error { };
 };
 
+// What the FindNewestActivity job at startup found.
+struct StoreChecked {
+    bool empty { false };
+};
+
 #define NOTIFICATIONTYPE(S)                 \
     S(Message, std::string)                 \
     S(ActivityList, Activities)             \
@@ -218,7 +231,8 @@ struct RecordingsChanged {
     S(ZwiftWorldReady, ZwiftWorldReady)     \
     S(SummariesUpdated, SummariesUpdated)   \
     S(RecordingsGrouped, RecordingsGrouped) \
-    S(RecordingsChanged, RecordingsChanged)
+    S(RecordingsChanged, RecordingsChanged) \
+    S(StoreChecked, StoreChecked)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -293,6 +307,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_summaries_updated(Notification::Payload const &data);
     static void notif_recordings_grouped(Notification::Payload const &data);
     static void notif_recordings_changed(Notification::Payload const &data);
+    static void notif_store_checked(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -314,6 +329,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_summaries_updated,
                 notif_recordings_grouped,
                 notif_recordings_changed,
+                notif_store_checked,
             });
     }
 

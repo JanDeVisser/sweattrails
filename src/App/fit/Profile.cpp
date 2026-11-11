@@ -12,7 +12,7 @@ constexpr static TypeMetaData activity_meta {
     .num_fields = 4,
     .fields = {
         { .name = "timestamp", .num = 253, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(activity, timestamp) },
-        { .name = "total timer time", .num = 0, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(activity, total_timer_time) },
+        { .name = "total timer time", .num = 0, .scale = 1000, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(activity, total_timer_time) },
         { .name = "num_sessions", .num = 1, .optional = false, .base_type = FITBaseType::uint16, .fld_offset = offsetof(activity, num_sessions) },
         { .name = "local timestamp", .num = 5, .units = MetaDataUnits::DateTime, .optional = true, .base_type = FITBaseType::sint32, .fld_offset = offsetof(activity, local_timestamp) },
     }
@@ -45,7 +45,7 @@ constexpr static TypeMetaData session_meta {
         { .name = "sport", .num = 5, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(session, sport) },
         { .name = "sub sport", .num = 6, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(session, sub_sport) },
         { .name = "total elapsed time", .num = 7, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_elapsed_time) },
-        { .name = "total timer time", .num = 8, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_timer_time) },
+        { .name = "total timer time", .num = 8, .scale = 1000, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_timer_time) },
         { .name = "total distance", .num = 9, .scale = 100, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_distance) },
         { .name = "total calories", .num = 11, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(session, total_calories) },
         { .name = "first lap index", .num = 25, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(session, first_lap_index) },
@@ -89,7 +89,7 @@ constexpr static TypeMetaData lap_meta {
         { .name = "timestamp", .num = 253, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(lap, timestamp) },
         { .name = "start time", .num = 2, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(lap, start_time) },
         { .name = "total elapsed time", .num = 7, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_elapsed_time) },
-        { .name = "total timer time", .num = 8, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_timer_time) },
+        { .name = "total timer time", .num = 8, .scale = 1000, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_timer_time) },
         { .name = "total distance", .num = 9, .scale = 100, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_distance) },
         { .name = "total calories", .num = 11, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(lap, total_calories) },
         { .name = "sport", .num = 25, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(lap, sport) },
@@ -172,8 +172,11 @@ std::optional<FITError> on_load(FITDataRecord const &fitrec, record &rec)
 {
     if (auto compressed_speed_distance_maybe = fitrec.get_field(8); compressed_speed_distance_maybe) {
         FITDataField compressed_speed_distance = { *compressed_speed_distance_maybe };
-        if (compressed_speed_distance.value) {
-            assert(compressed_speed_distance.type == FITBaseType::byte);
+        // Three bytes, as the profile has it. A device that writes it as
+        // another type, or bytes the reader cut short at a 0xFF, gives no
+        // speed or distance, rather than a read past the field.
+        if (compressed_speed_distance.value && compressed_speed_distance.type == FITBaseType::byte
+            && compressed_speed_distance.value->byte.size() >= 3) {
             auto spd_dst { compressed_speed_distance.value.value().byte };
             u16  spd = (static_cast<u16>(spd_dst[0]) << 4) | ((static_cast<u16>(spd_dst[1]) & 0x00F0) >> 4);
             u16  dst = (static_cast<u16>(spd_dst[1]) & 0x000F << 8) | static_cast<u16>(spd_dst[2]);
