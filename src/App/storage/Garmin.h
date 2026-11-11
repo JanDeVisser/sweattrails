@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -93,6 +94,15 @@ private:
     GarminResult<HttpResponse> get(std::string const &path, std::string accept);
 };
 
+// Where the activities Garmin Connect has no FIT file for are remembered,
+// so that a download doesn't ask for them again: a line each, with the
+// activity's ID and why. Deleting it asks for them all again. See
+// specs/43-download-history.md.
+fs::path garmin_unavailable_file(Storage const &storage);
+
+// The IDs in the file of unavailable activities; none if there's no file.
+std::set<u64> read_unavailable(fs::path const &file);
+
 // Called before each activity is downloaded, with its index and the number
 // of activities to download.
 using GarminProgress = std::function<void(size_t index, size_t count)>;
@@ -103,7 +113,8 @@ using GarminProgress = std::function<void(size_t index, size_t count)>;
 // how many were downloaded. An activity Garmin Connect won't hand over (an
 // HTTP error other than 401 and 429), or whose file isn't a FIT file, is
 // skipped with a warning; any other error, such as no connection, stops
-// the download. So is one the inbox set aside as a
+// the download. One without a FIT file for good (a TCX file, 403, 404 or
+// 500) is remembered in garmin_unavailable_file(), and not asked for again. So is one the inbox set aside as a
 // duplicate before, as `duplicates/garmin-<id>.fit` or `-<n>.fit`: its start
 // time on Garmin Connect isn't the store's, and it would come again on every
 // download.

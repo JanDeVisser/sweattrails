@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <format>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -389,6 +390,38 @@ void test_duplicates_set_aside_are_not_downloaded_again()
     CHECK_EQ(downloads(fake), 1uz);
 }
 
+// Activities without a FIT file for good, a TCX file and a 500, are
+// remembered and not asked for again; one a gateway's error kept back is
+// asked for again next time.
+void test_unavailable_activities_are_remembered()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    auto const list = list_of({ list_entry(7, 1792800000, "D"), list_entry(6, 1792700000, "C"), list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") });
+    fake.answer(ListPath, { .status = 200, .body = list });
+    fake.answer(download_path(7), { .status = 200, .body = make_zip({ { .name = "7_UNKNOWN.tcx", .contents = "<TrainingCenterDatabase/>" } }) });
+    fake.answer(download_path(6), { .status = 500, .body = "" });
+    fake.answer(download_path(5), { .status = 503, .body = "Busy" });
+    fake.answer(download_path(4), { .status = 200, .body = fit_zip(4, "a") });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23").value_or(99), 1uz);
+    CHECK(read_unavailable(garmin_unavailable_file(store.storage)) == (std::set<u64> { 6, 7 }));
+
+    fake.requests.clear();
+    fake.answer(ListPath, { .status = 200, .body = list });
+    fake.answer(download_path(5), { .status = 200, .body = fit_zip(5, "b") });
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23").value_or(99), 1uz);
+    CHECK_EQ(downloads(fake), 1uz);
+}
+
+void test_read_unavailable()
+{
+    TempStore store;
+    CHECK(read_unavailable(garmin_unavailable_file(store.storage)).empty());
+    MUST(write_file_by_name(garmin_unavailable_file(store.storage).string(), std::string_view { "12 The download of activity 12 has no FIT file\n\nnot an ID\n34 Garmin Connect answered HTTP 500\n" }));
+    CHECK(read_unavailable(garmin_unavailable_file(store.storage)) == (std::set<u64> { 12, 34 }));
+}
+
 // What a download's pacing did: the pauses, and where in the download
 // they came, as the index of the next progress call.
 struct PacingLog {
@@ -658,6 +691,8 @@ int main()
     test_download_skips_what_the_inbox_has();
     test_failed_download_keeps_the_earlier_ones();
     test_server_error_for_one_activity_is_skipped();
+    test_unavailable_activities_are_remembered();
+    test_read_unavailable();
     test_has_activity();
     test_downloaded_activity_goes_through_the_inbox();
     return ST::Test::test_result();

@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <format>
+#include <fstream>
 #include <set>
 #include <system_error>
 
@@ -65,6 +66,31 @@ bool unavailable(GarminError const &error)
         || (error.kind == GarminError::Kind::Failed && error.status >= 400 && error.status != TooManyRequests);
 }
 
+// Whether an activity Garmin Connect won't hand over never will: it has
+// no FIT file. A gateway's error (502 to 504) says Garmin Connect itself
+// is in trouble, and the activity may come next time.
+bool unavailable_for_good(GarminError const &error)
+{
+    return error.kind == GarminError::Kind::NotFit || error.status == 403 || error.status == 404 || error.status == 500;
+}
+
+void remember_unavailable(Storage const &storage, u64 id, std::string_view why)
+{
+    std::ofstream file { garmin_unavailable_file(storage), std::ios::app };
+    file << id << ' ' << why << '\n';
+    if (!file) {
+        warning(Garmin, "Couldn't remember activity {} as unavailable in `{}`", id, garmin_unavailable_file(storage).string());
+    }
+}
+
+GarminResult<void> write_whole_file(fs::path const &path, std::string_view contents)
+{
+    if (auto const written = write_file_atomically(path, contents); !written) {
+        return std::unexpected(failed(written.error().to_string()));
+    }
+    return { };
+}
+
 // The IDs of the activities the inbox set aside as duplicates:
 // `garmin-<id>.fit`, or `garmin-<id>-<n>.fit` for later copies.
 std::set<u64> set_aside_as_duplicates(Storage const &storage)
@@ -84,14 +110,30 @@ std::set<u64> set_aside_as_duplicates(Storage const &storage)
     return ret;
 }
 
-GarminResult<void> write_whole_file(fs::path const &path, std::string_view contents)
-{
-    if (auto const written = write_file_atomically(path, contents); !written) {
-        return std::unexpected(failed(written.error().to_string()));
-    }
-    return { };
 }
 
+fs::path garmin_unavailable_file(Storage const &storage)
+{
+    return storage.data_dir / "garmin-unavailable.txt";
+}
+
+std::set<u64> read_unavailable(fs::path const &file)
+{
+    std::set<u64> ret;
+    auto const    contents = read_file_by_name(file.string());
+    if (!contents) {
+        return ret;
+    }
+    for (auto const &line : split(*contents, '\n')) {
+        // string_to_integer() takes an empty string for 0.
+        if (line.empty()) {
+            continue;
+        }
+        if (auto const id = string_to_integer<u64>(line.substr(0, line.find(' ')), 10); id) {
+            ret.insert(*id);
+        }
+    }
+    return ret;
 }
 
 fs::path garmin_key_file()
@@ -252,12 +294,13 @@ GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage cons
         return std::unexpected(listed.error());
     }
     auto const                  duplicates = set_aside_as_duplicates(storage);
+    auto const                  unavailable_ones = read_unavailable(garmin_unavailable_file(storage));
     std::vector<GarminActivity> wanted;
     for (auto const &activity : *listed) {
         // Downloaded before, but not organized yet: the inbox will.
         std::error_code ec { };
         auto const      in_inbox = fs::exists(storage.inbox_dir / std::format("garmin-{}.fit", activity.id), ec);
-        if (activity.has_file && !in_inbox && !duplicates.contains(activity.id) && !storage.has_activity(activity.start_time)) {
+        if (activity.has_file && !in_inbox && !duplicates.contains(activity.id) && !unavailable_ones.contains(activity.id) && !storage.has_activity(activity.start_time)) {
             wanted.push_back(activity);
         }
     }
@@ -273,6 +316,9 @@ GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage cons
         auto const fit = fetch_paced(pacing, [&garmin, &activity] { return garmin.download_fit(activity.id); });
         if (!fit && unavailable(fit.error())) {
             warning(Garmin, "Skipping activity {}: {}", activity.id, fit.error().to_string());
+            if (unavailable_for_good(fit.error())) {
+                remember_unavailable(storage, activity.id, fit.error().to_string());
+            }
             continue;
         }
         if (!fit) {
