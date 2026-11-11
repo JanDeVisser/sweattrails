@@ -5,6 +5,8 @@
  */
 
 #include <algorithm>
+#include <cmath>
+#include <ctime>
 #include <format>
 
 #include <StringUtil.h>
@@ -120,6 +122,37 @@ std::optional<std::string> strava_setup_problem(std::optional<StravaClient> cons
     return { };
 }
 
+bool downloads_activities(JSONValue const &settings, bool has_garmin_key)
+{
+    return has_garmin_key || wahoo_client_id(settings).has_value();
+}
+
+std::vector<DownloadPeriod> download_periods(i64 now)
+{
+    auto const today = static_cast<time_t>(now);
+    std::tm    tm { };
+    localtime_r(&today, &tm);
+    // The downloads look back whole days from now, keeping the time of
+    // day, so a day more than the day of the year reaches all of January
+    // 1, and Garmin's start date, a date, is December 31.
+    auto const this_year = tm.tm_yday + 1;
+    // Days to January 1 of EverythingSinceYear, counted in whole days at
+    // noon so that a change to or from daylight saving time doesn't matter.
+    std::tm since { .tm_hour = 12, .tm_mday = 1, .tm_mon = 0, .tm_year = EverythingSinceYear - 1900, .tm_isdst = -1 };
+    std::tm noon = tm;
+    noon.tm_hour = 12;
+    noon.tm_min = 0;
+    noon.tm_sec = 0;
+    noon.tm_isdst = -1;
+    auto const everything = static_cast<int>(std::lround(std::difftime(std::mktime(&noon), std::mktime(&since)) / (24 * 60 * 60))) + 1;
+    return {
+        DownloadPeriod { .text = "The last 30 days", .days = 30 },
+        DownloadPeriod { .text = "This year", .days = this_year },
+        DownloadPeriod { .text = "The last year (365 days)", .days = 365 },
+        DownloadPeriod { .text = "Everything", .days = everything },
+    };
+}
+
 DownloadRequest make_download_request(JSONValue const &settings, JSONValue const &arguments, Sources sources)
 {
     DownloadRequest request {
@@ -171,6 +204,17 @@ DownloadReport download_report(std::vector<SourceOutcome> const &outcomes, bool 
         report.text = outcomes.front().message;
     }
     return report;
+}
+
+JSONValue login_arguments(DownloadRequest const &request, std::string_view source)
+{
+    auto ret = JSONValue::object();
+    if (source == "Wahoo") {
+        ret.set("days", JSONValue { request.wahoo_days });
+    } else if (source == "Strava") {
+        ret.set("days", JSONValue { request.strava_days });
+    }
+    return ret;
 }
 
 }

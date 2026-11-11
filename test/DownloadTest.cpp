@@ -7,6 +7,10 @@
  * user when it's done.
  */
 
+#include <cstdlib>
+#include <ctime>
+#include <format>
+
 #include <JSON.h>
 
 #include <storage/Download.h>
@@ -230,6 +234,76 @@ void test_quiet_report()
 
 }
 
+void test_downloads_activities()
+{
+    auto settings = JSONValue::object();
+    CHECK(!downloads_activities(settings, false));
+    CHECK(downloads_activities(settings, true));
+    CHECK(!downloads_activities(JSONValue { }, false));
+    // Strava brings in titles, not activities.
+    settings = MUST_EVAL(JSONValue::deserialize(R"({"strava": {"client_id": "12345", "client_secret": "s3cr3t"}})"));
+    CHECK(!downloads_activities(settings, false));
+    settings["wahoo"] = MUST_EVAL(JSONValue::deserialize(R"({"client_id": "abc123"})"));
+    CHECK(downloads_activities(settings, false));
+    CHECK(downloads_activities(settings, true));
+}
+
+// The local date `days` days before `now`, as Garmin's start date is
+// worked out (start_date(), which this test doesn't link).
+std::string start_date(int days, i64 now)
+{
+    auto const start = static_cast<time_t>(now - static_cast<i64>(days) * 24 * 60 * 60);
+    std::tm    tm { };
+    localtime_r(&start, &tm);
+    return std::format("{:04}-{:02}-{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+}
+
+// The days of "This year", for a download at `now`.
+int this_year(i64 now)
+{
+    return download_periods(now)[1].days;
+}
+
+void test_download_periods()
+{
+    setenv("TZ", "America/Toronto", 1);
+    tzset();
+    // November 11, 2026, 08:00 in Toronto.
+    i64 const  now = 1794402000;
+    auto const periods = download_periods(now);
+    CHECK_EQ(periods.size(), 4uz);
+    CHECK_EQ(periods[0].text, "The last 30 days");
+    CHECK_EQ(periods[0].days, 30);
+    CHECK_EQ(periods[1].text, "This year");
+    CHECK_EQ(periods[2].text, "The last year (365 days)");
+    CHECK_EQ(periods[2].days, 365);
+    CHECK_EQ(periods[3].text, "Everything");
+    // From December 31, 1989: a day early, as for "This year".
+    CHECK_EQ(periods[3].days, 13464);
+    CHECK_EQ(start_date(periods[3].days, now), "1989-12-31");
+
+    // This year reaches all of January 1, whatever the time of day: Wahoo
+    // keeps it, Garmin asks from December 31.
+    i64 const new_years_morning = 1767268800; // January 1, 2026, 07:00
+    CHECK_EQ(this_year(new_years_morning), 1);
+    CHECK_EQ(start_date(this_year(new_years_morning), new_years_morning), "2025-12-31");
+    i64 const ides_of_march = 1773583200; // March 15, 2026, 10:00, after the change to summer time
+    CHECK_EQ(this_year(ides_of_march), 74);
+    CHECK_EQ(start_date(this_year(ides_of_march), ides_of_march), "2025-12-31");
+    i64 const new_years_eve = 1798777800; // December 31, 2026, 23:30, already 2027 in UTC
+    CHECK_EQ(this_year(new_years_eve), 365);
+    CHECK_EQ(start_date(this_year(new_years_eve), new_years_eve), "2025-12-31");
+}
+
+// The login offered after a download fetches as far back as the download.
+void test_login_arguments()
+{
+    DownloadRequest const request { .garmin = true, .wahoo = true, .strava = true, .garmin_days = 13464, .wahoo_days = 13464, .strava_days = 365 };
+    CHECK_EQ(login_arguments(request, "Wahoo").try_get<int>("days").value_or(0), 13464);
+    CHECK_EQ(login_arguments(request, "Strava").try_get<int>("days").value_or(0), 365);
+    CHECK(!login_arguments(request, "Garmin Connect").try_get<int>("days").has_value());
+}
+
 int main()
 {
     test_client_id();
@@ -246,5 +320,8 @@ int main()
     test_strava_report_offers_the_login();
     test_quiet_report_of_one_source();
     test_quiet_report();
+    test_downloads_activities();
+    test_download_periods();
+    test_login_arguments();
     return ST::Test::test_result();
 }
