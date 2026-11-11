@@ -91,6 +91,19 @@ user wants an older period. Builds on [07](07-garmin-download.md),
   error as before. The activity lists aren't paced or retried: they're a
   request per 100 (Garmin) or 30 (Wahoo) activities, and Wahoo's limit on
   them resets after hours, not a minute.
+- **Activities Garmin Connect has no FIT file for are skipped and
+  remembered.** Older ones were often uploaded as TCX or GPX files, or
+  entered without a file, such as treadmill runs and pool swims, for
+  which Garmin Connect answers HTTP 500. A download skips them, with a
+  warning in the log, and writes them to `garmin-unavailable.txt` in the
+  data folder, a line each with the activity's ID and why, so that the
+  next "Everything" doesn't ask for them again. Deleting the file asks
+  for them all again. Errors that say Garmin Connect itself is in trouble
+  (502 to 504) are skipped but not remembered. Importing TCX files is a
+  matter for a spec of its own *(deferred)*.
+- **Strava is asked again when it doesn't answer**, in time or at all, or
+  answers with a server error: after 30 seconds, 3 times, with "Strava
+  didn't answer: asking again shortly" on the status line.
 - There's no way to stop a download but quitting, which also works while
   it pauses. Nothing is lost: what came in is in the inbox and is
   processed at the next start, and running "Everything" again skips what
@@ -233,7 +246,22 @@ None.
    carries in place of a `pausing` flag. `start_download()` sets Starting
    on the UI thread, as the job may not run for a while.
 
-Nothing new in `src/Lib/Widget`: `list_box()` is the widget.
+8. **Unavailable activities**, added after Jan's runs: `GarminError::Kind::NotFit`
+   for a download without a FIT file; `unavailable()` in `Garmin.cpp`
+   skips it and any HTTP error for one activity but 401 and 429;
+   `unavailable_for_good()` (TCX, 403, 404, 500) has it appended to
+   `garmin_unavailable_file()`, which `read_unavailable()` reads before
+   the next download. Activities set aside in `inbox/duplicates/` are
+   skipped too: their start time on Garmin Connect isn't the store's.
+9. **Strava's retries** are in `Strava::get()`: `retries`, `retry_pause`
+   and a `wait` the app sets to say so on the status line and sleep, as
+   Pacing's. `http_fetch()` logs the URL of a failed request instead of
+   putting it in the error.
+10. **List boxes wrap a long prompt**: `layout_prompt()` in `Modal.h`
+    widens the box up to 80% of the window and wraps past that, as a
+    long error message made the message box wider than the window.
+
+Nothing else new in `src/Lib/Widget`: `list_box()` is the widget.
 
 ## Test plan
 
@@ -289,3 +317,9 @@ Review of 9f6870b (pacing):
    **Resolved:** decoded only when it's three bytes of type byte (51c8b40), tested in `activity_load_test` with a deep load. Left as it is: the decoding itself, which loses the distance's top 4 bits (`& 0x000F << 8` lacks parentheses) and takes the 12-bit rolling distance as the distance itself. That's a matter for old devices' files, for a spec of its own if it matters.
 14. Found by Jan: "Everything" from Garmin Connect stopped after some 50 activities on every run, and went on to Wahoo. With `TRACE=Garmin` and Jan's history: the next activity, 1020820389 from 2016, is an uploaded TCX file, and a download without a FIT file was an error that ended the Garmin download. Garmin Connect's limit (100 requests a minute, measured: a 429 says `"limit":100,"retryInSeconds":17`) wasn't the cause; the pacing stays under it. The same runs downloaded 111 activities again each time, which the inbox set aside as duplicates, as their start time on Garmin Connect isn't the store's.
    **Resolved:** a download without a FIT file is `GarminError::Kind::NotFit`, skipped as a 403 or 404 is, and activities set aside in `inbox/duplicates/` as `garmin-<id>[-<n>].fit` aren't downloaded again (the commit after 43cb94b's FIT reader fixes), tested in `garmin_test`. Also found: the FIT reader read the older 12-byte header as 14 bytes, which left 850 rides from 2016 and before in the inbox (e26c8b8).
+15. Found by Jan's further runs, each fixed with a test that fails against the code before it:
+    - 385 activities stayed in the inbox: their sessions and laps have no timer time (field 8), which was required. It's optional, and falls back to the elapsed time (b497942).
+    - Garmin Connect answers HTTP 500 for older activities without a file, which stopped the download. Any HTTP error for one activity but 401 and 429 is skipped (fc40fcb), and the ones without a FIT file for good are remembered (see Architecture 8).
+    - The FIT reader printed its diagnostics for every file; they're traces in the FIT category (c0e767a).
+    - Strava timed out on a page of a whole history's list, and the message box with the error was wider than the window: Strava retries (e287c03), and list boxes wrap their prompt (c914f71).
+16. Not resolved: one test program failed intermittently, twice in some twenty runs of the suite, and its name wasn't caught. Jan suspects the Wahoo connection; the tests use fake services, so it's more likely the Wahoo login test's local server on port 8090.
