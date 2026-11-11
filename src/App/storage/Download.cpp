@@ -133,6 +133,8 @@ std::string download_status(DownloadStep step, std::string_view source, size_t i
         return std::format("Downloading {} of {} from {}", index + 1, count, source);
     case DownloadStep::Pausing:
         return std::format("Pausing a minute between downloads from {}", source);
+    case DownloadStep::Retrying:
+        return std::format("{} didn't answer: asking again shortly", source);
     }
     return { };
 }

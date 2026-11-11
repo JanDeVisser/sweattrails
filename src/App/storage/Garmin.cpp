@@ -165,7 +165,7 @@ GarminResult<void> GarminConnect::obtain_token(std::string_view key)
         .headers = { "Accept: */*", std::format("Authorization: ApiKey {}", key) },
     });
     if (!response) {
-        return std::unexpected(failed(std::format("Could not reach Garmin Connect: {}", response.error().to_string())));
+        return std::unexpected(failed(std::format("Could not reach Garmin Connect: {}", response.error().description)));
     }
     if (is_rejection(response->status) || response->status == 403) {
         return std::unexpected(rejected());
@@ -184,7 +184,7 @@ GarminResult<HttpResponse> GarminConnect::get(std::string const &path, std::stri
         .headers = { std::format("Accept: {}", accept), std::format("Authorization: Bearer {}", token) },
     });
     if (!response) {
-        return std::unexpected(failed(std::format("Could not reach Garmin Connect: {}", response.error().to_string())));
+        return std::unexpected(failed(std::format("Could not reach Garmin Connect: {}", response.error().description)));
     }
     if (is_rejection(response->status)) {
         return std::unexpected(rejected());

@@ -107,7 +107,7 @@ WahooError token_error(std::string_view body)
 
 WahooError unreachable(LibCError const &error)
 {
-    return failed(std::format("Could not reach Wahoo: {}", error.to_string()));
+    return failed(std::format("Could not reach Wahoo: {}", error.description));
 }
 
 // Wahoo won't hand over this one FIT file.

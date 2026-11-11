@@ -121,6 +121,8 @@ struct StravaStore {
 
     StravaStore()
     {
+        // A failure here ends what it fails: asking again is strava_test's.
+        strava.retries = 0;
         for (auto const start : { Ride, Run, Swim }) {
             store.add_activity(start);
         }

@@ -11,6 +11,7 @@
 
 #include <curl/curl.h>
 
+#include <Logging.h>
 #include <StringUtil.h>
 
 #include <Http.h>
@@ -117,8 +118,12 @@ std::expected<HttpResponse, LibCError> http_fetch(HttpRequest const &request)
     curl_easy_setopt(curl.get(), CURLOPT_HEADERFUNCTION, append_header);
     curl_easy_setopt(curl.get(), CURLOPT_HEADERDATA, &response);
 
+    // The URL goes to the log, not into the error: the error is shown to
+    // the user, after what couldn't be reached, and a URL with its query
+    // makes it longer than a message box.
     if (auto const result = curl_easy_perform(curl.get()); result != CURLE_OK) {
-        return std::unexpected(LibCError { std::format("{} {}: {}", request.method, request.url, curl_easy_strerror(result)) });
+        warning(Http, "{} {}: {}", request.method, request.url, curl_easy_strerror(result));
+        return std::unexpected(LibCError { std::string { curl_easy_strerror(result) } });
     }
     curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &response.status);
     return response;

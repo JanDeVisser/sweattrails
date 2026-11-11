@@ -8,6 +8,7 @@
  */
 
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <map>
 #include <string>
@@ -178,6 +179,8 @@ void test_list_stopped_short()
     for (auto ix = 0u; ix < 200; ++ix) {
         full.push_back(strava_activity(1000 + ix, "2026-10-20T12:00:00Z", std::format("Ride {}", ix)));
     }
+    // Not asked again: see test_retries.
+    strava.retries = 0;
     fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 200, .body = list_of(full) });
     fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 500, .body = "" });
     auto const listed = strava.list_activities(0, Now);
@@ -191,6 +194,52 @@ void test_list_stopped_short()
     fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 500, .body = "" });
     auto const first = strava.list_activities(0, Now);
     CHECK(!first.has_value() && first.error().status == 500);
+}
+
+// A request Strava doesn't answer in time, or answers with a server error,
+// is asked again after a wait, and the list carries on. A download of the
+// whole history used to end with Strava's timeout.
+void test_retries()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-retries" };
+    auto       strava = logged_in(fake, dir);
+    size_t     waits { 0 };
+    strava.wait = [&waits](std::chrono::seconds pause) {
+        CHECK_EQ(pause, std::chrono::seconds { 30 });
+        ++waits;
+    };
+    fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 0 });
+    fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 502, .body = "Bad gateway" });
+    fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 200, .body = list_of({ strava_activity(1, "2026-10-01T06:30:15Z", "Morning ride") }) });
+    auto const listed = strava.list_activities(0, Now);
+    CHECK(listed.has_value() && !listed->stopped.has_value());
+    if (listed) {
+        CHECK_EQ(listed->activities.size(), 1uz);
+    }
+    CHECK_EQ(waits, 2uz);
+    CHECK_EQ(fake.requests.size(), 3uz);
+}
+
+// Past the retries, the error is the request's, said briefly: the URL is
+// in the log, not in the message.
+void test_retries_run_out()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-retries-run-out" };
+    auto       strava = logged_in(fake, dir);
+    size_t     waits { 0 };
+    strava.wait = [&waits](std::chrono::seconds) { ++waits; };
+    for (auto ix = 0; ix < 4; ++ix) {
+        fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 0 });
+    }
+    auto const listed = strava.list_activities(0, Now);
+    CHECK(!listed.has_value());
+    if (!listed) {
+        CHECK_EQ(listed.error().message, "Could not reach Strava: Timeout was reached");
+    }
+    CHECK_EQ(waits, 3uz);
+    CHECK_EQ(fake.requests.size(), 4uz);
 }
 
 void test_description()
@@ -259,6 +308,8 @@ int main()
     test_refresh_saves_the_new_refresh_token();
     test_not_logged_in();
     test_list_activities();
+    test_retries();
+    test_retries_run_out();
     test_list_stopped_short();
     test_description();
     test_rate_limited();

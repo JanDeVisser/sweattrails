@@ -185,6 +185,10 @@ SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<Strava
         .client_secret = client->secret,
         .tokens_file = tokens_file,
         .tokens = read_tokens(tokens_file),
+        .wait = [&the](std::chrono::seconds pause) {
+            the->notify_latest<NotificationType::Downloading>(Downloading { .source = "Strava", .step = DownloadStep::Retrying });
+            std::this_thread::sleep_for(pause);
+        },
     };
     auto const on_description = [&the](size_t index, size_t count) {
         the->notify_latest<NotificationType::Downloading>(Downloading { "Strava", index, count });

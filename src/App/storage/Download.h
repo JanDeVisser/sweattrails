@@ -64,6 +64,7 @@ enum class DownloadStep {
     Listing,     // Asking the source what there is to download
     Downloading, // A file, of the ones to download
     Pausing,     // Between files: see Pacing
+    Retrying,    // The source didn't answer, and is asked again after a wait
 };
 
 // What the status line says at `step` of a download from `source`, at the
