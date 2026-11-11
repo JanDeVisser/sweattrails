@@ -182,7 +182,9 @@ None.
 
    So the startup download is submitted after the store is looked at,
    not before; jobs run in order, so it runs at about the same point as
-   now. `run_downloads()` keeps scheduling `FindNewest { }`, not at
+   now. The exception is the once-over of an older store for recordings
+   (spec 31), whose chunks schedule each other: the startup download
+   waits for the last of them, once. `run_downloads()` keeps scheduling `FindNewest { }`, not at
    startup, which says "No activities found" as before.
 
    As the quiet download is now submitted after the startup's messages
@@ -224,8 +226,11 @@ and starting, picking each period, Esc, and a start with activities.
 ## Review notes
 
 1. Suggestion: `src/App/SweatTrails.cpp` `notif_store_checked` (~1995). The quiet download is now queued when the UI handles `StoreChecked`, so it lands behind any `GroupRecordings` chunk that was rescheduled after FindNewest (`group_recordings_chunk`, ~305). On an old store with many months to group, the startup download waits for the whole once-over, where before it ran after the first chunk. Harmless, and it only happens once (the marker), but it differs from the spec's "about the same point".
+   **Resolved:** accepted, as it happens once per store, and only for a store from before spec 31. The Architecture section and the comment in `initialize()` say so (6d3c79e).
 2. Suggestion: `start_download` (~671) lets any quiet request run under a modal. Only `notif_store_checked` submits `quiet` today, so nothing else changes; a future quiet caller inherits the exemption. The comment says so.
+   **Resolved:** kept: `quiet` means the startup's download, and the comment in `start_download()` says why it may run under a modal.
 3. Suggestion: the `initialize()` comment (~2403) has a line that runs far past the others; rewrap it.
+   **Resolved:** rewrapped in 6d3c79e.
 4. Checked, no problem: `run_downloads` always setting `login_arguments` (`notif_download_done` passes the object to either login; `cmd_wahoo_login` and `cmd_strava_login` read only `days`/`history`; Garmin never asks a login). Days times 86400 are done in `i64` everywhere, so "Everything" (13464 days) doesn't overflow. `download_periods` is right across both daylight saving changes, the leap year's December 31 and a zone ahead of UTC.
 5. Missing test, added: DST changes, leap year, Auckland for `download_periods()`, and the login arguments feeding `make_download_request()` (`test/DownloadTest.cpp`). All pass.
 6. Not covered, needs a window: the startup list, Esc, and the "No activities found" box followed by the quiet download.
