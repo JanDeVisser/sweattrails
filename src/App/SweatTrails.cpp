@@ -77,11 +77,17 @@ SourceOutcome failed(SourceOutcome outcome, std::string message)
     return outcome;
 }
 
+// The Garmin Connect API key, where Garmin's own client looks for it.
+std::optional<std::string> garmin_key()
+{
+    auto const *variable = std::getenv(GarminKeyVariable);
+    return read_api_key(variable ? std::optional<std::string_view> { variable } : std::nullopt, garmin_key_file());
+}
+
 SourceOutcome download_from_garmin(pSweatTrails const &the, int days)
 {
     SourceOutcome outcome { .source = "Garmin Connect" };
-    auto const   *variable = std::getenv(GarminKeyVariable);
-    auto const    key = read_api_key(variable ? std::optional<std::string_view> { variable } : std::nullopt, garmin_key_file());
+    auto const    key = garmin_key();
     if (!key) {
         outcome.kind = SourceOutcome::Kind::NotSetUp;
         outcome.message = std::format(
@@ -322,7 +328,7 @@ void run_downloads(pSweatTrails const &the, DownloadRequest const &request)
     });
     if (brought_any) {
         process_inbox(the);
-        the->schedule<JobType::FindNewestActivity>(std::monostate { });
+        the->schedule<JobType::FindNewestActivity>(FindNewest { });
     }
     if (request.strava) {
         auto const after = static_cast<i64>(std::time(nullptr)) - static_cast<i64>(request.strava_days) * 24 * 60 * 60;
@@ -380,21 +386,22 @@ void SweatTrails::job_find_current_folder(Job::Payload const &)
     SweatTrails::the()->notify<NotificationType::ActivityList>(*activities);
 }
 
-void SweatTrails::job_find_newest_activity(Job::Payload const &)
+void SweatTrails::job_find_newest_activity(Job::Payload const &data)
 {
-    auto res = SweatTrails::the()->storage.find_newest();
+    auto const at_startup = std::get<FindNewest>(data).at_startup;
+    auto const the = SweatTrails::the();
+    auto       res = the->storage.find_newest();
     if (!res) {
-        SweatTrails::the()->notify<NotificationType::Message>(
-            std::format("Error finding newest activity: {}", res.error().to_string()));
-        return;
+        the->notify<NotificationType::Message>(std::format("Error finding newest activity: {}", res.error().to_string()));
+    } else if (*res) {
+        the->notify<NotificationType::Activity>(**res);
     }
-    auto activity = res.value();
-    if (!activity) {
-        SweatTrails::the()->notify<NotificationType::Message>(
-            std::string { "No activities found" });
-        return;
+    // The UI says there are none, unless it offers to download them.
+    if (at_startup) {
+        the->notify<NotificationType::StoreChecked>(StoreChecked { .empty = res && !*res });
+    } else if (res && !*res) {
+        the->notify<NotificationType::Message>(std::string { "No activities found" });
     }
-    SweatTrails::the()->notify<NotificationType::Activity>(*activity);
 }
 
 void SweatTrails::job_process_inbox(Job::Payload const &)
@@ -664,12 +671,15 @@ void cmd_quit(pSweatTrails const &sweattrails, JSONValue const &)
 void start_download(pSweatTrails const &sweattrails, JSONValue const &arguments, Sources sources)
 {
     // Not under a modal, as in cmd_quit, and not while a download runs:
-    // another would only list what this one is downloading.
-    if (!sweattrails->modals.empty() || sweattrails->downloading) {
+    // another would only list what this one is downloading. The quiet one
+    // at startup isn't a key pressed under a modal: it runs under a
+    // message from the startup, such as "No activities found".
+    auto const request = make_download_request(sweattrails->settings, arguments, sources);
+    if ((!request.quiet && !sweattrails->modals.empty()) || sweattrails->downloading) {
         return;
     }
     sweattrails->downloading = true;
-    sweattrails->schedule<JobType::Download>(make_download_request(sweattrails->settings, arguments, sources));
+    sweattrails->schedule<JobType::Download>(request);
 }
 
 void cmd_download(pSweatTrails const &sweattrails, JSONValue const &arguments)
@@ -1978,6 +1988,25 @@ void SweatTrails::notif_recordings_grouped(Notification::Payload const &data)
     }
 }
 
+// At startup, after the inbox: an empty store, with a source that brings
+// in activities, is offered its history; else the quiet download of the
+// last days runs, as at every start.
+void SweatTrails::notif_store_checked(Notification::Payload const &data)
+{
+    auto const the = SweatTrails::the();
+    auto const empty = std::get<StoreChecked>(data).empty;
+    if (empty && downloads_activities(the->settings, garmin_key().has_value())) {
+        offer_download_periods(the, "There are no activities yet. Download from…");
+        return;
+    }
+    if (empty) {
+        message_box("No activities found");
+    }
+    auto quiet = JSONValue::object();
+    quiet["quiet"] = JSONValue { true };
+    the->bus.submit("st-download", quiet);
+}
+
 void SweatTrails::notif_recordings_changed(Notification::Payload const &data)
 {
     auto const &changed = std::get<RecordingsChanged>(data);
@@ -2371,7 +2400,8 @@ void SweatTrails::initialize()
     // Jobs run one at a time in the order they're scheduled: the newest
     // activity shows before Garmin Connect or Wahoo is asked for anything,
     // which can take a while, and again after the download if it brought
-    // anything. The once over the store for recordings comes before the
+    // anything. The download is started when the newest activity has been
+    // looked for: an empty store is offered its history instead. The once over the store for recordings comes before the
     // summaries' update, and does it when it's done.
     std::error_code ec { };
     grouping_recordings = !std::filesystem::exists(recordings_grouped_marker(storage), ec);
@@ -2379,11 +2409,8 @@ void SweatTrails::initialize()
     if (grouping_recordings) {
         schedule<JobType::GroupRecordings>(GroupingProgress { });
     }
-    bus.schedule(make_job<JobType::FindNewestActivity>(std::monostate { }));
+    bus.schedule(make_job<JobType::FindNewestActivity>(FindNewest { .at_startup = true }));
     update_summaries();
-    auto quiet = JSONValue::object();
-    quiet["quiet"] = JSONValue { true };
-    bus.submit("st-download", quiet);
     if (!settings_error.empty()) {
         message_box(std::format("{}. SweatTrails starts without those settings.", settings_error));
     }
