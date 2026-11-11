@@ -139,8 +139,10 @@ void test_without_a_file_id()
 // did instead.
 std::string load_error(std::string const &file)
 {
-    Storage    storage { };
-    Activity   activity { storage, ActivityID::dummy(ActivityFile::Fit) };
+    Storage  storage { };
+    Activity activity { storage, ActivityID::dummy(ActivityFile::Fit) };
+    // Deep, as the totals load activities: a shallow load skips records.
+    activity.depth = LoadingDepth::Deep;
     auto const res = activity.load_from_slice(file);
     if (res) {
         return *res ? "loaded" : "not loaded";
@@ -169,6 +171,41 @@ void test_compressed_timestamp_without_a_definition()
     fit.byte(0x80 | (3 << 5) | 7);
     fit.u32_le(Start);
     CHECK_EQ(load_error(fit.file()), "UndefinedLocalMessage");
+}
+
+// A record with compressed speed and distance (field 8) of base type
+// `base_type`, three bytes.
+std::string compressed_speed_record(u8 base_type, u8 b0, u8 b1, u8 b2)
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    fit.definition(2, 20,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 8, .size = 3, .base_type = base_type },
+        });
+    fit.message(2);
+    fit.u32_le(Start);
+    fit.byte(b0);
+    fit.byte(b1);
+    fit.byte(b2);
+    add_session(fit, 1, 0);
+    return fit.file();
+}
+
+// Compressed speed and distance written as an array of uint8 rather than
+// bytes, as an older device did, loads without its speed: it used to fail
+// an assert.
+void test_compressed_speed_of_another_type()
+{
+    CHECK_EQ(load_error(compressed_speed_record(Uint8, 0x01, 0x23, 0x45)), "loaded");
+}
+
+// Bytes the reader cuts short at a 0xFF are too short to decode, and load
+// without the speed.
+void test_compressed_speed_cut_short()
+{
+    CHECK_EQ(load_error(compressed_speed_record(0x0D, 0x01, 0xFF, 0x45)), "loaded");
 }
 
 void test_session_sub_sport_is_loaded()
@@ -1047,6 +1084,8 @@ int main()
     test_without_a_file_id();
     test_message_without_a_definition();
     test_compressed_timestamp_without_a_definition();
+    test_compressed_speed_of_another_type();
+    test_compressed_speed_cut_short();
     test_session_total_ascent_is_loaded();
     test_session_without_total_ascent();
     test_session_sub_sport_is_loaded();

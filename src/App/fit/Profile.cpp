@@ -172,8 +172,11 @@ std::optional<FITError> on_load(FITDataRecord const &fitrec, record &rec)
 {
     if (auto compressed_speed_distance_maybe = fitrec.get_field(8); compressed_speed_distance_maybe) {
         FITDataField compressed_speed_distance = { *compressed_speed_distance_maybe };
-        if (compressed_speed_distance.value) {
-            assert(compressed_speed_distance.type == FITBaseType::byte);
+        // Three bytes, as the profile has it. A device that writes it as
+        // another type, or bytes the reader cut short at a 0xFF, gives no
+        // speed or distance, rather than a read past the field.
+        if (compressed_speed_distance.value && compressed_speed_distance.type == FITBaseType::byte
+            && compressed_speed_distance.value->byte.size() >= 3) {
             auto spd_dst { compressed_speed_distance.value.value().byte };
             u16  spd = (static_cast<u16>(spd_dst[0]) << 4) | ((static_cast<u16>(spd_dst[1]) & 0x00F0) >> 4);
             u16  dst = (static_cast<u16>(spd_dst[1]) & 0x000F << 8) | static_cast<u16>(spd_dst[2]);
