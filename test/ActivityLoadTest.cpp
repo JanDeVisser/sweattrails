@@ -204,6 +204,44 @@ void test_unsupported_header_size()
     CHECK_EQ(load_error(with_header_size(fit, 13)), "HeaderSizeUnsupported");
 }
 
+// A session and a lap with only the elapsed time, and not the timer time,
+// as Garmin Connect's files of older activities have: they load, moving for
+// as long as they took. They used to be rejected, which left the file in
+// the inbox.
+void test_session_without_timer_time()
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    fit.definition(3, 19,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 2, .size = 4, .base_type = Uint32 },
+            { .num = 7, .size = 4, .base_type = Uint32 },
+        });
+    fit.message(3);
+    fit.u32_le(Start + 1800);
+    fit.u32_le(Start);
+    fit.u32_le(1800 * 1000);
+    fit.definition(0, 18,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 2, .size = 4, .base_type = Uint32 },
+            { .num = 7, .size = 4, .base_type = Uint32 },
+        });
+    fit.message(0);
+    fit.u32_le(Start + 1800);
+    fit.u32_le(Start);
+    fit.u32_le(1800 * 1000);
+    LoadedActivity t { fit.file() };
+    CHECK(t.loaded);
+    CHECK_EQ(t.activity.segment.moving.elapsed, 1800u);
+    CHECK_EQ(t.activity.segment.elapsed.elapsed, 1800u);
+    CHECK_EQ(t.activity.laps.size(), 1uz);
+    if (!t.activity.laps.empty()) {
+        CHECK_EQ(t.activity.laps[0].segment.moving.elapsed, 1800u);
+    }
+}
+
 // A record with compressed speed and distance (field 8) of base type
 // `base_type`, three bytes.
 std::string compressed_speed_record(u8 base_type, u8 b0, u8 b1, u8 b2)
@@ -1117,6 +1155,7 @@ int main()
     test_compressed_timestamp_without_a_definition();
     test_compressed_speed_of_another_type();
     test_twelve_byte_header();
+    test_session_without_timer_time();
     test_unsupported_header_size();
     test_compressed_speed_cut_short();
     test_session_total_ascent_is_loaded();

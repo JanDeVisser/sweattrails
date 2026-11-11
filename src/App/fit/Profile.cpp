@@ -12,7 +12,7 @@ constexpr static TypeMetaData activity_meta {
     .num_fields = 4,
     .fields = {
         { .name = "timestamp", .num = 253, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(activity, timestamp) },
-        { .name = "total timer time", .num = 0, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(activity, total_timer_time) },
+        { .name = "total timer time", .num = 0, .scale = 1000, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(activity, total_timer_time) },
         { .name = "num_sessions", .num = 1, .optional = false, .base_type = FITBaseType::uint16, .fld_offset = offsetof(activity, num_sessions) },
         { .name = "local timestamp", .num = 5, .units = MetaDataUnits::DateTime, .optional = true, .base_type = FITBaseType::sint32, .fld_offset = offsetof(activity, local_timestamp) },
     }
@@ -45,7 +45,7 @@ constexpr static TypeMetaData session_meta {
         { .name = "sport", .num = 5, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(session, sport) },
         { .name = "sub sport", .num = 6, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(session, sub_sport) },
         { .name = "total elapsed time", .num = 7, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_elapsed_time) },
-        { .name = "total timer time", .num = 8, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_timer_time) },
+        { .name = "total timer time", .num = 8, .scale = 1000, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_timer_time) },
         { .name = "total distance", .num = 9, .scale = 100, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(session, total_distance) },
         { .name = "total calories", .num = 11, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(session, total_calories) },
         { .name = "first lap index", .num = 25, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(session, first_lap_index) },
@@ -89,7 +89,7 @@ constexpr static TypeMetaData lap_meta {
         { .name = "timestamp", .num = 253, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(lap, timestamp) },
         { .name = "start time", .num = 2, .units = MetaDataUnits::DateTime, .optional = false, .base_type = FITBaseType::sint32, .fld_offset = offsetof(lap, start_time) },
         { .name = "total elapsed time", .num = 7, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_elapsed_time) },
-        { .name = "total timer time", .num = 8, .scale = 1000, .optional = false, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_timer_time) },
+        { .name = "total timer time", .num = 8, .scale = 1000, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_timer_time) },
         { .name = "total distance", .num = 9, .scale = 100, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(lap, total_distance) },
         { .name = "total calories", .num = 11, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(lap, total_calories) },
         { .name = "sport", .num = 25, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(lap, sport) },
