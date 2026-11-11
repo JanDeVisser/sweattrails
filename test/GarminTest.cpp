@@ -449,6 +449,44 @@ void test_too_many_requests_past_the_retries()
     CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-5.fit", "garmin-5.json" }));
 }
 
+// The activity list isn't paced or retried: a 429 for it stops the
+// download at once, with nothing waited for.
+void test_too_many_requests_for_the_list_is_not_retried()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = TooManyRequests, .body = "Too many requests" });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    PacingLog     log;
+    auto const    count = download_new_activities(garmin, store.storage, "2026-09-23", log.progress(), log.pacing(25));
+    CHECK(!count.has_value());
+    if (!count) {
+        CHECK_EQ(count.error().status, TooManyRequests);
+        CHECK(count.error().kind != GarminError::Kind::KeyRejected);
+    }
+    CHECK(log.pauses.empty());
+    CHECK(store.inbox().empty());
+}
+
+// The retries are per file: two files that each need one retry get it, with
+// one retry allowed.
+void test_retries_are_per_file()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    for (u64 id : { 5, 4 }) {
+        fake.answer(download_path(id), { .status = TooManyRequests, .body = "" });
+        fake.answer(download_path(id), { .status = 200, .body = fit_zip(id, "x") });
+    }
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    PacingLog     log;
+    auto          pacing = log.pacing(25);
+    pacing.retries = 1;
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23", log.progress(), pacing).value_or(99), 2uz);
+    CHECK_EQ(log.pauses.size(), 2uz);
+}
+
 // Run again before the inbox is processed, the download doesn't fetch what
 // the inbox already has.
 void test_download_skips_what_the_inbox_has()
@@ -559,6 +597,8 @@ int main()
     test_download_pauses_between_batches();
     test_too_many_requests_is_retried();
     test_too_many_requests_past_the_retries();
+    test_too_many_requests_for_the_list_is_not_retried();
+    test_retries_are_per_file();
     test_download_skips_what_the_inbox_has();
     test_failed_download_keeps_the_earlier_ones();
     test_has_activity();
