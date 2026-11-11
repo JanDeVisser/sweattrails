@@ -173,6 +173,37 @@ void test_compressed_timestamp_without_a_definition()
     CHECK_EQ(load_error(fit.file()), "UndefinedLocalMessage");
 }
 
+// `fit`'s file with a header of `size` bytes rather than 14: 12 is the
+// older header, without its CRC.
+std::string with_header_size(FITBuilder const &fit, u8 size)
+{
+    auto file = fit.file();
+    file[0] = static_cast<char>(size);
+    return file.substr(0, 12) + std::string(size > 12 ? size - 12 : 0, '\0') + file.substr(14);
+}
+
+// Older devices, and Garmin Connect's files of their activities, have a
+// 12-byte header. Reading 14 took the first definition's first two bytes,
+// and the file didn't load.
+void test_twelve_byte_header()
+{
+    FITBuilder fit;
+    add_file_id(fit, 260);
+    add_session(fit, 3600, 345);
+    CHECK_EQ(load_error(with_header_size(fit, 12)), "loaded");
+    LoadedActivity t { with_header_size(fit, 12) };
+    CHECK(t.activity.manufacturer == FIT::manufacturer::zwift);
+    CHECK_EQ(t.activity.segment.total_ascent.value_or(0), 345);
+}
+
+void test_unsupported_header_size()
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    add_session(fit, 3600, 345);
+    CHECK_EQ(load_error(with_header_size(fit, 13)), "HeaderSizeUnsupported");
+}
+
 // A record with compressed speed and distance (field 8) of base type
 // `base_type`, three bytes.
 std::string compressed_speed_record(u8 base_type, u8 b0, u8 b1, u8 b2)
@@ -1085,6 +1116,8 @@ int main()
     test_message_without_a_definition();
     test_compressed_timestamp_without_a_definition();
     test_compressed_speed_of_another_type();
+    test_twelve_byte_header();
+    test_unsupported_header_size();
     test_compressed_speed_cut_short();
     test_session_total_ascent_is_loaded();
     test_session_without_total_ascent();

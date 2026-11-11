@@ -736,13 +736,13 @@ enum class MetaDataUnits {
     Long,
 };
 
-#define FITERROR(S)               \
-    S(LargeHeaderSizeUnsupported) \
-    S(HeaderMagicMissing)         \
-    S(UnknownDeveloperField)      \
-    S(RequiredFieldMissing)       \
-    S(Truncated)                  \
-    S(UndefinedLocalMessage)      \
+#define FITERROR(S)          \
+    S(HeaderSizeUnsupported) \
+    S(HeaderMagicMissing)    \
+    S(UnknownDeveloperField) \
+    S(RequiredFieldMissing)  \
+    S(Truncated)             \
+    S(UndefinedLocalMessage) \
     S(IOError)
 
 enum class FITError {

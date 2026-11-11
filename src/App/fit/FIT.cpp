@@ -217,15 +217,17 @@ std::expected<void, FITError> FITFile::read_header()
 
     // read_slice() asserts that the data is there, so check the length of
     // the file before reading the header, and against the header after.
-    if (buffer.length() < 14) {
+    // The header is 12 bytes, or 14 with a CRC: older devices, and Garmin
+    // Connect's files of their activities, have the 12.
+    if (buffer.length() < 12) {
         std::println("read_header: file is only {} bytes", buffer.length());
         return std::unexpected(FITError::Truncated);
     }
-    std::string_view header_data = read_slice(14);
+    std::string_view header_data = read_slice(12);
     u8 const         header_size = header_data[0];
-    if (header_size > 14) {
-        std::println("read_header: large header {}", header_size);
-        return std::unexpected(FITError::LargeHeaderSizeUnsupported);
+    if (header_size != 12 && header_size != 14) {
+        std::println("read_header: header size {}", header_size);
+        return std::unexpected(FITError::HeaderSizeUnsupported);
     }
     if (header_data.substr(8, 4) != ".FIT") {
         std::println("read_header: header magic missing");
@@ -238,8 +240,12 @@ std::expected<void, FITError> FITFile::read_header()
         .profile_version = fit_read<u16>(FITArchitecture::LittleEndian, header_data.substr(2)),
         .data_size = fit_read<u32>(FITArchitecture::LittleEndian, header_data.substr(4)),
     };
-    if (header_size >= 14) {
-        header.crc = fit_read<u16>(FITArchitecture::LittleEndian, header_data.substr(12));
+    if (header_size == 14) {
+        if (buffer.length() < 14) {
+            std::println("read_header: file is only {} bytes", buffer.length());
+            return std::unexpected(FITError::Truncated);
+        }
+        header.crc = fit_read<u16>(FITArchitecture::LittleEndian, read_slice(2));
     }
     if (static_cast<size_t>(header.header_size) + header.data_size > buffer.length()) {
         std::println("read_header: header says {} data bytes, file has {}", header.data_size, buffer.length() - header.header_size);
