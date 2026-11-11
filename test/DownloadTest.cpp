@@ -258,10 +258,18 @@ std::string start_date(int days, i64 now)
     return std::format("{:04}-{:02}-{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
 }
 
+// The days of "Everything", for a download at `now`.
+int everything(i64 now)
+{
+    auto const periods = download_periods(now);
+    return periods[3].days;
+}
+
 // The days of "This year", for a download at `now`.
 int this_year(i64 now)
 {
-    return download_periods(now)[1].days;
+    auto const periods = download_periods(now);
+    return periods[1].days;
 }
 
 void test_download_periods()
@@ -304,6 +312,46 @@ void test_login_arguments()
     CHECK(!login_arguments(request, "Garmin Connect").try_get<int>("days").has_value());
 }
 
+// Around the changes to and from summer time, and in a leap year, a day
+// counts once: "This year" and "Everything" are the same all day.
+void test_download_periods_at_daylight_saving_changes()
+{
+    setenv("TZ", "America/Toronto", 1);
+    tzset();
+    // March 8, 2026: 00:30 before the change, 03:30 after it.
+    for (i64 const now : { 1772947800L, 1772955000L }) {
+        CHECK_EQ(this_year(now), 67);
+        CHECK_EQ(everything(now), 13464 - 248);
+    }
+    // November 1, 2026: 00:30 before the change back, 23:30 after it.
+    for (i64 const now : { 1793507400L, 1793593800L }) {
+        CHECK_EQ(this_year(now), 305);
+        CHECK_EQ(everything(now), 13464 - 10);
+    }
+    // December 31, 2024, 23:30: the 366th day of a leap year.
+    i64 const leap_new_years_eve = 1735705800;
+    CHECK_EQ(this_year(leap_new_years_eve), 366);
+    CHECK_EQ(start_date(366, leap_new_years_eve), "2023-12-31");
+
+    // East of Greenwich, where it is still yesterday in UTC: November 11,
+    // 2026, 00:30 in Auckland, is the same day as in Toronto.
+    setenv("TZ", "Pacific/Auckland", 1);
+    tzset();
+    CHECK_EQ(everything(1794310200), 13464);
+    CHECK_EQ(this_year(1794310200), 315);
+}
+
+// The login's days make it back into a download request.
+void test_login_arguments_make_a_request()
+{
+    DownloadRequest const request { .wahoo = true, .strava = true, .wahoo_days = 400, .strava_days = 500 };
+    auto const            wahoo = make_download_request(JSONValue::object(), login_arguments(request, "Wahoo"), Sources { .wahoo = true });
+    CHECK_EQ(wahoo.wahoo_days, 400);
+    CHECK(!wahoo.quiet);
+    auto const strava = make_download_request(JSONValue::object(), login_arguments(request, "Strava"), Sources { .strava = true });
+    CHECK_EQ(strava.strava_days, 500);
+}
+
 int main()
 {
     test_client_id();
@@ -323,5 +371,7 @@ int main()
     test_downloads_activities();
     test_download_periods();
     test_login_arguments();
+    test_download_periods_at_daylight_saving_changes();
+    test_login_arguments_make_a_request();
     return ST::Test::test_result();
 }

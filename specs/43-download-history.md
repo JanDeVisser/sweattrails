@@ -223,4 +223,9 @@ and starting, picking each period, Esc, and a start with activities.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. Suggestion: `src/App/SweatTrails.cpp` `notif_store_checked` (~1995). The quiet download is now queued when the UI handles `StoreChecked`, so it lands behind any `GroupRecordings` chunk that was rescheduled after FindNewest (`group_recordings_chunk`, ~305). On an old store with many months to group, the startup download waits for the whole once-over, where before it ran after the first chunk. Harmless, and it only happens once (the marker), but it differs from the spec's "about the same point".
+2. Suggestion: `start_download` (~671) lets any quiet request run under a modal. Only `notif_store_checked` submits `quiet` today, so nothing else changes; a future quiet caller inherits the exemption. The comment says so.
+3. Suggestion: the `initialize()` comment (~2403) has a line that runs far past the others; rewrap it.
+4. Checked, no problem: `run_downloads` always setting `login_arguments` (`notif_download_done` passes the object to either login; `cmd_wahoo_login` and `cmd_strava_login` read only `days`/`history`; Garmin never asks a login). Days times 86400 are done in `i64` everywhere, so "Everything" (13464 days) doesn't overflow. `download_periods` is right across both daylight saving changes, the leap year's December 31 and a zone ahead of UTC.
+5. Missing test, added: DST changes, leap year, Auckland for `download_periods()`, and the login arguments feeding `make_download_request()` (`test/DownloadTest.cpp`). All pass.
+6. Not covered, needs a window: the startup list, Esc, and the "No activities found" box followed by the quiet download.
