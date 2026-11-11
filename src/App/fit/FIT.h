@@ -900,7 +900,7 @@ struct FITFile {
         }
         if (header.header_size == 0) {
             if (auto err_maybe = read_header(); !err_maybe) {
-                std::println("Error reading file header");
+                trace(FIT, "Error reading file header");
                 return std::unexpected(err_maybe.error());
             }
         }
@@ -921,7 +921,7 @@ struct FITFile {
                 case mesg_num::developer_data_id: {
                     auto const msg_maybe = make_from_rec<developer_data_id>(rec);
                     if (!msg_maybe) {
-                        std::println("Error making developer_data_id: {}", tag(msg_maybe.error()));
+                        trace(FIT, "Error making developer_data_id: {}", tag(msg_maybe.error()));
                         return std::unexpected(msg_maybe.error());
                     }
                     developer_data.emplace_back(TRY_EVAL(make_from_rec<developer_data_id>(rec)));
@@ -929,7 +929,7 @@ struct FITFile {
                 case mesg_num::field_description: {
                     auto const msg_maybe = make_from_rec<field_description>(rec);
                     if (!msg_maybe) {
-                        std::println("Error making field_description: {}", tag(msg_maybe.error()));
+                        trace(FIT, "Error making field_description: {}", tag(msg_maybe.error()));
                         return std::unexpected(msg_maybe.error());
                     }
                     developer_field.emplace_back(msg_maybe.value());
@@ -998,7 +998,7 @@ struct FITFile {
                             }
                         }
                         if (!found) {
-                            std::println("Unknown developer field encountered");
+                            trace(FIT, "Unknown developer field encountered");
                             return std::unexpected(FITError::UnknownDeveloperField);
                         }
                         if (verbose)
@@ -1053,7 +1053,7 @@ struct FITFile {
                 },
                 record_header.header);
             if (!read_record.has_value()) {
-                std::println("read_record failed");
+                trace(FIT, "read_record failed: {}", tag(read_record.error()));
                 return std::unexpected(read_record.error());
             }
             if (read_record.value()) {
@@ -1147,11 +1147,11 @@ bool assign_field(ObjType &obj, FITDataRecord const &rec)
         }
     } else {
         if (!val_maybe) {
-            std::println("Field {} of mesg {} not found", def.num, tag(static_cast<mesg_num>(local_def.global_msg_num)));
+            trace(FIT, "Field {} of mesg {} not found", def.num, tag(static_cast<mesg_num>(local_def.global_msg_num)));
             return false;
         }
         if (!val_maybe->value) {
-            std::println("Field {} of mesg {} empty", num, tag(static_cast<mesg_num>(local_def.global_msg_num)));
+            trace(FIT, "Field {} of mesg {} empty", num, tag(static_cast<mesg_num>(local_def.global_msg_num)));
             return false;
         }
         FldType *fld = reinterpret_cast<FldType *>(reinterpret_cast<char *>(&obj) + def.fld_offset);
@@ -1249,7 +1249,7 @@ std::ostream &format_field(std::ostream &out, FITDataRecord const &rec)
         }
     } else {
         if (!val_maybe) {
-            std::println("Required field `{}` not found\n", name, tag(static_cast<mesg_num>(local_def.global_msg_num)));
+            trace(FIT, "Required field `{}` of mesg {} not found", name, tag(static_cast<mesg_num>(local_def.global_msg_num)));
             return out;
         }
         if (!val_maybe->value) {
