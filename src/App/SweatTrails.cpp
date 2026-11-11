@@ -2401,8 +2401,10 @@ void SweatTrails::initialize()
     // activity shows before Garmin Connect or Wahoo is asked for anything,
     // which can take a while, and again after the download if it brought
     // anything. The download is started when the newest activity has been
-    // looked for: an empty store is offered its history instead. The once over the store for recordings comes before the
-    // summaries' update, and does it when it's done.
+    // looked for: an empty store is offered its history instead. The once
+    // over the store for recordings comes before the summaries' update, and
+    // does it when it's done; as its chunks schedule each other, the
+    // startup download waits for the last of them.
     std::error_code ec { };
     grouping_recordings = !std::filesystem::exists(recordings_grouped_marker(storage), ec);
     bus.schedule(make_job<JobType::ProcessInbox>(std::monostate { }));
