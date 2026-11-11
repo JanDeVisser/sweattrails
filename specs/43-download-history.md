@@ -69,6 +69,13 @@ user wants an older period. Builds on [07](07-garmin-download.md),
 
 - "Everything" can be thousands of FIT files. The status line counts, as
   for any download ("Downloading 412 of 2300 from Garmin Connect").
+- **The status line says the download has started**, as before the first
+  file there can be a wait, found when Jan tried it: the download can wait
+  behind other jobs, and Garmin Connect's list of a whole history is
+  some 20 requests. Picking a period, or Ctrl+G, says "Starting the
+  download…" at once, and each source, as it's asked for its list, "Asking
+  Garmin Connect what there is to download…". The quiet download at
+  startup doesn't say it's starting, but does say what it asks.
 - **Downloads are paced.** Tried by hand, a download of a whole Garmin
   Connect history stopped part way with an error: Garmin Connect throttles
   a client that asks for too many files in a row, and the download took
@@ -219,6 +226,12 @@ None.
    sends the status line's message and sleeps with
    `std::this_thread::sleep_for`: the job thread is the download's, and
    blocks as it does for a request, and quitting doesn't wait for it.
+
+7. **The status line's texts** are `download_status(step, source, index,
+   count)` in `storage/Download.h`, with `DownloadStep` (Starting,
+   Listing, Downloading, Pausing), which the `Downloading` notification
+   carries in place of a `pausing` flag. `start_download()` sets Starting
+   on the UI thread, as the job may not run for a while.
 
 Nothing new in `src/Lib/Widget`: `list_box()` is the widget.
 

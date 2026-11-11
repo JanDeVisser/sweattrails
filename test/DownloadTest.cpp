@@ -365,6 +365,14 @@ void test_pause_before()
     CHECK(!pause_before(Pacing { .batch = 0 }, 25));
 }
 
+void test_download_status()
+{
+    CHECK_EQ(download_status(DownloadStep::Starting), "Starting the download…");
+    CHECK_EQ(download_status(DownloadStep::Listing, "Garmin Connect"), "Asking Garmin Connect what there is to download…");
+    CHECK_EQ(download_status(DownloadStep::Downloading, "Wahoo", 0, 2), "Downloading 1 of 2 from Wahoo");
+    CHECK_EQ(download_status(DownloadStep::Pausing, "Garmin Connect"), "Pausing a minute between downloads from Garmin Connect");
+}
+
 int main()
 {
     test_client_id();
@@ -385,6 +393,7 @@ int main()
     test_download_periods();
     test_login_arguments();
     test_pause_before();
+    test_download_status();
     test_download_periods_at_daylight_saving_changes();
     test_login_arguments_make_a_request();
     return ST::Test::test_result();

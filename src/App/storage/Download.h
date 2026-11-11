@@ -58,6 +58,18 @@ struct DownloadPeriod {
 // specs/43-download-history.md.
 std::vector<DownloadPeriod> download_periods(i64 now);
 
+// Where a download from a source is, for the status line.
+enum class DownloadStep {
+    Starting,    // Asked for, and waiting for the jobs before it
+    Listing,     // Asking the source what there is to download
+    Downloading, // A file, of the ones to download
+    Pausing,     // Between files: see Pacing
+};
+
+// What the status line says at `step` of a download from `source`, at the
+// file `index` of `count`.
+std::string download_status(DownloadStep step, std::string_view source = { }, size_t index = 0, size_t count = 0);
+
 // What a download is asked to do: the task's arguments, with the settings
 // filling in what they don't say.
 struct DownloadRequest {

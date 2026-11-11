@@ -91,7 +91,7 @@ Pacing paced(pSweatTrails const &the, std::string const &source)
 {
     return Pacing {
         .wait = [the, source](std::chrono::seconds pause) {
-            the->notify_latest<NotificationType::Downloading>(Downloading { .source = source, .pausing = true });
+            the->notify_latest<NotificationType::Downloading>(Downloading { .source = source, .step = DownloadStep::Pausing });
             std::this_thread::sleep_for(pause);
         },
     };
@@ -108,6 +108,7 @@ SourceOutcome download_from_garmin(pSweatTrails const &the, int days)
             garmin_key_file().string());
         return outcome;
     }
+    the->notify_latest<NotificationType::Downloading>(Downloading { .source = outcome.source, .step = DownloadStep::Listing });
     GarminConnect garmin { .fetch = http_fetch };
     if (auto const token = garmin.obtain_token(*key); !token) {
         return failed(outcome, token.error().to_string());
@@ -133,6 +134,7 @@ SourceOutcome download_from_wahoo(pSweatTrails const &the, std::optional<std::st
                           "\"wahoo\": { \"client_id\": \"...\" }. The README says how.";
         return outcome;
     }
+    the->notify_latest<NotificationType::Downloading>(Downloading { .source = outcome.source, .step = DownloadStep::Listing });
     auto const tokens_file = wahoo_tokens_file(the->user_config_dir);
     Wahoo      wahoo {
         .fetch = http_fetch,
@@ -692,6 +694,11 @@ void start_download(pSweatTrails const &sweattrails, JSONValue const &arguments,
         return;
     }
     sweattrails->downloading = true;
+    // The download can wait behind other jobs, and asks for lists before
+    // it downloads anything: say right away that it's coming.
+    if (!request.quiet) {
+        sweattrails->set_status(download_status(DownloadStep::Starting));
+    }
     sweattrails->schedule<JobType::Download>(request);
 }
 
@@ -1834,11 +1841,7 @@ void SweatTrails::notif_importing_file(Notification::Payload const &data)
 void SweatTrails::notif_downloading(Notification::Payload const &data)
 {
     auto const &download = std::get<Downloading>(data);
-    if (download.pausing) {
-        SweatTrails::the()->set_status(std::format("Pausing a minute between downloads from {}", download.source));
-        return;
-    }
-    SweatTrails::the()->set_status(std::format("Downloading {} of {} from {}", download.index + 1, download.count, download.source));
+    SweatTrails::the()->set_status(download_status(download.step, download.source, download.index, download.count));
 }
 
 void SweatTrails::notif_download_done(Notification::Payload const &data)

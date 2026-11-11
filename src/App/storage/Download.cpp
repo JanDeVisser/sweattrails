@@ -122,6 +122,21 @@ std::optional<std::string> strava_setup_problem(std::optional<StravaClient> cons
     return { };
 }
 
+std::string download_status(DownloadStep step, std::string_view source, size_t index, size_t count)
+{
+    switch (step) {
+    case DownloadStep::Starting:
+        return "Starting the download…";
+    case DownloadStep::Listing:
+        return std::format("Asking {} what there is to download…", source);
+    case DownloadStep::Downloading:
+        return std::format("Downloading {} of {} from {}", index + 1, count, source);
+    case DownloadStep::Pausing:
+        return std::format("Pausing a minute between downloads from {}", source);
+    }
+    return { };
+}
+
 bool downloads_activities(JSONValue const &settings, bool has_garmin_key)
 {
     return has_garmin_key || wahoo_client_id(settings).has_value();

@@ -160,12 +160,13 @@ struct ImportingFile {
     size_t      count { 0 };
 };
 
-// Sent by a download before each activity.
+// Sent by a download when it asks a source what there is, before each
+// activity, and when it pauses.
 struct Downloading {
-    std::string source { }; // "Garmin Connect", "Wahoo", "Strava"
-    size_t      index { 0 };
-    size_t      count { 0 };
-    bool        pausing { false }; // Between files, so as not to ask too much
+    std::string  source { }; // "Garmin Connect", "Wahoo", "Strava"
+    size_t       index { 0 };
+    size_t       count { 0 };
+    DownloadStep step { DownloadStep::Downloading };
 };
 
 // Sent when a login is over, however it ended, with what to tell the
