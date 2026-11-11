@@ -536,18 +536,36 @@ void test_download_skips_what_the_inbox_has()
     CHECK_EQ(downloads(fake), 0uz);
 }
 
-// A failed download stops the download, but what came before it stays.
+// A failed download stops the download, but what came before it stays:
+// here the key, rejected half way.
 void test_failed_download_keeps_the_earlier_ones()
 {
     TempStore  store;
     FakeGarmin fake;
     fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
     fake.answer(download_path(5), { .status = 200, .body = fit_zip(5, "b") });
-    fake.answer(download_path(4), { .status = 503, .body = "Busy" });
+    fake.answer(download_path(4), { .status = 401, .body = "Unauthorized" });
     GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
     auto const    count = download_new_activities(garmin, store.storage, "2026-09-23");
-    CHECK(!count.has_value());
+    CHECK(!count.has_value() && count.error().kind == GarminError::Kind::KeyRejected);
     CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-5.fit", "garmin-5.json" }));
+}
+
+// Garmin Connect answers HTTP 500 for older activities without a file, such
+// as treadmill runs: they're skipped, as is any other HTTP error for one
+// activity, and the ones after them still come. They used to stop the
+// download.
+void test_server_error_for_one_activity_is_skipped()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(6, 1792700000, "C"), list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    fake.answer(download_path(6), { .status = 500, .body = "" });
+    fake.answer(download_path(5), { .status = 503, .body = "Busy" });
+    fake.answer(download_path(4), { .status = 200, .body = fit_zip(4, "a") });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23").value_or(99), 1uz);
+    CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-4.fit", "garmin-4.json" }));
 }
 
 // A downloaded activity goes through the inbox as any other: it's filed
@@ -639,6 +657,7 @@ int main()
     test_retries_are_per_file();
     test_download_skips_what_the_inbox_has();
     test_failed_download_keeps_the_earlier_ones();
+    test_server_error_for_one_activity_is_skipped();
     test_has_activity();
     test_downloaded_activity_goes_through_the_inbox();
     return ST::Test::test_result();

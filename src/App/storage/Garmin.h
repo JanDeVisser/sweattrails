@@ -100,9 +100,10 @@ using GarminProgress = std::function<void(size_t index, size_t count)>;
 // Downloads the activities of the last `days` days that the store doesn't
 // have into its inbox: `garmin-<id>.json`, the activity's summary, and
 // `garmin-<id>.fit`. The inbox organizes them as any other file. Returns
-// how many were downloaded. An activity Garmin Connect won't hand over (403
-// or 404), or whose file isn't a FIT file, is skipped with a warning; any
-// other error stops the download. So is one the inbox set aside as a
+// how many were downloaded. An activity Garmin Connect won't hand over (an
+// HTTP error other than 401 and 429), or whose file isn't a FIT file, is
+// skipped with a warning; any other error, such as no connection, stops
+// the download. So is one the inbox set aside as a
 // duplicate before, as `duplicates/garmin-<id>.fit` or `-<n>.fit`: its start
 // time on Garmin Connect isn't the store's, and it would come again on every
 // download.

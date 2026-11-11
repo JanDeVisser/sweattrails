@@ -56,9 +56,13 @@ GarminError http_error(long status, std::string message)
 }
 
 // Garmin Connect won't hand over this one activity, or it isn't a FIT file.
+// Older activities without a file, such as treadmill runs entered by hand,
+// get an HTTP 500. Too many requests is waited for instead, and a rejected
+// key stops the download.
 bool unavailable(GarminError const &error)
 {
-    return error.status == 403 || error.status == 404 || error.kind == GarminError::Kind::NotFit;
+    return error.kind == GarminError::Kind::NotFit
+        || (error.kind == GarminError::Kind::Failed && error.status >= 400 && error.status != TooManyRequests);
 }
 
 // The IDs of the activities the inbox set aside as duplicates:
