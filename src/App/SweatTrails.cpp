@@ -328,7 +328,9 @@ void run_downloads(pSweatTrails const &the, DownloadRequest const &request)
         auto const after = static_cast<i64>(std::time(nullptr)) - static_cast<i64>(request.strava_days) * 24 * 60 * 60;
         outcomes.push_back(download_from_strava(the, request.strava_client, after));
     }
-    the->notify<NotificationType::DownloadDone>(download_report(outcomes, request.quiet));
+    auto report = download_report(outcomes, request.quiet);
+    report.login_arguments = login_arguments(request, report.ask_login);
+    the->notify<NotificationType::DownloadDone>(report);
 }
 
 }
@@ -675,6 +677,29 @@ void cmd_download(pSweatTrails const &sweattrails, JSONValue const &arguments)
     start_download(sweattrails, arguments, Sources { .garmin = true, .wahoo = true, .strava = true });
 }
 
+// Offers the periods to download: see specs/43-download-history.md.
+void offer_download_periods(pSweatTrails const &sweattrails, std::string_view prompt)
+{
+    std::vector<std::pair<std::string, int>> entries;
+    for (auto const &period : download_periods(static_cast<i64>(std::time(nullptr)))) {
+        entries.emplace_back(period.text, period.days);
+    }
+    auto const download = [](pSweatTrails const &the, int days) {
+        auto arguments = JSONValue::object();
+        arguments.set("days", JSONValue { days });
+        the->bus.submit("st-download", arguments);
+    };
+    list_box(sweattrails, prompt, entries, download);
+}
+
+void cmd_download_period(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (!sweattrails->modals.empty() || sweattrails->downloading) {
+        return;
+    }
+    offer_download_periods(sweattrails, "Download activities from…");
+}
+
 void cmd_garmin_download(pSweatTrails const &sweattrails, JSONValue const &arguments)
 {
     start_download(sweattrails, arguments, Sources { .garmin = true });
@@ -772,7 +797,9 @@ bool can_log_in(pSweatTrails const &sweattrails)
     return true;
 }
 
-void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &)
+// Logs in to Wahoo, and then downloads. Arguments: `days`, how far back,
+// else `wahoo.days` from the settings.
+void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &arguments)
 {
     if (!can_log_in(sweattrails)) {
         return;
@@ -783,7 +810,7 @@ void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &)
                     "\"wahoo\": { \"client_id\": \"...\" }. The README says how.");
         return;
     }
-    auto const days = make_download_request(sweattrails->settings, JSONValue { }, Sources { .wahoo = true }).wahoo_days;
+    auto const days = make_download_request(sweattrails->settings, arguments, Sources { .wahoo = true }).wahoo_days;
     auto const pkce = Pkce::make();
     auto const state = random_token(16);
     start_login(sweattrails,
@@ -2148,6 +2175,8 @@ void SweatTrails::initialize()
     bus.add_task<SweatTrails>("st-download", self(), cmd_download)
         .titled("Download new activities")
         .bind(KeyCombo { KEY_G, KModControl });
+    bus.add_task<SweatTrails>("st-download-period", self(), cmd_download_period)
+        .titled("Download activities from…");
     bus.add_task<SweatTrails>("st-garmin-download", self(), cmd_garmin_download)
         .titled("Download from Garmin Connect");
     bus.add_task<SweatTrails>("st-wahoo-download", self(), cmd_wahoo_download)
