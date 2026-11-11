@@ -1,6 +1,6 @@
 # Download history
 
-Status: In progress, on branch feature/43-download-history
+Status: In review
 
 <!--
 Status is one of:
@@ -129,9 +129,14 @@ None.
    `storage/Download.h`:
 
    ```cpp
+   struct DownloadPeriod {
+       std::string text { };
+       int         days { 0 };
+   };
+
    // The periods "Download activities from…" offers, each with the days
    // it looks back from `now`, in local time.
-   std::vector<std::pair<std::string, int>> download_periods(i64 now);
+   std::vector<DownloadPeriod> download_periods(i64 now);
    ```
 
    - The last 30 days: 30.
@@ -140,13 +145,15 @@ None.
      January 1's morning. Garmin's `startDate` then is December 31, a
      day early, which costs nothing: what the store has is skipped.
    - The last year: 365.
-   - Everything: the days back to January 1, 1990 (`EverythingSince`),
+   - Everything: the days back to January 1, 1990
+     (`EverythingSinceYear`), plus one as for this year,
        before any GPS watch's FIT file. Checked with a real request on
      2026-11-11: Garmin Connect takes `startDate=1990-01-01`, and lists
      the same as without one.
 
    No enum: the list's payload is the days, and `st-download` already
-   takes them.
+   takes them. `offer_download_periods(prompt)` in `SweatTrails.cpp`
+   shows the list, for the task and for the startup.
 2. **`st-download-period`**, titled "Download activities from…", no key:
    `list_box()` with `download_periods(now)`, prompt "Download activities
    from…"; picking one submits `st-download` with `{ "days": n }`. Not
@@ -160,7 +167,8 @@ None.
    ```
 
    The Garmin key is read from the environment and file by the caller,
-   as `download_from_garmin()` does, so the function is testable.
+   with `garmin_key()`, which `download_from_garmin()` now uses too, so
+   the function is testable.
 4. **The startup check.** `FindNewestActivity`'s payload changes from
    `std::monostate` to `FindNewest { bool at_startup { false }; }`. At
    startup the job, after showing the newest activity, notifies a new
@@ -175,12 +183,18 @@ None.
    So the startup download is submitted after the store is looked at,
    not before; jobs run in order, so it runs at about the same point as
    now. `run_downloads()` keeps scheduling `FindNewest { }`, not at
-   startup.
+   startup, which says "No activities found" as before.
+
+   As the quiet download is now submitted after the startup's messages
+   (such as "No activities found", or a failure to read the store),
+   `start_download()` lets a quiet download run under a modal: the
+   modal check is there for Ctrl+G, a key pressed under one.
 5. **The Wahoo login keeps the period.** Picking "Everything" without a
    Wahoo login ends with "Log in to Wahoo now?", and the login then
    downloads only `wahoo.days`. `run_downloads()` puts the request's
    `days` in the report's `login_arguments`, as `run_strava_titles()`
-   does, and `st-wahoo-login` takes a `days` argument, falling back on
+   does, with `login_arguments(request, source)` in `storage/Download.h`,
+   and `st-wahoo-login` takes a `days` argument, falling back on
    `wahoo.days`.
 
 Nothing new in `src/Lib/Widget`: `list_box()` is the widget.
@@ -190,16 +204,18 @@ Nothing new in `src/Lib/Widget`: `list_box()` is the widget.
 In `test/DownloadTest.cpp`, which already tests the download's request
 and report:
 
-- `download_periods()` with `TZ` set and a fixed `now`, as
+- `download_periods()` with `TZ` set to Toronto and a fixed `now`, as
   `GarminTest.cpp` does for `garmin_start_date()`: four entries in
-  order; 30 and 365; this year on January 1, on a day in March, and on
-  December 31, and that `garmin_start_date()` of it is December 31 of
-  the year before; everything reaches back to 1990-01-01.
+  order; 30 and 365; this year on January 1, in March after the change
+  to summer time, and on December 31 late enough to be the next year in
+  UTC, and that Garmin's start date for it is December 31 of the year
+  before; everything's start date is 1989-12-31. The test works out the
+  start date as `garmin_start_date()` does, as `download_test` doesn't
+  link `Garmin.cpp` and what it pulls in.
 - `downloads_activities()`: a Garmin key, a Wahoo client ID, both,
   neither, and Strava alone, which is false.
-- The login's arguments after a download: the days are passed on. The
-  part of `run_downloads()` that builds them is a function a test can
-  reach.
+- `login_arguments()`: Wahoo's and Strava's days, and nothing for
+  Garmin Connect, which has no login.
 
 Not tested automatically: the startup check and the list, which need the
 app's job thread and a window. Checked by hand: moving `activity/` away
