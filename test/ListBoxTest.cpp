@@ -397,6 +397,39 @@ void test_search_by_codepoint(TestList &list)
 
 }
 
+// Ten pixels a character.
+float measure_chars(std::string_view text)
+{
+    return static_cast<float>(text.size()) * 10;
+}
+
+// A prompt is shown whole: the box widens for it, up to most of the
+// screen, and past that the prompt wraps. A long error message used to make
+// the box wider than the window.
+void test_layout_prompt()
+{
+    auto const short_prompt = layout_prompt("Quit?", 1000, measure_chars);
+    CHECK_EQ(short_prompt.width, 500.0f);
+    CHECK_EQ(short_prompt.lines, (std::vector<std::string> { "Quit?" }));
+
+    auto const wider = layout_prompt(std::string(60, 'x'), 1000, measure_chars);
+    CHECK_EQ(wider.width, 616.0f);
+    CHECK_EQ(wider.lines.size(), 1uz);
+
+    std::string message;
+    for (auto ix = 0; ix < 40; ++ix) {
+        message += "Strava timed out. ";
+    }
+    auto const wrapped = layout_prompt(message, 1000, measure_chars);
+    CHECK_EQ(wrapped.width, 800.0f);
+    CHECK(wrapped.lines.size() > 1);
+    for (auto const &line : wrapped.lines) {
+        CHECK(measure_chars(line) <= 800.0f - PromptMargin);
+    }
+
+    CHECK_EQ(layout_prompt("", 1000, measure_chars).lines.size(), 1uz);
+}
+
 int main()
 {
     Test::ScopedTestApp app;
@@ -419,5 +452,6 @@ int main()
     test_matches_words();
     test_search_by_words(*list);
     test_matches_words_utf8();
+    test_layout_prompt();
     return Test::test_result();
 }
