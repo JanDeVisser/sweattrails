@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <format>
+#include <set>
 #include <system_error>
 
 #include <IO.h>
@@ -54,10 +55,29 @@ GarminError http_error(long status, std::string message)
     return GarminError { .kind = GarminError::Kind::Failed, .message = std::move(message), .status = status };
 }
 
-// Garmin Connect won't hand over this one activity.
+// Garmin Connect won't hand over this one activity, or it isn't a FIT file.
 bool unavailable(GarminError const &error)
 {
-    return error.status == 403 || error.status == 404;
+    return error.status == 403 || error.status == 404 || error.kind == GarminError::Kind::NotFit;
+}
+
+// The IDs of the activities the inbox set aside as duplicates:
+// `garmin-<id>.fit`, or `garmin-<id>-<n>.fit` for later copies.
+std::set<u64> set_aside_as_duplicates(Storage const &storage)
+{
+    std::set<u64>   ret;
+    std::error_code ec { };
+    for (fs::directory_iterator it { storage.inbox_dir / "duplicates", ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
+        auto const name = it->path().filename().string();
+        if (!name.starts_with("garmin-") || !name.ends_with(".fit")) {
+            continue;
+        }
+        auto const id = std::string_view { name }.substr(7, name.size() - 11);
+        if (auto const parsed = string_to_integer<u64>(id.substr(0, id.find('-')), 10); parsed) {
+            ret.insert(*parsed);
+        }
+    }
+    return ret;
 }
 
 GarminResult<void> write_whole_file(fs::path const &path, std::string_view contents)
@@ -218,7 +238,7 @@ GarminResult<std::string> GarminConnect::download_fit(u64 id)
             return std::move(*fit);
         }
     }
-    return std::unexpected(failed(std::format("The download of activity {} has no FIT file", id)));
+    return std::unexpected(GarminError { .kind = GarminError::Kind::NotFit, .message = std::format("The download of activity {} has no FIT file", id) });
 }
 
 GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage const &storage, std::string_view start_date, GarminProgress const &progress, Pacing const &pacing)
@@ -227,12 +247,13 @@ GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage cons
     if (!listed) {
         return std::unexpected(listed.error());
     }
+    auto const                  duplicates = set_aside_as_duplicates(storage);
     std::vector<GarminActivity> wanted;
     for (auto const &activity : *listed) {
         // Downloaded before, but not organized yet: the inbox will.
         std::error_code ec { };
         auto const      in_inbox = fs::exists(storage.inbox_dir / std::format("garmin-{}.fit", activity.id), ec);
-        if (activity.has_file && !in_inbox && !storage.has_activity(activity.start_time)) {
+        if (activity.has_file && !in_inbox && !duplicates.contains(activity.id) && !storage.has_activity(activity.start_time)) {
             wanted.push_back(activity);
         }
     }

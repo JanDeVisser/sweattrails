@@ -353,6 +353,42 @@ void test_download_new_activities()
     CHECK(progress == (std::vector<std::pair<size_t, size_t>> { { 0, 1 } }));
 }
 
+// An activity uploaded as a TCX file has no FIT file to download: it's
+// skipped, and the ones after it still come. It used to stop the download.
+void test_activity_without_a_fit_file_is_skipped()
+{
+    TempStore  store;
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(6, 1792700000, "C"), list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    fake.answer(download_path(6), { .status = 200, .body = fit_zip(6, "c") });
+    fake.answer(download_path(5), { .status = 200, .body = make_zip({ { .name = "5_UNKNOWN.tcx", .contents = "<TrainingCenterDatabase/>" } }) });
+    fake.answer(download_path(4), { .status = 200, .body = fit_zip(4, "a") });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23").value_or(99), 2uz);
+    CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-4.fit", "garmin-4.json", "garmin-6.fit", "garmin-6.json" }));
+    fake.answer(download_path(5), { .status = 200, .body = make_zip({ { .name = "5_UNKNOWN.tcx", .contents = "<TrainingCenterDatabase/>" } }) });
+    auto const tcx = garmin.download_fit(5);
+    CHECK(!tcx.has_value() && tcx.error().kind == GarminError::Kind::NotFit);
+}
+
+// An activity the inbox set aside as a duplicate, once or more, isn't
+// downloaded again: its start time on Garmin Connect isn't the store's.
+void test_duplicates_set_aside_are_not_downloaded_again()
+{
+    TempStore  store;
+    auto const duplicates = store.storage.inbox_dir / "duplicates";
+    fs::create_directories(duplicates);
+    for (auto const *name : { "garmin-6.fit", "garmin-5-3.fit", "garmin-5-3.json", "wahoo-4.fit" }) {
+        MUST(write_file_by_name((duplicates / name).string(), std::string_view { "set aside" }));
+    }
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(6, 1792700000, "C"), list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    fake.answer(download_path(4), { .status = 200, .body = fit_zip(4, "a") });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23").value_or(99), 1uz);
+    CHECK_EQ(downloads(fake), 1uz);
+}
+
 // What a download's pacing did: the pauses, and where in the download
 // they came, as the index of the next progress call.
 struct PacingLog {
@@ -594,6 +630,8 @@ int main()
     test_download_unzips_the_fit_file();
     test_download_without_a_fit_file();
     test_download_new_activities();
+    test_activity_without_a_fit_file_is_skipped();
+    test_duplicates_set_aside_are_not_downloaded_again();
     test_download_pauses_between_batches();
     test_too_many_requests_is_retried();
     test_too_many_requests_past_the_retries();

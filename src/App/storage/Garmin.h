@@ -44,6 +44,7 @@ struct GarminError {
     enum class Kind {
         NoKey,       // There's no key: the user hasn't set up Garmin Connect.
         KeyRejected, // Expired or revoked: the user has to make a new one.
+        NotFit,      // The activity's file isn't a FIT file, such as an uploaded TCX file.
         Failed,      // Anything else: no connection, an HTTP error, bad data.
     };
 
@@ -100,7 +101,11 @@ using GarminProgress = std::function<void(size_t index, size_t count)>;
 // have into its inbox: `garmin-<id>.json`, the activity's summary, and
 // `garmin-<id>.fit`. The inbox organizes them as any other file. Returns
 // how many were downloaded. An activity Garmin Connect won't hand over (403
-// or 404) is skipped with a warning; any other error stops the download.
+// or 404), or whose file isn't a FIT file, is skipped with a warning; any
+// other error stops the download. So is one the inbox set aside as a
+// duplicate before, as `duplicates/garmin-<id>.fit` or `-<n>.fit`: its start
+// time on Garmin Connect isn't the store's, and it would come again on every
+// download.
 // Activities downloaded before an error stay in the inbox. The FIT files
 // are downloaded as `pacing` says: see specs/43-download-history.md.
 GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage const &storage, std::string_view start_date, GarminProgress const &progress = { }, Pacing const &pacing = { });
