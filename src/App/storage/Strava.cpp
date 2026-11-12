@@ -144,12 +144,22 @@ std::optional<StravaUsage> rate_limit_usage(HttpResponse const &response)
     };
 }
 
+i64 next_quarter_hour(i64 now)
+{
+    return (now / QuarterHour + 1) * QuarterHour;
+}
+
+i64 next_strava_day(i64 now)
+{
+    return (now / Day + 1) * Day;
+}
+
 i64 rate_limit_reset(HttpResponse const &response, i64 now)
 {
     if (auto const usage = rate_limit_usage(response); usage && usage->day_used_up()) {
-        return (now / Day + 1) * Day;
+        return next_strava_day(now);
     }
-    return (now / QuarterHour + 1) * QuarterHour;
+    return next_quarter_hour(now);
 }
 
 Decoded<std::vector<StravaActivity>> parse_activities(JSONValue const &page)

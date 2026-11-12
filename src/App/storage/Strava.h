@@ -85,6 +85,11 @@ struct StravaUsage {
 // The usage in `response`'s headers, if it has them and they make sense.
 std::optional<StravaUsage> rate_limit_usage(HttpResponse const &response);
 
+// When Strava's 15-minute limit resets after `now`: at :00, :15, :30 and
+// :45. And its daily one: at midnight UTC.
+i64 next_quarter_hour(i64 now);
+i64 next_strava_day(i64 now);
+
 // When the read limit a 429 ran into resets. Strava doesn't say: the
 // 15-minute limit resets at :00, :15, :30 and :45, and the daily one at
 // midnight UTC, which is when it resets if X-ReadRateLimit-Usage says the
