@@ -136,6 +136,19 @@ void test_text_after_closing_quote()
     }
 }
 
+void test_quoted_field_at_the_end()
+{
+    // No line end after the last record, which ends in a quoted field, or
+    // in a quoted field followed by a comma.
+    auto rows = rows_of("a,b\n1,\"x\r\ny\"");
+    CHECK_EQ(rows.size(), 1uz);
+    check_row(rows, 0, { "1", "x\r\ny" });
+    rows = rows_of("a,b\n\"\",\"\"\"\"\n\"q\",");
+    CHECK_EQ(rows.size(), 2uz);
+    check_row(rows, 0, { "", "\"" });
+    check_row(rows, 1, { "q", "" });
+}
+
 void test_empty_text()
 {
     CHECK(!CSV::parse("").has_value());
@@ -156,6 +169,7 @@ int main()
     test_column();
     test_unclosed_quote();
     test_text_after_closing_quote();
+    test_quoted_field_at_the_end();
     test_empty_text();
     return test_result();
 }
