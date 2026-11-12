@@ -1,6 +1,6 @@
 # Living with Wahoo's and Strava's rate limits
 
-Status: In review, on branch feature/44-rate-limits
+Status: Done
 
 <!--
 Status is one of:
@@ -318,13 +318,18 @@ status line.
    the 20 spare before the chain sees the headers and stops again. Keeping
    the last `usage` in `SweatTrails`, or not starting while `describe_at` is
    in the future, avoids it. Harmless otherwise.
+   **Resolved:** a titles run no longer starts a chain that waits for a
+   limit (`describe_at` set); when it goes on, it reads the store, new
+   titles included (0686801).
 2. **Suggestion.** `waiting_for_limit()` sleeps on the job thread for up to
    `StravaLimitWaits` x 15 minutes per list page (and 2 x 5 for Wahoo), also
    in the quiet startup run, which holds up the inbox and Ctrl+G behind it
    with nothing but the status line to say why. The spec accepts this; it is
    only reachable when something else uses Strava's quota.
+   **Resolved:** kept as the spec has it.
 3. **Suggestion.** `Strava.cpp` logs `resets_at` in the "waiting until"
    warning as a raw Unix time; `clock_time()` would read better.
+   **Resolved:** both lists' warnings say a clock time (e6388d1).
 4. **Missing tests, added** (`test/StravaBacklogTest.cpp`, all pass): a 429
    without headers resumes at the next quarter hour and does not stop the
    chain or leave `resume_at` empty (which would make the chain hammer
@@ -339,4 +344,18 @@ status line.
    titles run ending mid-chain sets `describe_again`, and a restart loop
    ends since `describe_again` is cleared each time; a failed or limited
    chunk sets `describe_at`, which `process_input()` picks up.
-
+6. Found by Jan, the morning after a night of "Everything" from Wahoo
+   (537 workouts came in from 12:13 to 23:39): the startup's download
+   stopped with "Wahoo's limit on requests is reached. Try again after
+   19:00." 19:00 in Toronto is midnight UTC, so it's a daily limit, used
+   up. The FIT files come from Wahoo's CDN without a token, and can't
+   count; the likely cause is that every run of "Everything" lists the
+   whole history again, 19 pages, before it downloads anything, and the
+   download was started many times that night. Until the limit resets,
+   every start shows the message box.
+   **Resolved for now:** the Wahoo trace logs the `X-RateLimit-*` headers
+   of every answer (c23e786), to learn Wahoo's real limits. Wahoo's
+   downloads get a spec of their own with `/analyst`: "Everything"
+   stopping where the store is complete (deferred here), budgeting by
+   what Wahoo says is left, and a daily limit at startup on the status
+   line rather than in a message box.
