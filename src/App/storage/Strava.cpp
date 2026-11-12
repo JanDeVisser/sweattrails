@@ -7,6 +7,7 @@
 #include <charconv>
 #include <format>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -268,6 +269,73 @@ StravaResult<HttpResponse> Strava::get(std::string const &path)
     return std::move(*response);
 }
 
+StravaResult<StravaPage> Strava::list_page(i64 after, i64 before, size_t count, size_t page)
+{
+    auto const response = get(std::format("{}?after={}&before={}&per_page={}{}", ActivitiesPath, after, before, count,
+        page == 1 ? std::string { } : std::format("&page={}", page)));
+    if (!response) {
+        return std::unexpected(response.error());
+    }
+    auto const json = JSONValue::deserialize(response->body);
+    if (!json) {
+        return std::unexpected(failed(std::format("Strava's list of activities isn't JSON: {}", json.error().to_string())));
+    }
+    auto listed = parse_activities(*json);
+    if (!listed) {
+        return std::unexpected(failed(std::format("Unexpected list of activities from Strava: {}", listed.error().to_string())));
+    }
+    // A short page is the last: counted before entries were skipped.
+    return StravaPage { .activities = std::move(*listed), .last = json->size() < count };
+}
+
+// Strava answers HTTP 404, "Record Not Found", for any page with an
+// activity whose upload it has lost. Jan's history has one from 2010. So
+// smaller pages are asked for, halving the difference, to find it: the
+// activities before it are listed, and then the one after it, asked for
+// on its own, past any more lost ones.
+StravaResult<StravaPage> Strava::list_around_lost(i64 after, i64 before)
+{
+    // A page of `good` activities comes back, one of `bad` doesn't: the
+    // lost activity is the one at `good`.
+    size_t     good { 0 };
+    size_t     bad { PageSize };
+    StravaPage ret;
+    while (bad - good > 1) {
+        auto const middle = (good + bad) / 2;
+        auto       page = list_page(after, before, middle);
+        if (page) {
+            good = middle;
+            ret = std::move(*page);
+            // The list ended before the 404's page did: it wasn't a lost
+            // activity.
+            if (ret.last) {
+                return ret;
+            }
+        } else if (page.error().status == 404) {
+            bad = middle;
+        } else {
+            return std::unexpected(page.error());
+        }
+    }
+    for (auto index = good + 1; index < PageSize; ++index) {
+        // The activity at `index`, on its own.
+        auto const page = list_page(after, before, 1, index + 1);
+        if (!page && page.error().status == 404) {
+            continue;
+        }
+        if (!page) {
+            return std::unexpected(page.error());
+        }
+        auto const lost = index - good;
+        warning(Strava, "Strava has lost the upload of {} {}: skipped", lost == 1 ? "an activity" : std::format("{} activities", lost),
+            ret.activities.empty() ? std::string { "at the start of the list" } : std::format("after {}", ret.activities.back().id));
+        ret.activities.append_range(page->activities);
+        ret.last = page->last;
+        return ret;
+    }
+    return std::unexpected(failed("Strava answered HTTP 404 for a whole page of its list, one activity at a time"));
+}
+
 StravaResult<StravaListing> Strava::list_activities(i64 after, i64 before)
 {
     StravaListing ret;
@@ -280,23 +348,44 @@ StravaResult<StravaListing> Strava::list_activities(i64 after, i64 before)
         ret.stopped = std::move(error);
         return std::move(ret);
     };
-    for (size_t page = 1;; ++page) {
-        auto const response = get(std::format("{}?after={}&before={}&page={}&per_page={}", ActivitiesPath, after, before, page, PageSize));
-        if (!response) {
-            return stop(response.error());
+    // Each request asks for the first page past the last activity listed
+    // so far, rather than for the next page: that way a lost activity (see
+    // list_around_lost) can be found with smaller pages, which only works
+    // from the start of the list. An activity that starts in the same
+    // second as the last one is listed again, so it isn't missed, and the
+    // second time it's left out.
+    std::set<u64> listed_ids;
+    // Strava lists the newest first, even with `after`; which way a page
+    // goes says which end of the window to move.
+    bool newest_first { true };
+    while (true) {
+        auto page = list_page(after, before, PageSize);
+        if (!page && page.error().status == 404) {
+            page = list_around_lost(after, before);
         }
-        auto const json = JSONValue::deserialize(response->body);
-        if (!json) {
-            return stop(failed(std::format("Strava's list of activities isn't JSON: {}", json.error().to_string())));
+        if (!page) {
+            return stop(page.error());
         }
-        auto const listed = parse_activities(*json);
-        if (!listed) {
-            return stop(failed(std::format("Unexpected list of activities from Strava: {}", listed.error().to_string())));
+        auto const known = listed_ids.size();
+        for (auto const &activity : page->activities) {
+            if (listed_ids.insert(activity.id).second) {
+                ret.activities.push_back(activity);
+            }
         }
-        ret.activities.insert(ret.activities.end(), listed->begin(), listed->end());
-        // A short page is the last: counted before entries were skipped.
-        if (json->size() < PageSize) {
+        // A page with nothing new can't move the window on: a whole page
+        // of activities that start in the same second.
+        if (page->last || listed_ids.size() == known) {
             return ret;
+        }
+        auto const &first = page->activities.front();
+        auto const &last = page->activities.back();
+        if (first.start_time != last.start_time) {
+            newest_first = first.start_time > last.start_time;
+        }
+        if (newest_first) {
+            before = last.start_time + 1;
+        } else {
+            after = last.start_time - 1;
         }
     }
 }
