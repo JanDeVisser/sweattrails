@@ -37,16 +37,9 @@ SourceOutcome wahoo(Kind kind, size_t count = 0, std::string message = { })
     return SourceOutcome { .source = "Wahoo", .kind = kind, .count = count, .message = std::move(message) };
 }
 
-SourceOutcome strava(Kind kind, size_t titles = 0, size_t descriptions = 0, size_t waiting = 0, std::string resets_at = { })
+SourceOutcome strava(Kind kind, size_t titles = 0, size_t waiting = 0)
 {
-    return SourceOutcome {
-        .source = "Strava",
-        .kind = kind,
-        .count = titles,
-        .descriptions = descriptions,
-        .waiting = waiting,
-        .resets_at = std::move(resets_at),
-    };
+    return SourceOutcome { .source = "Strava", .kind = kind, .count = titles, .waiting = waiting };
 }
 
 void test_client_id()
@@ -123,6 +116,22 @@ void test_strava_download_request()
     CHECK(!year.garmin && !year.wahoo);
 }
 
+// Strava's descriptions come in the background unless the settings say
+// false.
+void test_strava_descriptions_setting()
+{
+    auto const off = MUST_EVAL(JSONValue::deserialize(R"({"strava": {"client_id": "1", "descriptions": false}})"));
+    auto const on = MUST_EVAL(JSONValue::deserialize(R"({"strava": {"client_id": "1", "descriptions": true}})"));
+    auto const unsaid = MUST_EVAL(JSONValue::deserialize(R"({"strava": {"client_id": "1"}})"));
+    CHECK(!strava_descriptions(off));
+    CHECK(strava_descriptions(on));
+    CHECK(strava_descriptions(unsaid));
+    CHECK(strava_descriptions(JSONValue::object()));
+    CHECK(strava_descriptions(JSONValue { }));
+    CHECK(!make_download_request(off, JSONValue { }, Sources { .strava = true }).strava_descriptions);
+    CHECK(make_download_request(unsaid, JSONValue { }, Sources { .strava = true }).strava_descriptions);
+}
+
 // A key binding passes the key and its modifiers as the arguments: the
 // settings still say how far back to look, and Ctrl+G isn't quiet.
 void test_download_request_from_a_key_binding()
@@ -187,17 +196,15 @@ void test_report_combinations()
 
 void test_strava_report()
 {
-    CHECK_EQ(download_report({ strava(Kind::Titled, 3, 3) }, false).text, "Strava: 3 new titles.");
+    CHECK_EQ(download_report({ strava(Kind::Titled, 3) }, false).text, "Strava: 3 new titles.");
     CHECK_EQ(download_report({ strava(Kind::Titled, 1) }, false).text, "Strava: 1 new title.");
     CHECK_EQ(download_report({ strava(Kind::Titled) }, false).text, "Strava: nothing new.");
-    CHECK_EQ(download_report({ strava(Kind::Titled, 0, 4) }, false).text, "Strava: 4 new descriptions.");
-    CHECK_EQ(download_report({ strava(Kind::Titled, 40, 28, 12, "14:45") }, false).text,
-        "Strava: 40 new titles. 12 descriptions are left for after 14:45.");
-    CHECK_EQ(download_report({ strava(Kind::Titled, 0, 0, 1) }, false).text, "Strava: nothing new. 1 description is left for next time.");
-    auto stopped = strava(Kind::Titled, 40, 0, 12);
-    stopped.message = "Could not reach Strava: timed out";
+    CHECK_EQ(download_report({ strava(Kind::Titled, 154, 4644) }, false).text, "Strava: 154 new titles. 4644 descriptions follow in the background.");
+    CHECK_EQ(download_report({ strava(Kind::Titled, 0, 1) }, false).text, "Strava: nothing new. 1 description follows in the background.");
+    auto stopped = strava(Kind::Titled, 40, 12);
+    stopped.message = "Strava's list stopped short: Could not reach Strava: timed out";
     CHECK_EQ(download_report({ stopped }, false).text,
-        "Strava: 40 new titles. 12 descriptions are left for next time. Could not reach Strava: timed out.");
+        "Strava: 40 new titles. 12 descriptions follow in the background. Strava's list stopped short: Could not reach Strava: timed out.");
     auto const all = download_report({ garmin(Kind::Downloaded, 2), wahoo(Kind::NotSetUp, 0, "No ID."), strava(Kind::Titled, 2) }, false);
     CHECK_EQ(all.text, "Garmin Connect: 2 new activities. Strava: 2 new titles.");
     CHECK(download_report({ strava(Kind::Titled, 2) }, true).text.empty());
@@ -210,7 +217,7 @@ void test_strava_report_offers_the_login()
     CHECK_EQ(report.ask_login, "Strava");
     CHECK_EQ(report.text, "Garmin Connect: nothing new. Strava: not logged in.");
     CHECK_EQ(download_report({ wahoo(Kind::NeedsLogin), strava(Kind::NeedsLogin) }, false).ask_login, "Wahoo");
-    CHECK(download_report({ strava(Kind::NotSetUp, 0, 0, 0) }, false).ask_login.empty());
+    CHECK(download_report({ strava(Kind::NotSetUp) }, false).ask_login.empty());
 }
 
 void test_quiet_report_of_one_source()
@@ -381,6 +388,7 @@ int main()
     test_strava_client();
     test_download_request();
     test_strava_download_request();
+    test_strava_descriptions_setting();
     test_download_request_from_a_key_binding();
     test_report();
     test_report_failures();

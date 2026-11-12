@@ -59,14 +59,11 @@ std::string titled_sentence(SourceOutcome const &outcome)
     std::string ret;
     if (outcome.count > 0) {
         ret = std::format("{}: {}.", outcome.source, plural(outcome.count, "new title", "new titles"));
-    } else if (outcome.descriptions > 0) {
-        ret = std::format("{}: {}.", outcome.source, plural(outcome.descriptions, "new description", "new descriptions"));
     } else {
         ret = std::format("{}: nothing new.", outcome.source);
     }
     if (outcome.waiting > 0) {
-        ret += std::format(" {} left for {}.", plural(outcome.waiting, "description is", "descriptions are"),
-            outcome.resets_at.empty() ? std::string { "next time" } : std::format("after {}", outcome.resets_at));
+        ret += std::format(" {} in the background.", plural(outcome.waiting, "description follows", "descriptions follow"));
     }
     if (!outcome.message.empty()) {
         ret += std::format(" {}{}", outcome.message, outcome.message.ends_with('.') ? "" : ".");
@@ -107,6 +104,18 @@ std::optional<StravaClient> strava_client(JSONValue const &settings)
         return { };
     }
     return StravaClient { .id = std::move(*id), .secret = string_setting(settings, "strava", "client_secret").value_or("") };
+}
+
+bool strava_descriptions(JSONValue const &settings)
+{
+    if (!settings.is_object()) {
+        return true;
+    }
+    auto const section = settings.get("strava");
+    if (!section || !section->is_object()) {
+        return true;
+    }
+    return section->try_get<bool>("descriptions").value_or(true);
 }
 
 std::optional<std::string> strava_setup_problem(std::optional<StravaClient> const &client)
@@ -183,6 +192,7 @@ DownloadRequest make_download_request(JSONValue const &settings, JSONValue const
         .strava_days = days_setting(settings, "strava", StravaDefaultDays),
         .wahoo_client_id = wahoo_client_id(settings),
         .strava_client = strava_client(settings),
+        .strava_descriptions = strava_descriptions(settings),
     };
     if (arguments.is_object()) {
         if (auto const days = arguments.try_get<int>("days"); days) {

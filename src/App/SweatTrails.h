@@ -86,6 +86,7 @@ struct WahooLogin {
 struct StravaTitlesRequest {
     std::optional<int>          days { };
     std::optional<StravaClient> client { };
+    bool                        descriptions { true }; // In the background, after the titles
 };
 
 // What the Strava login brought back from the browser, and the titles to

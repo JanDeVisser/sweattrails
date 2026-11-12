@@ -36,6 +36,11 @@ struct StravaClient {
 // and should hear that the secret is missing.
 std::optional<StravaClient> strava_client(JSONValue const &settings);
 
+// `strava.descriptions` from the settings: whether Strava's descriptions
+// come in the background, which they do unless it's false. See
+// specs/44-rate-limits.md.
+bool strava_descriptions(JSONValue const &settings);
+
 // What to tell the user about Strava's setup: how to set it up without a
 // client, that the secret is missing without one, or nothing.
 std::optional<std::string> strava_setup_problem(std::optional<StravaClient> const &client);
@@ -81,9 +86,10 @@ struct DownloadRequest {
     int                         garmin_days { 30 };
     int                         wahoo_days { 30 };
     int                         strava_days { 30 };
-    std::optional<std::string>  wahoo_client_id { }; // Without one, Wahoo isn't set up
-    std::optional<StravaClient> strava_client { };   // Without one, Strava isn't set up
-    bool                        quiet { false };     // At startup: say only what went wrong
+    std::optional<std::string>  wahoo_client_id { };          // Without one, Wahoo isn't set up
+    std::optional<StravaClient> strava_client { };            // Without one, Strava isn't set up
+    bool                        strava_descriptions { true }; // In the background, after the titles
+    bool                        quiet { false };              // At startup: say only what went wrong
 };
 
 // Which sources a download asks for.
@@ -111,11 +117,9 @@ struct SourceOutcome {
 
     std::string source { }; // "Garmin Connect", "Wahoo", "Strava"
     Kind        kind { Kind::Downloaded };
-    size_t      count { 0 };        // For Downloaded: activities; for Titled: titles
-    size_t      descriptions { 0 }; // For Titled
-    size_t      waiting { 0 };      // For Titled: descriptions left for the next time
-    std::string resets_at { };      // For Titled: when they can be fetched, such as "14:45"
-    std::string message { };        // For NotSetUp and Failed: what to tell the user; for Titled, what stopped the descriptions
+    size_t      count { 0 };   // For Downloaded: activities; for Titled: titles
+    size_t      waiting { 0 }; // For Titled: descriptions that follow in the background
+    std::string message { };   // For NotSetUp and Failed: what to tell the user; for Titled, what stopped the list short
 };
 
 // What to tell the user when the download is done.
@@ -123,6 +127,7 @@ struct DownloadReport {
     std::string text { };            // Nothing to say if empty
     std::string ask_login { };       // The source to offer the login to, if any
     JSONValue   login_arguments { }; // For the login's task: what to fetch after it
+    bool        describe { false };  // Strava's titles ran: its descriptions follow in the background
 };
 
 // One sentence per source, such as "Garmin Connect: 2 new activities.

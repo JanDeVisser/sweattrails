@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: MIT
  *
  * Tests matching the store's activities with Strava's, and saving their
- * titles and descriptions, against canned responses: nothing here talks
- * to Strava.
+ * titles, against canned responses: nothing here talks to Strava.
  */
 
 #include <algorithm>
@@ -100,19 +99,6 @@ void test_match_in_any_order()
     CHECK((matched_ids(match_strava(strava, starts)) == std::vector<u64> { 1 }));
 }
 
-// Whether the descriptions were asked for newest first: the Strava IDs in
-// the tests go up with the start times.
-bool fake_asked_newest_first(FakeStrava const &fake)
-{
-    std::vector<std::string> asked;
-    for (auto const &request : fake.requests) {
-        if (request.url.contains("/api/v3/activities/")) {
-            asked.push_back(request.url.substr(request.url.rfind('/') + 1));
-        }
-    }
-    return asked == std::vector<std::string> { "103", "102", "102", "101" };
-}
-
 struct StravaStore {
     TempStore  store { };
     TempDir    dir { "strava-titles" };
@@ -134,11 +120,6 @@ struct StravaStore {
         fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 200, .body = list_of(activities) });
     }
 
-    void describe(u64 id, std::string_view description)
-    {
-        fake.answer(std::format("/api/v3/activities/{}", id), HttpResponse { .status = 200, .body = std::format(R"({{"id":{},"description":{}}})", id, description) });
-    }
-
     StravaUpdate update()
     {
         return MUST_EVAL(update_strava_titles(strava, store.storage, After, Now));
@@ -158,101 +139,54 @@ struct StravaStore {
 };
 
 // The names go into the sidecars, with the rest of them kept, and an
-// activity without a sidecar gets one. Then come the descriptions, a null
-// one as "". The Strava activity that isn't in the store, and the store's
-// that isn't on Strava, are passed over.
-void test_titles_and_descriptions()
+// activity without a sidecar gets one. The descriptions are the
+// background's: none is asked for. The Strava activity that isn't in the
+// store, and the store's that isn't on Strava, are passed over.
+void test_titles()
 {
     StravaStore t;
     t.list({ strava_activity(101, "2026-10-27T12:05:30Z", "Ride to Niagara"), strava_activity(102, "2026-10-28T12:04:50Z", "Tempo run"),
         strava_activity(103, "2026-10-26T10:00:00Z", "Not in the store") });
-    t.describe(101, R"("With Anna")");
-    t.describe(102, "null");
-    std::vector<std::pair<size_t, size_t>> progress;
-    auto const                             update = MUST_EVAL(update_strava_titles(t.strava, t.store.storage, After, Now, [&progress](size_t index, size_t count) {
-        progress.emplace_back(index, count);
-    }));
+    auto const update = t.update();
     CHECK_EQ(update.titles, 2u);
-    CHECK_EQ(update.descriptions, 2u);
-    CHECK_EQ(update.waiting, 0u);
-    CHECK(!update.resets_at.has_value());
+    CHECK(update.error.empty());
     CHECK((update.changed == std::vector<i64> { Ride, Run }));
-    CHECK((progress == std::vector<std::pair<size_t, size_t>> { { 0, 2 }, { 1, 2 } }));
-    CHECK((t.saved(Ride) == StravaTitle { .id = 101, .name = "Ride to Niagara", .description = "With Anna" }));
-    CHECK((t.saved(Run) == StravaTitle { .id = 102, .name = "Tempo run", .description = "" }));
+    CHECK((t.saved(Ride) == StravaTitle { .id = 101, .name = "Ride to Niagara" }));
+    CHECK((t.saved(Run) == StravaTitle { .id = 102, .name = "Tempo run" }));
+    CHECK_EQ(t.description_requests(), 0u);
     CHECK(!t.saved(Swim).has_value());
     CHECK(!fs::exists(t.store.storage.sidecar_of(Swim)));
     CHECK_EQ(sidecar_title(t.store.storage.sidecar_of(Ride)).value_or(""), "Morning Ride");
 }
 
-// The next time, nothing has changed, and no description is fetched again.
-// A name changed on Strava is taken, and its description fetched again.
+// The next time, nothing has changed. A name changed on Strava is taken,
+// and drops the description, which the background fetches again; an
+// unchanged name keeps it.
 void test_only_whats_new()
 {
     StravaStore t;
     auto const  ride = strava_activity(101, "2026-10-27T12:05:30Z", "Ride to Niagara");
     auto const  run = strava_activity(102, "2026-10-28T12:04:50Z", "Tempo run");
     t.list({ ride, run });
-    t.describe(101, R"("With Anna")");
-    t.describe(102, R"("")");
     t.update();
+    MUST(save_sidecar_strava(t.store.storage.sidecar_of(Ride), { .id = 101, .name = "Ride to Niagara", .description = "With Anna" }));
+    MUST(save_sidecar_strava(t.store.storage.sidecar_of(Run), { .id = 102, .name = "Tempo run", .description = "Intervals" }));
     t.list({ ride, run });
     auto const again = t.update();
     CHECK_EQ(again.titles, 0u);
-    CHECK_EQ(again.descriptions, 0u);
     CHECK(again.changed.empty());
-    CHECK_EQ(t.description_requests(), 2u);
 
     t.list({ strava_activity(101, "2026-10-27T12:05:30Z", "Niagara loop"), run });
-    t.describe(101, R"("With Anna and Bo")");
     auto const renamed = t.update();
     CHECK_EQ(renamed.titles, 1u);
-    CHECK_EQ(renamed.descriptions, 1u);
     CHECK((renamed.changed == std::vector<i64> { Ride }));
-    CHECK((t.saved(Ride) == StravaTitle { .id = 101, .name = "Niagara loop", .description = "With Anna and Bo" }));
-}
-
-// At Strava's limit, the titles are all there, the descriptions that came
-// are kept, and the rest wait for the next time, which fetches only those.
-// The newest come first: those are the ones the user looks at.
-void test_descriptions_stop_at_the_limit()
-{
-    StravaStore t;
-    auto const  activities = std::vector { strava_activity(101, "2026-10-27T12:05:30Z", "Ride to Niagara"),
-        strava_activity(102, "2026-10-28T12:04:50Z", "Tempo run"), strava_activity(103, "2026-10-29T07:05:00Z", "Swim") };
-    t.list(activities);
-    t.describe(103, R"("")");
-    t.fake.answer("/api/v3/activities/102", HttpResponse {
-                                                .status = 429,
-                                                .body = R"({"message":"Rate Limit Exceeded"})",
-                                                .headers = { { "X-ReadRateLimit-Limit", "100,1000" }, { "X-ReadRateLimit-Usage", "101,300" } },
-                                            });
-    auto const limited = t.update();
-    CHECK_EQ(limited.titles, 3u);
-    CHECK_EQ(limited.descriptions, 1u);
-    CHECK_EQ(limited.waiting, 2u);
-    CHECK(limited.resets_at.has_value());
-    CHECK((limited.changed == std::vector<i64> { Ride, Run, Swim }));
-    CHECK(!t.saved(Run)->description.has_value());
-
-    CHECK(t.saved(Swim)->description.has_value());
-    CHECK(!t.saved(Ride)->description.has_value());
-
-    t.list(activities);
-    t.describe(102, R"("Intervals")");
-    t.describe(101, R"("With Anna")");
-    auto const rest = t.update();
-    CHECK_EQ(rest.titles, 0u);
-    CHECK_EQ(rest.descriptions, 2u);
-    CHECK_EQ(rest.waiting, 0u);
-    CHECK((rest.changed == std::vector<i64> { Ride, Run }));
-    CHECK_EQ(t.description_requests(), 4u);
+    CHECK((t.saved(Ride) == StravaTitle { .id = 101, .name = "Niagara loop" }));
     CHECK_EQ(t.saved(Run)->description.value_or("<none>"), "Intervals");
-    CHECK(fake_asked_newest_first(t.fake));
+    CHECK_EQ(t.description_requests(), 0u);
 }
 
 // A list that stops short on its second page keeps the first page's
-// titles, and leaves their descriptions for the next time.
+// titles, and says why it stopped.
 void test_list_stopped_short_keeps_its_titles()
 {
     StravaStore              t;
@@ -264,30 +198,31 @@ void test_list_stopped_short_keeps_its_titles()
     t.fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 500, .body = "" });
     auto const update = t.update();
     CHECK_EQ(update.titles, 1u);
-    CHECK_EQ(update.descriptions, 0u);
-    CHECK_EQ(update.waiting, 1u);
     CHECK(update.error.starts_with("Strava's list stopped short: Strava answered HTTP 500"));
-    CHECK_EQ(t.description_requests(), 0u);
     CHECK_EQ(t.saved(Ride)->name, "Ride to Niagara");
 }
 
-// Another failure stops the descriptions too, without a time to wait for.
-void test_descriptions_stop_at_a_failure()
+// The day's limit on the second page: the time it resets, in local time.
+void test_list_stopped_short_by_the_day()
 {
-    StravaStore t;
-    t.list({ strava_activity(101, "2026-10-27T12:05:30Z", "Ride to Niagara"), strava_activity(102, "2026-10-28T12:04:50Z", "Tempo run") });
-    t.fake.answer("/api/v3/activities/102", HttpResponse { .status = 500, .body = "" });
+    StravaStore              t;
+    std::vector<std::string> full { strava_activity(101, "2026-10-27T12:05:30Z", "Ride to Niagara") };
+    for (auto ix = 1u; ix < 200; ++ix) {
+        full.push_back(strava_activity(5000 + ix, "2026-09-01T12:00:00Z", std::format("Not in the store {}", ix)));
+    }
+    t.list(full);
+    t.fake.answer("/api/v3/athlete/activities", HttpResponse {
+                                                    .status = 429,
+                                                    .body = R"({"message":"Rate Limit Exceeded"})",
+                                                    .headers = { { "X-ReadRateLimit-Limit", "100,1000" }, { "X-ReadRateLimit-Usage", "40,1000" } },
+                                                });
     auto const update = t.update();
-    CHECK_EQ(update.titles, 2u);
-    CHECK_EQ(update.descriptions, 0u);
-    CHECK_EQ(update.waiting, 2u);
-    CHECK(!update.resets_at.has_value());
-    CHECK_EQ(update.error, "Strava answered HTTP 500 for `/api/v3/activities/102`");
-    CHECK_EQ(t.description_requests(), 1u);
+    CHECK_EQ(update.titles, 1u);
+    CHECK_EQ(update.error, "Strava's limit stopped its list short. Try again after 00:00");
 }
 
 // A sidecar that isn't a JSON object isn't overwritten: that activity is
-// passed over, and its description isn't fetched.
+// passed over.
 void test_sidecar_that_isnt_an_object()
 {
     StravaStore t;
@@ -296,7 +231,6 @@ void test_sidecar_that_isnt_an_object()
     auto const update = t.update();
     CHECK_EQ(update.titles, 0u);
     CHECK(update.changed.empty());
-    CHECK_EQ(t.description_requests(), 0u);
     CHECK_EQ(read_file_by_name(t.store.storage.sidecar_of(Ride).string()).value_or(""), "[1, 2]");
 }
 
@@ -346,23 +280,19 @@ void test_list_rate_limited()
     CHECK(!fs::exists(t.store.storage.sidecar_of(Run)));
 }
 
-// Added by the Reviewer: the same ride on two devices gets the title and
-// the description on both.
-void test_two_devices_get_the_description()
+// Added by the Reviewer: the same ride on two devices gets the title on
+// both.
+void test_two_devices_get_the_title()
 {
     StravaStore t;
     t.store.add_activity(Ride + 30);
     t.list({ strava_activity(101, "2026-10-27T12:05:10Z", "Ride to Niagara") });
-    t.describe(101, R"("With Anna")");
     auto const update = t.update();
     CHECK_EQ(update.titles, 2u);
-    CHECK_EQ(update.descriptions, 2u);
-    // One request for both.
-    CHECK_EQ(t.description_requests(), 1u);
     CHECK((update.changed == std::vector<i64> { Ride, Ride + 30 }));
-    StravaTitle const described { .id = 101, .name = "Ride to Niagara", .description = "With Anna" };
-    CHECK(t.saved(Ride) == described);
-    CHECK(t.saved(Ride + 30) == described);
+    StravaTitle const titled { .id = 101, .name = "Ride to Niagara" };
+    CHECK(t.saved(Ride) == titled);
+    CHECK(t.saved(Ride + 30) == titled);
 }
 
 // Added by the Reviewer: the store files an activity in the month of its
@@ -383,7 +313,6 @@ void test_activity_filed_in_another_time_zone()
         setenv("TZ", "Europe/Amsterdam", 1);
         tzset();
         t.list({ strava_activity(201, "2026-10-01T03:30:00Z", "Last ride of September") });
-        t.describe(201, R"("")");
         auto const update = MUST_EVAL(update_strava_titles(t.strava, t.store.storage, MonthEnd - 86400, MonthEnd + 86400));
         CHECK_EQ(update.titles, 1u);
         CHECK(sidecar_titles(filed).strava.has_value());
@@ -398,39 +327,40 @@ void test_activity_filed_in_another_time_zone()
     tzset();
 }
 
-// Added by the Reviewer: a sync writes Strava's name and description into
-// a sidecar with the user's own title and description, and leaves those.
+// Added by the Reviewer: a sync writes Strava's name into a sidecar with
+// the user's own title and description, and leaves those.
 void test_sync_keeps_the_users_notes()
 {
     StravaStore t;
     MUST(write_file_by_name(t.store.storage.sidecar_of(Ride).string(), std::string_view { R"({"activityName": "Morning Ride", "title": "Niagara", "notes": "Mine"})" }));
     t.list({ strava_activity(101, "2026-10-27T12:05:30Z", "Ride to Niagara") });
-    t.describe(101, R"("With Anna")");
     auto const update = t.update();
-    CHECK_EQ(update.descriptions, 1u);
+    CHECK_EQ(update.titles, 1u);
     auto const names = sidecar_titles(t.store.storage.sidecar_of(Ride));
     CHECK_EQ(names.own.value_or(""), "Niagara");
     CHECK_EQ(names.own_notes.value_or(""), "Mine");
-    CHECK((names.strava == StravaTitle { .id = 101, .name = "Ride to Niagara", .description = "With Anna" }));
+    CHECK((names.strava == StravaTitle { .id = 101, .name = "Ride to Niagara" }));
 }
 
 }
 
 int main()
 {
+    // The messages say when Strava's limit resets in local time.
+    setenv("TZ", "UTC", 1);
+    tzset();
     test_match_nearest_within_a_minute();
     test_two_devices_match_the_same_activity();
     test_match_in_any_order();
-    test_titles_and_descriptions();
+    test_titles();
     test_only_whats_new();
-    test_descriptions_stop_at_the_limit();
     test_list_stopped_short_keeps_its_titles();
-    test_descriptions_stop_at_a_failure();
+    test_list_stopped_short_by_the_day();
     test_sidecar_that_isnt_an_object();
     test_not_logged_in();
     test_activity_starts();
     test_list_rate_limited();
-    test_two_devices_get_the_description();
+    test_two_devices_get_the_title();
     test_activity_filed_in_another_time_zone();
     test_sync_keeps_the_users_notes();
     return ST::Test::test_result();
