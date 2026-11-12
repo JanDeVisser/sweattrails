@@ -209,19 +209,25 @@ None.
      BacklogChunk fetch_backlog(Strava &strava, std::vector<Undescribed> &waiting, size_t count);
      ```
 
-     `import_descriptions()` uses `strava_backlog()` for its walk.
-     Before saving, `fetch_backlog()` reads the sidecar's Strava title
+     `import_descriptions()` keeps its own walk: it also counts the
+     activities without a Strava title, and sharing would bring
+     `Strava.cpp` into the export's test. An activity Strava answers 404
+     for gets an empty description, so that it isn't asked for at every
+     batch. Before saving, `fetch_backlog()` reads the sidecar's Strava title
      again and saves only if it's still the same ID without a
      description, so a name a titles run saved in between stays.
-   - A job `DescribeFromStrava` with payload
-     `StravaBacklogProgress { std::optional<std::vector<Undescribed>> waiting; }`:
+   - A job `DescribeFromStrava` with payload `DescribingProgress
+     { StravaClient client; std::optional<std::vector<Undescribed>>
+     waiting; std::optional<StravaUsage> usage; }`:
      the first chunk scans the store, each chunk fetches 10
      descriptions (a few seconds) and schedules the next while Strava
      allows, so Ctrl+G's job waits for at most one chunk. It notifies
      `Describing { size_t to_go; }` (`notify_latest`, the status line)
-     after each chunk and `DescribingPaused { std::optional<i64>
+     before each chunk and `DescribingPaused { std::optional<i64>
      resume_at; }` when the chain ends: backlog empty, a limit, a failure
      (resumes at the next quarter hour), not logged in, or not set up.
+     The background's `Strava` has no retries: those would wait on the
+     job thread, and a failure goes on at the next quarter hour anyway.
    - On the UI thread, `SweatTrails` keeps `describing` (a chain is
      queued or running) and `describe_at` (`std::optional<i64>`).
      `process_input()` schedules the job when `describe_at` has come and
@@ -255,19 +261,22 @@ None.
    `list_workouts()` on a 429 with `X-RateLimit-Reset` at most 300 asks
    for the same page again after the wait, at most twice per page. A
    longer reset says "Wahoo's limit on requests is reached. Try again
-   after 21:00." For that, `WahooError` gets `resets_at`, and the message
-   is made in `download_from_wahoo()`, which knows the clock.
+   after 21:00.", rounded up to the minute. `WahooError` gets
+   `resets_at`, and `Wahoo.cpp` makes the message with `clock_time()`,
+   now in Base.
    FIT files stay as spec 43 has them.
 
-6. **Status texts.** `DownloadStep::WaitingForLimit`, and
+6. **Status texts.** `DownloadStep::Waiting`, and
    `download_status()` takes an `until` text: "Waiting for Wahoo's limit
    until 20:04". `describing_status(to_go)`: "Strava descriptions: 4644
    to go". `clock_time(i64)`, now in `SweatTrails.cpp`, moves to
-   `Date.h` in Base, so that `Download.cpp` and tests can use it.
+   `Date.h` in Base, so that `Wahoo.cpp`, `StravaTitles.cpp` and tests
+   can use it. Strava's `next_quarter_hour()` and `next_strava_day()`
+   are in `Strava.h`, for `backlog_resume_at()`.
 
 7. **The 20 spare are left on both limits.** The spec says the
    15-minute one; leaving 20 of the day too keeps Ctrl+G working in the
-   evening after a day of background requests. (Decision for Jan.)
+   evening after a day of background requests. Agreed with Jan.
 
 Nothing new in `src/Lib/Widget`: the background shows only on the
 status line.
@@ -285,16 +294,18 @@ status line.
   `backlog_resume_at()` with no usage, under, at 80 of 100, the daily
   limit at 980 of 1000, across midnight UTC; `fetch_backlog()` fetches
   `count`, stops at the spare from the headers with the next quarter
-  hour, at a 429 with its reset, at a failure, not logged in; saves both
-  activities of one ID; leaves a name changed in between.
+  hour, at a 429 with its reset, at a failure, not logged in; a 404 gets
+  an empty description; saves both activities of one ID; leaves a name
+  and a description saved in between.
 - `StravaTitlesTest.cpp`: the description tests go; a run saves titles
-  and makes no description request.
+  and makes no description request; a new name drops the description;
+  the day's limit on the list's second page says when it resets.
 - `WahooTest.cpp`: a 429 with reset 250 waits and the list carries on;
   two in a row still carry on, a third stops; reset 301 stops with
   `resets_at`; no header stops as now.
-- `DownloadTest.cpp`: the Titled sentence with descriptions following
-  and with the setting off; `strava_descriptions()`; `download_status()`
-  for `WaitingForLimit`; `describing_status()`.
+- `DownloadTest.cpp`: the Titled sentence with descriptions following;
+  `strava_descriptions()` and the request's; `download_status()` for
+  `Waiting`; `describing_status()`.
 - By hand: Jan's backlog with the export not imported, watching the
   status line and the log across a quarter hour; Ctrl+G during a chain;
   `strava.descriptions: false`; a restart mid-backlog.
