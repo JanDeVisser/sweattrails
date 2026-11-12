@@ -98,6 +98,17 @@ Pacing paced(pSweatTrails const &the, std::string const &source)
     };
 }
 
+// Waits on the job thread until `until`, a Unix time, for `source`'s limit
+// on requests to reset, and says so on the status line. Only for a short
+// wait that the user asked for: it holds up the jobs behind it.
+std::function<void(i64)> waiting_for_limit(pSweatTrails const &the, std::string const &source)
+{
+    return [the, source](i64 until) {
+        the->notify_latest<NotificationType::Downloading>(Downloading { .source = source, .step = DownloadStep::Waiting, .until = clock_time(until) });
+        std::this_thread::sleep_until(std::chrono::system_clock::from_time_t(static_cast<time_t>(until)));
+    };
+}
+
 SourceOutcome download_from_garmin(pSweatTrails const &the, int days)
 {
     SourceOutcome outcome { .source = "Garmin Connect" };
@@ -142,6 +153,7 @@ SourceOutcome download_from_wahoo(pSweatTrails const &the, std::optional<std::st
         .client_id = *client_id,
         .tokens_file = tokens_file,
         .tokens = read_tokens(tokens_file),
+        .wait_for_limit = waiting_for_limit(the, outcome.source),
     };
     auto const on_workout = [&the](size_t index, size_t count) {
         the->notify_latest<NotificationType::Downloading>(Downloading { "Wahoo", index, count });
@@ -183,6 +195,7 @@ SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<Strava
             the->notify_latest<NotificationType::Downloading>(Downloading { .source = "Strava", .step = DownloadStep::Retrying });
             std::this_thread::sleep_for(pause);
         },
+        .wait_for_limit = waiting_for_limit(the, "Strava"),
     };
     auto const on_description = [&the](size_t index, size_t count) {
         the->notify_latest<NotificationType::Downloading>(Downloading { "Strava", index, count });
@@ -1889,7 +1902,7 @@ void SweatTrails::notif_importing_file(Notification::Payload const &data)
 void SweatTrails::notif_downloading(Notification::Payload const &data)
 {
     auto const &download = std::get<Downloading>(data);
-    SweatTrails::the()->set_status(download_status(download.step, download.source, download.index, download.count));
+    SweatTrails::the()->set_status(download_status(download.step, download.source, download.index, download.count, download.until));
 }
 
 void SweatTrails::notif_download_done(Notification::Payload const &data)

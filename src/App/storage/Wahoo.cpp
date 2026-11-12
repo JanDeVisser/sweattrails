@@ -58,26 +58,23 @@ std::optional<i64> rate_limit_reset(HttpResponse const &response)
     return seconds;
 }
 
-// When to try again, `reset` seconds from now.
-std::string when(std::optional<i64> reset)
+// So that "Try again after 12:45" isn't a few seconds early.
+i64 round_up_to_minute(i64 time)
 {
-    if (!reset) {
-        return "later";
-    }
-    if (*reset <= 60) {
-        return "in a minute";
-    }
-    return std::format("in {} minutes", (*reset + 59) / 60);
+    return (time + 59) / 60 * 60;
 }
 
-WahooError http_error(HttpResponse const &response, std::string_view what)
+WahooError http_error(HttpResponse const &response, std::string_view what, i64 now)
 {
     if (response.status == 429) {
         auto const reset = rate_limit_reset(response);
+        auto const resets_at = reset ? now + *reset : 0;
         return WahooError {
             .kind = WahooError::Kind::Failed,
-            .message = std::format("Wahoo's limit on requests is reached. Try again {}.", when(reset)),
+            .message = std::format("Wahoo's limit on requests is reached. Try again {}.",
+                reset ? std::format("after {}", clock_time(round_up_to_minute(resets_at))) : std::string { "later" }),
             .status = response.status,
+            .resets_at = resets_at,
         };
     }
     return WahooError {
@@ -215,7 +212,7 @@ WahooResult<void> Wahoo::request_tokens(std::vector<std::pair<std::string, std::
         return std::unexpected(token_error(response->body));
     }
     if (response->status != 200) {
-        return std::unexpected(http_error(*response, "when asked for tokens"));
+        return std::unexpected(http_error(*response, "when asked for tokens", now()));
     }
     auto const json = JSONValue::deserialize(response->body);
     auto const access_token = json ? json->try_get<std::string>("access_token") : std::unexpected(json.error());
@@ -274,9 +271,27 @@ WahooResult<HttpResponse> Wahoo::get(std::string const &path)
         return std::unexpected(not_logged_in());
     }
     if (response->status != 200) {
-        return std::unexpected(http_error(*response, std::format("for `{}`", path)));
+        return std::unexpected(http_error(*response, std::format("for `{}`", path), now()));
     }
     return std::move(*response);
+}
+
+// A whole history's list runs into Wahoo's 5-minute limit once or twice:
+// a limit that resets that soon is waited for, and the page asked for
+// again. A longer one stops the list.
+WahooResult<HttpResponse> Wahoo::get_waiting(std::string const &path)
+{
+    auto const soon = [this](WahooResult<HttpResponse> const &response) {
+        return !response && response.error().status == 429 && response.error().resets_at > 0
+            && response.error().resets_at - now() <= WahooMaxLimitWait;
+    };
+    auto ret = get(path);
+    for (auto waited = 0; wait_for_limit && waited < WahooLimitWaits && soon(ret); ++waited) {
+        warning(Wahoo, "Wahoo's limit is reached: waiting until {}", ret.error().resets_at);
+        wait_for_limit(ret.error().resets_at);
+        ret = get(path);
+    }
+    return ret;
 }
 
 WahooResult<std::vector<WahooWorkout>> Wahoo::list_workouts(i64 since)
@@ -285,7 +300,7 @@ WahooResult<std::vector<WahooWorkout>> Wahoo::list_workouts(i64 since)
     // Newest first: past the first workout before `since`, they're all
     // before it.
     for (i64 page = 1;; ++page) {
-        auto const response = get(std::format("{}?page={}&per_page={}", WorkoutsPath, page, PageSize));
+        auto const response = get_waiting(std::format("{}?page={}&per_page={}", WorkoutsPath, page, PageSize));
         if (!response) {
             return std::unexpected(response.error());
         }
@@ -318,7 +333,7 @@ WahooResult<std::string> Wahoo::download_fit(std::string const &url)
         return std::unexpected(unreachable(response.error()));
     }
     if (response->status != 200) {
-        return std::unexpected(http_error(*response, "for a FIT file"));
+        return std::unexpected(http_error(*response, "for a FIT file", now()));
     }
     return std::move(response->body);
 }

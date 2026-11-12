@@ -65,11 +65,12 @@ enum class DownloadStep {
     Downloading, // A file, of the ones to download
     Pausing,     // Between files: see Pacing
     Retrying,    // The source didn't answer, and is asked again after a wait
+    Waiting,     // For the source's limit on requests to reset
 };
 
 // What the status line says at `step` of a download from `source`, at the
-// file `index` of `count`.
-std::string download_status(DownloadStep step, std::string_view source = { }, size_t index = 0, size_t count = 0);
+// file `index` of `count`, or waiting `until` a time such as "20:15".
+std::string download_status(DownloadStep step, std::string_view source = { }, size_t index = 0, size_t count = 0, std::string_view until = { });
 
 // What a download is asked to do: the task's arguments, with the settings
 // filling in what they don't say.

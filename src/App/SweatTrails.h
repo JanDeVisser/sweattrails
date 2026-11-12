@@ -174,6 +174,7 @@ struct Downloading {
     size_t       index { 0 };
     size_t       count { 0 };
     DownloadStep step { DownloadStep::Downloading };
+    std::string  until { }; // For Waiting: such as "20:15"
 };
 
 // Sent when a login is over, however it ended, with what to tell the

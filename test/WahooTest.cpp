@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
+#include <ctime>
 #include <format>
 #include <map>
 #include <string>
@@ -432,31 +434,75 @@ void test_revoked_token()
     CHECK(!listed.has_value() && listed.error().kind == WahooError::Kind::NotLoggedIn);
 }
 
+// Without a way to wait, the list stops at the limit, and says when it
+// resets, as a time of day.
 void test_rate_limit()
 {
     FakeWahoo fake;
     TempDir   dir { "wahoo-rate-limit" };
     auto      wahoo = logged_in(fake, dir);
+    // Now is 12:40 UTC: 250 seconds is after 12:44, rounded up.
     fake.answer("/v1/workouts", { .status = 429, .body = "", .headers = { { "X-RateLimit-Limit", "25" }, { "x-ratelimit-reset", "250" } } });
     auto const listed = wahoo.list_workouts(0);
     CHECK(!listed.has_value());
     if (!listed) {
         CHECK(listed.error().kind == WahooError::Kind::Failed);
-        CHECK_EQ(listed.error().message, "Wahoo's limit on requests is reached. Try again in 5 minutes.");
-    }
-    for (auto const &[reset, message] : std::vector<std::pair<std::string, std::string>> {
-             { "0", "Try again in a minute." },
-             { "30", "Try again in a minute." },
-             { "60", "Try again in a minute." },
-             { "61", "Try again in 2 minutes." },
-         }) {
-        fake.answer("/v1/workouts", { .status = 429, .body = "", .headers = { { "X-RateLimit-Reset", reset } } });
-        auto const limited = wahoo.list_workouts(0);
-        CHECK(!limited.has_value() && limited.error().message.ends_with(message));
+        CHECK_EQ(listed.error().message, "Wahoo's limit on requests is reached. Try again after 12:45.");
+        CHECK_EQ(listed.error().resets_at, Now + 250);
     }
     fake.answer("/v1/workouts", { .status = 429, .body = "" });
     auto const no_reset = wahoo.list_workouts(0);
-    CHECK(!no_reset.has_value() && no_reset.error().message.ends_with("Try again later."));
+    CHECK(!no_reset.has_value() && no_reset.error().message.ends_with("Try again later.") && no_reset.error().resets_at == 0);
+}
+
+// A limit that resets within WahooMaxLimitWait is waited for, and the
+// list carries on from the page that ran into it.
+void test_short_limit_is_waited_for()
+{
+    FakeWahoo        fake;
+    TempDir          dir { "wahoo-limit-wait" };
+    auto             wahoo = logged_in(fake, dir);
+    std::vector<i64> waited;
+    wahoo.wait_for_limit = [&waited](i64 until) { waited.push_back(until); };
+    fake.answer("/v1/workouts", { .status = 429, .body = "", .headers = { { "X-RateLimit-Reset", "250" } } });
+    fake.answer("/v1/workouts", { .status = 429, .body = "", .headers = { { "X-RateLimit-Reset", "300" } } });
+    fake.answer("/v1/workouts", { .status = 200, .body = page_of({ workout(1, "2026-10-19T08:00:00.000Z", "Ride") }, 1) });
+    auto const listed = wahoo.list_workouts(0);
+    CHECK(listed.has_value() && listed->size() == 1);
+    CHECK_EQ(waited, (std::vector<i64> { Now + 250, Now + 300 }));
+    CHECK_EQ(fake.count("/v1/workouts"), 3uz);
+}
+
+// Past WahooLimitWaits waits for one page, the list stops.
+void test_limit_waits_run_out()
+{
+    FakeWahoo fake;
+    TempDir   dir { "wahoo-limit-waits-out" };
+    auto      wahoo = logged_in(fake, dir);
+    int       waits { 0 };
+    wahoo.wait_for_limit = [&waits](i64) { ++waits; };
+    for (auto ix = 0; ix <= WahooLimitWaits; ++ix) {
+        fake.answer("/v1/workouts", { .status = 429, .body = "", .headers = { { "X-RateLimit-Reset", "60" } } });
+    }
+    auto const listed = wahoo.list_workouts(0);
+    CHECK(!listed.has_value() && listed.error().status == 429);
+    CHECK_EQ(waits, WahooLimitWaits);
+}
+
+// A limit that resets later, or that doesn't say when, isn't waited for.
+void test_long_limit_is_not_waited_for()
+{
+    FakeWahoo fake;
+    TempDir   dir { "wahoo-limit-long" };
+    auto      wahoo = logged_in(fake, dir);
+    int       waits { 0 };
+    wahoo.wait_for_limit = [&waits](i64) { ++waits; };
+    fake.answer("/v1/workouts", { .status = 429, .body = "", .headers = { { "X-RateLimit-Reset", "301" } } });
+    auto const listed = wahoo.list_workouts(0);
+    CHECK(!listed.has_value() && listed.error().message.ends_with("Try again after 12:46."));
+    fake.answer("/v1/workouts", { .status = 429, .body = "" });
+    CHECK(!wahoo.list_workouts(0).has_value());
+    CHECK_EQ(waits, 0);
 }
 
 void test_offline_and_server_errors()
@@ -656,6 +702,9 @@ void test_too_many_requests_past_the_retries()
 
 int main()
 {
+    // The messages say when Wahoo's limit resets in local time.
+    setenv("TZ", "UTC", 1);
+    tzset();
     test_login_code();
     test_tokens_file();
     test_tokens_folder_is_made();
@@ -673,6 +722,9 @@ int main()
     test_rejected_refresh();
     test_revoked_token();
     test_rate_limit();
+    test_short_limit_is_waited_for();
+    test_limit_waits_run_out();
+    test_long_limit_is_not_waited_for();
     test_offline_and_server_errors();
     test_parse_workouts();
     test_list_stops_at_the_first_older_workout();

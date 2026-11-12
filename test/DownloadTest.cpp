@@ -372,6 +372,7 @@ void test_download_status()
     CHECK_EQ(download_status(DownloadStep::Downloading, "Wahoo", 0, 2), "Downloading 1 of 2 from Wahoo");
     CHECK_EQ(download_status(DownloadStep::Pausing, "Garmin Connect"), "Pausing a minute between downloads from Garmin Connect");
     CHECK_EQ(download_status(DownloadStep::Retrying, "Strava"), "Strava didn't answer: asking again shortly");
+    CHECK_EQ(download_status(DownloadStep::Waiting, "Wahoo", 0, 0, "20:04"), "Waiting for Wahoo's limit until 20:04");
 }
 
 int main()

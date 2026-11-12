@@ -122,7 +122,7 @@ std::optional<std::string> strava_setup_problem(std::optional<StravaClient> cons
     return { };
 }
 
-std::string download_status(DownloadStep step, std::string_view source, size_t index, size_t count)
+std::string download_status(DownloadStep step, std::string_view source, size_t index, size_t count, std::string_view until)
 {
     switch (step) {
     case DownloadStep::Starting:
@@ -135,6 +135,8 @@ std::string download_status(DownloadStep step, std::string_view source, size_t i
         return std::format("Pausing a minute between downloads from {}", source);
     case DownloadStep::Retrying:
         return std::format("{} didn't answer: asking again shortly", source);
+    case DownloadStep::Waiting:
+        return std::format("Waiting for {}'s limit until {}", source, until);
     }
     return { };
 }
