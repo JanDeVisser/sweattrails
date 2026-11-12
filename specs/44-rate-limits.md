@@ -312,4 +312,31 @@ status line.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Suggestion.** `describe_from_strava()` (SweatTrails.cpp) starts a chain
+   with `usage` empty, also from `notif_download_done` while `describe_at`
+   waits for a limit. Every Ctrl+G during a pause so costs one request out of
+   the 20 spare before the chain sees the headers and stops again. Keeping
+   the last `usage` in `SweatTrails`, or not starting while `describe_at` is
+   in the future, avoids it. Harmless otherwise.
+2. **Suggestion.** `waiting_for_limit()` sleeps on the job thread for up to
+   `StravaLimitWaits` x 15 minutes per list page (and 2 x 5 for Wahoo), also
+   in the quiet startup run, which holds up the inbox and Ctrl+G behind it
+   with nothing but the status line to say why. The spec accepts this; it is
+   only reachable when something else uses Strava's quota.
+3. **Suggestion.** `Strava.cpp` logs `resets_at` in the "waiting until"
+   warning as a raw Unix time; `clock_time()` would read better.
+4. **Missing tests, added** (`test/StravaBacklogTest.cpp`, all pass): a 429
+   without headers resumes at the next quarter hour and does not stop the
+   chain or leave `resume_at` empty (which would make the chain hammer
+   Strava); usage 79/979 carried in still fetches; a 404 for an ID on two
+   devices empties both; a sidecar that got another Strava ID in between
+   isn't given the old ID's description.
+5. **Not tested** (needs the app's job thread, as the Developer says): the
+   `describing`, `describe_at`, `describe_again` chain. Reading it, no way to
+   get stuck was found: every path of `describe_chunk()` either schedules the
+   next chunk or sends `DescribingPaused`; `describing` is only set in
+   `describe_from_strava()` and cleared by that notification; a login or
+   titles run ending mid-chain sets `describe_again`, and a restart loop
+   ends since `describe_again` is cleared each time; a failed or limited
+   chunk sets `describe_at`, which `process_input()` picks up.
+

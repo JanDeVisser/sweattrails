@@ -263,6 +263,61 @@ void test_fetch_keeps_what_changed_since()
     CHECK_EQ(chunk.changed, (std::vector<i64> { Swim }));
 }
 
+// A 429 without Strava's headers still says when to go on, the next
+// quarter hour, so that the chain doesn't ask again at once.
+void test_fetch_rate_limited_without_headers()
+{
+    Backlog t;
+    auto    waiting = t.waiting();
+    t.fake.answer(path_of(3), HttpResponse { .status = 429, .body = "" });
+    auto const chunk = fetch_backlog(t.strava, waiting, 10);
+    CHECK_EQ(chunk.fetched, 0uz);
+    CHECK_EQ(chunk.resume_at.value_or(0), NextQuarterHour);
+    CHECK(!chunk.stopped);
+    CHECK_EQ(ids_of(waiting), (std::vector<u64> { 3, 1 }));
+}
+
+// One request below the spare, the chunk carries on, with the usage it
+// was handed from the chunk before.
+void test_fetch_carries_on_below_the_spare()
+{
+    Backlog t;
+    auto    waiting = t.waiting();
+    t.strava.usage = StravaUsage { .quarter_used = 79, .quarter_limit = 100, .day_used = 979, .day_limit = 1000 };
+    t.fake.answer(path_of(3), activity(3, "Cold", "79,979"));
+    t.fake.answer(path_of(1), activity(1, "Windy", "80,980"));
+    auto const chunk = fetch_backlog(t.strava, waiting, 10);
+    CHECK_EQ(chunk.fetched, 2uz);
+    CHECK(waiting.empty());
+}
+
+// A 404 for an ID on two devices empties both descriptions.
+void test_fetch_not_found_on_two_devices()
+{
+    Backlog t;
+    save_strava(t.store, Walk, { .id = 3, .name = "Swim" });
+    auto waiting = t.waiting();
+    t.fake.answer(path_of(1), activity(1, "Windy"));
+    auto const chunk = fetch_backlog(t.strava, waiting, 10);
+    CHECK_EQ(strava_of(t.store, Swim).value().description.value_or("none"), "");
+    CHECK_EQ(strava_of(t.store, Walk).value().description.value_or("none"), "");
+    CHECK_EQ(chunk.changed, (std::vector<i64> { Walk, Ride, Swim }));
+}
+
+// A titles run gave the activity another Strava ID in between: the
+// description of the old one doesn't belong to it.
+void test_fetch_keeps_another_id()
+{
+    Backlog t;
+    auto    waiting = t.waiting();
+    save_strava(t.store, Swim, { .id = 99, .name = "Swim" });
+    t.fake.answer(path_of(3), activity(3, "Cold"));
+    t.fake.answer(path_of(1), activity(1, "Windy"));
+    auto const chunk = fetch_backlog(t.strava, waiting, 10);
+    CHECK(!strava_of(t.store, Swim).value().description.has_value());
+    CHECK_EQ(chunk.changed, (std::vector<i64> { Ride }));
+}
+
 }
 
 int main()
@@ -281,5 +336,9 @@ int main()
     test_fetch_not_logged_in();
     test_fetch_not_found();
     test_fetch_keeps_what_changed_since();
+    test_fetch_rate_limited_without_headers();
+    test_fetch_carries_on_below_the_spare();
+    test_fetch_not_found_on_two_devices();
+    test_fetch_keeps_another_id();
     return ST::Test::test_result();
 }
