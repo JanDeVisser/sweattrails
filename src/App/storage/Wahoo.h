@@ -48,6 +48,12 @@ constexpr std::string_view WahooScopes = "workouts_read user_read offline_data";
 // The number of days a download looks back when the settings don't say.
 constexpr int WahooDefaultDays = 30;
 
+// A limit that resets in at most this many seconds, Wahoo's shortest
+// window, is waited for. A page of the list waits at most WahooLimitWaits
+// times.
+constexpr i64 WahooMaxLimitWait = 5 * 60;
+constexpr int WahooLimitWaits = 2;
+
 struct WahooError {
     enum class Kind {
         NotLoggedIn, // No tokens, or tokens Wahoo no longer accepts
@@ -56,13 +62,19 @@ struct WahooError {
 
     Kind        kind { Kind::Failed };
     std::string message { };
-    long        status { 0 }; // The HTTP status, for an HTTP error
+    long        status { 0 };    // The HTTP status, for an HTTP error
+    i64         resets_at { 0 }; // For a 429: when Wahoo's limit resets, a Unix time, if it said
 
     [[nodiscard]] std::string to_string() const { return message; }
 };
 
 template<typename T>
 using WahooResult = std::expected<T, WahooError>;
+
+// The X-RateLimit-* headers of an answer, as "Name: value" separated by
+// commas, for the log: Wahoo doesn't document its limits, and these say
+// what they are, and how much of them is used.
+std::string rate_limit_headers(HttpResponse const &response);
 
 // `wahoo-tokens.json` in SweatTrails' config folder.
 fs::path wahoo_tokens_file(fs::path const &config_dir);
@@ -85,6 +97,9 @@ struct Wahoo {
     fs::path                   tokens_file { };
     std::optional<OAuthTokens> tokens { };
     std::function<i64()>       now { [] { return static_cast<i64>(std::time(nullptr)); } };
+    // Waits until a Unix time, for the list's limit to reset: see
+    // WahooMaxLimitWait. Without it, the list stops at the limit.
+    std::function<void(i64 until)> wait_for_limit { };
 
     // Where the browser goes to log in. `state` comes back with the code.
     [[nodiscard]] std::string authorize_url(std::string_view challenge, std::string_view state) const;
@@ -92,7 +107,8 @@ struct Wahoo {
     // Trades the code the login brought back for tokens, and saves them.
     WahooResult<void> exchange_code(std::string_view code, std::string_view verifier);
 
-    // The workouts that started at or after `since`, newest first.
+    // The workouts that started at or after `since`, newest first. A page
+    // that runs into a limit that resets soon waits for it.
     WahooResult<std::vector<WahooWorkout>> list_workouts(i64 since);
 
     // The FIT file at a workout's `file_url`.
@@ -102,6 +118,7 @@ private:
     WahooResult<void>         refresh_if_expiring();
     WahooResult<void>         request_tokens(std::vector<std::pair<std::string, std::string>> const &form, std::string verifier);
     WahooResult<HttpResponse> get(std::string const &path);
+    WahooResult<HttpResponse> get_waiting(std::string const &path);
 };
 
 // Called before each workout is downloaded, with its index and the number

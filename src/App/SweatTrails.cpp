@@ -41,6 +41,7 @@
 #include <storage/Recordings.h>
 #include <storage/Storage.h>
 #include <storage/Strava.h>
+#include <storage/StravaBacklog.h>
 #include <storage/StravaExport.h>
 #include <storage/StravaTitles.h>
 #include <storage/Summaries.h>
@@ -98,6 +99,17 @@ Pacing paced(pSweatTrails const &the, std::string const &source)
     };
 }
 
+// Waits on the job thread until `until`, a Unix time, for `source`'s limit
+// on requests to reset, and says so on the status line. Only for a short
+// wait that the user asked for: it holds up the jobs behind it.
+std::function<void(i64)> waiting_for_limit(pSweatTrails const &the, std::string const &source)
+{
+    return [the, source](i64 until) {
+        the->notify_latest<NotificationType::Downloading>(Downloading { .source = source, .step = DownloadStep::Waiting, .until = clock_time(until) });
+        std::this_thread::sleep_until(std::chrono::system_clock::from_time_t(static_cast<time_t>(until)));
+    };
+}
+
 SourceOutcome download_from_garmin(pSweatTrails const &the, int days)
 {
     SourceOutcome outcome { .source = "Garmin Connect" };
@@ -142,6 +154,7 @@ SourceOutcome download_from_wahoo(pSweatTrails const &the, std::optional<std::st
         .client_id = *client_id,
         .tokens_file = tokens_file,
         .tokens = read_tokens(tokens_file),
+        .wait_for_limit = waiting_for_limit(the, outcome.source),
     };
     auto const on_workout = [&the](size_t index, size_t count) {
         the->notify_latest<NotificationType::Downloading>(Downloading { "Wahoo", index, count });
@@ -160,16 +173,22 @@ SourceOutcome download_from_wahoo(pSweatTrails const &the, std::optional<std::st
     return outcome;
 }
 
-// A time as the user's clock says it, such as "14:45".
-std::string clock_time(i64 time)
+// How many descriptions the background has to fetch, for the closing
+// message.
+size_t descriptions_waiting(Storage const &storage)
 {
-    auto const local = DateTime::from_timestamp(static_cast<i32>(time));
-    return std::format("{:02}:{:02}", local.hour, local.minute);
+    auto const backlog = strava_backlog(storage);
+    if (!backlog) {
+        warning(ST, "Can't count the descriptions Strava has to fetch: {}", backlog.error().to_string());
+        return 0;
+    }
+    return backlog->size();
 }
 
 // Gives the activities in the store that started since `after` their
-// titles from Strava, and tells the UI which changed.
-SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<StravaClient> const &client, i64 after)
+// titles from Strava, and tells the UI which changed. With `descriptions`,
+// says how many descriptions follow in the background.
+SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<StravaClient> const &client, i64 after, bool descriptions)
 {
     SourceOutcome outcome { .source = "Strava", .kind = SourceOutcome::Kind::Titled };
     // Without a client ID, the user doesn't use Strava; without the secret,
@@ -190,11 +209,10 @@ SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<Strava
             the->notify_latest<NotificationType::Downloading>(Downloading { .source = "Strava", .step = DownloadStep::Retrying });
             std::this_thread::sleep_for(pause);
         },
+        .wait_for_limit = waiting_for_limit(the, "Strava"),
     };
-    auto const on_description = [&the](size_t index, size_t count) {
-        the->notify_latest<NotificationType::Downloading>(Downloading { "Strava", index, count });
-    };
-    auto const update = update_strava_titles(strava, the->storage, after, static_cast<i64>(std::time(nullptr)), on_description);
+    the->notify_latest<NotificationType::Downloading>(Downloading { .source = outcome.source, .step = DownloadStep::Listing });
+    auto const update = update_strava_titles(strava, the->storage, after, static_cast<i64>(std::time(nullptr)));
     if (!update) {
         switch (update.error().kind) {
         case StravaError::Kind::NotLoggedIn:
@@ -209,12 +227,10 @@ SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<Strava
     if (!update->changed.empty()) {
         the->notify<NotificationType::TitlesChanged>(TitlesChanged { update->changed });
     }
-    info(ST, "Strava: {} titles and {} descriptions, {} descriptions left", update->titles, update->descriptions, update->waiting);
     outcome.count = update->titles;
-    outcome.descriptions = update->descriptions;
-    outcome.waiting = update->waiting;
-    outcome.resets_at = update->resets_at ? clock_time(*update->resets_at) : std::string { };
+    outcome.waiting = descriptions ? descriptions_waiting(the->storage) : 0;
     outcome.message = update->error;
+    info(ST, "Strava: {} titles, {} descriptions to fetch", outcome.count, outcome.waiting);
     return outcome;
 }
 
@@ -352,10 +368,11 @@ void run_downloads(pSweatTrails const &the, DownloadRequest const &request)
     }
     if (request.strava) {
         auto const after = static_cast<i64>(std::time(nullptr)) - static_cast<i64>(request.strava_days) * 24 * 60 * 60;
-        outcomes.push_back(download_from_strava(the, request.strava_client, after));
+        outcomes.push_back(download_from_strava(the, request.strava_client, after, request.strava_descriptions));
     }
     auto report = download_report(outcomes, request.quiet);
     report.login_arguments = login_arguments(request, report.ask_login);
+    report.describe = request.strava && request.strava_descriptions;
     the->notify<NotificationType::DownloadDone>(report);
 }
 
@@ -574,7 +591,8 @@ void run_strava_titles(pSweatTrails const &the, StravaTitlesRequest const &reque
         }
         after = oldest->value_or(now) - StravaMatchSeconds;
     }
-    auto report = download_report({ download_from_strava(the, request.client, after) }, false);
+    auto report = download_report({ download_from_strava(the, request.client, after, request.descriptions) }, false);
+    report.describe = request.descriptions;
     report.login_arguments = JSONValue::object();
     if (request.days) {
         report.login_arguments.set("days", JSONValue { *request.days });
@@ -622,6 +640,70 @@ void SweatTrails::job_import_strava_export(Job::Payload const &data)
     }
     info(ST, "Strava's export: {} descriptions, {} empty, {} activities without a Strava title", imported->descriptions, imported->empty, imported->untitled);
     done(imported->message());
+}
+
+// One chunk of Strava's descriptions in the background, which schedules
+// the next while Strava's limit allows, so that the jobs the user asks for
+// wait for a chunk at most. When it stops, the UI says when to go on: see
+// specs/44-rate-limits.md.
+void describe_chunk(pSweatTrails const &the, DescribingProgress progress)
+{
+    // A few seconds' worth of requests.
+    constexpr size_t ChunkSize = 10;
+    auto const       pause = [&the](std::optional<i64> resume_at) {
+        the->notify<NotificationType::DescribingPaused>(DescribingPaused { .resume_at = resume_at });
+    };
+    auto const tokens_file = strava_tokens_file(the->user_config_dir);
+    auto       tokens = read_tokens(tokens_file);
+    // Without a login, the titles run offers one, and starts this again.
+    if (!tokens) {
+        pause({ });
+        return;
+    }
+    if (!progress.waiting) {
+        auto backlog = strava_backlog(the->storage);
+        if (!backlog) {
+            warning(ST, "Can't read which descriptions Strava has to fetch: {}", backlog.error().to_string());
+            pause({ });
+            return;
+        }
+        progress.waiting = std::move(*backlog);
+    }
+    if (progress.waiting->empty()) {
+        pause({ });
+        return;
+    }
+    the->notify_latest<NotificationType::Describing>(Describing { .to_go = progress.waiting->size() });
+    Strava strava {
+        .fetch = http_fetch,
+        .client_id = progress.client.id,
+        .client_secret = progress.client.secret,
+        .tokens_file = tokens_file,
+        .tokens = std::move(tokens),
+        // A failure goes on at the next quarter hour, rather than waiting
+        // on the job thread to ask again.
+        .retries = 0,
+        .usage = progress.usage,
+    };
+    auto const chunk = fetch_backlog(strava, *progress.waiting, ChunkSize);
+    if (!chunk.changed.empty()) {
+        the->notify<NotificationType::TitlesChanged>(TitlesChanged { chunk.changed });
+    }
+    trace(ST, "Strava: {} descriptions, {} to go", chunk.fetched, progress.waiting->size());
+    if (chunk.stopped || chunk.resume_at || progress.waiting->empty()) {
+        if (chunk.resume_at) {
+            info(ST, "Strava's descriptions go on at {}: {} to go", clock_time(*chunk.resume_at), progress.waiting->size());
+        }
+        pause(chunk.resume_at);
+        return;
+    }
+    progress.usage = strava.usage;
+    the->schedule<JobType::DescribeFromStrava>(std::move(progress));
+}
+
+void SweatTrails::job_describe_from_strava(Job::Payload const &data)
+{
+    describe_chunk(SweatTrails::the(), std::get<DescribingProgress>(data));
 }
 
 void SweatTrails::job_strava_login(Job::Payload const &data)
@@ -691,6 +773,25 @@ void SweatTrails::process_input()
 {
     Main<Job, Notification>::process_input();
     step_render();
+    // Strava's limit has reset: the descriptions go on.
+    if (describe_at && !describing && static_cast<i64>(std::time(nullptr)) >= *describe_at) {
+        describe_from_strava();
+    }
+}
+
+void SweatTrails::describe_from_strava()
+{
+    if (describing) {
+        return;
+    }
+    describe_at.reset();
+    auto const client = strava_client(settings);
+    if (!strava_descriptions(settings) || strava_setup_problem(client)) {
+        return;
+    }
+    describing = true;
+    describe_again = false;
+    schedule<JobType::DescribeFromStrava>(DescribingProgress { .client = *client });
 }
 
 void SweatTrails::terminate()
@@ -787,7 +888,7 @@ void cmd_strava_titles(pSweatTrails const &sweattrails, JSONValue const &argumen
     if (!sweattrails->modals.empty() || sweattrails->downloading) {
         return;
     }
-    StravaTitlesRequest request { .client = strava_client(sweattrails->settings) };
+    StravaTitlesRequest request { .client = strava_client(sweattrails->settings), .descriptions = strava_descriptions(sweattrails->settings) };
     if (arguments.is_object()) {
         if (auto const days = arguments.try_get<int>("days"); days) {
             request.days = *days;
@@ -918,7 +1019,7 @@ void cmd_strava_login(pSweatTrails const &sweattrails, JSONValue const &argument
         return;
     }
     auto const          request = make_download_request(sweattrails->settings, arguments, Sources { .strava = true });
-    StravaTitlesRequest titles { .days = request.strava_days, .client = request.strava_client };
+    StravaTitlesRequest titles { .days = request.strava_days, .client = request.strava_client, .descriptions = request.strava_descriptions };
     if (arguments.is_object() && arguments.try_get<bool>("history").value_or(false)) {
         titles.days.reset();
     }
@@ -1896,7 +1997,7 @@ void SweatTrails::notif_importing_file(Notification::Payload const &data)
 void SweatTrails::notif_downloading(Notification::Payload const &data)
 {
     auto const &download = std::get<Downloading>(data);
-    SweatTrails::the()->set_status(download_status(download.step, download.source, download.index, download.count));
+    SweatTrails::the()->set_status(download_status(download.step, download.source, download.index, download.count, download.until));
 }
 
 void SweatTrails::notif_download_done(Notification::Payload const &data)
@@ -1905,6 +2006,15 @@ void SweatTrails::notif_download_done(Notification::Payload const &data)
     auto const  the = SweatTrails::the();
     the->downloading = false;
     the->set_status("");
+    // A running chain has read the store before these titles: it looks
+    // again when it's done. One waiting for Strava's limit reads the store
+    // when it goes on; started now, it would spend a request of the ones
+    // left for the user before it knew.
+    if (report.describe && the->describing) {
+        the->describe_again = true;
+    } else if (report.describe && !the->describe_at) {
+        the->describe_from_strava();
+    }
     // Not while a login is waiting for the browser already.
     if (!report.ask_login.empty() && the->logging_in.empty()) {
         auto const task = (report.ask_login == "Strava") ? "st-strava-login" : "st-wahoo-login";
@@ -2089,6 +2199,32 @@ void SweatTrails::notif_recordings_changed(Notification::Payload const &data)
         message_box(changed.error);
     }
     show_again(SweatTrails::the(), changed.id, changed.done);
+}
+
+void SweatTrails::notif_describing(Notification::Payload const &data)
+{
+    auto const the = SweatTrails::the();
+    // A download says how far it is itself.
+    if (!the->downloading) {
+        the->set_status(describing_status(std::get<Describing>(data).to_go));
+    }
+}
+
+void SweatTrails::notif_describing_paused(Notification::Payload const &data)
+{
+    auto const &paused = std::get<DescribingPaused>(data);
+    auto const  the = SweatTrails::the();
+    the->describing = false;
+    if (!the->downloading) {
+        the->set_status("");
+    }
+    the->describe_at = paused.resume_at;
+    // Done with what it read, and a titles run brought more since: those
+    // too, now. At a limit, the next batch reads the store anyway.
+    if (the->describe_again && !paused.resume_at) {
+        the->describe_from_strava();
+    }
+    the->describe_again = false;
 }
 
 void SweatTrails::notif_importing_descriptions(Notification::Payload const &data)

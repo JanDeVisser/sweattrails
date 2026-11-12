@@ -57,11 +57,13 @@ StravaError unreachable(LibCError const &error)
 StravaError http_error(HttpResponse const &response, std::string_view what, i64 now)
 {
     if (response.status == 429) {
+        auto const usage = rate_limit_usage(response);
         return StravaError {
             .kind = StravaError::Kind::RateLimited,
             .message = "Strava's limit on requests is reached.",
             .status = response.status,
             .resets_at = rate_limit_reset(response, now),
+            .daily = usage && usage->day_used_up(),
         };
     }
     return StravaError {
@@ -127,14 +129,37 @@ fs::path strava_tokens_file(fs::path const &config_dir)
     return config_dir / "strava-tokens.json";
 }
 
-i64 rate_limit_reset(HttpResponse const &response, i64 now)
+std::optional<StravaUsage> rate_limit_usage(HttpResponse const &response)
 {
     auto const usage = two_numbers(response.header("X-ReadRateLimit-Usage"));
     auto const limit = two_numbers(response.header("X-ReadRateLimit-Limit"));
-    if (usage && limit && usage->second >= limit->second) {
-        return (now / Day + 1) * Day;
+    if (!usage || !limit) {
+        return { };
     }
+    return StravaUsage {
+        .quarter_used = usage->first,
+        .quarter_limit = limit->first,
+        .day_used = usage->second,
+        .day_limit = limit->second,
+    };
+}
+
+i64 next_quarter_hour(i64 now)
+{
     return (now / QuarterHour + 1) * QuarterHour;
+}
+
+i64 next_strava_day(i64 now)
+{
+    return (now / Day + 1) * Day;
+}
+
+i64 rate_limit_reset(HttpResponse const &response, i64 now)
+{
+    if (auto const usage = rate_limit_usage(response); usage && usage->day_used_up()) {
+        return next_strava_day(now);
+    }
+    return next_quarter_hour(now);
 }
 
 Decoded<std::vector<StravaActivity>> parse_activities(JSONValue const &page)
@@ -260,6 +285,9 @@ StravaResult<HttpResponse> Strava::get(std::string const &path)
     if (!response) {
         return std::unexpected(unreachable(response.error()));
     }
+    if (auto const said = rate_limit_usage(*response); said) {
+        usage = said;
+    }
     if (response->status == 401) {
         return std::unexpected(not_logged_in());
     }
@@ -269,7 +297,24 @@ StravaResult<HttpResponse> Strava::get(std::string const &path)
     return std::move(*response);
 }
 
+// The list is what the user asked for, and its pages are few: a page
+// that runs into the 15-minute limit waits for it, rather than stopping
+// the titles. The day's limit is too long to wait for.
 StravaResult<StravaPage> Strava::list_page(i64 after, i64 before, size_t count, size_t page)
+{
+    auto const quarter_limited = [](StravaResult<StravaPage> const &page) {
+        return !page && page.error().kind == StravaError::Kind::RateLimited && !page.error().daily;
+    };
+    auto ret = fetch_page(after, before, count, page);
+    for (auto waited = 0; wait_for_limit && waited < StravaLimitWaits && quarter_limited(ret); ++waited) {
+        warning(Strava, "Strava's 15-minute limit is reached: waiting until {}", clock_time(ret.error().resets_at));
+        wait_for_limit(ret.error().resets_at);
+        ret = fetch_page(after, before, count, page);
+    }
+    return ret;
+}
+
+StravaResult<StravaPage> Strava::fetch_page(i64 after, i64 before, size_t count, size_t page)
 {
     auto const response = get(std::format("{}?after={}&before={}&per_page={}{}", ActivitiesPath, after, before, count,
         page == 1 ? std::string { } : std::format("&page={}", page)));

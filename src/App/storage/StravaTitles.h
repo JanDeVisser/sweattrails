@@ -3,14 +3,13 @@
  *
  * SPDX-License-Identifier: MIT
  *
- * Gives the store's activities their titles and descriptions from Strava:
- * see specs/24-strava-titles.md.
+ * Gives the store's activities their titles from Strava: see
+ * specs/24-strava-titles.md. Their descriptions come in the background:
+ * see StravaBacklog.h.
  */
 
 #pragma once
 
-#include <functional>
-#include <optional>
 #include <span>
 #include <vector>
 
@@ -35,22 +34,16 @@ struct StravaMatch {
 std::vector<StravaMatch> match_strava(std::span<StravaActivity const> strava, std::span<StoredStart const> starts);
 
 struct StravaUpdate {
-    size_t             titles { 0 };       // Activities given a new name from Strava
-    size_t             descriptions { 0 }; // Descriptions fetched
-    size_t             waiting { 0 };      // Descriptions still to fetch
-    std::optional<i64> resets_at { };      // When Strava's limit resets, if it was reached
-    std::string        error { };          // What else stopped the descriptions, if anything
-    std::vector<i64>   changed { };        // The activities whose title or notes changed, by start time
+    size_t           titles { 0 }; // Activities given a new name from Strava
+    std::string      error { };    // Why the list stopped short, if it did
+    std::vector<i64> changed { };  // The activities whose title changed, by start time
 };
 
-using StravaTitlesProgress = std::function<void(size_t index, size_t count)>;
-
 // Gives the activities in the store that started between `after` and
-// `before`, Unix times, the names of the Strava activities they match, and
-// then fetches their descriptions, with `progress` called before each.
-// Descriptions stop at Strava's limit, or at the first one that fails,
-// with its error, and the rest are left for the next time. Runs on the job
-// thread.
-StravaResult<StravaUpdate> update_strava_titles(Strava &strava, Storage const &storage, i64 after, i64 before, StravaTitlesProgress const &progress = { });
+// `before`, Unix times, the names of the Strava activities they match. A
+// new name drops the description that went with the old one, for the
+// background to fetch again. A list that stops short keeps the titles it
+// has. Runs on the job thread.
+StravaResult<StravaUpdate> update_strava_titles(Strava &strava, Storage const &storage, i64 after, i64 before);
 
 }

@@ -6,7 +6,9 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <map>
+#include <format>
+
+#include <Date.h>
 
 #include <storage/StravaTitles.h>
 
@@ -38,21 +40,15 @@ std::vector<StravaMatch> match_strava(std::span<StravaActivity const> strava, st
 
 namespace {
 
-struct Described {
-    StoredStart stored { };
-    StravaTitle title { };
-};
-
 // Writes the match's name into its sidecar, unless it's there already. The
 // description stays only if the name does: a new name may come with a new
-// description. Returns what the sidecar has now, or nothing if it can't be
-// written.
-std::optional<StravaTitle> save_title(StravaMatch const &match, StravaUpdate &update)
+// description.
+void save_title(StravaMatch const &match, StravaUpdate &update)
 {
     auto const &sidecar = match.stored.sidecar;
     auto const  old = sidecar_titles(sidecar).strava;
     if (old && old->id == match.strava.id && old->name == match.strava.name) {
-        return old;
+        return;
     }
     StravaTitle title { .id = match.strava.id, .name = match.strava.name };
     if (old && old->name == match.strava.name) {
@@ -60,16 +56,15 @@ std::optional<StravaTitle> save_title(StravaMatch const &match, StravaUpdate &up
     }
     if (auto const saved = save_sidecar_strava(sidecar, title); !saved) {
         warning(Strava, "Could not save Strava's name in `{}`: {}", sidecar.string(), saved.error().to_string());
-        return { };
+        return;
     }
     ++update.titles;
     update.changed.push_back(match.stored.start);
-    return title;
 }
 
 }
 
-StravaResult<StravaUpdate> update_strava_titles(Strava &strava, Storage const &storage, i64 after, i64 before, StravaTitlesProgress const &progress)
+StravaResult<StravaUpdate> update_strava_titles(Strava &strava, Storage const &storage, i64 after, i64 before)
 {
     auto const listed = TRY_EVAL(strava.list_activities(after, before));
     // A Strava activity near `after` or `before` can match one in the store
@@ -79,57 +74,14 @@ StravaResult<StravaUpdate> update_strava_titles(Strava &strava, Storage const &s
         return std::unexpected(StravaError { .message = starts.error().to_string() });
     }
 
-    StravaUpdate           update { };
-    std::vector<Described> undescribed;
+    StravaUpdate update { };
     for (auto const &match : match_strava(listed.activities, *starts)) {
-        if (auto const title = save_title(match, update); title && !title->description) {
-            undescribed.push_back(Described { .stored = match.stored, .title = *title });
-        }
+        save_title(match, update);
     }
-
-    // The newest first: those are the ones the user looks at, and with
-    // Strava's limits a long history's descriptions take days.
-    std::ranges::sort(undescribed, std::ranges::greater { }, [](Described const &d) { return d.stored.start; });
-
-    // A list that stopped short keeps the titles it has, and the
-    // descriptions wait: what stopped it would stop them too.
-    if (listed.stopped) {
-        update.waiting = undescribed.size();
-        if (listed.stopped->kind == StravaError::Kind::RateLimited) {
-            update.resets_at = listed.stopped->resets_at;
-            update.error = "Strava's limit stopped its list short";
-        } else {
-            update.error = std::format("Strava's list stopped short: {}", listed.stopped->to_string());
-        }
-        undescribed.clear();
-    }
-
-    // By Strava ID: the same ride on two devices takes one request.
-    std::map<u64, std::string> fetched;
-    for (size_t ix = 0; ix < undescribed.size(); ++ix) {
-        auto &[stored, title] = undescribed[ix];
-        if (progress) {
-            progress(ix, undescribed.size());
-        }
-        auto const known = fetched.find(title.id);
-        auto const description = (known != fetched.end()) ? StravaResult<std::string> { known->second } : strava.description(title.id);
-        if (!description) {
-            update.waiting = undescribed.size() - ix;
-            if (description.error().kind == StravaError::Kind::RateLimited) {
-                update.resets_at = description.error().resets_at;
-            } else {
-                update.error = description.error().to_string();
-            }
-            break;
-        }
-        fetched[title.id] = *description;
-        title.description = *description;
-        if (auto const saved = save_sidecar_strava(stored.sidecar, title); !saved) {
-            warning(Strava, "Could not save Strava's description in `{}`: {}", stored.sidecar.string(), saved.error().to_string());
-            continue;
-        }
-        ++update.descriptions;
-        update.changed.push_back(stored.start);
+    if (listed.stopped && listed.stopped->kind == StravaError::Kind::RateLimited) {
+        update.error = std::format("Strava's limit stopped its list short. Try again after {}", clock_time(listed.stopped->resets_at));
+    } else if (listed.stopped) {
+        update.error = std::format("Strava's list stopped short: {}", listed.stopped->to_string());
     }
 
     std::ranges::sort(update.changed);

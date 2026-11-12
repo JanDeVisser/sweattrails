@@ -477,6 +477,113 @@ void test_rate_limit_reset()
     CHECK_EQ(rate_limit_reset(too_many("lots"), Now), Now + 10 * 60);
 }
 
+void test_rate_limit_usage()
+{
+    auto const usage = rate_limit_usage(too_many("101,400"));
+    CHECK(usage.has_value());
+    if (usage) {
+        CHECK_EQ(usage->quarter_used, 101);
+        CHECK_EQ(usage->quarter_limit, 100);
+        CHECK_EQ(usage->day_used, 400);
+        CHECK_EQ(usage->day_limit, 1000);
+        CHECK(!usage->day_used_up());
+    }
+    CHECK(rate_limit_usage(too_many("40,1000")).value().day_used_up());
+    CHECK(!rate_limit_usage(HttpResponse { .status = 200 }).has_value());
+    CHECK(!rate_limit_usage(too_many("lots")).has_value());
+}
+
+// Every answer says how much of the limits is used, not just a 429.
+void test_usage_is_kept()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-usage" };
+    auto       strava = logged_in(fake, dir);
+    CHECK(!strava.usage.has_value());
+    fake.answer("/api/v3/activities/5", HttpResponse {
+                                            .status = 200,
+                                            .body = R"({"id":5,"description":"Windy"})",
+                                            .headers = { { "X-ReadRateLimit-Limit", "100,1000" }, { "X-ReadRateLimit-Usage", "12,340" } },
+                                        });
+    CHECK(strava.description(5).has_value());
+    CHECK_EQ(strava.usage.value().quarter_used, 12);
+    CHECK_EQ(strava.usage.value().day_used, 340);
+    fake.answer("/api/v3/activities/6", too_many("101,341"));
+    CHECK(!strava.description(6).has_value());
+    CHECK_EQ(strava.usage.value().quarter_used, 101);
+    // An answer without the headers leaves what the last one said.
+    fake.answer("/api/v3/activities/7", HttpResponse { .status = 200, .body = R"({"id":7})" });
+    CHECK(strava.description(7).has_value());
+    CHECK_EQ(strava.usage.value().day_used, 341);
+}
+
+// A page of the list that runs into the 15-minute limit waits until it
+// resets, and the list carries on.
+void test_list_waits_for_the_quarter_hour()
+{
+    FakeStrava       fake;
+    TempDir          dir { "strava-list-waits" };
+    auto             strava = logged_in(fake, dir);
+    std::vector<i64> waited;
+    strava.wait_for_limit = [&waited](i64 until) { waited.push_back(until); };
+    fake.answer("/api/v3/athlete/activities", too_many("101,400"));
+    fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 200, .body = list_of({ strava_activity(1, "2026-10-01T06:30:15Z", "Morning ride") }) });
+    auto const listed = strava.list_activities(100, Now);
+    CHECK(listed.has_value() && listed->activities.size() == 1 && !listed->stopped);
+    CHECK_EQ(waited, (std::vector<i64> { Now + 10 * 60 }));
+    CHECK_EQ(fake.requests.size(), 2uz);
+}
+
+// Someone else using the same app keeps the limit reached: after
+// StravaLimitWaits waits, the list stops.
+void test_list_waits_run_out()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-list-waits-out" };
+    auto       strava = logged_in(fake, dir);
+    int        waits { 0 };
+    strava.wait_for_limit = [&waits](i64) { ++waits; };
+    for (auto ix = 0; ix <= StravaLimitWaits; ++ix) {
+        fake.answer("/api/v3/athlete/activities", too_many("101,400"));
+    }
+    auto const listed = strava.list_activities(100, Now);
+    CHECK(!listed.has_value() && listed.error().kind == StravaError::Kind::RateLimited);
+    CHECK_EQ(waits, StravaLimitWaits);
+}
+
+// The day's limit, or no way to wait, stops the list at once.
+void test_list_does_not_wait_for_the_day()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-list-day" };
+    auto       strava = logged_in(fake, dir);
+    int        waits { 0 };
+    strava.wait_for_limit = [&waits](i64) { ++waits; };
+    fake.answer("/api/v3/athlete/activities", too_many("40,1000"));
+    auto const listed = strava.list_activities(100, Now);
+    CHECK(!listed.has_value() && listed.error().daily);
+    CHECK_EQ(listed.error().resets_at, 1793318400);
+    CHECK_EQ(waits, 0);
+
+    strava.wait_for_limit = { };
+    fake.answer("/api/v3/athlete/activities", too_many("101,400"));
+    auto const unwaited = strava.list_activities(100, Now);
+    CHECK(!unwaited.has_value() && !unwaited.error().daily);
+}
+
+// Descriptions never wait: the background goes on later instead.
+void test_description_does_not_wait()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-description-limit" };
+    auto       strava = logged_in(fake, dir);
+    int        waits { 0 };
+    strava.wait_for_limit = [&waits](i64) { ++waits; };
+    fake.answer("/api/v3/activities/5", too_many("101,400"));
+    CHECK(!strava.description(5).has_value());
+    CHECK_EQ(waits, 0);
+}
+
 void test_tokens_file()
 {
     TempDir dir { "strava-tokens" };
@@ -507,6 +614,12 @@ int main()
     test_description();
     test_rate_limited();
     test_rate_limit_reset();
+    test_rate_limit_usage();
+    test_usage_is_kept();
+    test_list_waits_for_the_quarter_hour();
+    test_list_waits_run_out();
+    test_list_does_not_wait_for_the_day();
+    test_description_does_not_wait();
     test_tokens_file();
     return ST::Test::test_result();
 }

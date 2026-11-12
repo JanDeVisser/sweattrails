@@ -253,6 +253,7 @@ add_executable(
         src/App/storage/Storage.cpp
         src/App/storage/Types.cpp
         src/App/storage/Strava.cpp
+        src/App/storage/StravaBacklog.cpp
         src/App/storage/StravaExport.cpp
         src/App/storage/StravaTitles.cpp
         src/App/storage/Wahoo.cpp
@@ -981,6 +982,25 @@ sweattrails_test(
 )
 target_include_directories(strava_titles_test PRIVATE src/App)
 target_link_libraries(strava_titles_test PRIVATE ${CURL_LIBRARIES} OpenSSL::SSL)
+
+sweattrails_test(
+        strava_backlog_test
+        test/StravaBacklogTest.cpp
+        src/App/storage/Strava.cpp
+        src/App/storage/StravaBacklog.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Http.cpp
+        src/App/Map.cpp
+        src/App/OAuth.cpp
+)
+target_include_directories(strava_backlog_test PRIVATE src/App)
+target_link_libraries(strava_backlog_test PRIVATE ${CURL_LIBRARIES} OpenSSL::SSL)
 
 sweattrails_test(
         strava_export_test

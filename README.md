@@ -452,10 +452,16 @@ both. A name you gave an activity in SweatTrails wins over Strava's.
 
 The description, which SweatTrails shows under the title, takes a
 request of its own for each activity. Strava allows 100 requests every 15
-minutes and 1,000 a day, so the descriptions of a long history come over
-a few runs: SweatTrails says how many are left, and from when it can
-fetch them. A description changed on Strava, without the name, isn't
-seen again. One you wrote in SweatTrails wins over Strava's.
+minutes and 1,000 a day, so the descriptions of a long history take days.
+SweatTrails fetches them in the background, newest first, while it runs:
+the status line says how many are to go while a batch comes in. It stops
+20 requests short of either limit, so that Ctrl+G still works, and
+carries on when the limit resets, also after a restart.
+`"strava": { "descriptions": false }` in the settings turns this off.
+Strava's account export (on Strava, Settings, My Account, Download or
+Delete Your Account) has them all: drop its `activities.csv` on the
+window to bring a long history's descriptions in at once. A description changed on Strava, without the
+name, isn't seen again. One you wrote in SweatTrails wins over Strava's.
 
 ## Video overlay
 
