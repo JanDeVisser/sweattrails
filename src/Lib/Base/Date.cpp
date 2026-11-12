@@ -147,6 +147,12 @@ std::optional<DateTime> DateTime::from_timestamp(std::optional<i32> timestamp)
     return from_timestamp(*timestamp);
 }
 
+std::string clock_time(i64 time)
+{
+    auto const local = DateTime::from_timestamp(static_cast<i32>(time));
+    return std::format("{:02}:{:02}", local.hour, local.minute);
+}
+
 DateTime DateTime::end(Duration const &elapsed) const
 {
     return from_timestamp(static_cast<i32>(timestamp + elapsed.elapsed));

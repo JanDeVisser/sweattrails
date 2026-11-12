@@ -175,6 +175,10 @@ struct DateTime {
 std::string_view month_name(DateTime::Month month);
 std::string_view weekday_name(DateTime::WeekDay day);
 
+// A Unix time as the user's clock says it, such as "14:45", for messages
+// that say when to try again.
+std::string clock_time(i64 time);
+
 }
 
 template<>

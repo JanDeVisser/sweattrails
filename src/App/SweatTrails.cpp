@@ -160,13 +160,6 @@ SourceOutcome download_from_wahoo(pSweatTrails const &the, std::optional<std::st
     return outcome;
 }
 
-// A time as the user's clock says it, such as "14:45".
-std::string clock_time(i64 time)
-{
-    auto const local = DateTime::from_timestamp(static_cast<i32>(time));
-    return std::format("{:02}:{:02}", local.hour, local.minute);
-}
-
 // Gives the activities in the store that started since `after` their
 // titles from Strava, and tells the UI which changed.
 SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<StravaClient> const &client, i64 after)
