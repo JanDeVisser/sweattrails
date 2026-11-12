@@ -1,6 +1,6 @@
 # Living with Wahoo's and Strava's rate limits
 
-Status: In progress, on branch feature/44-rate-limits
+Status: In review, on branch feature/44-rate-limits
 
 <!--
 Status is one of:
