@@ -2007,10 +2007,12 @@ void SweatTrails::notif_download_done(Notification::Payload const &data)
     the->downloading = false;
     the->set_status("");
     // A running chain has read the store before these titles: it looks
-    // again when it's done.
+    // again when it's done. One waiting for Strava's limit reads the store
+    // when it goes on; started now, it would spend a request of the ones
+    // left for the user before it knew.
     if (report.describe && the->describing) {
         the->describe_again = true;
-    } else if (report.describe) {
+    } else if (report.describe && !the->describe_at) {
         the->describe_from_strava();
     }
     // Not while a login is waiting for the browser already.
