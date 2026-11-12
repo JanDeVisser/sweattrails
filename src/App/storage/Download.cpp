@@ -150,6 +150,11 @@ std::string download_status(DownloadStep step, std::string_view source, size_t i
     return { };
 }
 
+std::string describing_status(size_t to_go)
+{
+    return std::format("Strava descriptions: {} to go", to_go);
+}
+
 bool downloads_activities(JSONValue const &settings, bool has_garmin_key)
 {
     return has_garmin_key || wahoo_client_id(settings).has_value();

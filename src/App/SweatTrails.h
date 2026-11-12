@@ -28,6 +28,7 @@
 #include <storage/Recordings.h>
 #include <storage/Storage.h>
 #include <storage/Strava.h>
+#include <storage/StravaBacklog.h>
 #include <storage/Summaries.h>
 #include <storage/Types.h>
 #include <storage/Wahoo.h>
@@ -130,21 +131,31 @@ struct StravaExportRequest {
     std::filesystem::path file { };
 };
 
-#define JOBTYPE(S)                        \
-    S(FindCurrentFolder, std::monostate)  \
-    S(FindNewestActivity, FindNewest)     \
-    S(ProcessInbox, std::monostate)       \
-    S(DownloadTiles, pTileDownload)       \
-    S(Download, DownloadRequest)          \
-    S(WahooLogin, WahooLogin)             \
-    S(StravaTitles, StravaTitlesRequest)  \
-    S(StravaLogin, StravaLogin)           \
-    S(PrepareZwiftWorld, ZwiftWorld)      \
-    S(UpdateSummaries, SummaryProgress)   \
-    S(GroupRecordings, GroupingProgress)  \
-    S(SplitRecordings, RecordingsRequest) \
-    S(GroupWithMain, RecordingsRequest)   \
-    S(ImportStravaExport, StravaExportRequest)
+// The DescribeFromStrava job, a chunk at a time: the descriptions still
+// to fetch, once the first chunk has read them from the store, and what
+// Strava said last about its limits.
+struct DescribingProgress {
+    StravaClient                            client { };
+    std::optional<std::vector<Undescribed>> waiting { };
+    std::optional<StravaUsage>              usage { };
+};
+
+#define JOBTYPE(S)                             \
+    S(FindCurrentFolder, std::monostate)       \
+    S(FindNewestActivity, FindNewest)          \
+    S(ProcessInbox, std::monostate)            \
+    S(DownloadTiles, pTileDownload)            \
+    S(Download, DownloadRequest)               \
+    S(WahooLogin, WahooLogin)                  \
+    S(StravaTitles, StravaTitlesRequest)       \
+    S(StravaLogin, StravaLogin)                \
+    S(PrepareZwiftWorld, ZwiftWorld)           \
+    S(UpdateSummaries, SummaryProgress)        \
+    S(GroupRecordings, GroupingProgress)       \
+    S(SplitRecordings, RecordingsRequest)      \
+    S(GroupWithMain, RecordingsRequest)        \
+    S(ImportStravaExport, StravaExportRequest) \
+    S(DescribeFromStrava, DescribingProgress)
 
 enum class JobType {
     JOBTYPE(ENUMVALUE2)
@@ -229,28 +240,43 @@ struct ImportingDescriptions {
     std::optional<std::string> done { };
 };
 
+// Sent by the DescribeFromStrava job before each chunk: the descriptions
+// it has still to fetch.
+struct Describing {
+    size_t to_go { 0 };
+};
+
+// Sent when the DescribeFromStrava job stops: when to go on, for Strava's
+// limit or a failure, or nothing if it's done or can't go on without the
+// user, such as without a login.
+struct DescribingPaused {
+    std::optional<i64> resume_at { };
+};
+
 // What the FindNewestActivity job at startup found.
 struct StoreChecked {
     bool empty { false };
 };
 
-#define NOTIFICATIONTYPE(S)                 \
-    S(Message, std::string)                 \
-    S(ActivityList, Activities)             \
-    S(Activity, Activity)                   \
-    S(ImportingFile, ImportingFile)         \
-    S(MapTile, MapTile)                     \
-    S(MapTilesDone, MapTilesDone)           \
-    S(Downloading, Downloading)             \
-    S(DownloadDone, DownloadReport)         \
-    S(LoginEnded, LoginEnded)               \
-    S(TitlesChanged, TitlesChanged)         \
-    S(ZwiftWorldReady, ZwiftWorldReady)     \
-    S(SummariesUpdated, SummariesUpdated)   \
-    S(RecordingsGrouped, RecordingsGrouped) \
-    S(RecordingsChanged, RecordingsChanged) \
-    S(StoreChecked, StoreChecked)           \
-    S(ImportingDescriptions, ImportingDescriptions)
+#define NOTIFICATIONTYPE(S)                         \
+    S(Message, std::string)                         \
+    S(ActivityList, Activities)                     \
+    S(Activity, Activity)                           \
+    S(ImportingFile, ImportingFile)                 \
+    S(MapTile, MapTile)                             \
+    S(MapTilesDone, MapTilesDone)                   \
+    S(Downloading, Downloading)                     \
+    S(DownloadDone, DownloadReport)                 \
+    S(LoginEnded, LoginEnded)                       \
+    S(TitlesChanged, TitlesChanged)                 \
+    S(ZwiftWorldReady, ZwiftWorldReady)             \
+    S(SummariesUpdated, SummariesUpdated)           \
+    S(RecordingsGrouped, RecordingsGrouped)         \
+    S(RecordingsChanged, RecordingsChanged)         \
+    S(StoreChecked, StoreChecked)                   \
+    S(ImportingDescriptions, ImportingDescriptions) \
+    S(Describing, Describing)                       \
+    S(DescribingPaused, DescribingPaused)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -281,6 +307,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void job_split_recordings(Job::Payload const &data);
     static void job_group_with_main(Job::Payload const &data);
     static void job_import_strava_export(Job::Payload const &data);
+    static void job_describe_from_strava(Job::Payload const &data);
 
     // The payload variant starts with a std::monostate, so a job type's
     // payload comes one after its value.
@@ -304,6 +331,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 job_split_recordings,
                 job_group_with_main,
                 job_import_strava_export,
+                job_describe_from_strava,
             });
     }
 
@@ -329,6 +357,8 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_recordings_changed(Notification::Payload const &data);
     static void notif_store_checked(Notification::Payload const &data);
     static void notif_importing_descriptions(Notification::Payload const &data);
+    static void notif_describing(Notification::Payload const &data);
+    static void notif_describing_paused(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -352,6 +382,8 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_recordings_changed,
                 notif_store_checked,
                 notif_importing_descriptions,
+                notif_describing,
+                notif_describing_paused,
             });
     }
 
@@ -416,6 +448,13 @@ struct SweatTrails : public Main<Job, Notification> {
     std::string                      thresholds_error { }; // Why the settings' thresholds can't be read
     std::string                      settings_error { };   // Why a settings file can't be read
     std::shared_ptr<Label>           status { nullptr };
+    // Strava's descriptions in the background: whether its job is queued or
+    // running, when to start it again, and whether a titles run that ended
+    // while it ran wants it to look at the store again. Only used on the
+    // UI thread. See specs/44-rate-limits.md.
+    bool               describing { false };
+    std::optional<i64> describe_at { };
+    bool               describe_again { false };
     // Run from the command palette, for as long as the app runs.
     RecentCommands recent_commands { };
 
@@ -453,7 +492,10 @@ struct SweatTrails : public Main<Job, Notification> {
     void compare_if_on(std::shared_ptr<DisplayedActivity> const &before = nullptr);
     // Has the job read what's new in the store for the summaries, unless
     // it's doing that already.
-    void               update_summaries();
+    void update_summaries();
+    // Starts fetching Strava's descriptions in the background, unless it's
+    // doing that already, or Strava isn't set up for it.
+    void               describe_from_strava();
     [[nodiscard]] bool showing_summaries() const;
     void               show_summaries(bool on);
     // Where Zwift worlds' maps are cut into tiles.

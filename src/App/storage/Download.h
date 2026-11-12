@@ -77,6 +77,10 @@ enum class DownloadStep {
 // file `index` of `count`, or waiting `until` a time such as "20:15".
 std::string download_status(DownloadStep step, std::string_view source = { }, size_t index = 0, size_t count = 0, std::string_view until = { });
 
+// What the status line says while Strava's descriptions come in, in the
+// background: see specs/44-rate-limits.md.
+std::string describing_status(size_t to_go);
+
 // What a download is asked to do: the task's arguments, with the settings
 // filling in what they don't say.
 struct DownloadRequest {
