@@ -1,6 +1,6 @@
 # Importing Strava's account export
 
-Status: Ready
+Status: Done
 
 <!--
 Status is one of:
@@ -88,9 +88,11 @@ after.
 - **It runs as a job**, as a download does, with the status line
   counting: "Importing Strava's descriptions: 1200 of 4644".
 - **The closing message** says what came in: "Strava's export: 4502
-  descriptions, 3911 of them empty. 142 activities have no Strava title
-  yet: get all the titles from Strava (Ctrl+Shift+G) and import again."
-  The second sentence only when there are such activities.
+  descriptions, 3911 of them empty. 142 activities have no Strava
+  title: if Strava has them, get all the titles (Ctrl+Shift+G) and import
+  again." The second sentence only when there are such activities. It
+  says "if Strava has them" because activities Strava doesn't have, such
+  as Jan's some 325, stay without a title however often the titles run.
 - **A file that isn't Strava's export**, without the `Activity ID` and
   `Activity Description` headings, or that isn't valid CSV, imports
   nothing, and the message says so: "activities.csv isn't Strava's list
@@ -119,12 +121,146 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### Checked against the real export
+
+Jan's export (2026-11-11, 6281 activities) agrees with the spec:
+`Activity ID` is column 0 and `Activity Description` column 4, each
+once (`Elapsed Time`, `Distance`, `Max Heart Rate`, `Relative Effort`
+and `Commute` occur twice). UTF-8 without a byte order mark; records
+end in LF; 439 descriptions have line breaks, as CRLF inside the
+quotes, and 28 have quotes. The 49 descriptions already fetched
+from Strava's API that the export also has are the same, byte for byte,
+CRLFs included, so the export's are saved as they are. The three that
+differ were edited after the export, which "only what's missing" covers.
+Every row has an ID, and no ID occurs twice.
+
+### CSV reader: `src/Lib/Base/CSV.h`, `CSV.cpp`
+
+```cpp
+using CSVRow = std::vector<std::string>;
+
+struct CSV {
+    CSVRow              headings { };
+    std::vector<CSVRow> rows { };
+
+    // The column with this heading, the first if there are several.
+    [[nodiscard]] std::optional<size_t> column(std::string_view heading) const;
+
+    // RFC 4180: fields quoted or not, "" for a quote in a quoted field,
+    // line breaks in quoted fields. Records end in LF or CRLF; a UTF-8
+    // byte order mark at the start is skipped. The first record is the
+    // headings.
+    static std::expected<CSV, LibCError> parse(std::string_view text);
+};
+```
+
+A quote that isn't closed, or text after a closing quote other than a
+comma or the end of the record, is an error, with the line it's on. A
+quote inside an unquoted field is kept as it is, as most readers do. A
+row may be shorter than the headings (`column()` is then past its end,
+which the import checks).
+
+### The import: `src/App/storage/StravaExport.h`, `StravaExport.cpp`
+
+Two steps, so that the parsing is tested without a store:
+
+```cpp
+// The export's descriptions by Strava's ID, or why `csv` isn't Strava's
+// list of activities: "activities.csv isn't Strava's list of activities:
+// it has no Activity Description column."
+std::expected<std::map<u64, std::string>, std::string> export_descriptions(std::string_view csv, std::string_view file_name);
+
+struct ExportImport {
+    size_t           descriptions { 0 }; // Saved
+    size_t           empty { 0 };        // Of those, empty
+    size_t           untitled { 0 };     // Activities with no Strava title
+    std::vector<i64> changed { };        // By start time, for TitlesChanged
+};
+
+using ExportProgress = std::function<void(size_t index, size_t count)>;
+
+// Gives each activity in the store with a Strava title but no
+// description the export's description for its ID. Runs on the job thread.
+StorageResult<ExportImport> import_descriptions(Storage const &storage, std::map<u64, std::string> const &descriptions, ExportProgress const &progress = { });
+```
+
+`import_descriptions()` walks every month with
+`months_with_activities()` and `month_starts()`, reads each sidecar with
+`sidecar_titles()`, and saves with `save_sidecar_strava()`, as the
+titles run does. A sidecar that can't be saved is logged and skipped, as
+there. The progress counts the activities to fill in, so the status line
+reads "1200 of 4644" over the saves, which are the slow part.
+
+`ExportImport::message()` makes the closing message, so it's tested
+too.
+
+### The app
+
+- **Job** `ImportStravaExport`, payload `StravaExportRequest { fs::path
+  file }`. It reads the file, calls the two functions, and notifies.
+- **Notification** `ImportingDescriptions { index, count, done }`: sent
+  with `notify_latest` for progress (status line "Importing Strava's
+  descriptions: 1200 of 4644"), and once at the end with `done`, the
+  closing message or the error, which goes to a message box and clears
+  the status line. `TitlesChanged` is sent with `changed`, as the titles
+  run does.
+- **Task** `st-strava-export`, titled "Import descriptions from Strava's
+  export…", no key. Without arguments, from the palette, it shows the
+  message box saying how; with `paths`, from a drop, it submits the job.
+- **`files_dropped()`** submits `st-strava-export` when the first path
+  ends in `.csv` (any case), and `st-fill-gaps` otherwise, as now.
+
+No new dependencies, no new file formats: the sidecar's `"strava"` is as
+spec 24 has it.
+
+### Tried on a copy of Jan's store
+
+On a copy of the store's sidecars (5048 activities), with Jan's export:
+4644 descriptions saved, 3085 of them empty, in 3.6 seconds, each the
+same as the export's; nothing else in any sidecar changed; 216
+activities have no Strava title. A second import saved none. The 26
+sidecars with a Strava title that it leaves without a description are
+the other recordings of grouped activities (spec 31), in `*.recordings/`
+folders, which the titles run doesn't go into either; one that becomes
+the main recording is filled in by the next import.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `test/CSVTest.cpp` (`csv_test`): plain fields; quoted fields with
+  commas, `""`, LF and CRLF inside; CRLF and LF record ends; a last record
+  without a line end; empty fields, an empty last field, empty quoted
+  field; a byte order mark; duplicate headings and `column()` finding the
+  first; a missing heading; an unclosed quote and text after a closing
+  quote are errors with their line; an empty file.
+- `test/StravaExportTest.cpp` (`strava_export_test`), with a fixture
+  `test/data/strava-activities.csv`: the real export's headings and a
+  few lines of it, descriptions made up, among them one with CRLF line
+  breaks and quotes, one with commas, and empty ones.
+  - `export_descriptions()`: the fixture's IDs and descriptions; a CSV
+    without `Activity Description`, one without `Activity ID`, and one
+    that isn't valid CSV, each with its message; a row too short for the
+    description column; an ID that isn't a number.
+  - `import_descriptions()` on a `TempStore`: an activity with a title
+    and no description gets the export's, an empty one is saved as `""`;
+    one with a description keeps it; its name and `"notes"` aren't
+    touched; one without a title is counted in `untitled`; one whose ID
+    isn't in the export is left as it is; `changed` holds what was saved;
+    the progress counts up to the number to fill in.
+  - `ExportImport::message()`: with and without untitled activities.
+- `is_csv_file()`, which decides where a dropped file goes.
+- `files_dropped()` and the job are thin. Checked by hand: the whole
+  export parses the same as Python's `csv` module (all 6281 rows), and
+  the import on a copy of Jan's store, above.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. Suggestion: `files_dropped()` (src/App/SweatTrails.cpp) routes by the first path only. Dropping a FIT file together with activities.csv sends both to `st-fill-gaps`, and the CSV is ignored, with the usual "not a FIT file" message. Acceptable, but a CSV anywhere in the drop could be preferred.
+   Resolved: left as it is, with Jan. Nobody drops both at once, and the gap filling then says what went wrong.
+2. Suggestion: `import_descriptions()` calls `progress` only while saving. The scan of 5000 sidecars before it shows just "Importing Strava's descriptions…", and the last status is "4643 of 4644", never the full count. Cosmetic.
+   Resolved: left as it is, with Jan. The whole import takes about 4 seconds.
+3. Suggestion: `export_descriptions()` skips rows with a non-numeric ID or too short a row with only a log warning. The user's message doesn't say how many were skipped. Fine for v1.
+   Resolved: left as it is, with Jan. Jan's export has no such rows.
+4. Missing test (added): a quoted field as the last record's last field with no line end, and a quoted field followed by a trailing comma at EOF (test_quoted_field_at_the_end in test/CSVTest.cpp). It passes.
+   Resolved: kept.
+
+No bugs found. The CSV reader (including line counting in errors, the BOM, CRLF inside quotes and the empty last field), the ID matching, "only what's missing", the untitled count, the sorted `changed`, the routing in `files_dropped()`, the task and notification all match the spec. The Test plan is covered.

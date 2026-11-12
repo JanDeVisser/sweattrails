@@ -1,0 +1,2 @@
+# Strava's export has CRLF line breaks inside its descriptions: keep them.
+test/data/*.csv -text

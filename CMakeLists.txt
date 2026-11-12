@@ -123,6 +123,7 @@ add_library(
         STATIC
         src/Lib/Base/Date.cpp
         src/Lib/Base/Defer.h
+        src/Lib/Base/CSV.cpp
         src/Lib/Base/Error.cpp
         src/Lib/Base/Expected.h
         src/Lib/Base/Format.h
@@ -252,6 +253,7 @@ add_executable(
         src/App/storage/Storage.cpp
         src/App/storage/Types.cpp
         src/App/storage/Strava.cpp
+        src/App/storage/StravaExport.cpp
         src/App/storage/StravaTitles.cpp
         src/App/storage/Wahoo.cpp
         share/icons/sweattrails.icns
@@ -358,6 +360,7 @@ sweattrails_test(pick_box_test test/PickBoxTest.cpp)
 sweattrails_test(input_box_test test/InputBoxTest.cpp)
 sweattrails_test(key_binding_test test/KeyBindingTest.cpp)
 sweattrails_test(zip_test test/ZipTest.cpp)
+sweattrails_test(csv_test test/CSVTest.cpp)
 sweattrails_test(json_test test/JSONTest.cpp)
 sweattrails_test(cursor_test test/CursorTest.cpp)
 sweattrails_test(string_util_test test/StringUtilTest.cpp)
@@ -978,6 +981,26 @@ sweattrails_test(
 )
 target_include_directories(strava_titles_test PRIVATE src/App)
 target_link_libraries(strava_titles_test PRIVATE ${CURL_LIBRARIES} OpenSSL::SSL)
+
+sweattrails_test(
+        strava_export_test
+        test/StravaExportTest.cpp
+        src/App/storage/StravaExport.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Http.cpp
+        src/App/Map.cpp
+        src/App/OAuth.cpp
+)
+target_include_directories(strava_export_test PRIVATE src/App)
+target_link_libraries(strava_export_test PRIVATE ${CURL_LIBRARIES} OpenSSL::SSL)
+# The test reads its fixture from the source tree.
+target_compile_definitions(strava_export_test PRIVATE SWEATTRAILS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
 sweattrails_test(download_test test/DownloadTest.cpp src/App/storage/Download.cpp)
 target_include_directories(download_test PRIVATE src/App)
