@@ -123,6 +123,12 @@ struct FindNewest {
     bool at_startup { false };
 };
 
+// The ImportStravaExport job: Strava's activities.csv, dropped on the
+// window.
+struct StravaExportRequest {
+    std::filesystem::path file { };
+};
+
 #define JOBTYPE(S)                        \
     S(FindCurrentFolder, std::monostate)  \
     S(FindNewestActivity, FindNewest)     \
@@ -136,7 +142,8 @@ struct FindNewest {
     S(UpdateSummaries, SummaryProgress)   \
     S(GroupRecordings, GroupingProgress)  \
     S(SplitRecordings, RecordingsRequest) \
-    S(GroupWithMain, RecordingsRequest)
+    S(GroupWithMain, RecordingsRequest)   \
+    S(ImportStravaExport, StravaExportRequest)
 
 enum class JobType {
     JOBTYPE(ENUMVALUE2)
@@ -212,6 +219,14 @@ struct RecordingsChanged {
     std::string error { };
 };
 
+// Sent by the ImportStravaExport job as it starts, before each description
+// it saves, and when it's done, with what to tell the user.
+struct ImportingDescriptions {
+    size_t                     index { 0 };
+    size_t                     count { 0 };
+    std::optional<std::string> done { };
+};
+
 // What the FindNewestActivity job at startup found.
 struct StoreChecked {
     bool empty { false };
@@ -232,7 +247,8 @@ struct StoreChecked {
     S(SummariesUpdated, SummariesUpdated)   \
     S(RecordingsGrouped, RecordingsGrouped) \
     S(RecordingsChanged, RecordingsChanged) \
-    S(StoreChecked, StoreChecked)
+    S(StoreChecked, StoreChecked)           \
+    S(ImportingDescriptions, ImportingDescriptions)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -262,6 +278,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void job_group_recordings(Job::Payload const &data);
     static void job_split_recordings(Job::Payload const &data);
     static void job_group_with_main(Job::Payload const &data);
+    static void job_import_strava_export(Job::Payload const &data);
 
     // The payload variant starts with a std::monostate, so a job type's
     // payload comes one after its value.
@@ -284,6 +301,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 job_group_recordings,
                 job_split_recordings,
                 job_group_with_main,
+                job_import_strava_export,
             });
     }
 
@@ -308,6 +326,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_recordings_grouped(Notification::Payload const &data);
     static void notif_recordings_changed(Notification::Payload const &data);
     static void notif_store_checked(Notification::Payload const &data);
+    static void notif_importing_descriptions(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -330,6 +349,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_recordings_grouped,
                 notif_recordings_changed,
                 notif_store_checked,
+                notif_importing_descriptions,
             });
     }
 

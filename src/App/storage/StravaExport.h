@@ -21,6 +21,10 @@
 
 namespace ST {
 
+// Whether a file dropped on the window goes to the import: a CSV file,
+// which the import then checks is Strava's.
+bool is_csv_file(fs::path const &path);
+
 // The descriptions in the export's activities.csv, `csv`, by Strava's ID,
 // or why it isn't Strava's list of activities. `file_name` is for the
 // message.

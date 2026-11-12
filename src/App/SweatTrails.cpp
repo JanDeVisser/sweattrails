@@ -41,6 +41,7 @@
 #include <storage/Recordings.h>
 #include <storage/Storage.h>
 #include <storage/Strava.h>
+#include <storage/StravaExport.h>
 #include <storage/StravaTitles.h>
 #include <storage/Summaries.h>
 #include <storage/Types.h>
@@ -588,6 +589,41 @@ void SweatTrails::job_strava_titles(Job::Payload const &data)
     run_strava_titles(SweatTrails::the(), std::get<StravaTitlesRequest>(data));
 }
 
+// Fills in Strava's descriptions from the activities.csv of its account
+// export. See specs/45-strava-export-import.md.
+void SweatTrails::job_import_strava_export(Job::Payload const &data)
+{
+    auto const &file = std::get<StravaExportRequest>(data).file;
+    auto const  the = SweatTrails::the();
+    auto const  done = [&the](std::string message) {
+        the->notify<NotificationType::ImportingDescriptions>(ImportingDescriptions { .done = std::move(message) });
+    };
+    the->notify_latest<NotificationType::ImportingDescriptions>(ImportingDescriptions { });
+    auto const csv = read_file_by_name(file.string());
+    if (!csv) {
+        done(std::format("Couldn't read {}: {}", file.string(), csv.error().description));
+        return;
+    }
+    auto const descriptions = export_descriptions(*csv, file.filename().string());
+    if (!descriptions) {
+        done(descriptions.error());
+        return;
+    }
+    auto const on_description = [&the](size_t index, size_t count) {
+        the->notify_latest<NotificationType::ImportingDescriptions>(ImportingDescriptions { .index = index, .count = count });
+    };
+    auto const imported = import_descriptions(the->storage, *descriptions, on_description);
+    if (!imported) {
+        done(std::format("Couldn't import Strava's descriptions: {}", imported.error().to_string()));
+        return;
+    }
+    if (!imported->changed.empty()) {
+        the->notify<NotificationType::TitlesChanged>(TitlesChanged { imported->changed });
+    }
+    info(ST, "Strava's export: {} descriptions, {} empty, {} activities without a Strava title", imported->descriptions, imported->empty, imported->untitled);
+    done(imported->message());
+}
+
 void SweatTrails::job_strava_login(Job::Payload const &data)
 {
     auto const &login = std::get<StravaLogin>(data);
@@ -759,6 +795,21 @@ void cmd_strava_titles(pSweatTrails const &sweattrails, JSONValue const &argumen
     }
     sweattrails->downloading = true;
     sweattrails->schedule<JobType::StravaTitles>(request);
+}
+
+// Strava's activities.csv dropped on the window, `paths`, is imported;
+// from the palette, without, this says how. See
+// specs/45-strava-export-import.md.
+void cmd_strava_export(pSweatTrails const &sweattrails, JSONValue const &arguments)
+{
+    auto const paths = arguments.is_object()
+        ? arguments.try_get_array<std::string>("paths").value_or(std::vector<std::string> { })
+        : std::vector<std::string> { };
+    if (paths.empty()) {
+        message_box("Unzip the archive Strava emailed you, and drop activities.csv from it on this window.");
+        return;
+    }
+    sweattrails->schedule<JobType::ImportStravaExport>(StravaExportRequest { .file = paths.front() });
 }
 
 // What differs between the logins: the service, its login page, the
@@ -2040,6 +2091,21 @@ void SweatTrails::notif_recordings_changed(Notification::Payload const &data)
     show_again(SweatTrails::the(), changed.id, changed.done);
 }
 
+void SweatTrails::notif_importing_descriptions(Notification::Payload const &data)
+{
+    auto const &importing = std::get<ImportingDescriptions>(data);
+    auto const  the = SweatTrails::the();
+    if (importing.done) {
+        the->set_status("");
+        message_box(*importing.done);
+    } else if (importing.count == 0) {
+        the->set_status("Importing Strava's descriptions…");
+    } else {
+        the->set_status(std::format("Importing Strava's descriptions: {} of {}", importing.index, importing.count));
+    }
+}
+
+// A CSV file is Strava's export; anything else fills gaps.
 void SweatTrails::files_dropped(std::vector<std::string> const &paths)
 {
     auto arguments = JSONValue::object();
@@ -2048,7 +2114,7 @@ void SweatTrails::files_dropped(std::vector<std::string> const &paths)
         list.append(JSONValue { path });
     }
     arguments.set("paths", list);
-    bus.submit("st-fill-gaps", arguments);
+    bus.submit(!paths.empty() && is_csv_file(paths.front()) ? "st-strava-export" : "st-fill-gaps", arguments);
 }
 
 void SweatTrails::selection_menu(Vector2 at)
@@ -2241,6 +2307,10 @@ void SweatTrails::initialize()
     bus.add_task<SweatTrails>("st-strava-titles", self(), cmd_strava_titles)
         .titled("Get all the titles from Strava")
         .bind(KeyCombo { KEY_G, KModControl | KModShift });
+    // No key: it's for once in a long while, and from the palette, it only
+    // says to drop the export on the window.
+    bus.add_task<SweatTrails>("st-strava-export", self(), cmd_strava_export)
+        .titled("Import descriptions from Strava's export…");
     bus.add_task<SweatTrails>("st-strava-login", self(), cmd_strava_login)
         .titled("Log in to Strava");
     bus.add_task<SweatTrails>("st-message", self(), cmd_message);

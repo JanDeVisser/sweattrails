@@ -99,6 +99,15 @@ void test_bad_lines_are_skipped()
     }
 }
 
+void test_is_csv_file()
+{
+    CHECK(is_csv_file("/Users/jan/Downloads/export_8345975/activities.csv"));
+    CHECK(is_csv_file("ACTIVITIES.CSV"));
+    CHECK(!is_csv_file("/tmp/24790584050_ACTIVITY.fit"));
+    CHECK(!is_csv_file("export_8345975.zip"));
+    CHECK(!is_csv_file("csv"));
+}
+
 void save_strava(TempStore const &store, i64 start, StravaTitle const &title)
 {
     MUST(save_sidecar_strava(store.storage.sidecar_of(start), title));
@@ -175,6 +184,7 @@ int main()
     test_fixture();
     test_not_strava();
     test_bad_lines_are_skipped();
+    test_is_csv_file();
     test_import();
     test_message();
     return test_result();

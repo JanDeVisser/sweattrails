@@ -5,6 +5,7 @@
  */
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <format>
 
@@ -34,6 +35,13 @@ std::string count_of(size_t count, std::string_view one, std::string_view more)
     return std::format("{} {}", count, count == 1 ? one : more);
 }
 
+}
+
+bool is_csv_file(fs::path const &path)
+{
+    auto extension = path.extension().string();
+    std::ranges::transform(extension, extension.begin(), [](unsigned char c) { return std::tolower(c); });
+    return extension == ".csv";
 }
 
 std::expected<std::map<u64, std::string>, std::string> export_descriptions(std::string_view csv, std::string_view file_name)
