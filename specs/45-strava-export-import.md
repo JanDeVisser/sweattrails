@@ -1,6 +1,6 @@
 # Importing Strava's account export
 
-Status: In progress, on branch feature/45-strava-export-import
+Status: In review, on branch feature/45-strava-export-import
 
 <!--
 Status is one of:
@@ -213,6 +213,17 @@ too.
 No new dependencies, no new file formats: the sidecar's `"strava"` is as
 spec 24 has it.
 
+### Tried on a copy of Jan's store
+
+On a copy of the store's sidecars (5048 activities), with Jan's export:
+4644 descriptions saved, 3085 of them empty, in 3.6 seconds, each the
+same as the export's; nothing else in any sidecar changed; 216
+activities have no Strava title. A second import saved none. The 26
+sidecars with a Strava title that it leaves without a description are
+the other recordings of grouped activities (spec 31), in `*.recordings/`
+folders, which the titles run doesn't go into either; one that becomes
+the main recording is filled in by the next import.
+
 ## Test plan
 
 - `test/CSVTest.cpp` (`csv_test`): plain fields; quoted fields with
@@ -236,8 +247,10 @@ spec 24 has it.
     isn't in the export is left as it is; `changed` holds what was saved;
     the progress counts up to the number to fill in.
   - `ExportImport::message()`: with and without untitled activities.
-- `files_dropped()` and the job are thin; checked by hand in the app with
-  Jan's export.
+- `is_csv_file()`, which decides where a dropped file goes.
+- `files_dropped()` and the job are thin. Checked by hand: the whole
+  export parses the same as Python's `csv` module (all 6281 rows), and
+  the import on a copy of Jan's store, above.
 
 ## Review notes
 
