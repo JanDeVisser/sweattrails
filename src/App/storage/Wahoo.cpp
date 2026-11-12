@@ -123,6 +123,18 @@ WahooResult<void> write_whole_file(fs::path const &path, std::string_view conten
 
 }
 
+std::string rate_limit_headers(HttpResponse const &response)
+{
+    constexpr std::string_view Prefix = "x-ratelimit";
+    std::string                ret;
+    for (auto const &[name, value] : response.headers) {
+        if (to_lower(name).starts_with(Prefix)) {
+            ret += std::format("{}{}: {}", ret.empty() ? "" : ", ", name, value);
+        }
+    }
+    return ret;
+}
+
 fs::path wahoo_tokens_file(fs::path const &config_dir)
 {
     return config_dir / "wahoo-tokens.json";
@@ -208,6 +220,7 @@ WahooResult<void> Wahoo::request_tokens(std::vector<std::pair<std::string, std::
     if (!response) {
         return std::unexpected(unreachable(response.error()));
     }
+    trace(Wahoo, "Token request: HTTP {}; {}", response->status, rate_limit_headers(*response));
     if (response->status == 400 || response->status == 401) {
         return std::unexpected(token_error(response->body));
     }
@@ -267,6 +280,7 @@ WahooResult<HttpResponse> Wahoo::get(std::string const &path)
     if (!response) {
         return std::unexpected(unreachable(response.error()));
     }
+    trace(Wahoo, "`{}`: HTTP {}; {}", path, response->status, rate_limit_headers(*response));
     if (response->status == 401) {
         return std::unexpected(not_logged_in());
     }

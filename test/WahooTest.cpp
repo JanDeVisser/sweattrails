@@ -434,6 +434,18 @@ void test_revoked_token()
     CHECK(!listed.has_value() && listed.error().kind == WahooError::Kind::NotLoggedIn);
 }
 
+// For the log: the rate limit's headers, whatever their case, and none
+// of the others.
+void test_rate_limit_headers()
+{
+    HttpResponse const response {
+        .status = 200,
+        .headers = { { "Content-Type", "application/json" }, { "X-RateLimit-Limit", "250" }, { "x-ratelimit-remaining", "12" }, { "X-RateLimit-Reset", "43200" } },
+    };
+    CHECK_EQ(rate_limit_headers(response), "X-RateLimit-Limit: 250, x-ratelimit-remaining: 12, X-RateLimit-Reset: 43200");
+    CHECK_EQ(rate_limit_headers(HttpResponse { .status = 200, .headers = { { "Content-Type", "text/plain" } } }), "");
+}
+
 // Without a way to wait, the list stops at the limit, and says when it
 // resets, as a time of day.
 void test_rate_limit()
@@ -722,6 +734,7 @@ int main()
     test_rejected_refresh();
     test_revoked_token();
     test_rate_limit();
+    test_rate_limit_headers();
     test_short_limit_is_waited_for();
     test_limit_waits_run_out();
     test_long_limit_is_not_waited_for();

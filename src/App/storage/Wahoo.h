@@ -71,6 +71,11 @@ struct WahooError {
 template<typename T>
 using WahooResult = std::expected<T, WahooError>;
 
+// The X-RateLimit-* headers of an answer, as "Name: value" separated by
+// commas, for the log: Wahoo doesn't document its limits, and these say
+// what they are, and how much of them is used.
+std::string rate_limit_headers(HttpResponse const &response);
+
 // `wahoo-tokens.json` in SweatTrails' config folder.
 fs::path wahoo_tokens_file(fs::path const &config_dir);
 
