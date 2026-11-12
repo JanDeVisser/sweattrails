@@ -1,0 +1,130 @@
+# Importing Strava's account export
+
+Status: Ready
+
+<!--
+Status is one of:
+- Draft: the Analyst and Jan are working on it.
+- Ready: no open questions left; the Developer can start.
+- In progress: the Developer is working on it, on branch <branch>.
+- In review: the Reviewer is reviewing the branch.
+- Done: merged into main.
+-->
+
+## Goal
+
+Bring in the titles and descriptions of a whole Strava history at once,
+from the account export Strava makes on request, instead of a request
+per description. Jan has some 4600 descriptions waiting, which Strava's
+daily limit spreads over five days or more. Split off from
+[44](44-rate-limits.md), which deals with the limits for what comes
+after.
+
+## Feature
+
+### What there is now
+
+- **Strava's titles** are in each activity's sidecar under `"strava"`:
+  `StravaTitle` (`storage/Activity.h`), with Strava's ID, the name, and
+  the description, an `std::optional`: none until it's fetched, and an
+  empty string for an activity that has none. A run of Strava's titles
+  (Ctrl+G, Ctrl+Shift+G, Everything; spec 24 and `StravaTitles.cpp`)
+  matches Strava's list to the store by start time, within
+  `StravaMatchSeconds`, and saves the ID and name. The description takes
+  a request per activity, which is what Strava's limits spread over days.
+  Spec [44](44-rate-limits.md) has them fetched in the background.
+- **The user's own description** is `"notes"` in the sidecar (spec 41)
+  and wins over Strava's. Nothing here touches it.
+- **Dropping files on the window** (`SweatTrails::files_dropped()`)
+  always submits `st-fill-gaps` (spec 30), which says so when what's
+  dropped isn't a FIT file.
+- `Zip.h` in `src/Lib/Base` reads a zip held in memory, without ZIP64.
+  There's no CSV reader.
+
+### Strava's export
+
+- The user asks Strava for it (strava.com: Settings, My Account,
+  Download or Delete Your Account, Request Your Archive), and gets an
+  email with a link to a zip some time later. In the zip, next to the
+  original files of every activity, is `activities.csv`: a line per
+  activity with its ID, date, name, type and description, among many
+  other columns.
+- A description can have commas, quotes and line breaks, so the file
+  needs a real CSV reader (RFC 4180: quoted fields, `""` for a quote,
+  line breaks inside quotes). The columns are found by their headings,
+  `Activity ID` and `Activity Description`; some other headings occur
+  twice, which doesn't matter for those two.
+
+### The import
+
+- **The user unzips the export and drops `activities.csv` on the
+  window.** A dropped file named `*.csv` goes to the import; anything
+  else goes to the gap filling, as now. The zip itself isn't read: it
+  holds the original file of every activity, gigabytes for a long
+  history, which would need ZIP64 and reading from disk, neither of
+  which `Zip.h` does.
+- **A palette task, "Import descriptions from Strava's export…"**, no
+  key, says how: a message box, "Unzip the archive Strava emailed you,
+  and drop activities.csv from it on this window." Dropping is easier
+  than typing a path in an input box, and the task is there so that the
+  feature can be found.
+- **Descriptions are filled in by Strava's ID.** Each activity in the
+  store with a Strava title but no description (`description` is
+  `std::nullopt`) gets the export's description for that ID, saved in
+  the sidecar's `"strava"`, as a fetched one is. An empty one in the
+  export is saved as empty, which says the activity has none, so nobody
+  asks Strava for it again. Most activities have no description, so
+  this is likely most of the backlog.
+- **Only what's missing is filled in.** A description already fetched
+  is kept: it's as new as the export or newer. Names aren't touched: the
+  list, which is cheap, keeps them up to date. The user's own
+  description, `"notes"`, isn't touched either.
+- **Activities without a Strava title aren't matched by date.** The
+  export's dates are formatted for reading, such as "Mar 31, 2013,
+  12:36:42 PM", possibly in the account's language, and matching by
+  date is what Strava's list already does, for some 30 requests for a
+  whole history. So the closing message says how many activities have
+  no Strava title, and to get all the titles from Strava first.
+- **It runs as a job**, as a download does, with the status line
+  counting: "Importing Strava's descriptions: 1200 of 4644".
+- **The closing message** says what came in: "Strava's export: 4502
+  descriptions, 3911 of them empty. 142 activities have no Strava title
+  yet: get all the titles from Strava (Ctrl+Shift+G) and import again."
+  The second sentence only when there are such activities.
+- **A file that isn't Strava's export**, without the `Activity ID` and
+  `Activity Description` headings, or that isn't valid CSV, imports
+  nothing, and the message says so: "activities.csv isn't Strava's list
+  of activities: it has no Activity Description column."
+- The descriptions that come in show on the activity screen at once, as
+  fetched ones do (`TitlesChanged`).
+
+### Version 1 scope
+
+In: the import of descriptions by ID from a dropped `activities.csv`,
+the palette task, and a CSV reader in `src/Lib/Base`. Deferred: reading
+the zip *(deferred)*; matching by date, for activities without a Strava
+title *(deferred)*; anything else in the export, such as gear or the
+original files *(deferred)*.
+
+**Checked against a real export.** Jan has asked Strava for an export. The
+column headings and quoting above are from what's known of the format;
+before finishing, the Developer checks them against Jan's
+`activities.csv`, including a description with line breaks and quotes,
+and makes a few of its lines, with made-up descriptions, into a test
+fixture.
+
+## Open questions
+
+None.
+
+## Architecture
+
+*Filled in by the Developer.*
+
+## Test plan
+
+*Filled in by the Developer.*
+
+## Review notes
+
+*Filled in by the Reviewer.*
