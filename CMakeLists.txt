@@ -123,6 +123,7 @@ add_library(
         STATIC
         src/Lib/Base/Date.cpp
         src/Lib/Base/Defer.h
+        src/Lib/Base/CSV.cpp
         src/Lib/Base/Error.cpp
         src/Lib/Base/Expected.h
         src/Lib/Base/Format.h
@@ -358,6 +359,7 @@ sweattrails_test(pick_box_test test/PickBoxTest.cpp)
 sweattrails_test(input_box_test test/InputBoxTest.cpp)
 sweattrails_test(key_binding_test test/KeyBindingTest.cpp)
 sweattrails_test(zip_test test/ZipTest.cpp)
+sweattrails_test(csv_test test/CSVTest.cpp)
 sweattrails_test(json_test test/JSONTest.cpp)
 sweattrails_test(cursor_test test/CursorTest.cpp)
 sweattrails_test(string_util_test test/StringUtilTest.cpp)
