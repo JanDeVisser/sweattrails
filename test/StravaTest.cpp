@@ -11,6 +11,7 @@
 #include <chrono>
 #include <format>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -156,8 +157,12 @@ void test_list_activities()
     // start are skipped.
     CHECK_EQ(fake.requests.size(), 2uz);
     CHECK(fake.requests[0].url.contains("after=100") && fake.requests[0].url.contains(std::format("before={}", Now)));
-    CHECK(fake.requests[0].url.contains("page=1") && fake.requests[0].url.contains("per_page=200"));
-    CHECK(fake.requests[1].url.contains("page=2"));
+    CHECK(fake.requests[0].url.contains("per_page=200"));
+    CHECK(!fake.requests[0].url.contains("&page="));
+    // The first page's activities all start at 2026-10-20T12:00:00Z, so
+    // it says nothing about which way the list goes: newest first, as
+    // Strava lists, and the window ends a second after that.
+    CHECK(fake.requests[1].url.contains("after=100&before=1792497601"));
     CHECK(has_header(fake.requests[0], "Authorization: Bearer access"));
     CHECK_EQ(listed->activities.size(), 201uz);
     CHECK(!listed->stopped.has_value());
@@ -166,6 +171,189 @@ void test_list_activities()
     CHECK_EQ(last.name, "Morning ride");
     // 2026-10-01T06:30:15Z.
     CHECK_EQ(last.start_time, 1790836215);
+}
+
+// A Unix time as Strava writes it: 2026-10-01T00:00:00Z.
+std::string utc(i64 time)
+{
+    return std::format("{:%FT%TZ}", std::chrono::sys_seconds { std::chrono::seconds { time } });
+}
+
+// The list doesn't page: each request moves the window past the last
+// activity listed. Oldest first, the window's start moves. An activity
+// listed twice, as the one at the window's edge is, is kept once.
+void test_list_moves_window()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-list-window" };
+    auto       strava = logged_in(fake, dir);
+    // Oldest first: 2026-10-01T00:00:00Z on.
+    auto const page = [](u64 first_id, i64 first_start, size_t count) {
+        std::vector<std::string> ret;
+        for (auto ix = 0uz; ix < count; ++ix) {
+            ret.push_back(strava_activity(first_id + ix, utc(first_start + static_cast<i64>(ix) * 60), "Ride"));
+        }
+        return list_of(ret);
+    };
+    i64 const start = 1790812800;
+    fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 200, .body = page(1, start, 200) });
+    // Starts with the last one of the page before.
+    fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 200, .body = page(200, start + 199 * 60, 200) });
+    fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 200, .body = page(399, start + 398 * 60, 10) });
+    auto const listed = strava.list_activities(0, Now);
+    CHECK(listed.has_value() && !listed->stopped.has_value());
+    if (!listed) {
+        return;
+    }
+    CHECK_EQ(fake.requests.size(), 3uz);
+    CHECK(fake.requests[1].url.contains(std::format("after={}&before={}", start + 199 * 60 - 1, Now)));
+    CHECK(fake.requests[2].url.contains(std::format("after={}&before={}", start + 398 * 60 - 1, Now)));
+    CHECK_EQ(listed->activities.size(), 408uz);
+    CHECK_EQ(listed->activities.back().id, 408u);
+}
+
+// Newest first, as Strava lists, the window's end moves instead. And a full page with
+// nothing new can't move the window, so the list ends there.
+void test_list_moves_window_back()
+{
+    FakeStrava               fake;
+    TempDir                  dir { "strava-list-window-back" };
+    auto                     strava = logged_in(fake, dir);
+    std::vector<std::string> newest;
+    for (auto ix = 0u; ix < 200; ++ix) {
+        newest.push_back(strava_activity(1 + ix, utc(1790812800 - static_cast<i64>(ix) * 60), "Ride"));
+    }
+    fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 200, .body = list_of(newest) });
+    fake.answer("/api/v3/athlete/activities", HttpResponse { .status = 200, .body = list_of(newest) });
+    auto const listed = strava.list_activities(0, Now);
+    CHECK(listed.has_value() && !listed->stopped.has_value());
+    if (!listed) {
+        return;
+    }
+    CHECK_EQ(fake.requests.size(), 2uz);
+    CHECK(fake.requests[1].url.contains(std::format("after=0&before={}", 1790812800 - 199 * 60 + 1)));
+    CHECK_EQ(listed->activities.size(), 200uz);
+}
+
+// A Strava with a history, newest first, that answers the list as Strava
+// does, `after`, `before`, `per_page` and `page`, and with HTTP 404 for a
+// page with a lost activity in it.
+struct History {
+    struct Entry {
+        u64  id;
+        i64  start;
+        bool lost { false };
+    };
+    std::vector<Entry>       entries;
+    std::vector<std::string> urls { };
+
+    HttpFetch fetch()
+    {
+        return [this](HttpRequest const &request) -> std::expected<HttpResponse, LibCError> {
+            urls.push_back(request.url);
+            auto const parameter = [&request](std::string const &name, i64 otherwise) {
+                auto at = request.url.find(std::format("?{}=", name));
+                if (at == std::string::npos) {
+                    at = request.url.find(std::format("&{}=", name));
+                }
+                if (at == std::string::npos) {
+                    return otherwise;
+                }
+                return std::stoll(request.url.substr(at + name.size() + 2));
+            };
+            auto const         after = parameter("after", 0);
+            auto const         before = parameter("before", Now);
+            auto const         per_page = static_cast<size_t>(parameter("per_page", 30));
+            auto const         page = static_cast<size_t>(parameter("page", 1));
+            std::vector<Entry> window;
+            for (auto const &entry : entries) {
+                if (entry.start > after && entry.start < before) {
+                    window.push_back(entry);
+                }
+            }
+            std::vector<std::string> listed;
+            for (auto ix = (page - 1) * per_page; ix < std::min(page * per_page, window.size()); ++ix) {
+                if (window[ix].lost) {
+                    return HttpResponse { .status = 404, .body = R"({"message":"Record Not Found","errors":[{"resource":"Upload","field":"id","code":"invalid"}]})" };
+                }
+                listed.push_back(strava_activity(window[ix].id, utc(window[ix].start), "Ride"));
+            }
+            return HttpResponse { .status = 200, .body = list_of(listed) };
+        };
+    }
+};
+
+// A history of `count` activities an hour apart, newest first, with the
+// ones in `lost` lost.
+History history(size_t count, std::set<size_t> const &lost)
+{
+    History ret;
+    for (auto ix = 0uz; ix < count; ++ix) {
+        ret.entries.push_back({ .id = 1 + ix, .start = Now - 3600 * static_cast<i64>(1 + ix), .lost = lost.contains(ix) });
+    }
+    return ret;
+}
+
+// Strava answers HTTP 404 for a page with an activity whose upload it has
+// lost, as Jan's history has. Smaller pages find it, it's skipped, and
+// the list goes on past it.
+void test_list_skips_lost()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-list-lost" };
+    auto       strava = logged_in(fake, dir);
+    auto       strava_history = history(500, { 336 });
+    strava.fetch = strava_history.fetch();
+    auto const listed = strava.list_activities(0, Now);
+    CHECK(listed.has_value() && !listed->stopped.has_value());
+    if (!listed) {
+        return;
+    }
+    CHECK_EQ(listed->activities.size(), 499uz);
+    CHECK(std::ranges::none_of(listed->activities, [](auto const &activity) { return activity.id == 337; }));
+    // The first page, the second's 404, 7 smaller ones to find the lost
+    // one, the one after it on its own, and the rest of the list.
+    CHECK_EQ(strava_history.urls.size(), 11uz);
+}
+
+// Lost activities at the start of a page, next to each other, and at the
+// very end of the list.
+void test_list_skips_lost_at_the_edges()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-list-lost-edges" };
+    auto       strava = logged_in(fake, dir);
+    auto       strava_history = history(450, { 0, 1, 250, 449 });
+    strava.fetch = strava_history.fetch();
+    auto const listed = strava.list_activities(0, Now);
+    CHECK(listed.has_value() && !listed->stopped.has_value());
+    if (!listed) {
+        return;
+    }
+    CHECK_EQ(listed->activities.size(), 446uz);
+    std::set<u64> ids;
+    for (auto const &activity : listed->activities) {
+        ids.insert(activity.id);
+    }
+    CHECK_EQ(ids.size(), 446uz);
+    CHECK(!ids.contains(1) && !ids.contains(2) && !ids.contains(251) && !ids.contains(450));
+    CHECK(ids.contains(3) && ids.contains(252) && ids.contains(449));
+}
+
+// A 404 that smaller pages don't explain stops the list, as any error.
+void test_list_lost_everything()
+{
+    FakeStrava       fake;
+    TempDir          dir { "strava-list-lost-everything" };
+    auto             strava = logged_in(fake, dir);
+    std::set<size_t> all;
+    for (auto ix = 0uz; ix < 300; ++ix) {
+        all.insert(ix);
+    }
+    auto strava_history = history(300, all);
+    strava.fetch = strava_history.fetch();
+    auto const listed = strava.list_activities(0, Now);
+    CHECK(!listed.has_value());
 }
 
 // A page that fails after the first keeps the pages before it, and says
@@ -308,6 +496,11 @@ int main()
     test_refresh_saves_the_new_refresh_token();
     test_not_logged_in();
     test_list_activities();
+    test_list_moves_window();
+    test_list_moves_window_back();
+    test_list_skips_lost();
+    test_list_skips_lost_at_the_edges();
+    test_list_lost_everything();
     test_retries();
     test_retries_run_out();
     test_list_stopped_short();

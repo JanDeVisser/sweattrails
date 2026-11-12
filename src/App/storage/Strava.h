@@ -88,6 +88,12 @@ struct StravaListing {
     std::optional<StravaError>  stopped { }; // Why the list stopped short, if it did
 };
 
+// One request's worth of Strava's list.
+struct StravaPage {
+    std::vector<StravaActivity> activities { };
+    bool                        last { false }; // Nothing comes after it
+};
+
 struct Strava {
     HttpFetch                  fetch;
     std::string                client_id { };
@@ -121,6 +127,8 @@ private:
     StravaResult<void>         refresh_if_expiring();
     StravaResult<void>         request_tokens(std::vector<std::pair<std::string, std::string>> const &form);
     StravaResult<HttpResponse> get(std::string const &path);
+    StravaResult<StravaPage>   list_page(i64 after, i64 before, size_t count, size_t page = 1);
+    StravaResult<StravaPage>   list_around_lost(i64 after, i64 before);
 };
 
 }
