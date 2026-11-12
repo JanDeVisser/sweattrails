@@ -307,7 +307,7 @@ StravaResult<StravaPage> Strava::list_page(i64 after, i64 before, size_t count, 
     };
     auto ret = fetch_page(after, before, count, page);
     for (auto waited = 0; wait_for_limit && waited < StravaLimitWaits && quarter_limited(ret); ++waited) {
-        warning(Strava, "Strava's 15-minute limit is reached: waiting until {}", ret.error().resets_at);
+        warning(Strava, "Strava's 15-minute limit is reached: waiting until {}", clock_time(ret.error().resets_at));
         wait_for_limit(ret.error().resets_at);
         ret = fetch_page(after, before, count, page);
     }

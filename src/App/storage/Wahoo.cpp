@@ -301,7 +301,7 @@ WahooResult<HttpResponse> Wahoo::get_waiting(std::string const &path)
     };
     auto ret = get(path);
     for (auto waited = 0; wait_for_limit && waited < WahooLimitWaits && soon(ret); ++waited) {
-        warning(Wahoo, "Wahoo's limit is reached: waiting until {}", ret.error().resets_at);
+        warning(Wahoo, "Wahoo's limit is reached: waiting until {}", clock_time(ret.error().resets_at));
         wait_for_limit(ret.error().resets_at);
         ret = get(path);
     }
