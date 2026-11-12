@@ -45,6 +45,10 @@ constexpr std::string_view StravaScopes = "activity:read_all";
 // The number of days a download looks back when the settings don't say.
 constexpr int StravaDefaultDays = 30;
 
+// How often a page of the list waits for the 15-minute limit before it
+// gives up: someone else is using the same Strava app.
+constexpr int StravaLimitWaits = 2;
+
 struct StravaError {
     enum class Kind {
         NotLoggedIn, // No tokens, or tokens Strava no longer accepts
@@ -56,6 +60,7 @@ struct StravaError {
     std::string message { };
     long        status { 0 };    // The HTTP status, for an HTTP error
     i64         resets_at { 0 }; // Unix time, for RateLimited
+    bool        daily { false }; // For RateLimited: the day's limit, not the 15 minutes'
 
     [[nodiscard]] std::string to_string() const { return message; }
 };
@@ -65,6 +70,20 @@ using StravaResult = std::expected<T, StravaError>;
 
 // `strava-tokens.json` in SweatTrails' config folder.
 fs::path strava_tokens_file(fs::path const &config_dir);
+
+// Strava's read limits and how much of them is used, per 15 minutes and
+// per day, from an answer's X-ReadRateLimit-Limit and -Usage headers.
+struct StravaUsage {
+    i64 quarter_used { 0 };
+    i64 quarter_limit { 0 };
+    i64 day_used { 0 };
+    i64 day_limit { 0 };
+
+    [[nodiscard]] bool day_used_up() const { return day_used >= day_limit; }
+};
+
+// The usage in `response`'s headers, if it has them and they make sense.
+std::optional<StravaUsage> rate_limit_usage(HttpResponse const &response);
 
 // When the read limit a 429 ran into resets. Strava doesn't say: the
 // 15-minute limit resets at :00, :15, :30 and :45, and the daily one at
@@ -108,6 +127,12 @@ struct Strava {
     int                                       retries { 3 };
     std::chrono::seconds                      retry_pause { 30 };
     std::function<void(std::chrono::seconds)> wait { };
+    // A page of the list that runs into the 15-minute limit is asked for
+    // again after `wait_for_limit` has waited until the limit resets, a
+    // Unix time, up to StravaLimitWaits times. Without it, the list stops.
+    std::function<void(i64 until)> wait_for_limit { };
+    // What the last answer said about Strava's limits, if it said.
+    std::optional<StravaUsage> usage { };
 
     // Where the browser goes to log in. `state` comes back with the code.
     [[nodiscard]] std::string authorize_url(std::string_view state) const;
@@ -128,6 +153,7 @@ private:
     StravaResult<void>         request_tokens(std::vector<std::pair<std::string, std::string>> const &form);
     StravaResult<HttpResponse> get(std::string const &path);
     StravaResult<StravaPage>   list_page(i64 after, i64 before, size_t count, size_t page = 1);
+    StravaResult<StravaPage>   fetch_page(i64 after, i64 before, size_t count, size_t page);
     StravaResult<StravaPage>   list_around_lost(i64 after, i64 before);
 };
 
