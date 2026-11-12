@@ -1,6 +1,6 @@
 # Importing Strava's account export
 
-Status: In review, on branch feature/45-strava-export-import
+Status: Done
 
 <!--
 Status is one of:
@@ -255,8 +255,12 @@ the main recording is filled in by the next import.
 ## Review notes
 
 1. Suggestion: `files_dropped()` (src/App/SweatTrails.cpp) routes by the first path only. Dropping a FIT file together with activities.csv sends both to `st-fill-gaps`, and the CSV is ignored, with the usual "not a FIT file" message. Acceptable, but a CSV anywhere in the drop could be preferred.
+   Resolved: left as it is, with Jan. Nobody drops both at once, and the gap filling then says what went wrong.
 2. Suggestion: `import_descriptions()` calls `progress` only while saving. The scan of 5000 sidecars before it shows just "Importing Strava's descriptions…", and the last status is "4643 of 4644", never the full count. Cosmetic.
+   Resolved: left as it is, with Jan. The whole import takes about 4 seconds.
 3. Suggestion: `export_descriptions()` skips rows with a non-numeric ID or too short a row with only a log warning. The user's message doesn't say how many were skipped. Fine for v1.
+   Resolved: left as it is, with Jan. Jan's export has no such rows.
 4. Missing test (added): a quoted field as the last record's last field with no line end, and a quoted field followed by a trailing comma at EOF (test_quoted_field_at_the_end in test/CSVTest.cpp). It passes.
+   Resolved: kept.
 
 No bugs found. The CSV reader (including line counting in errors, the BOM, CRLF inside quotes and the empty last field), the ID matching, "only what's missing", the untitled count, the sorted `changed`, the routing in `files_dropped()`, the task and notification all match the spec. The Test plan is covered.
