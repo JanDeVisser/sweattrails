@@ -278,6 +278,23 @@ void test_kept_stub_not_listed()
     CHECK(slot_for(store.storage, unix_start(0)).kind == Slot::Kind::Taken);
 }
 
+// Only a deep load knows: a shallow one doesn't read the records.
+void test_activity_is_stub()
+{
+    Test::TempStore store;
+    file(store, 0, stub_fit());
+    file(store, 1000, recorded_fit(1000));
+    auto const load = [&store](i64 offset, LoadingDepth depth) {
+        Activity activity { store.storage, ActivityID { Month { 2020, DateTime::Month::January }, "x", FileTypes::one(ActivityFile::Fit) } };
+        activity.depth = depth;
+        CHECK(activity.load_from_file(fit_at(store, offset)).value_or(false));
+        return activity.is_stub();
+    };
+    CHECK(load(0, LoadingDepth::Deep));
+    CHECK(!load(1000, LoadingDepth::Deep));
+    CHECK(!load(0, LoadingDepth::Shallow));
+}
+
 // Puts `contents` in the inbox as `name`.fit, with `sidecar` as its
 // `name`.json, if any.
 void to_inbox(Test::TempStore const &store, std::string_view name, std::string_view contents, std::string_view sidecar = "")
@@ -376,6 +393,7 @@ int main()
     test_replace_without_stub_sidecar();
     test_replace_never_overwrites();
     test_kept_stub_not_listed();
+    test_activity_is_stub();
     test_inbox_replaces_stub();
     test_inbox_stub_over_stub();
     test_inbox_real_is_duplicate();

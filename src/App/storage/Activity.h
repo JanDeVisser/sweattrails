@@ -259,6 +259,13 @@ struct Activity {
     StorageResult<bool> load_from_file(fs::path const &file);
     StorageResult<bool> load_from_slice(std::string_view const &buffer);
 
+    // Whether, loaded deep, it's only a summary: a FIT file without
+    // records (storage/Stubs.h), without a track or graphs.
+    [[nodiscard]] bool is_stub() const
+    {
+        return depth == LoadingDepth::Deep && recorded.empty();
+    }
+
     // The starts of the laps after the first: the user's, or the device's.
     [[nodiscard]] std::vector<i64> lap_starts() const;
 
