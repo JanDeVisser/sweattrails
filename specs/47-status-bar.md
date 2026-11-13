@@ -1,6 +1,6 @@
 # Status bar
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -175,7 +175,7 @@ the hint rather than "No activities yet" for a moment at startup.
 
 How they were resolved, with Jan:
 
-1. Fixed (8ae9a88): the hint is drawn at `-PADDING`. To be checked by hand.
+1. Fixed (8ae9a88): the hint is drawn at `-PADDING`.
 2. Fixed (f4bff49): `StatusBar::hint_fits()` says whether the hint fits
    next to the text on the left, with PADDING at the ends and twice that
    between them; `draw()` leaves the hint out if it doesn't. Tested in
