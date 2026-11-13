@@ -1,6 +1,6 @@
 # Developer fields don't stand in for missing native fields
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -137,11 +137,9 @@ that have to come before them.
 - `format_record<mesg_num::record>` prints a Waterloo position as
   ` 43.4º lat` and `-80.5º long`. Checked to fail with `1 << 31`.
 
-A test that a developer field 253 doesn't hide a compressed timestamp
-was dropped: the reader can't read a developer field numbered 128 or
-more at all (it compares a signed `char` with the description's `u8`, and
-fails with `UnknownDeveloperField`), so that case can't come up. That
-bug is outside this spec.
+- A record with a compressed timestamp header and a developer field 253
+  is read, and gets the compressed timestamp. Checked to fail on the old
+  reader, which couldn't read the file (see Review notes).
 
 Checked by hand: fitexplore on the example file prints 8978 positions,
 9187 records less the 209 without one, all at 43.4º lat and −80.6º long.
@@ -152,4 +150,18 @@ records without a position; checking the example file
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+The Reviewer found no bugs and added no tests.
+
+1. *The rule that a position needs both coordinates only covers `record`
+   messages.* They're the only messages with a position today. Left as
+   it is, at Jan's call.
+2. *Point `get_field()` at the deferred developer field lookup.* Done:
+   its comment now says where that lookup would go.
+
+Found during development and fixed at Jan's request: a FIT file with a
+developer field numbered 128 or more, or a developer data index of 128
+or more, didn't load at all. The reader matched the field to its
+`field_description` by comparing the definition's bytes, signed `char`s,
+with the description's `u8`s, and failed with `UnknownDeveloperField`.
+It now compares the `u8`s. This also made the test of a developer field
+253 and a compressed timestamp possible, which had been dropped.
