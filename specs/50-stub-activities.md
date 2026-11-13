@@ -1,6 +1,6 @@
 # Activities that are only a summary
 
-Status: In progress, on branch feature/50-stub-activities
+Status: In review
 
 <!--
 Status is one of:
