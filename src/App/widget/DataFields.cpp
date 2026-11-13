@@ -281,6 +281,7 @@ std::string maker_name(std::optional<FIT::manufacturer> made_by)
         { manufacturer::bryton, "Bryton" },
         { manufacturer::sigmasport, "Sigma" },
         { manufacturer::lezyne, "Lezyne" },
+        { manufacturer::sram, "SRAM" },
     };
     std::string maker;
     if (made_by) {

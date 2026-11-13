@@ -135,26 +135,55 @@ void test_a_sensors_missing_values_are_left_out()
         CHECK_EQ(info.sensors.size(), 1uz);
         return;
     }
-    CHECK_EQ(info.sensors[0].name.text, "power meter");
+    CHECK_EQ(info.sensors[0].name.text, "Power meter");
     CHECK_EQ(info.sensors[0].name.small, "");
     CHECK_EQ(info.sensors[0].details, "");
 }
 
-void test_a_sensors_product_name()
+// A Wahoo ELEMNT ROAM names its sensors by their type, "Radar" or
+// "Power": with a type it knows, the popup goes by that instead.
+void test_a_known_types_product_name_is_left_out()
 {
     Made t;
     auto strap = heart_rate_strap();
-    strap.product_name = "HRM-Pro";
+    strap.product_name = "Heartrate";
     strap.battery = FIT::battery_status::new_;
-    t.activity.sensors = { strap };
+    auto const power = Sensor {
+        .source = FIT::source_type::antplus,
+        .device_type = 11,
+        .manufacturer = FIT::manufacturer::sram,
+        .product = 1052,
+        .product_name = "Power",
+    };
+    auto const shifting = Sensor { .source = FIT::source_type::antplus, .device_type = 34, .product_name = "Gear Selection" };
+    t.activity.sensors = { strap, power, shifting };
     auto const info = describe(t.activity, Store);
-    if (info.sensors.size() != 1) {
-        CHECK_EQ(info.sensors.size(), 1uz);
+    if (info.sensors.size() != 3) {
+        CHECK_EQ(info.sensors.size(), 3uz);
         return;
     }
-    CHECK_EQ(info.sensors[0].name.text, "Garmin HRM-Pro heart rate monitor");
-    CHECK_EQ(info.sensors[0].name.small, "");
+    CHECK(info.sensors[0].name == (InfoLine { .text = "Garmin heart rate monitor", .small = "(product 4606)" }));
     CHECK_EQ(info.sensors[0].details, "Serial 3615618938 · Software 5.10 · Battery new");
+    CHECK(info.sensors[1].name == (InfoLine { .text = "SRAM power meter", .small = "(product 1052)" }));
+    // Without a maker, the type starts the line.
+    CHECK(info.sensors[2].name == (InfoLine { .text = "Shifting", .small = "" }));
+}
+
+// Of a type it doesn't know, the product name is all it has.
+void test_an_unknown_types_product_name_is_kept()
+{
+    Made t;
+    t.activity.sensors = {
+        Sensor { .source = FIT::source_type::antplus, .device_type = 250, .manufacturer = FIT::manufacturer::garmin, .product = 9, .product_name = "Varia" },
+        Sensor { .source = FIT::source_type::antplus, .device_type = 250, .manufacturer = FIT::manufacturer::garmin, .product = 9 },
+    };
+    auto const info = describe(t.activity, Store);
+    if (info.sensors.size() != 2) {
+        CHECK_EQ(info.sensors.size(), 2uz);
+        return;
+    }
+    CHECK(info.sensors[0].name == (InfoLine { .text = "Garmin Varia", .small = "" }));
+    CHECK(info.sensors[1].name == (InfoLine { .text = "Garmin sensor", .small = "(product 9)" }));
 }
 
 void test_sensor_types()
@@ -195,7 +224,8 @@ int main()
     test_an_unknown_device();
     test_a_sensor();
     test_a_sensors_missing_values_are_left_out();
-    test_a_sensors_product_name();
+    test_a_known_types_product_name_is_left_out();
+    test_an_unknown_types_product_name_is_kept();
     test_sensor_types();
     test_no_sensors();
     return test_result();

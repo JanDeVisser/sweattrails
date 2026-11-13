@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <cctype>
 #include <format>
 #include <optional>
 
@@ -116,6 +117,43 @@ std::string product_number(std::string_view product_name, std::optional<u16> pro
     return std::format("(product {})", *product);
 }
 
+// What a sensor is, from its ANT+ or BLE device type, if that's a type
+// it knows.
+std::optional<std::string_view> known_type_name(Sensor const &sensor)
+{
+    if (!sensor.device_type) {
+        return { };
+    }
+    if (sensor.source == FIT::source_type::bluetooth_low_energy || sensor.source == FIT::source_type::bluetooth) {
+        // A Wahoo lists BLE sensors with ANT+'s types, such as 120 for a
+        // heart rate strap, which isn't a BLE type.
+        if (FIT::ble_device_type_of(*sensor.device_type)) {
+            return ble_type_name(*sensor.device_type);
+        }
+        return antplus_type_name(*sensor.device_type);
+    }
+    if (sensor.source == FIT::source_type::wifi) {
+        return { };
+    }
+    // ANT+, plain ANT, and older files, which don't say, use ANT+'s types.
+    return antplus_type_name(*sensor.device_type);
+}
+
+// A sensor's name: its maker and type, "Garmin heart rate monitor". Its
+// product name only for a type it doesn't know: a Wahoo ELEMNT ROAM
+// names its sensors by their type, "Heartrate", which says it again.
+InfoLine sensor_name(Sensor const &sensor)
+{
+    auto const type = known_type_name(sensor);
+    auto const product_name = type ? std::string { } : sensor.product_name;
+    auto       text = join_words({ maker_name(sensor.manufacturer), product_name, std::string { type.value_or(product_name.empty() ? "sensor" : "") } });
+    // Without a maker, the type starts the line.
+    if (!text.empty()) {
+        text[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(text[0])));
+    }
+    return InfoLine { .text = std::move(text), .small = product_number(product_name, sensor.product) };
+}
+
 std::string battery_name(FIT::battery_status battery)
 {
     // FIT's names, but for "new_", whose underscore keeps it off C++'s new.
@@ -145,22 +183,7 @@ std::string sensor_details(Sensor const &sensor)
 
 std::string sensor_type_name(Sensor const &sensor)
 {
-    if (!sensor.device_type) {
-        return "sensor";
-    }
-    std::optional<std::string_view> name;
-    if (sensor.source == FIT::source_type::bluetooth_low_energy || sensor.source == FIT::source_type::bluetooth) {
-        // A Wahoo lists BLE sensors with ANT+'s types, such as 120 for a
-        // heart rate strap, which isn't a BLE type.
-        name = ble_type_name(*sensor.device_type);
-        if (!FIT::ble_device_type_of(*sensor.device_type)) {
-            name = antplus_type_name(*sensor.device_type);
-        }
-    } else if (sensor.source != FIT::source_type::wifi) {
-        // ANT+, plain ANT, and older files, which don't say, use ANT+'s types.
-        name = antplus_type_name(*sensor.device_type);
-    }
-    return std::string { name.value_or("sensor") };
+    return std::string { known_type_name(sensor).value_or("sensor") };
 }
 
 ActivityInfo describe(Activity const &activity, std::filesystem::path const &store)
@@ -183,10 +206,7 @@ ActivityInfo describe(Activity const &activity, std::filesystem::path const &sto
     };
     for (auto const &sensor : activity.sensors) {
         ret.sensors.push_back(SensorInfo {
-            .name = InfoLine {
-                .text = join_words({ maker_name(sensor.manufacturer), sensor.product_name, sensor_type_name(sensor) }),
-                .small = product_number(sensor.product_name, sensor.product),
-            },
+            .name = sensor_name(sensor),
             .details = sensor_details(sensor),
         });
     }

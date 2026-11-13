@@ -61,7 +61,11 @@ the file for this one?".
   in the same smaller font, after the name: "Garmin (product 4315)".
 - **The sensors**: one entry each, with the maker, the type, and the
   product number in the smaller font, as for the recording device:
-  "Garmin heart rate monitor (product 4606)". Under that, in the smaller
+  "Garmin heart rate monitor (product 4606)". A sensor's product name is
+  only shown for a type SweatTrails doesn't know, in place of the type:
+  a Wahoo ELEMNT ROAM names its sensors by their type ("Radar",
+  "Heartrate", "Power"), which would say it twice. Without a maker, the
+  type starts the line: "Shifting". Under that, in the smaller
   font, its serial number, software version, and battery status at the
   end of the activity (ok, low, critical, ...). The battery is the most
   useful of these: it answers "why did the power drop out?". Product
@@ -266,5 +270,14 @@ Found by Jan, checking by hand:
    characters, and `product_number()` drops Zwift's product 0, where
    `file_id` and `device_info` are read. `device_info_test` has the
    Zwift ride's bytes, and fails against the old code.
+7. Found by Jan on a Wahoo ELEMNT ROAM ride: its barometer, temperature
+   sensor, GPS and accelerometer were listed as sensors; its BLE heart
+   rate strap had no type; the ROAM itself showed as "Wahoo (product
+   47)"; and the sensors' names repeated their types ("Garmin Radar
+   radar"). **Fixed**, each in its own commit with a test: a listing
+   without a source type needs a serial number of its own to be a
+   sensor; a BLE type that isn't one falls back to ANT+'s; the device's
+   name comes from its own `device_info` listing when `file_id` has
+   none; and a sensor's product name is only shown for an unknown type.
 
 No bugs found against the spec's Version 1 scope.
