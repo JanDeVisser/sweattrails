@@ -168,6 +168,9 @@ ActivityInfo describe(Activity const &activity, std::filesystem::path const &sto
         auto const outside = relative.empty() || *relative.begin() == "..";
         ret.file = (outside ? ret.path : relative).string();
     }
+    if (activity.recordings > 1) {
+        ret.recording = std::format("Recording {} of {}", activity.recording_number, activity.recordings);
+    }
     auto name = device_name(activity);
     ret.device = InfoLine {
         .text = name.empty() ? "Unknown device" : std::move(name),

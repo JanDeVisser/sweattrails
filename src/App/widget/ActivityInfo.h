@@ -39,8 +39,9 @@ struct SensorInfo {
 };
 
 struct ActivityInfo {
-    std::string             file { }; // As shown: relative to the store
-    std::filesystem::path   path { }; // The file itself, for Show in Finder; empty for none
+    std::string             file { };      // As shown: relative to the store
+    std::filesystem::path   path { };      // The file itself, for Show in Finder; empty for none
+    std::string             recording { }; // "Recording 2 of 2", for one of several
     InfoLine                device { };
     std::vector<SensorInfo> sensors { }; // None says NoSensors
 

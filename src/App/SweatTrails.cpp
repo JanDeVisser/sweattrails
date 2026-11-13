@@ -50,6 +50,7 @@
 #include <storage/Volume.h>
 #include <storage/Wahoo.h>
 #include <widget/Activity.h>
+#include <widget/ActivityInfoBox.h>
 #include <widget/ActivitySelector.h>
 
 namespace ST {
@@ -1800,11 +1801,11 @@ void cmd_remove_fills(pSweatTrails const &sweattrails, JSONValue const &)
 }
 
 // Tab and Shift+Tab: the next (`step` +1) or previous (-1) recording of
-// the activity on display, the main one first, wrapping around. One that
-// doesn't load is passed over, and named, as Left and Right do.
-void show_recording_next_to(pSweatTrails const &sweattrails, int step)
+// `displayed`, the activity on display, the main one first, wrapping
+// around. One that doesn't load is passed over, and named, as Left and
+// Right do. The activity info popup runs it too, under its modal.
+void show_recording_next_to(pSweatTrails const &sweattrails, std::shared_ptr<DisplayedActivity> const &displayed, int step)
 {
-    auto const displayed = activity_for_keys(sweattrails);
     if (!displayed) {
         return;
     }
@@ -1854,12 +1855,39 @@ void cmd_compare_recordings(pSweatTrails const &sweattrails, JSONValue const &)
 
 void cmd_next_recording(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    show_recording_next_to(sweattrails, 1);
+    show_recording_next_to(sweattrails, activity_for_keys(sweattrails), 1);
 }
 
 void cmd_previous_recording(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    show_recording_next_to(sweattrails, -1);
+    show_recording_next_to(sweattrails, activity_for_keys(sweattrails), -1);
+}
+
+// Cmd+I: the activity on display's file, device and sensors, in a popup
+// (specs/48-device-info.md). The popup follows Tab and Shift+Tab to the
+// other recordings.
+void cmd_activity_info(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (!activity_for_keys(sweattrails)) {
+        return;
+    }
+    auto describe_shown = [sweattrails]() -> std::optional<ActivityInfo> {
+        auto const displayed = sweattrails->activity_display->activity;
+        if (!displayed) {
+            return { };
+        }
+        return describe(displayed->activity, sweattrails->storage.data_dir);
+    };
+    auto switch_recording = [sweattrails](int step) {
+        show_recording_next_to(sweattrails, sweattrails->activity_display->activity, step);
+    };
+    auto reveal = [sweattrails](fs::path const &file) {
+        if (auto const revealed = reveal_file(file); !revealed) {
+            sweattrails->set_status(std::format("Couldn't show the file: {}", revealed.error().to_string()));
+        }
+    };
+    auto const box = Widget::make<ActivityInfoBox>(describe_shown, switch_recording, reveal);
+    box->show();
 }
 
 // Ctrl+Shift+R: the activity on display's recordings as activities of
@@ -2596,6 +2624,10 @@ void SweatTrails::initialize()
     bus.add_task<SweatTrails>("st-previous-recording", self(), cmd_previous_recording)
         .titled("Previous recording")
         .bind(KeyCombo { KEY_TAB, KModShift })
+        .when(on_activity_screen);
+    bus.add_task<SweatTrails>("st-activity-info", self(), cmd_activity_info)
+        .titled("Activity info")
+        .bind(KeyCombo { KEY_I, command })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-overlay-preview", self(), cmd_overlay_preview)
         .titled("Preview the overlay")

@@ -65,6 +65,15 @@ void test_a_recordings_file_is_in_its_folder()
     CHECK_EQ(describe(t.activity, Store).file, "activity/2026/11/1794572226.recordings/1794572230.fit");
 }
 
+void test_which_recording()
+{
+    Made t;
+    CHECK_EQ(describe(t.activity, Store).recording, "");
+    t.activity.recordings = 2;
+    t.activity.recording_number = 2;
+    CHECK_EQ(describe(t.activity, Store).recording, "Recording 2 of 2");
+}
+
 void test_a_file_outside_the_store_has_its_full_path()
 {
     Made t;
@@ -176,6 +185,7 @@ int main()
 {
     test_the_file_is_relative_to_the_store();
     test_a_recordings_file_is_in_its_folder();
+    test_which_recording();
     test_a_file_outside_the_store_has_its_full_path();
     test_no_file_without_a_sidecar();
     test_the_device_by_product_number();
