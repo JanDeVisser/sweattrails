@@ -750,6 +750,10 @@ StorageResult<bool> Activity::load_fit_file(FITFile &fit_file)
         return std::unexpected(StorageError { read.error() });
     }
     sensors = devices.sensors();
+    // A Wahoo ELEMNT ROAM names itself in its device_info listing only.
+    if (product_name.empty()) {
+        product_name = devices.creator_name();
+    }
     return segment.start_time.timestamp > 0;
 }
 

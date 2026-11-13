@@ -135,7 +135,9 @@ Four layers, each testable without a window.
   none at all (the ROAM lists its barometer, GPS and so on by name only).
 - `Activity` gets `std::optional<u16> product` (from `file_id`) and
   `std::vector<Sensor> sensors`, filled on a deep load only, as the
-  records and laps are.
+  records and laps are. Its `product_name`, when `file_id` has none,
+  is the recording device's own `device_info` listing's on a deep load:
+  a Wahoo ELEMNT ROAM names itself only there.
 
 ### The box's text (`widget/ActivityInfo.h`, `.cpp`, new)
 

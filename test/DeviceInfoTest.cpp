@@ -290,6 +290,63 @@ void test_a_junk_product_name_keeps_a_good_one()
     CHECK(sensors.size() == 1 && sensors[0].product_name == "HRM-Pro");
 }
 
+// A Wahoo ELEMNT ROAM's file_id has no product name, but its own
+// device_info listing has: Wahoo ELEMNT ROAM, rather than Wahoo.
+std::string roam_ride(std::string_view name)
+{
+    FITBuilder fit;
+    add_file_id(fit, 32); // Wahoo
+    fit.definition(7, 23,
+        {
+            { .num = 0, .size = 1, .base_type = Uint8 },
+            { .num = 27, .size = static_cast<u8>(name.size() + 1), .base_type = ST::Test::String },
+        });
+    fit.message(7);
+    fit.byte(0); // The creator
+    fit.data += name;
+    fit.byte(0);
+    add_session(fit, 60, 10);
+    return fit.file();
+}
+
+void test_the_creators_listing_names_the_device()
+{
+    Loaded t { roam_ride("ELEMNT ROAM"), LoadingDepth::Deep };
+    CHECK(t.loaded);
+    CHECK_EQ(t.activity.product_name, "ELEMNT ROAM");
+    CHECK(t.activity.sensors.empty());
+}
+
+void test_file_ids_product_name_wins()
+{
+    FITBuilder fit;
+    fit.definition(4, 0,
+        {
+            { .num = 0, .size = 1, .base_type = Enum },
+            { .num = 1, .size = 2, .base_type = Uint16 },
+            { .num = 4, .size = 4, .base_type = Uint32 },
+            { .num = 8, .size = 5, .base_type = ST::Test::String },
+        });
+    fit.message(4);
+    fit.byte(4);
+    fit.u16_le(32);
+    fit.u32_le(Start);
+    fit.data += "BOLT";
+    fit.byte(0);
+    fit.definition(7, 23,
+        {
+            { .num = 0, .size = 1, .base_type = Uint8 },
+            { .num = 27, .size = 5, .base_type = ST::Test::String },
+        });
+    fit.message(7);
+    fit.byte(0);
+    fit.data += "ROAM";
+    fit.byte(0);
+    add_session(fit, 60, 10);
+    Loaded t { fit.file(), LoadingDepth::Deep };
+    CHECK_EQ(t.activity.product_name, "BOLT");
+}
+
 void test_a_product_name_is_kept()
 {
     SensorList list;
@@ -354,6 +411,8 @@ int main()
     test_without_source_type_a_sensor_has_its_own_serial();
     test_unknown_battery_keeps_a_known_one();
     test_a_product_name_is_kept();
+    test_the_creators_listing_names_the_device();
+    test_file_ids_product_name_wins();
     test_zwifts_junk_product_name_is_left_out();
     test_product_text();
     test_product_number();

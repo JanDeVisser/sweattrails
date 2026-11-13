@@ -59,6 +59,9 @@ struct SensorList {
     // older files and a Wahoo's, is a sensor if it has a serial number of
     // its own: the device's parts have its serial number, or none.
     [[nodiscard]] std::vector<Sensor> sensors() const;
+
+    // The recording device's product name in its own listing, or "".
+    [[nodiscard]] std::string creator_name() const;
 };
 
 }

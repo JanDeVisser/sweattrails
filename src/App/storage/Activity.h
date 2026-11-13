@@ -195,8 +195,10 @@ struct Activity {
     std::optional<FIT::sub_sport> sub_sport { };
     // Who made the FIT file: Zwift, for a ride in one of its worlds.
     std::optional<FIT::manufacturer> manufacturer { };
-    std::string                      product_name { }; // The device's, if the FIT file has it
-    std::optional<u16>               product { };      // The number of the device's model
+    // The device's, if the FIT file has it: file_id's, or, on a deep
+    // load, the device's own device_info listing's.
+    std::string        product_name { };
+    std::optional<u16> product { }; // The number of the device's model
     // The sensors connected to the device, on a deep load
     // (specs/48-device-info.md).
     std::vector<Sensor> sensors { };

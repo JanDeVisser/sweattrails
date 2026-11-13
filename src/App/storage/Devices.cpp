@@ -92,4 +92,10 @@ std::vector<Sensor> SensorList::sensors() const
     return ret;
 }
 
+std::string SensorList::creator_name() const
+{
+    auto const creator = devices.find(Creator);
+    return creator == devices.end() ? "" : creator->second.product_name;
+}
+
 }
