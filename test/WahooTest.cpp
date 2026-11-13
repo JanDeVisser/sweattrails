@@ -910,6 +910,20 @@ void test_everything_with_the_file_goes_on_to_the_page_that_passes_it()
     CHECK_EQ(fake.count(cdn_url(201)), 0uz);
     CHECK_EQ(read_wahoo_complete(file).value_or(0), Now);
 }
+// A clock that was set back: T in the future counts as now.
+void test_a_complete_time_in_the_future_counts_as_now()
+{
+    FakeWahoo  fake;
+    TempDir    dir { "wahoo-history-future" };
+    TempStore  store;
+    auto       wahoo = logged_in(fake, dir);
+    auto const file = wahoo_complete_file(store.storage);
+    MUST(write_wahoo_complete(file, Now + 100 * Day));
+    fake.answer("/v1/workouts", { .status = 200, .body = page_of_days({ { 1, 0 }, { 2, 5 } }, 600) });
+    fake.answer(cdn_url(1), { .status = 200, .body = "fit" });
+    CHECK_EQ(download_wahoo_history(wahoo, store.storage, Everything, 3 * Day).value_or(99), 1uz);
+    CHECK_EQ(read_wahoo_complete(file).value_or(0), Now);
+}
 }
 
 int main()
@@ -960,5 +974,6 @@ int main()
     test_a_failed_run_leaves_the_file();
     test_a_limit_on_the_second_page_leaves_no_file();
     test_everything_with_the_file_goes_on_to_the_page_that_passes_it();
+    test_a_complete_time_in_the_future_counts_as_now();
     return ST::Test::test_result();
 }

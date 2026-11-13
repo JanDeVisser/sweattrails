@@ -452,7 +452,13 @@ WahooResult<size_t> download_wahoo_history(Wahoo &wahoo, Storage const &storage,
 {
     auto const started = wahoo.now();
     auto const file = wahoo_complete_file(storage);
-    auto const plan = plan_wahoo_download(since, read_wahoo_complete(file), overlap);
+    auto       complete = read_wahoo_complete(file);
+    // A clock set back would leave T in the future, and "Everything" would
+    // list too little.
+    if (complete && *complete > started) {
+        complete = started;
+    }
+    auto const plan = plan_wahoo_download(since, complete, overlap);
     trace(Wahoo, "Listing back to {}{}", plan.since, plan.completes ? ", which completes the store" : "");
     auto const count = download_new_workouts(wahoo, storage, plan.since, progress, pacing);
     if (count && plan.completes) {
