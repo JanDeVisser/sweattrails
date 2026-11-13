@@ -151,6 +151,8 @@ std::optional<FITDataField> FITDataRecord::get_field(u8 num) const
     }
     // Developer fields aren't looked at: their numbers are a namespace of
     // their own, per developer data index. Wahoo's field 0 isn't a latitude.
+    // Reading them needs a lookup by index and number, which nothing needs
+    // yet (specs/49-developer-field-numbers.md).
     if (num == FIT_FIELD_TIMESTAMP && compressed_timestamp) {
         return FITDataField { .type = FITBaseType::uint32, .value = FITDataField::Options { .uint32 = *compressed_timestamp } };
     }
