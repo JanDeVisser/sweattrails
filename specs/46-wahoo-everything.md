@@ -1,6 +1,6 @@
 # Wahoo's "Everything" stops where the store is complete
 
-Status: In progress, on branch feature/46-wahoo-everything
+Status: In review
 
 <!--
 Status is one of:
