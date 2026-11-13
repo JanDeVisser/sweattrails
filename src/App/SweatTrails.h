@@ -253,6 +253,13 @@ struct DescribingPaused {
     std::optional<i64> resume_at { };
 };
 
+// Sent when activities that were only a summary got their recordings, by
+// the inbox or Strava's export: the stubs' start times, and the
+// recordings'. See specs/50-stub-activities.md.
+struct StubsReplaced {
+    std::vector<std::pair<i64, i64>> moved { };
+};
+
 // What the FindNewestActivity job at startup found.
 struct StoreChecked {
     bool empty { false };
@@ -276,7 +283,8 @@ struct StoreChecked {
     S(StoreChecked, StoreChecked)                   \
     S(ImportingDescriptions, ImportingDescriptions) \
     S(Describing, Describing)                       \
-    S(DescribingPaused, DescribingPaused)
+    S(DescribingPaused, DescribingPaused)           \
+    S(StubsReplaced, StubsReplaced)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -359,6 +367,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_importing_descriptions(Notification::Payload const &data);
     static void notif_describing(Notification::Payload const &data);
     static void notif_describing_paused(Notification::Payload const &data);
+    static void notif_stubs_replaced(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -384,6 +393,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_importing_descriptions,
                 notif_describing,
                 notif_describing_paused,
+                notif_stubs_replaced,
             });
     }
 

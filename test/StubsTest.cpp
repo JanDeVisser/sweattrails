@@ -293,6 +293,83 @@ void test_kept_stub_not_listed()
     CHECK(slot_for(store.storage, unix_start(0)).kind == Slot::Kind::Taken);
 }
 
+// Puts `contents` in the inbox as `name`.fit, with `sidecar` as its
+// `name`.json, if any.
+void to_inbox(Test::TempStore const &store, std::string_view name, std::string_view contents, std::string_view sidecar = "")
+{
+    MUST(write_file_by_name((store.storage.inbox_dir / std::format("{}.fit", name)).string(), contents));
+    if (!sidecar.empty()) {
+        MUST(write_file_by_name((store.storage.inbox_dir / std::format("{}.json", name)).string(), sidecar));
+    }
+}
+
+struct Filed {
+    std::vector<i64>                 filed { };
+    std::vector<std::pair<i64, i64>> replaced { };
+    u32                              count { 0 };
+};
+
+Filed process(Test::TempStore &store)
+{
+    Filed      ret;
+    auto const count = store.storage.process_inbox(
+        { },
+        [&ret](i64 start) { ret.filed.push_back(start); },
+        [&ret](i64 stub_start, i64 start) { ret.replaced.emplace_back(stub_start, start); });
+    CHECK(count.has_value());
+    ret.count = count.value_or(0);
+    return ret;
+}
+
+void test_inbox_replaces_stub()
+{
+    Test::TempStore store;
+    file(store, 0, stub_fit(), R"({ "title": "Mine" })");
+    to_inbox(store, "wahoo-1", recorded_fit(4), R"({ "id": 1, "title": "Wahoo's" })");
+    auto const filed = process(store);
+    CHECK_EQ(filed.count, 1u);
+    CHECK(filed.filed == std::vector { unix_start(4) });
+    CHECK((filed.replaced == std::vector { std::pair { unix_start(0), unix_start(4) } }));
+    CHECK_EQ(contents(fit_at(store, 4)), recorded_fit(4));
+    CHECK_EQ(contents(fit_at(store, 4, ".stub")), stub_fit());
+    auto const json = json_at(sidecar_at(store, 4));
+    CHECK_EQ(json.try_get<std::string>("title").value_or(""), "Mine");
+    CHECK_EQ(json.try_get<int>("id").value_or(0), 1);
+    CHECK(store.inbox().empty());
+}
+
+// One that's only a summary too doesn't replace a stub: it's filed next
+// to it, as before.
+void test_inbox_stub_over_stub()
+{
+    Test::TempStore store;
+    file(store, 0, stub_fit());
+    to_inbox(store, "other", stub_fit(4));
+    auto const filed = process(store);
+    CHECK_EQ(filed.count, 1u);
+    CHECK(filed.replaced.empty());
+    CHECK_EQ(contents(fit_at(store, 0)), stub_fit());
+    CHECK_EQ(contents(fit_at(store, 4)), stub_fit(4));
+    CHECK(!fs::exists(fit_at(store, 0, ".stub")));
+
+    // At the same start, it's a duplicate.
+    to_inbox(store, "again", stub_fit());
+    CHECK_EQ(process(store).count, 0u);
+    CHECK(fs::exists(store.storage.inbox_dir / "duplicates" / "again.fit"));
+}
+
+void test_inbox_real_is_duplicate()
+{
+    Test::TempStore store;
+    file(store, 0, recorded_fit());
+    file(store, 10, stub_fit());
+    to_inbox(store, "wahoo-1", recorded_fit());
+    auto const filed = process(store);
+    CHECK_EQ(filed.count, 0u);
+    CHECK(fs::exists(store.storage.inbox_dir / "duplicates" / "wahoo-1.fit"));
+    CHECK_EQ(contents(fit_at(store, 10)), stub_fit());
+}
+
 }
 
 int main()
@@ -314,5 +391,8 @@ int main()
     test_replace_without_stub_sidecar();
     test_replace_never_overwrites();
     test_kept_stub_not_listed();
+    test_inbox_replaces_stub();
+    test_inbox_stub_over_stub();
+    test_inbox_real_is_duplicate();
     return ST::Test::test_result();
 }

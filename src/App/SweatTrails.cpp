@@ -256,8 +256,15 @@ void process_inbox(pSweatTrails const &the)
             groups.push_back(std::move(**grouped));
         }
     };
-    auto res = the->storage.process_inbox(on_file, on_filed);
+    StubsReplaced replaced;
+    auto const    on_replaced = [&replaced](i64 stub_start, i64 start) {
+        replaced.moved.emplace_back(stub_start, start);
+    };
+    auto res = the->storage.process_inbox(on_file, on_filed, on_replaced);
     the->notify_latest<NotificationType::ImportingFile>(ImportingFile { });
+    if (!replaced.moved.empty()) {
+        the->notify<NotificationType::StubsReplaced>(std::move(replaced));
+    }
     if (!groups.empty()) {
         the->notify<NotificationType::RecordingsGrouped>(RecordingsGrouped { .groups = std::move(groups) });
     }
@@ -1961,6 +1968,21 @@ void cmd_group_recordings(pSweatTrails const &sweattrails, JSONValue const &)
 // recording is shown instead, on the activity screen even if it's behind
 // the totals. If it's the main one, it's loaded again, as it has more
 // recordings now.
+// Loads `id`, as the activity on display, again, also behind the totals.
+void load_again(pSweatTrails const &the, ActivityID const &id)
+{
+    auto loaded = load_to_show(the->storage, id);
+    if (!loaded) {
+        the->set_status(loaded.error());
+    } else if (the->showing_summaries()) {
+        the->last_activity = id;
+        the->activity_display->set_activity(*loaded);
+        the->compare_if_on();
+    } else {
+        the->show_activity(*loaded);
+    }
+}
+
 void show_main_again(pSweatTrails const &the, std::vector<Grouped> const &groups)
 {
     for (auto const &group : groups) {
@@ -1971,16 +1993,7 @@ void show_main_again(pSweatTrails const &the, std::vector<Grouped> const &groups
         if (!id || !(moved || id->name == the->last_activity.name)) {
             continue;
         }
-        auto loaded = load_to_show(the->storage, *id);
-        if (!loaded) {
-            the->set_status(loaded.error());
-        } else if (the->showing_summaries()) {
-            the->last_activity = *id;
-            the->activity_display->set_activity(*loaded);
-            the->compare_if_on();
-        } else {
-            the->show_activity(*loaded);
-        }
+        load_again(the, *id);
         return;
     }
 }
@@ -2257,6 +2270,23 @@ void SweatTrails::notif_describing_paused(Notification::Payload const &data)
         the->describe_from_strava();
     }
     the->describe_again = false;
+}
+
+// The stub on display is loaded again as its recording, which may have
+// another start.
+void SweatTrails::notif_stubs_replaced(Notification::Payload const &data)
+{
+    auto const &replaced = std::get<StubsReplaced>(data);
+    auto const  the = SweatTrails::the();
+    for (auto const &[stub_start, start] : replaced.moved) {
+        if (the->last_activity.name != std::format("{}", stub_start)) {
+            continue;
+        }
+        if (auto const id = activity_id_of(fs::path { the->storage.sidecar_of(start) }.replace_extension(".fit")); id) {
+            load_again(the, *id);
+        }
+        return;
+    }
 }
 
 void SweatTrails::notif_importing_descriptions(Notification::Payload const &data)
