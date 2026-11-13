@@ -1,6 +1,6 @@
 # Device info: the recording device and its sensors
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
