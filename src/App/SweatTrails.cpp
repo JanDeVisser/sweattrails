@@ -73,10 +73,11 @@ fs::path certificate_key_file(fs::path const &config_dir)
     return config_dir / "localhost-key.pem";
 }
 
-SourceOutcome failed(SourceOutcome outcome, std::string message)
+SourceOutcome failed(SourceOutcome outcome, std::string message, bool limited = false)
 {
     outcome.kind = SourceOutcome::Kind::Failed;
     outcome.message = std::move(message);
+    outcome.limited = limited;
     return outcome;
 }
 
@@ -167,7 +168,7 @@ SourceOutcome download_from_wahoo(pSweatTrails const &the, std::optional<std::st
         return outcome;
     }
     if (!count) {
-        return failed(outcome, count.error().to_string());
+        return failed(outcome, count.error().to_string(), count.error().status == TooManyRequests);
     }
     info(ST, "Downloaded {} workouts from Wahoo", *count);
     outcome.count = *count;
@@ -220,7 +221,7 @@ SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<Strava
             outcome.kind = SourceOutcome::Kind::NeedsLogin;
             return outcome;
         case StravaError::Kind::RateLimited:
-            return failed(outcome, std::format("Strava: its limit is reached for now. Try again after {}.", clock_time(update.error().resets_at)));
+            return failed(outcome, std::format("Strava: its limit is reached for now. Try again after {}.", clock_time(update.error().resets_at)), true);
         case StravaError::Kind::Failed:
             return failed(outcome, update.error().to_string());
         }
@@ -374,6 +375,9 @@ void run_downloads(pSweatTrails const &the, DownloadRequest const &request)
     auto report = download_report(outcomes, request.quiet);
     report.login_arguments = login_arguments(request, report.ask_login);
     report.describe = request.strava && request.strava_descriptions;
+    if (!report.status.empty()) {
+        warning(ST, "The download at startup stopped: {}", report.status);
+    }
     the->notify<NotificationType::DownloadDone>(report);
 }
 
@@ -2006,7 +2010,8 @@ void SweatTrails::notif_download_done(Notification::Payload const &data)
     auto const &report = std::get<DownloadReport>(data);
     auto const  the = SweatTrails::the();
     the->downloading = false;
-    the->set_status("");
+    // A limit at startup stays until something else is put there.
+    the->set_status(report.status);
     // A running chain has read the store before these titles: it looks
     // again when it's done. One waiting for Strava's limit reads the store
     // when it goes on; started now, it would spend a request of the ones

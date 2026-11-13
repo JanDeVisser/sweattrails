@@ -227,6 +227,10 @@ DownloadReport download_report(std::vector<SourceOutcome> const &outcomes, bool 
         if (outcome.kind == SourceOutcome::Kind::NeedsLogin && report.ask_login.empty()) {
             report.ask_login = outcome.source;
         }
+        if (quiet && outcome.kind == SourceOutcome::Kind::Failed && outcome.limited) {
+            report.status += std::format("{}{}", report.status.empty() ? "" : " ", sentence(outcome));
+            continue;
+        }
         if (!report.text.empty()) {
             report.text += ' ';
         }

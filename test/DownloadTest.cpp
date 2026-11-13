@@ -161,6 +161,30 @@ void test_report_failures()
     CHECK_EQ(report.text, "Could not reach Garmin Connect: offline Wahoo: 3 new activities.");
 }
 
+// Quiet, a limit at startup goes on the status line, not in a message
+// box at every start until it resets. Asked for, it's in the message.
+void test_report_limits()
+{
+    auto limited = wahoo(Kind::Failed, 0, "Wahoo's limit on requests is reached. Try again after 19:00.");
+    limited.limited = true;
+    auto const quiet = download_report({ garmin(Kind::Downloaded, 2), limited }, true);
+    CHECK(quiet.text.empty());
+    CHECK_EQ(quiet.status, "Wahoo's limit on requests is reached. Try again after 19:00.");
+
+    auto const other = download_report({ garmin(Kind::Failed, 0, "Could not reach Garmin Connect."), limited }, true);
+    CHECK_EQ(other.text, "Could not reach Garmin Connect.");
+    CHECK_EQ(other.status, "Wahoo's limit on requests is reached. Try again after 19:00.");
+
+    auto const asked = download_report({ limited }, false);
+    CHECK_EQ(asked.text, "Wahoo's limit on requests is reached. Try again after 19:00.");
+    CHECK(asked.status.empty());
+
+    // Not a limit: a message box, as before.
+    auto const failed = download_report({ wahoo(Kind::Failed, 0, "Wahoo answered HTTP 500.") }, true);
+    CHECK_EQ(failed.text, "Wahoo answered HTTP 500.");
+    CHECK(failed.status.empty());
+}
+
 void test_report_leaves_out_sources_not_set_up()
 {
     // Someone who doesn't use Wahoo never hears of it.
@@ -396,6 +420,7 @@ int main()
     test_download_request_from_a_key_binding();
     test_report();
     test_report_failures();
+    test_report_limits();
     test_report_leaves_out_sources_not_set_up();
     test_report_offers_the_login();
     test_report_combinations();
