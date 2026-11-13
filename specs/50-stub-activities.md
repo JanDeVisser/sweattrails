@@ -297,6 +297,39 @@ a widget in `src/Lib/Widget`.
 
 A section under Strava's export, as the spec says.
 
+### Changed while building
+
+- `process_inbox()` takes a third callback, `InboxReplaced`, called with
+  the stub's start and the recording's for each replacement, after
+  `InboxFiled`; the inbox job collects them for `StubsReplaced`.
+- `import_originals()` takes a `Storage &`, not a const one: it reads
+  each original's start with a shallow `Activity` load, as the inbox
+  does, so that both file it by the same start.
+- `StubImport` is a member of `ExportImport`, `stubs`, so `message()`
+  has it.
+- `Activity::is_stub()` looks at `recorded`, the records as read.
+
+### Tried on a copy of Jan's store
+
+With Jan's export (2026-11-11) on a copy of the store:
+
+- **113 stubs, not 191.** 191 FIT files are under 1000 bytes, but 78 of
+  them have records: short recordings converted by the old app (maker
+  255), a few seconds of GPS, or up to an hour and a half of heart rate
+  without positions. They are what was recorded, so by the spec's test
+  they are no stubs. 3 of the 113 are in `.recordings` folders, where
+  the import doesn't look, as the titles don't.
+- Of the 110 listed stubs, 73 have a `.fit.gz` in the export, 31 are
+  manual entries on Strava, and 6 have no Strava ID. None has a GPX or
+  TCX file.
+- **72 replaced**, the Bermuda run among them (7216 records, the
+  RIVAL's). None had another start than its stub's. The 73rd,
+  2024-06-25, isn't: its recording is already in the store, 37 s later,
+  downloaded from Wahoo with a Strava ID of its own, so it's left alone
+  with a warning.
+- Looking for stubs reads every FIT file with a Strava ID: about 7 s in
+  a debug build.
+
 ### Order of the work
 
 1. `gunzip()`.
@@ -304,7 +337,7 @@ A section under Strava's export, as the spec says.
 3. The inbox.
 4. Strava's export.
 5. The activity screen.
-6. Garmin's and Wahoo's downloads, after spec 46 is merged.
+6. Garmin's and Wahoo's downloads; Wahoo's after spec 46 is merged.
 7. README.
 
 ## Test plan
