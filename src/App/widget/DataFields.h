@@ -38,6 +38,11 @@ struct DataLine {
 std::string format_distance(float32 meters);
 std::string format_moving_time(Duration const &moving);
 
+// A device's maker, as it calls itself rather than as FIT does: "Garmin",
+// or FIT's name, such as "favero electronics". Empty for none, or one
+// FIT doesn't know.
+std::string maker_name(std::optional<FIT::manufacturer> made_by);
+
 // The device that recorded the activity: its maker, with the product name
 // if the FIT file has one, e.g. "Wahoo ELEMNT ROAM". Empty if the file
 // doesn't say, or names a maker FIT doesn't know.

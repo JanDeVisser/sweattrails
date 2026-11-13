@@ -228,6 +228,7 @@ add_executable(
         src/App/overlay/Template.cpp
         src/App/overlay/TrackMap.cpp
         src/App/widget/Activity.cpp
+        src/App/widget/ActivityInfo.cpp
         src/App/widget/ActivityMap.cpp
         src/App/widget/ActivitySelector.cpp
         src/App/widget/DataFields.cpp
@@ -427,6 +428,27 @@ sweattrails_test(
 )
 target_include_directories(map_test PRIVATE src/App)
 target_link_libraries(map_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        activity_info_test
+        test/ActivityInfoTest.cpp
+        src/App/widget/ActivityInfo.cpp
+        src/App/storage/Thresholds.cpp
+        src/App/storage/Volume.cpp
+        src/App/widget/DataFields.cpp
+        src/App/storage/Comparison.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Devices.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(activity_info_test PRIVATE src/App)
+target_link_libraries(activity_info_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         data_fields_test
