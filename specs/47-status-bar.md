@@ -173,6 +173,15 @@ the hint rather than "No activities yet" for a moment at startup.
    `Nov12Noon` and `numbered()` helpers instead of above
    `test_curves_no_longer_than_their_lists()`. Move it back.
 
+How they were resolved, with Jan:
+
+1. Fixed (8ae9a88): the hint is drawn at `-PADDING`. Checked by hand.
+2. Fixed (f4bff49): `StatusBar::hint_fits()` says whether the hint fits
+   next to the text on the left, with PADDING at the ends and twice that
+   between them; `draw()` leaves the hint out if it doesn't. Tested in
+   `status_bar_test`.
+3. Fixed (6c551e2): the comment is back above its test.
+
 Everything else in Version 1 scope is there: the bar is always one line,
 `set_status()` no longer resizes, the idle text comes from
 `notif_summaries_updated()`, unreadable summaries are skipped, and the
