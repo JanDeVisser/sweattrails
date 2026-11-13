@@ -25,6 +25,7 @@ inline constexpr u32 Start = 1'000'000'000;
 inline constexpr u8 Enum = 0x00;
 inline constexpr u8 Uint8 = 0x02;
 inline constexpr u8 Uint16 = 0x84;
+inline constexpr u8 Sint32 = 0x85;
 inline constexpr u8 Uint32 = 0x86;
 inline constexpr u8 String = 0x07;
 
@@ -32,6 +33,14 @@ struct FieldDefinition {
     u8 num { 0 };
     u8 size { 0 };
     u8 base_type { 0 };
+};
+
+// A developer field in a definition: its number within the developer data
+// index that a field_description message declared it in.
+struct DeveloperFieldDefinition {
+    u8 num { 0 };
+    u8 size { 0 };
+    u8 developer_data_index { 0 };
 };
 
 // The data messages of a little-endian FIT file, and the file around them.
@@ -57,7 +66,25 @@ struct FITBuilder {
 
     void definition(u8 local, u16 global, std::vector<FieldDefinition> const &fields)
     {
-        byte(0x40 | local);
+        definition_header(0x40 | local, global, fields);
+    }
+
+    // A definition with developer fields after the native ones. Their
+    // field_description messages have to come first.
+    void definition(u8 local, u16 global, std::vector<FieldDefinition> const &fields, std::vector<DeveloperFieldDefinition> const &developer_fields)
+    {
+        definition_header(0x60 | local, global, fields);
+        byte(static_cast<u8>(developer_fields.size()));
+        for (auto const &field : developer_fields) {
+            byte(field.num);
+            byte(field.size);
+            byte(field.developer_data_index);
+        }
+    }
+
+    void definition_header(u8 header, u16 global, std::vector<FieldDefinition> const &fields)
+    {
+        byte(header);
         byte(0); // Reserved
         byte(0); // Little-endian
         u16_le(global);
@@ -87,6 +114,30 @@ struct FITBuilder {
         return header.data + data;
     }
 };
+
+// The developer_data_id message that opens developer data index `index`.
+inline void add_developer_data_id(FITBuilder &fit, u8 index)
+{
+    fit.definition(7, 207, { { .num = 3, .size = 1, .base_type = Uint8 } });
+    fit.message(7);
+    fit.byte(index);
+}
+
+// The field_description message that declares developer field `num` of
+// developer data index `index`, of a base type such as Sint32.
+inline void add_field_description(FITBuilder &fit, u8 index, u8 num, u8 base_type)
+{
+    fit.definition(8, 206,
+        {
+            { .num = 0, .size = 1, .base_type = Uint8 },
+            { .num = 1, .size = 1, .base_type = Uint8 },
+            { .num = 2, .size = 1, .base_type = Uint8 },
+        });
+    fit.message(8);
+    fit.byte(index);
+    fit.byte(num);
+    fit.byte(base_type);
+}
 
 // FIT's invalid value for an enum, as a device without a sub-sport writes
 // it.

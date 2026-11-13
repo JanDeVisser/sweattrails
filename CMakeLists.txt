@@ -971,6 +971,15 @@ target_include_directories(activity_load_test PRIVATE src/App)
 target_link_libraries(activity_load_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
+        fit_test
+        test/FITTest.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+)
+target_include_directories(fit_test PRIVATE src/App)
+
+sweattrails_test(
         device_info_test
         test/DeviceInfoTest.cpp
         src/App/storage/Activity.cpp

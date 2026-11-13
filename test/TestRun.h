@@ -19,8 +19,6 @@
 
 namespace ST::Test {
 
-inline constexpr u8 Sint32 = 0x85;
-
 struct Field {
     u8  num { 0 };
     u8  size { 0 };
