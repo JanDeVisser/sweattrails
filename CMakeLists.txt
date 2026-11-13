@@ -1023,6 +1023,7 @@ target_link_libraries(strava_export_test PRIVATE ${CURL_LIBRARIES} OpenSSL::SSL)
 target_compile_definitions(strava_export_test PRIVATE SWEATTRAILS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
 sweattrails_test(download_test test/DownloadTest.cpp src/App/storage/Download.cpp)
+sweattrails_test(logging_test test/LoggingTest.cpp)
 target_include_directories(download_test PRIVATE src/App)
 
 install(TARGETS Base Widget sweattrails fitexplore

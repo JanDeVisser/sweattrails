@@ -105,7 +105,7 @@ public:
     void logmsg(LogMessage<T> const &msg, Args const &...args)
     {
         std::lock_guard<std::mutex> const lock(g_logging_mutex);
-        if (msg.category.empty() || (!m_categories.contains(msg.category) && !m_all_enabled)) {
+        if (msg.category.empty() || !enabled(msg.category)) {
             return;
         }
         if (msg.level >= m_level) {
@@ -150,6 +150,12 @@ public:
         abort();
     }
     static Logger &get_logger();
+
+    // Whether trace() and friends print messages in `category`.
+    [[nodiscard]] bool enabled(std::string_view category) const
+    {
+        return m_all_enabled || m_categories.contains(category);
+    }
 
 private:
     Logger();
