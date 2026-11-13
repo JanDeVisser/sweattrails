@@ -439,3 +439,16 @@ pass): `test_replace_across_months` (stub and original in different month
 directories), `test_replace_sidecar_in_the_way`, `test_inbox_bad_sidecar`,
 `test_gunzip_sizes` (sizes around the initial buffer, 20 MB of zeros,
 trailing garbage). The full run passes.
+
+### Resolved, with Jan
+
+1. Left for now. If Wahoo's "Everything" is slow after spec 46,
+   `is_stub()` reads only the start of a file.
+2. Fixed in f7fc4de: `move_recording()` moves `.fit.stub` too; the
+   `recordings_test` check fails against the old code. It was more
+   likely than it looked: the inbox groups right after a replacement.
+3. Left as it is, pinned by `test_replace_sidecar_in_the_way`.
+4. Taken up in the Wahoo step, after spec 46 is merged: check that a
+   workout without records isn't fetched on every run.
+5. Left as it is: the CSV is the user's own.
+6. No action, as the Reviewer says.
