@@ -28,6 +28,7 @@
 #include <TextAreaBox.h>
 #include <Widget.h>
 
+#include <Desktop.h>
 #include <Http.h>
 #include <OAuth.h>
 #include <SweatTrails.h>

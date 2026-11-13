@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: MIT
  *
  * The parts of an OAuth 2 login that don't depend on the service: PKCE,
- * opening the browser, and a small HTTPS server on localhost that catches
- * the browser when the service sends it back with the authorization code.
- * See specs/08-wahoo-download.md.
+ * and a small HTTPS server on localhost that catches the browser when the
+ * service sends it back with the authorization code. Desktop.h opens the
+ * browser. See specs/08-wahoo-download.md.
  */
 
 #pragma once
@@ -123,13 +123,6 @@ private:
     int        m_ipv6 { -1 };
     int        m_port { 0 };
 };
-
-// Runs `command`, the program and its arguments, looking for the program
-// on the PATH, and waits for it to end. Returns its exit code.
-std::expected<int, LibCError> run_and_wait(std::vector<std::string> const &command);
-
-// Opens `url` in the user's browser.
-std::expected<void, LibCError> open_browser(std::string const &url);
 
 // The code the browser brought back from `service`'s login, such as
 // "Wahoo", or what to tell the user if it didn't bring one.

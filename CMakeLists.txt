@@ -204,6 +204,7 @@ add_executable(
         src/App/SweatTrails.h
         src/App/SweatTrails.cpp
         src/App/Coordinates.cpp
+        src/App/Desktop.cpp
         src/App/Http.cpp
         src/App/OAuth.cpp
         src/App/Map.h
@@ -378,6 +379,9 @@ target_link_libraries(http_test PRIVATE ${CURL_LIBRARIES})
 sweattrails_test(oauth_test test/OAuthTest.cpp src/App/OAuth.cpp)
 target_include_directories(oauth_test PRIVATE src/App)
 target_link_libraries(oauth_test PRIVATE OpenSSL::SSL)
+
+sweattrails_test(desktop_test test/DesktopTest.cpp src/App/Desktop.cpp)
+target_include_directories(desktop_test PRIVATE src/App)
 
 # A test of app code also needs that code, and what it uses.
 sweattrails_test(
