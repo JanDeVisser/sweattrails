@@ -91,6 +91,18 @@ void test_clamp_lines()
 }
 }
 
+// A separator between each group of three digits, from the right.
+void test_integer_grouping()
+{
+    CHECK_EQ(integer_to_string(0, 10, ','), "0");
+    CHECK_EQ(integer_to_string(123, 10, ','), "123");
+    CHECK_EQ(integer_to_string(1234, 10, ','), "1,234");
+    CHECK_EQ(integer_to_string(123456, 10, ','), "123,456");
+    CHECK_EQ(integer_to_string(1234567, 10, ','), "1,234,567");
+    CHECK_EQ(integer_to_string(-1234, 10, ','), "-1,234");
+    CHECK_EQ(integer_to_string(1234), "1234");
+}
+
 int main()
 {
     test_base64url();
@@ -98,5 +110,6 @@ int main()
     test_strip();
     test_wrap_words();
     test_clamp_lines();
+    test_integer_grouping();
     return ST::Test::test_result();
 }

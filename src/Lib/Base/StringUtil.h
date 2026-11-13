@@ -111,10 +111,12 @@ template<std::integral Int>
         integer_pos = -integer;
 
     do {
-        if (grouping_char && (++ix % 3) == 0)
+        // A separator before each group of three digits written so far.
+        if (grouping_char && ix > 0 && (ix % 3) == 0)
             *(--ptr) = grouping_char;
         *(--ptr) = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[integer_pos % radix];
         integer_pos /= radix;
+        ++ix;
     } while (integer_pos > 0);
     if (std::is_signed_v<Int> && (integer < 0)) {
         *(--ptr) = '-';
