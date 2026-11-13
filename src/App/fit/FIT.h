@@ -991,7 +991,9 @@ struct FITFile {
                         fld.developer_data_index = def_buffer[2];
                         auto found = false;
                         for (auto const &dev_fld : developer_field) {
-                            if (def_buffer[2] == dev_fld.developer_data_index && def_buffer[0] == dev_fld.field_definition_number) {
+                            // Compare the u8s, not def_buffer's chars: those are
+                            // signed, and never equal a number of 128 or more.
+                            if (fld.developer_data_index == dev_fld.developer_data_index && fld.field_num == dev_fld.field_definition_number) {
                                 fld.base_type = static_cast<FITBaseType>(dev_fld.fit_base_type_id & 0x0F);
                                 found = true;
                                 break;
@@ -1204,15 +1206,15 @@ void format_field_value(std::ostream &out, FITDataField const &val)
     if constexpr (def.units == MetaDataUnits::Semicircles) {
         static_assert(def.base_type == FITBaseType::sint32);
         auto v = val.value->sint32;
-        out << std::format("{:7.3}º", static_cast<f32>(v) * (180.0 / static_cast<f32>(1 << 31)));
+        out << std::format("{:7.3}º", static_cast<f32>(v) * (180.0 / static_cast<f32>(1u << 31)));
     } else if constexpr (def.units == MetaDataUnits::Lat) { // Implies semicircles
         static_assert(def.base_type == FITBaseType::sint32);
         auto v = val.value->sint32;
-        out << std::format("{:7.3}º lat", static_cast<f32>(v) * (180.0 / static_cast<f32>(1 << 31)));
+        out << std::format("{:7.3}º lat", static_cast<f32>(v) * (180.0 / static_cast<f32>(1u << 31)));
     } else if constexpr (def.units == MetaDataUnits::Long) { // Implies semicircles
         static_assert(def.base_type == FITBaseType::sint32);
         auto v = val.value->sint32;
-        out << std::format("{:7.3}º long", static_cast<f32>(v) * (180.0 / static_cast<f32>(1 << 31)));
+        out << std::format("{:7.3}º long", static_cast<f32>(v) * (180.0 / static_cast<f32>(1u << 31)));
     } else if constexpr (def.units == MetaDataUnits::DateTime) {
         int32_t d;
         switch (def.base_type) {
