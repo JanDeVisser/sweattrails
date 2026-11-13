@@ -8,7 +8,9 @@
 #include <chrono>
 #include <limits>
 #include <map>
+#include <ranges>
 
+#include <Date.h>
 #include <IO.h>
 #include <JSON.h>
 #include <Logging.h>
@@ -254,6 +256,21 @@ std::optional<ActivityID> summary_activity(ActivitySummary const &summary)
         file.stem().string(),
         FileTypes::one(ActivityFile::Fit),
     };
+}
+
+std::string store_summary(ActivitySummaries const &summaries)
+{
+    auto const readable = [](ActivitySummary const &summary) { return summary.sport.has_value(); };
+    auto const count = std::ranges::count_if(summaries, readable);
+    if (count == 0) {
+        return "No activities yet";
+    }
+    auto const newest = std::ranges::max(summaries | std::views::filter(readable), { }, &ActivitySummary::start);
+    // In local time, as the activity list shows it.
+    auto const date = DateTime::from_timestamp(static_cast<i32>(newest.start));
+    return std::format("{} {}, the newest on {} {} {} {}",
+        integer_to_string(count, 10, ','), (count == 1) ? "activity" : "activities",
+        weekday_name(date.day_of_week).substr(0, 3), date.day_of_month, month_name(date.month).substr(0, 3), date.year);
 }
 
 void merge_summaries(ActivitySummaries &into, ActivitySummaries const &summaries)

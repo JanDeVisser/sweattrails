@@ -2142,6 +2142,9 @@ void SweatTrails::notif_summaries_updated(Notification::Payload const &data)
     auto const  the = SweatTrails::the();
     the->summaries = updated.summaries;
     the->summaries_screen->set_summaries(updated.summaries);
+    // Whatever adds or removes activities updates the summaries, so this
+    // keeps the status bar's summary of the store up to date.
+    the->status->idle = store_summary(the->summaries);
     if (!updated.error.empty()) {
         the->reading_summaries = false;
         the->set_status(updated.error);
@@ -2389,10 +2392,9 @@ void SweatTrails::initialize()
         }
         return activity.title;
     };
-    // A status line at the bottom of the window, hidden while it's empty.
-    status = add_widget<Label>("");
-    status->policy = SizePolicy::Hide;
-    status->background = DARKGRAY;
+    // The status bar at the bottom of the window, always there. Its hint
+    // is set with the palette's key, below.
+    status = add_widget<StatusBar>();
     // Before any job runs, which reads them from the job thread.
     if (auto const thresholds = decode_thresholds(settings.get("thresholds")); thresholds) {
         storage.thresholds = *thresholds;
@@ -2421,6 +2423,7 @@ void SweatTrails::initialize()
     bus.add_task<SweatTrails>("st-command-palette", self(), cmd_command_palette)
         .titled("Show the command palette")
         .bind(palette_key);
+    status->hint = std::format("{} for commands", key_text(palette_key));
     bus.add_task<SweatTrails>("st-quit", self(), cmd_quit)
         .titled("Quit")
         .bind(KeyCombo { KEY_Q, KModControl });
@@ -2850,12 +2853,7 @@ void SweatTrails::set_status(std::string_view const &status_text)
     auto const text = (status_text.empty() && !logging_in.empty())
         ? std::string_view { waiting }
         : status_text;
-    status->text = text;
-    auto const policy = text.empty() ? SizePolicy::Hide : SizePolicy::Characters;
-    if (status->policy != policy) {
-        status->policy = policy;
-        resize();
-    }
+    status->message = text;
 }
 
 }

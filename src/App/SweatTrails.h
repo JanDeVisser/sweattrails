@@ -447,7 +447,7 @@ struct SweatTrails : public Main<Job, Notification> {
     std::shared_ptr<SummariesScreen> summaries_screen { nullptr };
     std::string                      thresholds_error { }; // Why the settings' thresholds can't be read
     std::string                      settings_error { };   // Why a settings file can't be read
-    std::shared_ptr<Label>           status { nullptr };
+    std::shared_ptr<StatusBar>       status { nullptr };
     // Strava's descriptions in the background: whether its job is queued or
     // running, when to start it again, and whether a titles run that ended
     // while it ran wants it to look at the store again. Only used on the

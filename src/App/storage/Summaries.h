@@ -96,6 +96,11 @@ StorageResult<std::vector<SummaryFile>> summary_files(Storage const &storage);
 // none if the file isn't in a month's directory.
 [[nodiscard]] std::optional<ActivityID> summary_activity(ActivitySummary const &summary);
 
+// The status bar's summary of the store: "1,234 activities, the newest on
+// Thu 12 Nov 2026", or "No activities yet". Files that can't be read
+// aren't counted, as the activity list leaves them out.
+[[nodiscard]] std::string store_summary(ActivitySummaries const &summaries);
+
 // Adds `summaries` to `into`, keeping it in order of start time.
 void merge_summaries(ActivitySummaries &into, ActivitySummaries const &summaries);
 
