@@ -885,6 +885,31 @@ void test_a_limit_on_the_second_page_leaves_no_file()
     CHECK(!count.has_value() && count.error().status == TooManyRequests);
     CHECK(!read_wahoo_complete(wahoo_complete_file(store.storage)).has_value());
 }
+
+void test_everything_with_the_file_goes_on_to_the_page_that_passes_it()
+{
+    FakeWahoo                        fake;
+    TempDir                          dir { "wahoo-history-second-page" };
+    TempStore                        store;
+    auto                             wahoo = logged_in(fake, dir);
+    auto const                       file = wahoo_complete_file(store.storage);
+    std::vector<std::pair<u64, i64>> first;
+    for (u64 ix = 0; ix < 30; ++ix) {
+        first.emplace_back(100 + ix, 1);
+    }
+    MUST(write_wahoo_complete(file, Start - 5 * Day));
+    // T less the overlap is 8 days back: page 1 is all newer, page 2 passes it.
+    fake.answer("/v1/workouts", { .status = 200, .body = page_of_days(first, 600) });
+    fake.answer("/v1/workouts", { .status = 200, .body = page_of_days({ { 200, 4 }, { 201, 20 } }, 600, 2) });
+    for (u64 ix = 0; ix < 30; ++ix) {
+        fake.answer(cdn_url(100 + ix), { .status = 200, .body = "fit" });
+    }
+    fake.answer(cdn_url(200), { .status = 200, .body = "fit" });
+    CHECK_EQ(download_wahoo_history(wahoo, store.storage, Everything, 3 * Day).value_or(99), 31uz);
+    CHECK_EQ(fake.count("/v1/workouts"), 2uz);
+    CHECK_EQ(fake.count(cdn_url(201)), 0uz);
+    CHECK_EQ(read_wahoo_complete(file).value_or(0), Now);
+}
 }
 
 int main()
@@ -934,5 +959,6 @@ int main()
     test_an_unavailable_workout_still_completes();
     test_a_failed_run_leaves_the_file();
     test_a_limit_on_the_second_page_leaves_no_file();
+    test_everything_with_the_file_goes_on_to_the_page_that_passes_it();
     return ST::Test::test_result();
 }

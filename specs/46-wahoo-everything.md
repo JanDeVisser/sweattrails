@@ -268,4 +268,9 @@ Nothing for `src/Lib/Widget`: the status line is there.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. Suggestion: `download_from_wahoo()` sets `limited` for any 429, which includes one that was retried and still answered 429 within 5 minutes (`test_too_many_requests_past_the_retries`). The spec says "a 429 that isn't waited out" is a daily or hourly limit; a short-reset 429 at startup now goes on the status line, not a message box. Arguably fine (still a limit), but it's wider than the spec's wording.
+2. Suggestion: a clock set back past T leaves T in the future, so every run has `since <= T` and "completes", and "Everything" lists back to a T-less-overlap that's too recent. Unlikely; clamping T to `started` on read would cover it.
+3. Suggestion: on a startup that stops at a limit, `describe_from_strava()` in `notif_download_done()` may replace the status text at once. The spec accepts that (not sticky).
+4. Missing test (added): "Everything" with T that needs a second page, in `test/WahooTest.cpp`: `test_everything_with_the_file_goes_on_to_the_page_that_passes_it`. Passes.
+
+No bugs found against Version 1 scope. `ctest`: all pass except `oauth_test`, the known flaky one.
