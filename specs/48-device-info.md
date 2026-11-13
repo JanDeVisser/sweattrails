@@ -1,6 +1,6 @@
 # Device info: the recording device and its sensors
 
-Status: In progress, on branch feature/48-device-info
+Status: In review
 
 <!--
 Status is one of:
@@ -136,13 +136,17 @@ Four layers, each testable without a window.
 
 - `maker_name(std::optional<manufacturer>)`, taken out of
   `device_name()`, which keeps working as it does. Sensors use it too.
+  It stays in `widget/DataFields` with `device_name()`, so that
+  DataFields doesn't depend on the popup's code.
 - `sensor_type_name(Sensor const &)`: "heart rate monitor", "power
   meter", "speed and cadence sensor", "radar", ... from the ANT+ or BLE
   type, and "sensor" for one it doesn't know.
 - `describe(Activity const &, fs::path const &store)` returns an
   `ActivityInfo`: the file's path relative to the store (`fit_path()`,
-  so a recording's is in its `.recordings` folder), the recording
-  device's line, and per sensor its line and detail line. A line is
+  so a recording's is in its `.recordings` folder; `fit_path()` moves
+  from `storage/Gaps` to `storage/Activity` for it, and gives an empty
+  path for an activity not from the store), which recording it is
+  ("Recording 2 of 2", for one of several), the recording device's line, and per sensor its line and detail line. A line is
   `{ text, small }`: the part in the normal font and the part in the
   smaller one ("Garmin heart rate monitor" + "(product 3865)"; the
   detail line is all small: "Serial 3615618938 · Software 5.10 ·
@@ -160,6 +164,11 @@ Four layers, each testable without a window.
     app's recording switch and then describes the recording now shown.
   The box gets these as callbacks (`describe`, `switch_recording(step)`,
   `reveal`), so a test drives it with keys and no app behind it.
+- Its rows, title and hint are plain functions (`info_rows()`,
+  `info_title()`, `info_hint()`), tested without fonts. The title says
+  which recording it shows ("Activity info · Recording 2 of 2"), and the
+  hint lists Tab only for several recordings, and F only for a file.
+  `draw()` and `resize()` only measure and draw those.
 - `st-activity-info`, "Activity info", Cmd+I (Ctrl+I off macOS: Get
   Info's key), when on the activity screen. Without an activity it does
   nothing.
@@ -190,11 +199,14 @@ a second info popup comes along, the two-font line layout could move to
 - `activity_info_test` (new): `describe()` on activities made by hand:
   product name versus number for the recording device, sensor lines and
   detail lines, missing values left out, unknown types, the "No sensors"
-  line, the path relative to the store, also for a recording.
-  `reveal_command()` on both platforms' branches as compiled.
-- `ActivityInfoBox` with `ScopedTestApp`: Esc closes, F calls reveal with
-  the file, Tab and Shift+Tab call the switch with +1 and -1 and describe
-  again.
+  line, the path relative to the store, also for a recording, and which
+  recording it is.
+- `desktop_test` (new): `run_and_wait()`, its test moved from
+  `oauth_test`, and `reveal_command()` for the platform as compiled.
+- `activity_info_box_test` (new), with `ScopedTestApp`: the rows, title
+  and hint; Esc closes, F calls reveal with the file (and does nothing
+  without one), Tab and Shift+Tab call the switch with +1 and -1 and
+  describe again, other keys aren't taken.
 - `DataFieldsTest`'s `device_name()` tests keep passing after the split.
 - By hand: the drawing, the layout in both fonts, the click on the hint,
   Finder opening on the file, and Tab in the box on an activity of two
