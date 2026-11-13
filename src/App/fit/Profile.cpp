@@ -223,4 +223,103 @@ std::ostream &format_record<mesg_num::workout>(std::ostream &out, FITDataRecord 
     return format_record_<workout_meta>(out, rec);
 }
 
+constexpr static TypeMetaData device_info_meta {
+    .mesg_num = mesg_num::device_info,
+    .num_fields = 10,
+    .fields = {
+        { .name = "device index", .num = 0, .optional = false, .base_type = FITBaseType::uint8, .fld_offset = offsetof(device_info, device_index) },
+        { .name = "timestamp", .num = 253, .units = MetaDataUnits::DateTime, .optional = true, .base_type = FITBaseType::uint32, .fld_offset = offsetof(device_info, timestamp) },
+        { .name = "device type", .num = 1, .optional = true, .base_type = FITBaseType::uint8, .fld_offset = offsetof(device_info, device_type) },
+        { .name = "manufacturer", .num = 2, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(device_info, manufacturer) },
+        { .name = "serial number", .num = 3, .optional = true, .base_type = FITBaseType::uint32z, .fld_offset = offsetof(device_info, serial_number) },
+        { .name = "product", .num = 4, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(device_info, product) },
+        { .name = "software version", .num = 5, .scale = 100, .optional = true, .base_type = FITBaseType::uint16, .fld_offset = offsetof(device_info, software_version) },
+        { .name = "battery status", .num = 11, .optional = true, .base_type = FITBaseType::uint8, .fld_offset = offsetof(device_info, battery_status) },
+        { .name = "source type", .num = 25, .optional = true, .base_type = FITBaseType::enum_, .fld_offset = offsetof(device_info, source_type) },
+        { .name = "product name", .num = 27, .optional = true, .base_type = FITBaseType::string, .fld_offset = offsetof(device_info, product_name) },
+    },
+};
+
+template<>
+std::expected<device_info, FITError> make_from_rec(FITDataRecord const &rec)
+{
+    return make_from_rec_<
+        device_info,
+        device_info_meta,
+        device_index,
+        DateTime,
+        u8,
+        manufacturer,
+        u32,
+        u16,
+        f32,
+        battery_status,
+        source_type,
+        std::string>(rec);
+}
+
+template<>
+std::ostream &format_record<mesg_num::device_info>(std::ostream &out, FITDataRecord const &rec)
+{
+    return format_record_<device_info_meta>(out, rec);
+}
+
+char const *tag(source_type t)
+{
+    switch (t) {
+#undef S
+#define S(V, I)          \
+    case source_type::V: \
+        return #V;
+        SOURCE_TYPE(S)
+#undef S
+    default:
+        break;
+    }
+    return "Unknown";
+}
+
+char const *tag(battery_status s)
+{
+    switch (s) {
+#undef S
+#define S(V, I)             \
+    case battery_status::V: \
+        return #V;
+        BATTERY_STATUS(S)
+#undef S
+    default:
+        break;
+    }
+    return "Unknown";
+}
+
+std::optional<antplus_device_type> antplus_device_type_of(u8 type)
+{
+    switch (type) {
+#undef S
+#define S(V, I) \
+    case I:     \
+        return antplus_device_type::V;
+        ANTPLUS_DEVICE_TYPE(S)
+#undef S
+    default:
+        return { };
+    }
+}
+
+std::optional<ble_device_type> ble_device_type_of(u8 type)
+{
+    switch (type) {
+#undef S
+#define S(V, I) \
+    case I:     \
+        return ble_device_type::V;
+        BLE_DEVICE_TYPE(S)
+#undef S
+    default:
+        return { };
+    }
+}
+
 }

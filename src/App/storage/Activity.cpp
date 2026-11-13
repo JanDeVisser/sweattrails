@@ -250,6 +250,22 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
     return true;
 }
 
+fs::path fit_path(Activity const &activity)
+{
+    if (activity.sidecar.empty()) {
+        return { };
+    }
+    return fs::path { activity.sidecar }.replace_extension(".fit");
+}
+
+fs::path original_path(Activity const &activity)
+{
+    if (activity.sidecar.empty()) {
+        return { };
+    }
+    return fs::path { activity.sidecar }.replace_extension(".fit.original");
+}
+
 std::vector<i64> Activity::lap_starts() const
 {
     return user_lap_starts ? *user_lap_starts : device_lap_starts(*this);
@@ -628,7 +644,8 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
         number = f->number.value_or(0);
         serial = f->serial_number.value_or(0);
         manufacturer = f->manufacturer;
-        product_name = std::string { f->product_name.value_or("") };
+        product_name = product_text(f->product_name.value_or(""));
+        product = product_number(f->product);
     } break;
     case mesg_num::activity: {
         auto a = make_from_rec<ST::activity>(rec);
@@ -717,9 +734,25 @@ StorageResult<bool> Activity::load_fit_file(FITFile &fit_file)
     if (title.empty()) {
         title = id.name;
     }
-    if (auto res = fit_file.read_until([this](FITDataRecord const &rec) { return load_fit_file_filter(rec); }); !res) {
+    SensorList devices;
+    auto const read = fit_file.read_until([this, &devices](FITDataRecord const &rec) {
+        if (rec.mesg_num == mesg_num::device_info && depth == LoadingDepth::Deep) {
+            if (auto const info = make_from_rec<device_info>(rec); info) {
+                devices.add(*info);
+            } else {
+                warning(Storage, "Error converting device_info message to struct: {}", info.error());
+            }
+        }
+        return load_fit_file_filter(rec);
+    });
+    if (!read) {
         trace(Storage, "load_fit_file: read_until failed");
-        return std::unexpected(StorageError { res.error() });
+        return std::unexpected(StorageError { read.error() });
+    }
+    sensors = devices.sensors();
+    // A Wahoo ELEMNT ROAM names itself in its device_info listing only.
+    if (product_name.empty()) {
+        product_name = devices.creator_name();
     }
     return segment.start_time.timestamp > 0;
 }

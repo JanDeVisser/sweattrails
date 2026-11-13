@@ -23,6 +23,7 @@
 #include <Range.h>
 #include <fit/FIT.h>
 #include <fit/Profile.h>
+#include <storage/Devices.h>
 #include <storage/Types.h>
 
 namespace ST {
@@ -194,17 +195,23 @@ struct Activity {
     std::optional<FIT::sub_sport> sub_sport { };
     // Who made the FIT file: Zwift, for a ride in one of its worlds.
     std::optional<FIT::manufacturer> manufacturer { };
-    std::string                      product_name { }; // The device's, if the FIT file has it
-    std::string                      title { };
-    std::string                      original_title { }; // Without the name the user gave it
-    std::string                      fit_title { };      // The FIT file's: the workout's, or the start time
-    std::string                      notes { };
-    std::string                      original_notes { }; // Without the user's description: Strava's
-    Segment                          segment { };
-    std::vector<record>              records { };  // Smoothed, for the graph
-    std::vector<record>              recorded { }; // As recorded, for a range's stats
-    std::vector<Lap>                 laps { };
-    std::vector<Lap>                 device_laps { }; // The FIT file's, which the user's laps replace
+    // The device's, if the FIT file has it: file_id's, or, on a deep
+    // load, the device's own device_info listing's.
+    std::string        product_name { };
+    std::optional<u16> product { }; // The number of the device's model
+    // The sensors connected to the device, on a deep load
+    // (specs/48-device-info.md).
+    std::vector<Sensor> sensors { };
+    std::string         title { };
+    std::string         original_title { }; // Without the name the user gave it
+    std::string         fit_title { };      // The FIT file's: the workout's, or the start time
+    std::string         notes { };
+    std::string         original_notes { }; // Without the user's description: Strava's
+    Segment             segment { };
+    std::vector<record> records { };  // Smoothed, for the graph
+    std::vector<record> recorded { }; // As recorded, for a range's stats
+    std::vector<Lap>    laps { };
+    std::vector<Lap>    device_laps { }; // The FIT file's, which the user's laps replace
     // This one, and the others of the activity, in its `.recordings`
     // folder (specs/31-multiple-recordings.md), on a deep load. Which of
     // them this is: 1 for the main one, then the others by their start.
@@ -278,6 +285,12 @@ private:
     StorageResult<bool> load_fit_file(FITFile &fit_file);
     StorageResult<bool> load_fit_file_by_name(fs::path const &file);
 };
+
+// The activity's FIT file, from the store, and where its original is kept
+// once its gaps are filled: `<start>.fit.original`. Empty for an activity
+// loaded otherwise.
+[[nodiscard]] fs::path fit_path(Activity const &activity);
+[[nodiscard]] fs::path original_path(Activity const &activity);
 
 // A range counts as moving between two records at most this many seconds
 // apart: a longer gap is a pause, which records nothing.

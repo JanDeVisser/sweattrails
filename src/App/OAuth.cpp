@@ -21,9 +21,7 @@
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <poll.h>
-#include <spawn.h>
 #include <sys/socket.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #include <IO.h>
@@ -32,10 +30,6 @@
 #include <StringUtil.h>
 
 #include <OAuth.h>
-
-// The environment, for the programs run_and_wait() runs: POSIX has no
-// header that declares it.
-extern char **environ;
 
 namespace ST {
 
@@ -528,46 +522,6 @@ std::expected<QueryParameters, RedirectError> LoopbackServer::wait_for_redirect(
             }
         }
     }
-}
-
-std::expected<int, LibCError> run_and_wait(std::vector<std::string> const &command)
-{
-    // Not Process: its pipes' reader threads outlive it.
-    std::vector<char *> argv;
-    for (auto const &argument : command) {
-        argv.push_back(const_cast<char *>(argument.c_str()));
-    }
-    argv.push_back(nullptr);
-    pid_t pid { 0 };
-    if (auto const error = ::posix_spawnp(&pid, argv[0], nullptr, nullptr, argv.data(), environ); error != 0) {
-        return std::unexpected(LibCError { error });
-    }
-    int status { 0 };
-    while (::waitpid(pid, &status, 0) == -1) {
-        if (errno != EINTR) {
-            return std::unexpected(LibCError { });
-        }
-    }
-    if (!WIFEXITED(status)) {
-        return std::unexpected(LibCError { std::format("`{}` ended with signal {}", command.front(), WTERMSIG(status)) });
-    }
-    return WEXITSTATUS(status);
-}
-
-std::expected<void, LibCError> open_browser(std::string const &url)
-{
-#ifdef __APPLE__
-    auto const exit_code = run_and_wait({ "open", url });
-#else
-    auto const exit_code = run_and_wait({ "xdg-open", url });
-#endif
-    if (!exit_code) {
-        return std::unexpected(exit_code.error());
-    }
-    if (*exit_code != 0) {
-        return std::unexpected(LibCError { std::format("exit code {}", *exit_code) });
-    }
-    return { };
 }
 
 std::expected<std::string, std::string> login_code(std::expected<QueryParameters, RedirectError> const &redirect, std::string_view service)

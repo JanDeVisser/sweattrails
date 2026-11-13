@@ -56,11 +56,6 @@ struct Gap {
 // What's wrong with dropping `paths` on the window, if anything.
 [[nodiscard]] std::optional<std::string> drop_problem(std::vector<std::string> const &paths, bool showing_activity);
 
-// The activity's FIT file, and where its original is kept once it's
-// filled: `<start>.fit.original`.
-[[nodiscard]] std::filesystem::path fit_path(Activity const &activity);
-[[nodiscard]] std::filesystem::path original_path(Activity const &activity);
-
 // Whether the fills can be patched into the activity's FIT file, without
 // writing it, and why not: to ask the user only if they can.
 std::expected<void, std::string> check_fills(Activity const &activity, std::vector<FIT::FITFill> const &fills);

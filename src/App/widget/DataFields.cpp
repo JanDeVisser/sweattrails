@@ -261,7 +261,7 @@ bool is_on_foot(Activity const &activity)
     return activity.sport == sport::Running || activity.sport == sport::Walking || activity.sport == sport::Hiking;
 }
 
-std::string device_name(Activity const &activity)
+std::string maker_name(std::optional<FIT::manufacturer> made_by)
 {
     using FIT::manufacturer;
     // The makers of devices that record rides and runs, as they call
@@ -281,17 +281,24 @@ std::string device_name(Activity const &activity)
         { manufacturer::bryton, "Bryton" },
         { manufacturer::sigmasport, "Sigma" },
         { manufacturer::lezyne, "Lezyne" },
+        { manufacturer::sram, "SRAM" },
     };
     std::string maker;
-    if (activity.manufacturer) {
-        if (auto const known = makers.find(*activity.manufacturer); known != makers.end()) {
+    if (made_by) {
+        if (auto const known = makers.find(*made_by); known != makers.end()) {
             maker = known->second;
-        } else if (std::string_view const tag = FIT::tag(*activity.manufacturer); FIT::manufacturer_by_name(tag) == activity.manufacturer) {
+        } else if (std::string_view const tag = FIT::tag(*made_by); FIT::manufacturer_by_name(tag) == made_by) {
             // FIT's name, if its profile has the maker: not "Unknown".
             maker = tag;
             std::ranges::replace(maker, '_', ' ');
         }
     }
+    return maker;
+}
+
+std::string device_name(Activity const &activity)
+{
+    auto const maker = maker_name(activity.manufacturer);
     if (activity.product_name.empty()) {
         return maker;
     }

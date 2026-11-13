@@ -212,6 +212,80 @@ enum class sub_sport : u8 {
     SUB_SPORT(ENUMVALUE_INT)
 };
 
+// How a device in a device_info message is connected to the one that
+// recorded the file: local is one of its own parts, such as its GPS.
+#define SOURCE_TYPE(S)         \
+    S(ant, 0)                  \
+    S(antplus, 1)              \
+    S(bluetooth, 2)            \
+    S(bluetooth_low_energy, 3) \
+    S(wifi, 4)                 \
+    S(local, 5)
+
+enum class source_type : u8 {
+    SOURCE_TYPE(ENUMVALUE_INT)
+};
+
+#define BATTERY_STATUS(S) \
+    S(new_, 1)            \
+    S(good, 2)            \
+    S(ok, 3)              \
+    S(low, 4)             \
+    S(critical, 5)        \
+    S(charging, 6)        \
+    S(unknown, 7)
+
+enum class battery_status : u8 {
+    BATTERY_STATUS(ENUMVALUE_INT)
+};
+
+// A device_info's device_type, for an ANT+ device.
+#define ANTPLUS_DEVICE_TYPE(S)        \
+    S(antfs, 1)                       \
+    S(bike_power, 11)                 \
+    S(environment_sensor_legacy, 12)  \
+    S(multi_sport_speed_distance, 15) \
+    S(control, 16)                    \
+    S(fitness_equipment, 17)          \
+    S(blood_pressure, 18)             \
+    S(geocache_node, 19)              \
+    S(light_electric_vehicle, 20)     \
+    S(env_sensor, 25)                 \
+    S(racquet, 26)                    \
+    S(control_hub, 27)                \
+    S(muscle_oxygen, 31)              \
+    S(shifting, 34)                   \
+    S(bike_light_main, 35)            \
+    S(bike_light_shared, 36)          \
+    S(exd, 38)                        \
+    S(bike_radar, 40)                 \
+    S(bike_aero, 46)                  \
+    S(weight_scale, 119)              \
+    S(heart_rate, 120)                \
+    S(bike_speed_cadence, 121)        \
+    S(bike_cadence, 122)              \
+    S(bike_speed, 123)                \
+    S(stride_speed_distance, 124)
+
+enum class antplus_device_type : u8 {
+    ANTPLUS_DEVICE_TYPE(ENUMVALUE_INT)
+};
+
+// A device_info's device_type, for a Bluetooth LE device.
+#define BLE_DEVICE_TYPE(S)   \
+    S(connected_gps, 0)      \
+    S(heart_rate, 1)         \
+    S(bike_power, 2)         \
+    S(bike_speed_cadence, 3) \
+    S(bike_speed, 4)         \
+    S(bike_cadence, 5)       \
+    S(footpod, 6)            \
+    S(bike_trainer, 7)
+
+enum class ble_device_type : u8 {
+    BLE_DEVICE_TYPE(ENUMVALUE_INT)
+};
+
 // ==========================================================================
 // ==========================================================================
 
@@ -275,6 +349,22 @@ struct workout {
     std::optional<std::string>   wkt_name = { };
 };
 
+// The device that recorded the file, one of its parts, or a sensor
+// connected to it, by its index: 0 is the recording device. A file lists
+// them at the start, and again during the activity and at the end.
+struct device_info {
+    device_index                  device_index { 0 };
+    std::optional<DateTime>       timestamp = { };
+    std::optional<u8>             device_type = { }; // Its meaning goes with source_type
+    std::optional<manufacturer>   manufacturer = { };
+    std::optional<u32>            serial_number = { };
+    std::optional<u16>            product = { };
+    std::optional<f32>            software_version = { };
+    std::optional<battery_status> battery_status = { };
+    std::optional<source_type>    source_type = { };
+    std::optional<std::string>    product_name = { };
+};
+
 template<>
 std::optional<FITError> on_load(FITDataRecord const &fitrec, record &rec);
 
@@ -288,6 +378,8 @@ template<>
 std::expected<record, FITError> make_from_rec(FITDataRecord const &rec);
 template<>
 std::expected<workout, FITError> make_from_rec(FITDataRecord const &rec);
+template<>
+std::expected<device_info, FITError> make_from_rec(FITDataRecord const &rec);
 
 template<>
 std::ostream &format_record<mesg_num::activity>(std::ostream &out, FITDataRecord const &rec);
@@ -299,6 +391,14 @@ template<>
 std::ostream &format_record<mesg_num::record>(std::ostream &out, FITDataRecord const &rec);
 template<>
 std::ostream &format_record<mesg_num::workout>(std::ostream &out, FITDataRecord const &rec);
+template<>
+std::ostream &format_record<mesg_num::device_info>(std::ostream &out, FITDataRecord const &rec);
+
+char const *tag(source_type t);
+char const *tag(battery_status s);
+// Nothing for a type FIT's profile doesn't have.
+std::optional<antplus_device_type> antplus_device_type_of(u8 type);
+std::optional<ble_device_type>     ble_device_type_of(u8 type);
 
 inline char const *tag(FIT::sport s)
 {
