@@ -644,8 +644,8 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
         number = f->number.value_or(0);
         serial = f->serial_number.value_or(0);
         manufacturer = f->manufacturer;
-        product_name = std::string { f->product_name.value_or("") };
-        product = f->product;
+        product_name = product_text(f->product_name.value_or(""));
+        product = product_number(f->product);
     } break;
     case mesg_num::activity: {
         auto a = make_from_rec<ST::activity>(rec);

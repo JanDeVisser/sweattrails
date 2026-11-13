@@ -4,6 +4,11 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <algorithm>
+
+#include <StringUtil.h>
+#include <Utf8.h>
+
 #include <storage/Devices.h>
 
 namespace ST {
@@ -22,15 +27,37 @@ void update(std::optional<T> &value, std::optional<T> const &listed)
 
 }
 
+std::string product_text(std::string_view name)
+{
+    auto const trimmed = strip(name);
+    if (trimmed.empty()) {
+        return "";
+    }
+    auto const runes = to_wstring(trimmed);
+    auto const is_control = [](wchar_t ch) { return ch < 0x20 || (ch >= 0x7F && ch < 0xA0); };
+    if (!runes || std::ranges::any_of(*runes, is_control)) {
+        return "";
+    }
+    return std::string { trimmed };
+}
+
+std::optional<u16> product_number(std::optional<u16> product)
+{
+    if (product == 0) {
+        return { };
+    }
+    return product;
+}
+
 void SensorList::add(FIT::device_info const &info)
 {
     auto &device = devices[info.device_index];
     update(device.source, info.source_type);
     update(device.device_type, info.device_type);
     update(device.manufacturer, info.manufacturer);
-    update(device.product, info.product);
-    if (info.product_name && !info.product_name->empty()) {
-        device.product_name = *info.product_name;
+    update(device.product, product_number(info.product));
+    if (auto name = product_text(info.product_name.value_or("")); !name.empty()) {
+        device.product_name = std::move(name);
     }
     update(device.serial_number, info.serial_number);
     update(device.software_version, info.software_version);

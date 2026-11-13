@@ -12,12 +12,22 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <fit/FIT.h>
 #include <fit/Profile.h>
 
 namespace ST {
+
+// A device's product name as the FIT file has it, trimmed, or "" for one
+// that isn't text: Zwift fills its product name with leftover bytes,
+// which drew as "?>?".
+[[nodiscard]] std::string product_text(std::string_view name);
+
+// A device's product number, but for 0, which Zwift writes and which no
+// maker uses for a real model.
+[[nodiscard]] std::optional<u16> product_number(std::optional<u16> product);
 
 // A sensor as the FIT file lists it. Anything the file leaves out is
 // empty.

@@ -234,6 +234,61 @@ void test_unknown_battery_keeps_a_known_one()
     CHECK(sensors.size() == 1 && sensors[0].battery == FIT::battery_status::unknown);
 }
 
+// Zwift's file_id, byte for byte from a ride: its product name is
+// leftover bytes, and its product 0.
+void test_zwifts_junk_product_name_is_left_out()
+{
+    FITBuilder fit;
+    fit.definition(4, 0,
+        {
+            { .num = 0, .size = 1, .base_type = Enum },
+            { .num = 1, .size = 2, .base_type = Uint16 },
+            { .num = 2, .size = 2, .base_type = Uint16 },
+            { .num = 4, .size = 4, .base_type = Uint32 },
+            { .num = 8, .size = 20, .base_type = ST::Test::String },
+        });
+    fit.message(4);
+    fit.byte(4);     // An activity
+    fit.u16_le(260); // Zwift
+    fit.u16_le(0);
+    fit.u32_le(Start);
+    for (u8 const b : { 0x14, 0x3e, 0xd6, 0x9c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x60, 0xdb, 0x06, 0x01, 0x00, 0x00, 0x00, 0x0e, 0x00, 0x00, 0x00 }) {
+        fit.byte(b);
+    }
+    add_session(fit, 60, 10);
+    Loaded t { fit.file(), LoadingDepth::Shallow };
+    CHECK(t.loaded);
+    CHECK_EQ(t.activity.product_name, "");
+    CHECK(!t.activity.product);
+}
+
+void test_product_text()
+{
+    CHECK_EQ(product_text("  Edge 1050 "), "Edge 1050");
+    CHECK_EQ(product_text("Vélo"), "Vélo");
+    CHECK_EQ(product_text(""), "");
+    CHECK_EQ(product_text("\x14>\xd6\x9c"), ""); // A control character
+    CHECK_EQ(product_text("ELEMNT\xff"), "");    // Not UTF-8
+    CHECK_EQ(product_text("A\x7f"), "");
+}
+
+void test_product_number()
+{
+    CHECK(!product_number(0));
+    CHECK(!product_number(std::nullopt));
+    CHECK_EQ(product_number(4315).value_or(0), 4315u);
+}
+
+// A listing with junk for a name keeps the name an earlier one gave.
+void test_a_junk_product_name_keeps_a_good_one()
+{
+    SensorList list;
+    list.add(FIT::device_info { .device_index = 1, .source_type = FIT::source_type::antplus, .product_name = "HRM-Pro" });
+    list.add(FIT::device_info { .device_index = 1, .source_type = FIT::source_type::antplus, .product_name = "\x14>" });
+    auto const sensors = list.sensors();
+    CHECK(sensors.size() == 1 && sensors[0].product_name == "HRM-Pro");
+}
+
 void test_a_product_name_is_kept()
 {
     SensorList list;
@@ -298,6 +353,10 @@ int main()
     test_without_source_type_the_creators_serial_is_a_part();
     test_unknown_battery_keeps_a_known_one();
     test_a_product_name_is_kept();
+    test_zwifts_junk_product_name_is_left_out();
+    test_product_text();
+    test_product_number();
+    test_a_junk_product_name_keeps_a_good_one();
     test_without_a_creator_listing();
     test_the_creator_is_never_a_sensor();
     test_listings_merge();
