@@ -629,6 +629,7 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
         serial = f->serial_number.value_or(0);
         manufacturer = f->manufacturer;
         product_name = std::string { f->product_name.value_or("") };
+        product = f->product;
     } break;
     case mesg_num::activity: {
         auto a = make_from_rec<ST::activity>(rec);
@@ -717,10 +718,22 @@ StorageResult<bool> Activity::load_fit_file(FITFile &fit_file)
     if (title.empty()) {
         title = id.name;
     }
-    if (auto res = fit_file.read_until([this](FITDataRecord const &rec) { return load_fit_file_filter(rec); }); !res) {
+    SensorList devices;
+    auto const read = fit_file.read_until([this, &devices](FITDataRecord const &rec) {
+        if (rec.mesg_num == mesg_num::device_info && depth == LoadingDepth::Deep) {
+            if (auto const info = make_from_rec<device_info>(rec); info) {
+                devices.add(*info);
+            } else {
+                warning(Storage, "Error converting device_info message to struct: {}", info.error());
+            }
+        }
+        return load_fit_file_filter(rec);
+    });
+    if (!read) {
         trace(Storage, "load_fit_file: read_until failed");
-        return std::unexpected(StorageError { res.error() });
+        return std::unexpected(StorageError { read.error() });
     }
+    sensors = devices.sensors();
     return segment.start_time.timestamp > 0;
 }
 
