@@ -1,6 +1,6 @@
 # Developer fields don't stand in for missing native fields
 
-Status: In progress, on branch feature/49-developer-field-numbers
+Status: In review
 
 <!--
 Status is one of:
@@ -132,12 +132,19 @@ that have to come before them.
   fail on the old `get_field()`.
 - A record with a native position and a developer field 0 keeps its
   native latitude.
-- A record with a compressed timestamp header and a developer field 253
-  gets the compressed timestamp.
 - A record with only `position_lat`, and one with only `position_long`,
   have no position. A record with both has it, with the right signs.
 - `format_record<mesg_num::record>` prints a Waterloo position as
   ` 43.4º lat` and `-80.5º long`. Checked to fail with `1 << 31`.
+
+A test that a developer field 253 doesn't hide a compressed timestamp
+was dropped: the reader can't read a developer field numbered 128 or
+more at all (it compares a signed `char` with the description's `u8`, and
+fails with `UnknownDeveloperField`), so that case can't come up. That
+bug is outside this spec.
+
+Checked by hand: fitexplore on the example file prints 8978 positions,
+9187 records less the 209 without one, all at 43.4º lat and −80.6º long.
 
 Not tested automatically: how the map draws. The map already skips
 records without a position; checking the example file
