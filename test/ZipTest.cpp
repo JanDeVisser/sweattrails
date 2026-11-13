@@ -107,6 +107,46 @@ void test_impossible_size()
     CHECK(!unzip(zip, "a.fit").has_value());
 }
 
+// A gzip file as gzip(1) writes one: deflated data in a gzip header and
+// trailer.
+std::string gzip(std::string_view data)
+{
+    z_stream stream { };
+    deflateInit2(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 16 + MAX_WBITS, 8, Z_DEFAULT_STRATEGY);
+    std::string out(deflateBound(&stream, static_cast<uLong>(data.size())) + 32, '\0');
+    stream.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(data.data()));
+    stream.avail_in = static_cast<uInt>(data.size());
+    stream.next_out = reinterpret_cast<Bytef *>(out.data());
+    stream.avail_out = static_cast<uInt>(out.size());
+    deflate(&stream, Z_FINISH);
+    out.resize(stream.total_out);
+    deflateEnd(&stream);
+    return out;
+}
+
+void test_gunzip()
+{
+    CHECK_EQ(gunzip(gzip(Text)).value_or(""), Text);
+    CHECK_EQ(gunzip(gzip("")).value_or("x"), "");
+    // Bigger than the first guess at the size, so the output grows.
+    std::string const big(1'000'000, 'r');
+    auto const        unzipped = gunzip(gzip(big));
+    CHECK(unzipped.has_value());
+    CHECK_EQ(unzipped.value_or("").size(), big.size());
+    CHECK(unzipped.value_or("") == big);
+}
+
+void test_gunzip_damaged()
+{
+    CHECK(!gunzip("").has_value());
+    CHECK(!gunzip(Text).has_value());
+    auto const gz = gzip(Text);
+    CHECK(!gunzip(std::string_view { gz }.substr(0, gz.size() / 2)).has_value());
+    auto corrupt = gz;
+    corrupt[corrupt.size() / 2] ^= 0x55;
+    CHECK(!gunzip(corrupt).has_value());
+}
+
 }
 
 int main()
@@ -119,5 +159,7 @@ int main()
     test_not_a_zip();
     test_truncated_and_corrupt();
     test_impossible_size();
+    test_gunzip();
+    test_gunzip_damaged();
     return ST::Test::test_result();
 }
