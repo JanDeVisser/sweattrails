@@ -215,4 +215,31 @@ a second info popup comes along, the two-font line layout could move to
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. Suggestion: a last listing of battery status `unknown` replaces an
+   earlier `ok`, `low` or `critical` (`SensorList::add`,
+   `storage/Devices.cpp`). Sensors that report no battery at the end, or a
+   hub that lists a strap as `unknown` when it has just dropped out, would
+   hide the "low" the user wants to see. Suggested fix: don't let
+   `unknown` replace a known status. Not changed: the spec says the last
+   listing wins, so it's Jan's call.
+2. Suggestion: `ActivityInfoBox::process_key()` calls `switch_fnc`, then
+   `refresh()` and `resize()`, also for an activity of one recording,
+   where `show_recording_next_to()` returns without doing anything. It's
+   harmless (the box describes the same activity again), and the hint
+   doesn't offer Tab then. No change needed.
+3. Suggestion: `hint_area` is only set by `draw()`, so it is stale for a
+   frame after Tab changes the box's size. A click in that frame can miss
+   or hit the hint wrongly. Not worth fixing.
+4. Missing test (added): `SensorList` without a creator listing, the
+   creator never being a sensor whatever its source, and a later listing
+   that says only some things keeping the rest (`device_info_test`). All
+   pass.
+5. Not checked, as there is no window: the drawing, the click on the hint,
+   Finder opening, Tab with two recordings, as the spec's "by hand" list
+   says. The real ride's `device_info` messages (via `fitexplore`) match
+   what the tests build: index 0 and the parts are `local`, the strap
+   (index 3) is ANT+ with type 120, and would show as "Garmin heart rate
+   monitor (product 4606)". The spec's example says product 3865, which
+   is index 2, a local part: the spec text is off, the code is right.
+
+No bugs found against the spec's Version 1 scope.

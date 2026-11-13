@@ -224,6 +224,46 @@ void test_a_product_name_is_kept()
     }
 }
 
+// Without a creator listing there's no serial number to compare with: a
+// listing without a source is a sensor. A local one never is.
+void test_without_a_creator_listing()
+{
+    SensorList list;
+    list.add(FIT::device_info { .device_index = 5, .serial_number = 7 });
+    list.add(FIT::device_info { .device_index = 2, .serial_number = 8, .source_type = FIT::source_type::local });
+    list.add(FIT::device_info { .device_index = 3, .serial_number = 9, .source_type = FIT::source_type::antplus });
+    auto const sensors = list.sensors();
+    CHECK_EQ(sensors.size(), 2uz);
+    if (sensors.size() == 2) {
+        CHECK_EQ(sensors[0].serial_number.value_or(0), 9u); // By index: 3, then 5
+        CHECK_EQ(sensors[1].serial_number.value_or(0), 7u);
+    }
+}
+
+// The creator's own listing is never a sensor, wherever it says it's from.
+void test_the_creator_is_never_a_sensor()
+{
+    SensorList list;
+    list.add(FIT::device_info { .device_index = 0, .source_type = FIT::source_type::antplus });
+    CHECK(list.sensors().empty());
+}
+
+// A later listing that says only some things keeps the rest.
+void test_listings_merge()
+{
+    SensorList list;
+    list.add(FIT::device_info { .device_index = 1, .manufacturer = FIT::manufacturer::garmin, .serial_number = 5, .battery_status = FIT::battery_status::good, .source_type = FIT::source_type::antplus });
+    list.add(FIT::device_info { .device_index = 1, .battery_status = FIT::battery_status::critical });
+    auto const sensors = list.sensors();
+    CHECK_EQ(sensors.size(), 1uz);
+    if (!sensors.empty()) {
+        CHECK(sensors[0].source == FIT::source_type::antplus);
+        CHECK(sensors[0].manufacturer == FIT::manufacturer::garmin);
+        CHECK_EQ(sensors[0].serial_number.value_or(0), 5u);
+        CHECK(sensors[0].battery == FIT::battery_status::critical);
+    }
+}
+
 }
 
 int main()
@@ -235,5 +275,8 @@ int main()
     test_no_sensors_without_device_info();
     test_without_source_type_the_creators_serial_is_a_part();
     test_a_product_name_is_kept();
+    test_without_a_creator_listing();
+    test_the_creator_is_never_a_sensor();
+    test_listings_merge();
     return test_result();
 }
