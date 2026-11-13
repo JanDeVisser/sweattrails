@@ -403,6 +403,61 @@ void test_summary_activity()
 
 // A file with longer curves than there are durations and distances, as
 // one edited by hand: they're cut to them.
+// Noon UTC, so that the date is the same in the time zone the tests run in.
+constexpr i64 Nov12Noon = 1794484800; // Thu 12 Nov 2026, 12:00 UTC
+
+ActivitySummaries numbered(size_t count)
+{
+    ActivitySummaries ret;
+    for (auto ix = 0uz; ix < count; ++ix) {
+        auto const start = Nov12Noon - static_cast<i64>(ix) * 3600;
+        ret.push_back(summary(std::format("2026/11/{}.fit", start), start));
+    }
+    std::ranges::reverse(ret);
+    return ret;
+}
+
+ActivitySummary unreadable(i64 start)
+{
+    auto ret = summary(std::format("2026/11/{}.fit", start), start);
+    ret.sport.reset();
+    ret.sub_sport.reset();
+    return ret;
+}
+
+void test_store_summary_empty()
+{
+    CHECK_EQ(store_summary({ }), "No activities yet");
+    // Only files that can't be read: the activity list shows none.
+    CHECK_EQ(store_summary({ unreadable(Nov12Noon) }), "No activities yet");
+}
+
+void test_store_summary_one()
+{
+    CHECK_EQ(store_summary(numbered(1)), "1 activity, the newest on Thu 12 Nov 2026");
+}
+
+void test_store_summary_thousands()
+{
+    CHECK_EQ(store_summary(numbered(1234)), "1,234 activities, the newest on Thu 12 Nov 2026");
+    CHECK_EQ(store_summary(numbered(123)), "123 activities, the newest on Thu 12 Nov 2026");
+}
+
+// A newer file that can't be read is neither counted nor the newest.
+void test_store_summary_skips_unreadable()
+{
+    auto summaries = numbered(2);
+    summaries.push_back(unreadable(Nov12Noon + 2 * 86400));
+    CHECK_EQ(store_summary(summaries), "2 activities, the newest on Thu 12 Nov 2026");
+}
+
+// The newest by its start, wherever it is in the list.
+void test_store_summary_out_of_order()
+{
+    ActivitySummaries summaries { summary("2026/11/b.fit", Nov12Noon), summary("2026/10/a.fit", Nov12Noon - 30 * 86400) };
+    CHECK_EQ(store_summary(summaries), "2 activities, the newest on Thu 12 Nov 2026");
+}
+
 void test_curves_no_longer_than_their_lists()
 {
     Test::TempDir dir { "summaries" };
@@ -447,5 +502,10 @@ int main()
     test_update_that_cant_write();
     test_summary_activity();
     test_curves_no_longer_than_their_lists();
+    test_store_summary_empty();
+    test_store_summary_one();
+    test_store_summary_thousands();
+    test_store_summary_skips_unreadable();
+    test_store_summary_out_of_order();
     return Test::test_result();
 }
