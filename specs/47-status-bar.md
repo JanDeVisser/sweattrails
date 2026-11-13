@@ -1,6 +1,6 @@
 # Status bar
 
-Status: Ready
+Status: In progress, on feature/47-status-bar
 
 <!--
 Status is one of:
@@ -71,11 +71,86 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### `StatusBar` in `src/Lib/Widget`
+
+The `Label` at the bottom of the window becomes a `StatusBar`, a widget
+in `Widget.h`/`Widget.cpp` next to `Label`, as nothing in it is about
+activities:
+
+```cpp
+// One line at the bottom of a window, always there. A message has the
+// whole line; without one, `idle` is on the left and `hint`, dimmed, on
+// the right.
+struct StatusBar : public Widget {
+    std::string message { };
+    std::string idle { };
+    std::string hint { };
+
+    struct Shown {
+        std::string_view left { };
+        std::string_view right { }; // Dimmed
+    };
+    // What draw() draws: a test can ask without a window.
+    [[nodiscard]] Shown shown() const;
+    void draw() override;
+};
+```
+
+Its policy is `SizePolicy::Characters`, 1.0, always, so `set_status()`
+no longer calls `resize()`. `draw()` renders `left` at `PADDING` in
+RAYWHITE and `right` right-aligned (`render_text()` with a negative x) in
+GRAY, both on DARKGRAY.
+
+### The summary of the store
+
+```cpp
+// src/App/storage/Summaries.h
+// The status bar's summary of the store: "1,234 activities, the newest on
+// Thu 12 Nov 2026", or "No activities yet".
+[[nodiscard]] std::string store_summary(ActivitySummaries const &summaries);
+```
+
+It counts from the summaries the `UpdateSummaries` job keeps
+(`SweatTrails::summaries`), rather than listing the store again:
+
+- They are of the FIT files in the months' directories, so main
+  recordings only, as in the activity list. A summary without a sport is
+  of a file that can't be read, which the list leaves out too, and so
+  does the count.
+- They are updated after everything that adds or removes activities: the
+  inbox (downloads, imports, dropped files, and grouping new
+  recordings), the once over the store for recordings, and a FIT file
+  that changes. So `notif_summaries_updated()` sets `status->idle`, and
+  nothing else has to.
+- The count uses `integer_to_string(n, 10, ',')` for "1,234", and "1
+  activity" for one. The date is the newest start in local time, as
+  `DateTime::from_timestamp()` gives it, written with `weekday_name()` and
+  `month_name()` cut to three letters, as the activity list cuts them.
+
+Until the first summaries come in, `idle` is empty, so the bar shows only
+the hint rather than "No activities yet" for a moment at startup.
+
+### `SweatTrails`
+
+- `status` is a `std::shared_ptr<StatusBar>`; `hint` is set once from
+  `key_text(palette_key)` plus " for commands", so it is the key the app
+  binds.
+- `set_status(text)` sets `status->message`, with the login's waiting
+  text for an empty one as now, and no longer resizes.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- A new `status_bar_test` (`test/StatusBarTest.cpp`),
+  with a `ScopedTestApp`: `shown()` gives the message alone on the left
+  when there is one, and `idle` and `hint` when there isn't; an empty
+  `idle` gives an empty left.
+- `summaries_test`: `store_summary()` for no summaries, for only
+  unreadable ones ("No activities yet"), for one ("1 activity, …"), for
+  1,234, with an unreadable one newer than the newest readable one, and
+  for summaries out of order. Starts at noon UTC, so that the local date
+  is the same in any time zone the tests run in.
+- By hand: the window doesn't move when a download starts and ends; the
+  summary changes after a download; the hint shows the key.
 
 ## Review notes
 
