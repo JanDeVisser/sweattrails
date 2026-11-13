@@ -1037,7 +1037,11 @@ struct StatusBar : public Widget {
     explicit StatusBar(pWidget const &parent);
     // What draw() draws, which a test can ask without a window.
     [[nodiscard]] Shown shown() const;
-    void                draw() override;
+    // Whether the hint fits next to the text on the left, with room
+    // between them, in a bar this wide. If it doesn't, the text on the
+    // left has the bar.
+    [[nodiscard]] static bool hint_fits(float left_width, float hint_width, float bar_width);
+    void                      draw() override;
 };
 
 template<>

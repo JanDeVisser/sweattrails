@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: MIT
  *
  * Tests what StatusBar shows: a message on its own, or the idle text and
- * the hint. draw() needs raylib, so the tests ask shown().
+ * the hint. draw() needs raylib, so the tests ask shown() and
+ * hint_fits().
  */
 
 #include <memory>
@@ -71,6 +72,18 @@ void test_always_a_line()
     CHECK_EQ(bar->policy_size, 1.0f);
 }
 
+// The hint only fits with room on either side and between it and the
+// text on the left: PADDING at the ends, twice that in between.
+void test_hint_fits()
+{
+    CHECK(StatusBar::hint_fits(300, 200, 1000));
+    CHECK(StatusBar::hint_fits(300, 200, 500 + 4 * PADDING));
+    CHECK(!StatusBar::hint_fits(300, 200, 500 + 4 * PADDING - 1));
+    CHECK(!StatusBar::hint_fits(800, 200, 900));
+    // Nothing on the left: the hint alone.
+    CHECK(StatusBar::hint_fits(0, 200, 200 + 4 * PADDING));
+}
+
 }
 
 int main()
@@ -81,5 +94,6 @@ int main()
     test_cleared();
     test_no_idle_yet();
     test_always_a_line();
+    test_hint_fits();
     return Test::test_result();
 }

@@ -465,6 +465,12 @@ StatusBar::Shown StatusBar::shown() const
     return Shown { .left = idle, .right = hint };
 }
 
+bool StatusBar::hint_fits(float left_width, float hint_width, float bar_width)
+{
+    // PADDING at either end, and twice that between them.
+    return left_width + hint_width + 4 * PADDING <= bar_width;
+}
+
 void StatusBar::draw()
 {
     auto const [left, right] = shown();
@@ -472,7 +478,10 @@ void StatusBar::draw()
     if (!left.empty()) {
         render_text(PADDING, y, left, FontSize::Medium, RAYWHITE);
     }
-    if (!right.empty()) {
+    auto const width = [](std::string_view text) {
+        return App::measure_text(std::string { text }.c_str(), FontSize::Medium).x;
+    };
+    if (!right.empty() && hint_fits(width(left), width(right), viewport.width)) {
         // A negative x puts the text's right edge that far from the right.
         render_text(-PADDING, y, right, FontSize::Medium, LIGHTGRAY);
     }
