@@ -450,4 +450,32 @@ void Label::draw()
             text, size, color);
     }
 }
+
+StatusBar::StatusBar(pWidget const &parent)
+    : Widget(parent, SizePolicy::Characters, 1.0f)
+{
+    background = DARKGRAY;
+}
+
+StatusBar::Shown StatusBar::shown() const
+{
+    if (!message.empty()) {
+        return Shown { .left = message };
+    }
+    return Shown { .left = idle, .right = hint };
+}
+
+void StatusBar::draw()
+{
+    auto const [left, right] = shown();
+    auto const y = std::max(0.0f, (viewport.height - App::the()->char_size(FontSize::Medium).y) / 2);
+    if (!left.empty()) {
+        render_text(PADDING, y, left, FontSize::Medium, RAYWHITE);
+    }
+    if (!right.empty()) {
+        // render_text() takes a negative x as measured from the right.
+        auto const width = App::measure_text(std::string { right }.c_str(), FontSize::Medium).x;
+        render_text(-(width + PADDING), y, right, FontSize::Medium, LIGHTGRAY);
+    }
+}
 }

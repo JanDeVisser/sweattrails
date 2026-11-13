@@ -1020,6 +1020,26 @@ struct Label : public Widget {
     void draw() override;
 };
 
+// One line at the bottom of a window, always there, so that the window
+// doesn't move when a message comes or goes. A message has the whole
+// line; without one, `idle` is on the left and `hint`, dimmed so that it
+// doesn't read as a message, on the right.
+struct StatusBar : public Widget {
+    std::string message { };
+    std::string idle { };
+    std::string hint { };
+
+    struct Shown {
+        std::string_view left { };
+        std::string_view right { }; // Dimmed
+    };
+
+    explicit StatusBar(pWidget const &parent);
+    // What draw() draws, which a test can ask without a window.
+    [[nodiscard]] Shown shown() const;
+    void                draw() override;
+};
+
 template<>
 inline char const *value_to_string(ContainerOrientation orientation)
 {
