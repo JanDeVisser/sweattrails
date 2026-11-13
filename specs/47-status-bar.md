@@ -1,6 +1,6 @@
 # Status bar
 
-Status: In progress, on feature/47-status-bar
+Status: In review
 
 <!--
 Status is one of:
@@ -99,7 +99,7 @@ struct StatusBar : public Widget {
 Its policy is `SizePolicy::Characters`, 1.0, always, so `set_status()`
 no longer calls `resize()`. `draw()` renders `left` at `PADDING` in
 RAYWHITE and `right` right-aligned (`render_text()` with a negative x) in
-GRAY, both on DARKGRAY.
+LIGHTGRAY, both on DARKGRAY. (GRAY is too faint to read on DARKGRAY.)
 
 ### The summary of the store
 
@@ -123,7 +123,8 @@ It counts from the summaries the `UpdateSummaries` job keeps
   that changes. So `notif_summaries_updated()` sets `status->idle`, and
   nothing else has to.
 - The count uses `integer_to_string(n, 10, ',')` for "1,234", and "1
-  activity" for one. The date is the newest start in local time, as
+  activity" for one. Its grouping was wrong ("12,34" for 1234), and
+  nothing used it: it's fixed, with a test in `string_util_test`. The date is the newest start in local time, as
   `DateTime::from_timestamp()` gives it, written with `weekday_name()` and
   `month_name()` cut to three letters, as the activity list cuts them.
 
