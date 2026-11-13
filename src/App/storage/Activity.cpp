@@ -250,6 +250,22 @@ StorageResult<bool> Activity::load_from_dir(fs::path const &dir)
     return true;
 }
 
+fs::path fit_path(Activity const &activity)
+{
+    if (activity.sidecar.empty()) {
+        return { };
+    }
+    return fs::path { activity.sidecar }.replace_extension(".fit");
+}
+
+fs::path original_path(Activity const &activity)
+{
+    if (activity.sidecar.empty()) {
+        return { };
+    }
+    return fs::path { activity.sidecar }.replace_extension(".fit.original");
+}
+
 std::vector<i64> Activity::lap_starts() const
 {
     return user_lap_starts ? *user_lap_starts : device_lap_starts(*this);

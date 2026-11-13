@@ -284,6 +284,12 @@ private:
     StorageResult<bool> load_fit_file_by_name(fs::path const &file);
 };
 
+// The activity's FIT file, from the store, and where its original is kept
+// once its gaps are filled: `<start>.fit.original`. Empty for an activity
+// loaded otherwise.
+[[nodiscard]] fs::path fit_path(Activity const &activity);
+[[nodiscard]] fs::path original_path(Activity const &activity);
+
 // A range counts as moving between two records at most this many seconds
 // apart: a longer gap is a pause, which records nothing.
 constexpr u32 RangeMovingGap = 10;

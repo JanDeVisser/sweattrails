@@ -148,16 +148,6 @@ std::optional<std::string> drop_problem(std::vector<std::string> const &paths, b
     return { };
 }
 
-fs::path fit_path(Activity const &activity)
-{
-    return fs::path { activity.sidecar }.replace_extension(".fit");
-}
-
-fs::path original_path(Activity const &activity)
-{
-    return fs::path { activity.sidecar }.replace_extension(".fit.original");
-}
-
 std::expected<void, std::string> check_fills(Activity const &activity, std::vector<FIT::FITFill> const &fills)
 {
     auto const fit = fit_path(activity);
