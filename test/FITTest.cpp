@@ -121,6 +121,36 @@ void test_native_field_wins_over_developer_field()
     }
 }
 
+// A developer field numbered 253 can be read, and isn't the timestamp of
+// a record with a compressed timestamp header.
+void test_developer_field_253_is_not_a_timestamp()
+{
+    FITBuilder fit;
+    add_developer_data_id(fit, 0);
+    add_field_description(fit, 0, 253, Uint32);
+    fit.definition(0, 20, { { .num = 253, .size = 4, .base_type = Uint32 } });
+    fit.message(0);
+    fit.u32_le(Start);
+    fit.definition(1, 20, { { .num = 3, .size = 1, .base_type = Uint8 } }, { { .num = 253, .size = 4, .developer_data_index = 0 } });
+    // A compressed timestamp header for local message 1, 5 seconds on. It
+    // holds the timestamp's low five bits.
+    auto const offset = static_cast<u8>((Start + 5) & 0x1F);
+    fit.byte(0x80 | (1 << 5) | offset);
+    fit.byte(140);
+    fit.u32_le(12345);
+
+    ReadRecords t { fit.file() };
+    CHECK_EQ(t.records.size(), 2u);
+    if (t.records.size() != 2) {
+        return;
+    }
+    auto const timestamp = t.records[1].get_field(FIT_FIELD_TIMESTAMP);
+    CHECK(timestamp && timestamp->value);
+    if (timestamp && timestamp->value) {
+        CHECK_EQ(timestamp->value->uint32, Start + 5);
+    }
+}
+
 // A record with one coordinate of the two, with `num` the one it has.
 std::string half_position_file(u8 num, i32 value)
 {
@@ -206,6 +236,7 @@ int main()
 {
     test_developer_field_is_not_a_native_field();
     test_native_field_wins_over_developer_field();
+    test_developer_field_253_is_not_a_timestamp();
     test_latitude_alone_is_no_position();
     test_longitude_alone_is_no_position();
     test_both_coordinates_are_a_position();

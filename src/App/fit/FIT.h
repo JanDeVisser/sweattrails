@@ -991,7 +991,9 @@ struct FITFile {
                         fld.developer_data_index = def_buffer[2];
                         auto found = false;
                         for (auto const &dev_fld : developer_field) {
-                            if (def_buffer[2] == dev_fld.developer_data_index && def_buffer[0] == dev_fld.field_definition_number) {
+                            // Compare the u8s, not def_buffer's chars: those are
+                            // signed, and never equal a number of 128 or more.
+                            if (fld.developer_data_index == dev_fld.developer_data_index && fld.field_num == dev_fld.field_definition_number) {
                                 fld.base_type = static_cast<FITBaseType>(dev_fld.fit_base_type_id & 0x0F);
                                 found = true;
                                 break;
