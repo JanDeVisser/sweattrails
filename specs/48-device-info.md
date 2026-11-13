@@ -61,7 +61,7 @@ the file for this one?".
   in the same smaller font, after the name: "Garmin (product 4315)".
 - **The sensors**: one entry each, with the maker, the type, and the
   product number in the smaller font, as for the recording device:
-  "Garmin heart rate monitor (product 3865)". Under that, in the smaller
+  "Garmin heart rate monitor (product 4606)". Under that, in the smaller
   font, its serial number, software version, and battery status at the
   end of the activity (ok, low, critical, ...). The battery is the most
   useful of these: it answers "why did the power drop out?". Product
@@ -78,7 +78,11 @@ the file for this one?".
   an old file: the box shows what the file does have, and says "No
   sensors listed in this file". A missing value, such as a sensor's
   serial number or battery status, is left out rather than shown as
-  empty.
+  empty. So is a product name that isn't text, such as the leftover
+  bytes Zwift writes, and a product number of 0, which Zwift writes too:
+  a Zwift ride shows as "Zwift". A battery status of "unknown" doesn't
+  replace a known one from an earlier listing: a sensor that dropped
+  out may say "unknown" at the end, and its "low" is what explains it.
 
 ### Version 1 scope
 
@@ -148,7 +152,7 @@ Four layers, each testable without a window.
   path for an activity not from the store), which recording it is
   ("Recording 2 of 2", for one of several), the recording device's line, and per sensor its line and detail line. A line is
   `{ text, small }`: the part in the normal font and the part in the
-  smaller one ("Garmin heart rate monitor" + "(product 3865)"; the
+  smaller one ("Garmin heart rate monitor" + "(product 4606)"; the
   detail line is all small: "Serial 3615618938 · Software 5.10 ·
   Battery ok"). Missing values are left out; no sensors gives the "No
   sensors listed in this file" line.
@@ -222,14 +226,19 @@ a second info popup comes along, the two-font line layout could move to
    hide the "low" the user wants to see. Suggested fix: don't let
    `unknown` replace a known status. Not changed: the spec says the last
    listing wins, so it's Jan's call.
+   **Resolved**: Jan agreed; fixed in "Keep a sensor's known battery
+   status under a later "unknown"", with a test, and the spec's Feature
+   section says so.
 2. Suggestion: `ActivityInfoBox::process_key()` calls `switch_fnc`, then
    `refresh()` and `resize()`, also for an activity of one recording,
    where `show_recording_next_to()` returns without doing anything. It's
    harmless (the box describes the same activity again), and the hint
    doesn't offer Tab then. No change needed.
+   **Resolved**: left as it is, with Jan's agreement.
 3. Suggestion: `hint_area` is only set by `draw()`, so it is stale for a
    frame after Tab changes the box's size. A click in that frame can miss
    or hit the hint wrongly. Not worth fixing.
+   **Resolved**: left as it is, with Jan's agreement.
 4. Missing test (added): `SensorList` without a creator listing, the
    creator never being a sensor whatever its source, and a later listing
    that says only some things keeping the rest (`device_info_test`). All
@@ -241,5 +250,18 @@ a second info popup comes along, the two-font line layout could move to
    (index 3) is ANT+ with type 120, and would show as "Garmin heart rate
    monitor (product 4606)". The spec's example says product 3865, which
    is index 2, a local part: the spec text is off, the code is right.
+   **Resolved**: the spec's examples now say product 4606.
+
+Found by Jan, checking by hand:
+
+6. Bug: a Zwift ride showed "Zwift ?>?". Zwift fills its `file_id`'s
+   product name with leftover bytes (`14 3e d6 9c 00 ...`), which were
+   taken as the device's name; `device_name()` has shown them under the
+   title for a Zwift recording among several since spec 31. **Fixed** in
+   "Leave out product names that aren't text, and product number 0":
+   `product_text()` drops a name that isn't UTF-8 or has control
+   characters, and `product_number()` drops Zwift's product 0, where
+   `file_id` and `device_info` are read. `device_info_test` has the
+   Zwift ride's bytes, and fails against the old code.
 
 No bugs found against the spec's Version 1 scope.
