@@ -14,7 +14,7 @@ Status is one of:
 ## Goal
 
 Once Wahoo's whole history is in the store, "Everything" from Wahoo costs
-one or two list requests instead of the whole history's 19, so that
+one or two list requests instead of the whole history's 72, so that
 running it again, or many times in a night, doesn't use up Wahoo's daily
 limit. And when a limit is used up anyway, the quiet download at startup
 says so on the status line, instead of in a message box at every start
@@ -41,8 +41,10 @@ where the store is complete", and its review note 6, and
   from `cdn.wahooligan.com` without a token, and don't count.
 - **What a run costs.** The startup download and Ctrl+G list the last
   `wahoo.days` days: one request. "Everything" lists to the end of the
-  list: a page per 30 workouts, 19 for Jan's 543, every time, however
-  much of it the store has. On 2026-11-11 "Everything" was started many
+  list: a page per 30 workouts, 72 for Jan's 2143 (Wahoo's `total` on
+  2026-11-13; 543 of them came into the store, the others it had from
+  Garmin Connect, or they have no FIT file), every time, however much of
+  it the store has. On 2026-11-11 "Everything" was started many
   times in an evening, and used up the day's 250.
 - **A limit that resets in more than 5 minutes stops the download**
   (spec 44), with "Wahoo's limit on requests is reached. Try again after
@@ -76,9 +78,12 @@ where the store is complete", and its review note 6, and
     and fills the gap, and moves T.
 - **A run that doesn't complete leaves T as it was.** An "Everything"
   interrupted on the way through a whole history (quitting, an error, a
-  limit) lists the whole history again next time. That's 19 pages for
-  Jan's, under the 5-minute limit of 25, and it only happens until the
-  first one completes.
+  limit) lists the whole history again next time. That's 72 pages for
+  Jan's, three waits for the 5-minute limit, and needs an hour with most
+  of its 100 left: a first run is best started after the day resets. It
+  only happens until the first one completes. If interrupted first runs
+  turn out to hurt, a listing that resumes where it stopped is a spec of
+  its own.
 - **Deleting the file lists the whole history again**, as deleting
   `garmin-unavailable.txt` asks Garmin Connect again.
 - **What "Everything" no longer brings back:** an activity deleted from
@@ -119,7 +124,7 @@ where the store is complete", and its review note 6, and
 - **Budgeting by what Wahoo says is left** (`x-ratelimit-remaining`),
   suggested in spec 44's review note 6: with T, "Everything" costs one
   or two requests, and the one expensive run, the first whole history,
-  is 19 pages and a token request, under the 5-minute limit of 25.
+  is 72 pages and a token request, under the hourly limit of 100.
   There's nothing left to budget.
 
 ### Version 1 scope
@@ -263,7 +268,7 @@ Nothing for `src/Lib/Widget`: the status line is there.
   is in `text`; `make_download_request()` keeps the setting's days in
   `wahoo_overlap_days` when `days` is given.
 - By hand: "Everything" twice with `TRACE=Wahoo`, the second listing one
-  or two pages; the file's contents; deleting it lists all 19 again; a
+  or two pages; the file's contents; deleting it lists all 72 again; a
   start with a used-up limit (or a fake 429) shows it on the status line.
 
 ## Review notes
@@ -277,3 +282,13 @@ Nothing for `src/Lib/Widget`: the status line is there.
 4. Missing test (added): "Everything" with T that needs a second page, in `test/WahooTest.cpp`: `test_everything_with_the_file_goes_on_to_the_page_that_passes_it`. Passes.
 
 No bugs found against Version 1 scope. `ctest`: all pass except `oauth_test`, the known flaky one.
+
+5. Found by Jan, trying the first "Everything" by hand: it went past
+   page 50, where the spec said 19, and ran into the hourly limit. The
+   per-page trace (added for it) showed Wahoo's `total` is 2143, not
+   543: the 19 pages were worked out from the workouts that came into
+   the store, never measured. The paging is right.
+   **Resolved:** the spec's numbers are corrected to 72 pages, with a
+   first run needing an hour with most of its 100 requests left. Agreed
+   with Jan to keep the design, and to make the listing resumable in a
+   spec of its own if interrupted first runs turn out to hurt.
