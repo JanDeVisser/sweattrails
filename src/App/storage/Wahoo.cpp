@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <algorithm>
 #include <charconv>
 #include <chrono>
 #include <format>
@@ -328,13 +329,19 @@ WahooResult<std::vector<WahooWorkout>> Wahoo::list_workouts(i64 since)
         if (!listed) {
             return std::unexpected(failed(std::format("Unexpected list of workouts from Wahoo: {}", listed.error().to_string())));
         }
+        auto const total = json->try_get<i64>("total");
+        // Wahoo doesn't document how its paging ends: this says what it sent.
+        trace(Wahoo, "Page {}: {} workouts, {} new, total {}, oldest {}", page, listed->size(),
+            std::ranges::count_if(*listed, [&workouts](WahooWorkout const &workout) {
+                return std::ranges::none_of(workouts, [&workout](WahooWorkout const &seen) { return seen.id == workout.id; });
+            }),
+            json->get("total") ? json->get("total")->serialize() : std::string { "missing" }, listed->empty() ? std::string { "-" } : std::format("{:%F}", std::chrono::sys_seconds { std::chrono::seconds { listed->back().start_time } }));
         for (auto const &workout : *listed) {
             if (workout.start_time < since) {
                 return workouts;
             }
             workouts.push_back(workout);
         }
-        auto const total = json->try_get<i64>("total");
         if (listed->empty() || (total && page * PageSize >= *total)) {
             return workouts;
         }
