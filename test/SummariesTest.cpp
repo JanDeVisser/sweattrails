@@ -401,8 +401,6 @@ void test_summary_activity()
     CHECK(!summary_activity(summary("x/2025/03/1741000000.fit", 1741000000)));
 }
 
-// A file with longer curves than there are durations and distances, as
-// one edited by hand: they're cut to them.
 // Noon UTC, so that the date is the same in the time zone the tests run in.
 constexpr i64 Nov12Noon = 1794484800; // Thu 12 Nov 2026, 12:00 UTC
 
@@ -458,6 +456,8 @@ void test_store_summary_out_of_order()
     CHECK_EQ(store_summary(summaries), "2 activities, the newest on Thu 12 Nov 2026");
 }
 
+// A file with longer curves than there are durations and distances, as
+// one edited by hand: they're cut to them.
 void test_curves_no_longer_than_their_lists()
 {
     Test::TempDir dir { "summaries" };
