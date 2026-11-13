@@ -155,4 +155,27 @@ the hint rather than "No activities yet" for a moment at startup.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. Bug: the hint is drawn in the wrong place. `StatusBar::draw()`
+   (`src/Lib/Widget/Widget.cpp`, the `render_text(-(width + PADDING), ...)`
+   call) passes a negative x, but `render_sized_text_()` already subtracts
+   the text's width for a negative x (`x = viewport.width - total.x + x`),
+   so the text's right edge ends up at `-x` from the right edge. With
+   `-(width + PADDING)` the hint ends a whole hint-width plus PADDING
+   short of the right edge (about 25 characters in), and is not
+   right-aligned. It should be `render_text(-PADDING, ...)`, as the
+   palette's `render_text(-8, 8, search, ...)` in `Modal.h`. No window-free
+   test is possible for this; check it by hand.
+2. Suggestion: with a narrow window, a long idle text on the left and the
+   hint on the right overlap; nothing clips or drops the hint. Rare, and
+   the spec doesn't ask for it.
+3. Suggestion: in `test/SummariesTest.cpp` the comment "A file with longer
+   curves than there are durations ..." now sits above the new
+   `Nov12Noon` and `numbered()` helpers instead of above
+   `test_curves_no_longer_than_their_lists()`. Move it back.
+
+Everything else in Version 1 scope is there: the bar is always one line,
+`set_status()` no longer resizes, the idle text comes from
+`notif_summaries_updated()`, unreadable summaries are skipped, and the
+grouping fix is right and tested. Build and the full test run pass (69 of
+69). No tests added: the Test plan is covered, and the bug in 1 needs a
+window.
