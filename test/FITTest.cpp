@@ -10,6 +10,7 @@
 
 #include <cmath>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -184,6 +185,21 @@ void test_both_coordinates_are_a_position()
     }
 }
 
+// fitexplore prints records with format_record().
+void test_formatted_position_has_the_right_sign()
+{
+    ReadRecords t { waterloo_file() };
+    CHECK_EQ(t.records.size(), 1u);
+    if (t.records.size() != 1) {
+        return;
+    }
+    std::ostringstream out;
+    format_record<mesg_num::record>(out, t.records[0]);
+    auto const text = out.str();
+    CHECK(text.contains(" 43.4º lat"));
+    CHECK(text.contains("-80.5º long"));
+}
+
 }
 
 int main()
@@ -193,5 +209,6 @@ int main()
     test_latitude_alone_is_no_position();
     test_longitude_alone_is_no_position();
     test_both_coordinates_are_a_position();
+    test_formatted_position_has_the_right_sign();
     return test_result();
 }
