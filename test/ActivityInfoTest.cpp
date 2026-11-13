@@ -166,8 +166,10 @@ void test_sensor_types()
     CHECK_EQ(type(FIT::source_type::antplus, 40), "radar");
     CHECK_EQ(type(FIT::source_type::antplus, 121), "speed and cadence sensor");
     CHECK_EQ(type(FIT::source_type::bluetooth_low_energy, 1), "heart rate monitor");
-    CHECK_EQ(type(FIT::source_type::bluetooth_low_energy, 120), "sensor"); // Not a BLE type
-    CHECK_EQ(type(std::nullopt, 120), "heart rate monitor");               // Older files: ANT+
+    // A Wahoo ELEMNT ROAM lists BLE sensors with ANT+'s types.
+    CHECK_EQ(type(FIT::source_type::bluetooth_low_energy, 120), "heart rate monitor");
+    CHECK_EQ(type(FIT::source_type::bluetooth_low_energy, 99), "sensor"); // Neither's
+    CHECK_EQ(type(std::nullopt, 120), "heart rate monitor");              // Older files: ANT+
     CHECK_EQ(type(FIT::source_type::antplus, 250), "sensor");
     CHECK_EQ(type(FIT::source_type::antplus, std::nullopt), "sensor");
     CHECK_EQ(type(FIT::source_type::wifi, 1), "sensor");

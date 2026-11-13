@@ -150,7 +150,12 @@ std::string sensor_type_name(Sensor const &sensor)
     }
     std::optional<std::string_view> name;
     if (sensor.source == FIT::source_type::bluetooth_low_energy || sensor.source == FIT::source_type::bluetooth) {
+        // A Wahoo lists BLE sensors with ANT+'s types, such as 120 for a
+        // heart rate strap, which isn't a BLE type.
         name = ble_type_name(*sensor.device_type);
+        if (!FIT::ble_device_type_of(*sensor.device_type)) {
+            name = antplus_type_name(*sensor.device_type);
+        }
     } else if (sensor.source != FIT::source_type::wifi) {
         // ANT+, plain ANT, and older files, which don't say, use ANT+'s types.
         name = antplus_type_name(*sensor.device_type);
