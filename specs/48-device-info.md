@@ -129,9 +129,10 @@ Four layers, each testable without a window.
   a later value replacing an earlier one, and a value a later listing
   leaves out staying as it was. `sensors()` gives them by index, leaving
   out the creator (index 0) and the device's own parts (`source_type`
-  local). A listing without a `source_type`, as in older files, counts as
-  a sensor unless it has the creator's serial number, which is how those
-  files mark the device's own parts.
+  local). A listing without a `source_type`, as in older files and a
+  Wahoo ELEMNT ROAM's, counts as a sensor only if it has a serial number
+  of its own: the device's own parts have the creator's serial number, or
+  none at all (the ROAM lists its barometer, GPS and so on by name only).
 - `Activity` gets `std::optional<u16> product` (from `file_id`) and
   `std::vector<Sensor> sensors`, filled on a deep load only, as the
   records and laps are.

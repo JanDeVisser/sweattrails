@@ -193,8 +193,9 @@ void test_no_sensors_without_device_info()
 }
 
 // Older files don't say how a device is connected: the device's own parts
-// have its serial number.
-void test_without_source_type_the_creators_serial_is_a_part()
+// have its serial number, or none at all, as a Wahoo ELEMNT ROAM's
+// barometer and GPS, which only have a name. A sensor has its own.
+void test_without_source_type_a_sensor_has_its_own_serial()
 {
     SensorList list;
     auto const listed = [](u8 index, std::optional<u32> serial) {
@@ -204,11 +205,11 @@ void test_without_source_type_the_creators_serial_is_a_part()
     list.add(listed(1, EdgeSerial));
     list.add(listed(2, 42));
     list.add(listed(3, std::nullopt));
+    list.add(FIT::device_info { .device_index = 4, .product_name = "Barometer" });
     auto const sensors = list.sensors();
-    CHECK_EQ(sensors.size(), 2uz);
-    if (sensors.size() == 2) {
+    CHECK_EQ(sensors.size(), 1uz);
+    if (sensors.size() == 1) {
         CHECK_EQ(sensors[0].serial_number.value_or(0), 42u);
-        CHECK(!sensors[1].serial_number);
     }
 }
 
@@ -350,7 +351,7 @@ int main()
     test_the_recording_devices_product_is_kept();
     test_no_sensors_on_a_shallow_load();
     test_no_sensors_without_device_info();
-    test_without_source_type_the_creators_serial_is_a_part();
+    test_without_source_type_a_sensor_has_its_own_serial();
     test_unknown_battery_keeps_a_known_one();
     test_a_product_name_is_kept();
     test_zwifts_junk_product_name_is_left_out();

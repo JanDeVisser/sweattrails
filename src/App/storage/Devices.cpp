@@ -81,7 +81,7 @@ std::vector<Sensor> SensorList::sensors() const
         if (device.source) {
             return *device.source != FIT::source_type::local;
         }
-        return !creator_serial || device.serial_number != creator_serial;
+        return device.serial_number && device.serial_number != creator_serial;
     };
     std::vector<Sensor> ret;
     for (auto const &[index, device] : devices) {

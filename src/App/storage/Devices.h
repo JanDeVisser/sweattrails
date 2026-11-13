@@ -56,8 +56,8 @@ struct SensorList {
     // The sensors connected to the recording device, by index: not the
     // device itself (index 0), nor its own parts, such as its GPS, which
     // are local. A listing that doesn't say how it's connected, as in
-    // older files, is one of its parts if it has the device's serial
-    // number.
+    // older files and a Wahoo's, is a sensor if it has a serial number of
+    // its own: the device's parts have its serial number, or none.
     [[nodiscard]] std::vector<Sensor> sensors() const;
 };
 
