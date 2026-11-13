@@ -631,15 +631,15 @@ void SweatTrails::job_import_strava_export(Job::Payload const &data)
         done(std::format("Couldn't read {}: {}", file.string(), csv.error().description));
         return;
     }
-    auto const descriptions = export_descriptions(*csv, file.filename().string());
-    if (!descriptions) {
-        done(descriptions.error());
+    auto const activities = read_export(*csv, file.filename().string());
+    if (!activities) {
+        done(activities.error());
         return;
     }
     auto const on_description = [&the](size_t index, size_t count) {
         the->notify_latest<NotificationType::ImportingDescriptions>(ImportingDescriptions { .index = index, .count = count });
     };
-    auto const imported = import_descriptions(the->storage, *descriptions, on_description);
+    auto imported = import_descriptions(the->storage, *activities, on_description);
     if (!imported) {
         done(std::format("Couldn't import Strava's descriptions: {}", imported.error().to_string()));
         return;
@@ -648,6 +648,35 @@ void SweatTrails::job_import_strava_export(Job::Payload const &data)
         the->notify<NotificationType::TitlesChanged>(TitlesChanged { imported->changed });
     }
     info(ST, "Strava's export: {} descriptions, {} empty, {} activities without a Strava title", imported->descriptions, imported->empty, imported->untitled);
+
+    // Then the activities that are only a summary: see
+    // specs/50-stub-activities.md.
+    auto const on_stub = [&the](size_t index, size_t count) {
+        the->notify_latest<NotificationType::ImportingDescriptions>(ImportingDescriptions { .index = index, .count = count, .stubs = true });
+    };
+    auto stubs = import_originals(the->storage, *activities, file.parent_path(), on_stub);
+    if (!stubs) {
+        done(std::format("{} Couldn't replace the activities that are only a summary: {}", imported->message(), stubs.error().to_string()));
+        return;
+    }
+    info(ST, "Strava's export: replaced {} stubs, {} have a GPX or TCX file", stubs->replaced, stubs->unreadable);
+    if (!stubs->moved.empty()) {
+        // As the inbox does with what it files.
+        std::vector<Grouped> groups;
+        for (auto const &[stub_start, start] : stubs->moved) {
+            if (auto grouped = group_new(the->storage, start); !grouped) {
+                warning(ST, "Can't group the activity starting at {} with its recordings: {}", start, grouped.error().to_string());
+            } else if (*grouped) {
+                groups.push_back(std::move(**grouped));
+            }
+        }
+        the->notify<NotificationType::StubsReplaced>(StubsReplaced { .moved = stubs->moved });
+        if (!groups.empty()) {
+            the->notify<NotificationType::RecordingsGrouped>(RecordingsGrouped { .groups = std::move(groups) });
+        }
+        the->update_summaries();
+    }
+    imported->stubs = std::move(*stubs);
     done(imported->message());
 }
 
@@ -2298,6 +2327,8 @@ void SweatTrails::notif_importing_descriptions(Notification::Payload const &data
         message_box(*importing.done);
     } else if (importing.count == 0) {
         the->set_status("Importing Strava's descriptions…");
+    } else if (importing.stubs) {
+        the->set_status(std::format("Replacing activities that are only a summary: {} of {}", importing.index, importing.count));
     } else {
         the->set_status(std::format("Importing Strava's descriptions: {} of {}", importing.index, importing.count));
     }

@@ -233,10 +233,12 @@ struct RecordingsChanged {
 };
 
 // Sent by the ImportStravaExport job as it starts, before each description
-// it saves, and when it's done, with what to tell the user.
+// it saves, then before each stub it replaces, and when it's done, with
+// what to tell the user.
 struct ImportingDescriptions {
     size_t                     index { 0 };
     size_t                     count { 0 };
+    bool                       stubs { false }; // Replacing stubs, after the descriptions
     std::optional<std::string> done { };
 };
 

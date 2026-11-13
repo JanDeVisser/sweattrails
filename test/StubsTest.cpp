@@ -28,32 +28,17 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr u16 Wahoo = 32;
-constexpr u16 Development = 255;
-
 i64 unix_start(i64 offset)
 {
     return static_cast<i64>(Test::Start) + DateTime::FIT_TIMESTAMP_OFFSET + offset;
 }
 
-// A run's summary, as the old app made them: a session, no records.
 std::string stub_fit(u32 offset = 0)
 {
-    Test::FITBuilder fit;
-    Test::add_file_id(fit, Development);
-    Test::add_session(fit, 600, 10, Test::NoSubSport, offset);
-    return fit.file();
+    return Test::summary_fit(offset);
 }
 
-// What the device recorded: the session and a record a second.
-std::string recorded_fit(u32 offset = 0)
-{
-    Test::FITBuilder fit;
-    Test::add_file_id(fit, Wahoo);
-    Test::add_records(fit, 600, 140, 200, offset);
-    Test::add_session(fit, 600, 10, Test::NoSubSport, offset);
-    return fit.file();
-}
+using Test::recorded_fit;
 
 fs::path month_dir(Test::TempStore const &store, i64 offset = 0)
 {

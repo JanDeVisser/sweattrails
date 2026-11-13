@@ -228,4 +228,26 @@ inline void add_workout(FITBuilder &fit, std::string_view name)
     fit.byte(0);
 }
 
+// An activity that's only a summary, as a program makes them from the
+// totals: maker 255, "development", a session, and no records. It starts
+// `start` seconds after Start.
+inline std::string summary_fit(u32 start = 0)
+{
+    FITBuilder fit;
+    add_file_id(fit, 255);
+    add_session(fit, 600, 10, NoSubSport, start);
+    return fit.file();
+}
+
+// What a Wahoo device recorded of the same: the session, and a record a
+// second.
+inline std::string recorded_fit(u32 start = 0)
+{
+    FITBuilder fit;
+    add_file_id(fit, 32);
+    add_records(fit, 600, 140, 200, start);
+    add_session(fit, 600, 10, NoSubSport, start);
+    return fit.file();
+}
+
 }

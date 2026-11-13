@@ -107,23 +107,6 @@ void test_impossible_size()
     CHECK(!unzip(zip, "a.fit").has_value());
 }
 
-// A gzip file as gzip(1) writes one: deflated data in a gzip header and
-// trailer.
-std::string gzip(std::string_view data)
-{
-    z_stream stream { };
-    deflateInit2(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 16 + MAX_WBITS, 8, Z_DEFAULT_STRATEGY);
-    std::string out(deflateBound(&stream, static_cast<uLong>(data.size())) + 32, '\0');
-    stream.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(data.data()));
-    stream.avail_in = static_cast<uInt>(data.size());
-    stream.next_out = reinterpret_cast<Bytef *>(out.data());
-    stream.avail_out = static_cast<uInt>(out.size());
-    deflate(&stream, Z_FINISH);
-    out.resize(stream.total_out);
-    deflateEnd(&stream);
-    return out;
-}
-
 void test_gunzip()
 {
     CHECK_EQ(gunzip(gzip(Text)).value_or(""), Text);
