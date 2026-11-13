@@ -212,6 +212,28 @@ void test_without_source_type_the_creators_serial_is_a_part()
     }
 }
 
+// A sensor that has dropped out can say "unknown" at the end: the "low"
+// before it is what the user wants to see.
+void test_unknown_battery_keeps_a_known_one()
+{
+    SensorList list;
+    auto const listed = [](FIT::battery_status battery) {
+        return FIT::device_info { .device_index = 1, .battery_status = battery, .source_type = FIT::source_type::antplus };
+    };
+    list.add(listed(FIT::battery_status::low));
+    list.add(listed(FIT::battery_status::unknown));
+    auto sensors = list.sensors();
+    CHECK(sensors.size() == 1 && sensors[0].battery == FIT::battery_status::low);
+    list.add(listed(FIT::battery_status::critical));
+    sensors = list.sensors();
+    CHECK(sensors.size() == 1 && sensors[0].battery == FIT::battery_status::critical);
+
+    SensorList only_unknown;
+    only_unknown.add(listed(FIT::battery_status::unknown));
+    sensors = only_unknown.sensors();
+    CHECK(sensors.size() == 1 && sensors[0].battery == FIT::battery_status::unknown);
+}
+
 void test_a_product_name_is_kept()
 {
     SensorList list;
@@ -274,6 +296,7 @@ int main()
     test_no_sensors_on_a_shallow_load();
     test_no_sensors_without_device_info();
     test_without_source_type_the_creators_serial_is_a_part();
+    test_unknown_battery_keeps_a_known_one();
     test_a_product_name_is_kept();
     test_without_a_creator_listing();
     test_the_creator_is_never_a_sensor();

@@ -36,7 +36,8 @@ struct Sensor {
 
 // The devices of a FIT file's device_info messages, by device index. A
 // file lists each several times: a later listing's values replace an
-// earlier one's, and a value it leaves out stays as it was.
+// earlier one's, and a value it leaves out stays as it was. So does a
+// known battery status, under a later "unknown".
 struct SensorList {
     std::map<FIT::device_index, Sensor> devices { };
 

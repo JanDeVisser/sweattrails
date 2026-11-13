@@ -34,7 +34,11 @@ void SensorList::add(FIT::device_info const &info)
     }
     update(device.serial_number, info.serial_number);
     update(device.software_version, info.software_version);
-    update(device.battery, info.battery_status);
+    // A sensor that has dropped out can say "unknown" at the end, which
+    // would hide the "low" that explains why it dropped out.
+    if (info.battery_status != FIT::battery_status::unknown || !device.battery) {
+        update(device.battery, info.battery_status);
+    }
 }
 
 std::vector<Sensor> SensorList::sensors() const
