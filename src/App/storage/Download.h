@@ -89,6 +89,7 @@ struct DownloadRequest {
     bool                        strava { false }; // Titles: after the others, and the inbox
     int                         garmin_days { 30 };
     int                         wahoo_days { 30 };
+    int                         wahoo_overlap_days { 30 }; // `wahoo.days` from the settings, whatever `days` says: see specs/46-wahoo-everything.md
     int                         strava_days { 30 };
     std::optional<std::string>  wahoo_client_id { };          // Without one, Wahoo isn't set up
     std::optional<StravaClient> strava_client { };            // Without one, Strava isn't set up

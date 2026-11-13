@@ -194,6 +194,7 @@ DownloadRequest make_download_request(JSONValue const &settings, JSONValue const
         .strava = sources.strava,
         .garmin_days = days_setting(settings, "garmin", GarminDefaultDays),
         .wahoo_days = days_setting(settings, "wahoo", WahooDefaultDays),
+        .wahoo_overlap_days = days_setting(settings, "wahoo", WahooDefaultDays),
         .strava_days = days_setting(settings, "strava", StravaDefaultDays),
         .wahoo_client_id = wahoo_client_id(settings),
         .strava_client = strava_client(settings),

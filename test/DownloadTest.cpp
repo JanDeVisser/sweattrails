@@ -96,6 +96,9 @@ void test_download_request()
     CHECK(!year.garmin && year.wahoo);
     CHECK_EQ(year.garmin_days, 365);
     CHECK_EQ(year.wahoo_days, 365);
+    // How far "Everything" looks back past where the store is complete.
+    CHECK_EQ(year.wahoo_overlap_days, 7);
+    CHECK_EQ(defaults.wahoo_overlap_days, WahooDefaultDays);
     CHECK(!year.quiet);
 
     auto const startup = make_download_request(settings, MUST_EVAL(JSONValue::deserialize(R"({"quiet": true})")), Sources { .garmin = true, .wahoo = true });
