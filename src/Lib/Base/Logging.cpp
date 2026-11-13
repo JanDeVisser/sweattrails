@@ -59,13 +59,15 @@ Logger::Logger()
             m_categories.insert(category);
         }
     };
-    auto add_categories = [add_category](std::string_view const &categories) {
-        auto prev = 0ul;
-        for (auto sep = categories.find_first_of(";,:", prev); sep != std::string_view::npos; prev = sep, sep = categories.find_first_of(";,:", prev + 1)) {
-            add_category(categories.substr(prev, sep - prev));
-        }
-        if (prev < categories.length()) {
-            add_category(categories.substr(prev));
+    // "Garmin,Wahoo": any of ";,:" separates them. The views are into the
+    // environment or the options, which live as long as the program.
+    auto add_categories = [add_category](std::string_view categories) {
+        while (!categories.empty()) {
+            auto const sep = categories.find_first_of(";,:");
+            if (auto const category = categories.substr(0, sep); !category.empty()) {
+                add_category(category);
+            }
+            categories = (sep == std::string_view::npos) ? std::string_view { } : categories.substr(sep + 1);
         }
     };
     auto set_level = [this](std::string_view level) {
@@ -92,12 +94,7 @@ Logger::Logger()
         add_categories(cat);
     }
     if (auto env_trace = getenv("TRACE"); env_trace != nullptr) {
-        std::string_view trace = env_trace;
-        auto             prev = 0ul;
-        for (auto sep = trace.find_first_of(";,:", prev); sep != std::string_view::npos; prev = sep, sep = trace.find_first_of(";,:", prev + 1)) {
-            add_categories(trace.substr(prev, sep - prev));
-        }
-        add_categories(trace.substr(prev));
+        add_categories(env_trace);
     }
 }
 
