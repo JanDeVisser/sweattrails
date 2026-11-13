@@ -473,9 +473,8 @@ void StatusBar::draw()
         render_text(PADDING, y, left, FontSize::Medium, RAYWHITE);
     }
     if (!right.empty()) {
-        // render_text() takes a negative x as measured from the right.
-        auto const width = App::measure_text(std::string { right }.c_str(), FontSize::Medium).x;
-        render_text(-(width + PADDING), y, right, FontSize::Medium, LIGHTGRAY);
+        // A negative x puts the text's right edge that far from the right.
+        render_text(-PADDING, y, right, FontSize::Medium, LIGHTGRAY);
     }
 }
 }
