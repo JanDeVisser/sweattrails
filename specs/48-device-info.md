@@ -61,16 +61,16 @@ the file for this one?".
   in the same smaller font, after the name: "Garmin (product 4315)".
 - **The sensors**: one entry each, with the maker, the type, and the
   product number in the smaller font, as for the recording device:
-  "Garmin heart rate monitor (product 4606)". A sensor's product name is
-  only shown for a type SweatTrails doesn't know, in place of the type:
-  a Wahoo ELEMNT ROAM names its sensors by their type ("Radar",
-  "Heartrate", "Power"), which would say it twice. Without a maker, the
-  type starts the line: "Shifting". Under that, in the smaller
+  "Garmin heart rate monitor (product 4606)". Under that, in the smaller
   font, its serial number, software version, and battery status at the
   end of the activity (ok, low, critical, ...). The battery is the most
   useful of these: it answers "why did the power drop out?". Product
   numbers aren't turned into names in this version (see Version 1
   scope).
+  - A sensor's product name is only shown for a type SweatTrails doesn't
+    know, in place of the type: a Wahoo ELEMNT ROAM names its sensors by
+    their type ("Radar", "Heartrate", "Power"), which would say it twice.
+    Without a maker, the type starts the line: "Shifting".
   - The file lists each device several times: at the start, during the
     activity and at the end. Each device is shown once, with what its
     last listing says.
