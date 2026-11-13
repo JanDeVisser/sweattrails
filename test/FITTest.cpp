@@ -3,11 +3,12 @@
  *
  * SPDX-License-Identifier: MIT
  *
- * Tests reading record messages from FIT files with developer fields
- * (specs/49-developer-field-numbers.md), with FIT files built byte by byte
- * with TestFit.h.
+ * Tests reading record messages from FIT files with developer fields and
+ * with half a position (specs/49-developer-field-numbers.md), with FIT
+ * files built byte by byte with TestFit.h.
  */
 
+#include <cmath>
 #include <optional>
 #include <string>
 #include <vector>
@@ -30,6 +31,7 @@ constexpr i32 WaterlooLon = -960'655'360;   // -80.52°
 constexpr i32 DeveloperValue = 518'000'000; // Around 43.4°, as Wahoo's "adc" field
 
 constexpr u8 PositionLat = 0;
+constexpr u8 PositionLong = 1;
 
 void i32_le(FITBuilder &fit, i32 v)
 {
@@ -118,11 +120,78 @@ void test_native_field_wins_over_developer_field()
     }
 }
 
+// A record with one coordinate of the two, with `num` the one it has.
+std::string half_position_file(u8 num, i32 value)
+{
+    FITBuilder fit;
+    fit.definition(0, 20,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = num, .size = 4, .base_type = Sint32 },
+        });
+    fit.message(0);
+    fit.u32_le(Start);
+    i32_le(fit, value);
+    return fit.file();
+}
+
+void test_latitude_alone_is_no_position()
+{
+    ReadRecords t { half_position_file(PositionLat, WaterlooLat) };
+    CHECK_EQ(t.records.size(), 1u);
+    if (t.records.size() == 1) {
+        CHECK(!t.position(0).has_value());
+    }
+}
+
+void test_longitude_alone_is_no_position()
+{
+    ReadRecords t { half_position_file(PositionLong, WaterlooLon) };
+    CHECK_EQ(t.records.size(), 1u);
+    if (t.records.size() == 1) {
+        CHECK(!t.position(0).has_value());
+    }
+}
+
+std::string waterloo_file()
+{
+    FITBuilder fit;
+    fit.definition(0, 20,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 0, .size = 4, .base_type = Sint32 },
+            { .num = 1, .size = 4, .base_type = Sint32 },
+        });
+    fit.message(0);
+    fit.u32_le(Start);
+    i32_le(fit, WaterlooLat);
+    i32_le(fit, WaterlooLon);
+    return fit.file();
+}
+
+void test_both_coordinates_are_a_position()
+{
+    ReadRecords t { waterloo_file() };
+    CHECK_EQ(t.records.size(), 1u);
+    if (t.records.size() != 1) {
+        return;
+    }
+    auto const position = t.position(0);
+    CHECK(position.has_value());
+    if (position) {
+        CHECK(std::abs(position->lat - 43.44f) < 0.01f);
+        CHECK(std::abs(position->lon + 80.52f) < 0.01f);
+    }
+}
+
 }
 
 int main()
 {
     test_developer_field_is_not_a_native_field();
     test_native_field_wins_over_developer_field();
+    test_latitude_alone_is_no_position();
+    test_longitude_alone_is_no_position();
+    test_both_coordinates_are_a_position();
     return test_result();
 }

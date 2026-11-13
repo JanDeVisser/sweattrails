@@ -170,6 +170,16 @@ std::expected<record, FITError> make_from_rec(FITDataRecord const &rec)
 template<>
 std::optional<FITError> on_load(FITDataRecord const &fitrec, record &rec)
 {
+    // Latitude and longitude are read one at a time into the position, so
+    // with one of them the other is 0°: a line to the equator or to
+    // Greenwich on the map.
+    auto const has_value = [&fitrec](u8 num) {
+        auto const field = fitrec.get_field(num);
+        return field && field->value;
+    };
+    if (!has_value(0) || !has_value(1)) {
+        rec.position.reset();
+    }
     if (auto compressed_speed_distance_maybe = fitrec.get_field(8); compressed_speed_distance_maybe) {
         FITDataField compressed_speed_distance = { *compressed_speed_distance_maybe };
         // Three bytes, as the profile has it. A device that writes it as
