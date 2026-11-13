@@ -379,4 +379,63 @@ With Jan's export (2026-11-11) on a copy of the store:
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Suggestion: `slot_for()` reads whole files for activities that
+   are already there.** For a workout whose start the store has exactly
+   (the usual case on every download, Wahoo's Everything with its 2143
+   listed workouts included), `slot_for()` reads that FIT file in full
+   (`is_stub_or_unreadable()` -> `read_file_by_name()`) and parses to the
+   first record, where `has_activity()` was one `fs::exists`. At 1.3 s per
+   5586 files this is acceptable, but it makes each run's cost
+   proportional to the store, plus three `month_starts()` directory scans
+   per workout. If it shows, `is_stub()` could read just the first N kB
+   (records come early in a FIT file), or a stub's size could be a
+   cheap pre-check. No change needed now.
+2. **Suggestion: Recordings grouping leaves `<start>.fit.stub` behind.**
+   `move_recording()` in `Recordings.cpp` moves `.fit`, `.json`,
+   `.fit.original` and `.strava`, not `.fit.stub`. A replaced Wahoo
+   recording that is later grouped under a Garmin main recording as its
+   secondary leaves its kept stub in the month directory. Harmless (the
+   listing ignores it), but the stub no longer sits next to what
+   replaced it, and a later `.fit.stub` for the same start would be an
+   error in `replace_stub()` ("already exists"). Add `.fit.stub` to that
+   list if wanted.
+3. **Suggestion: when the original's start is not the stub's and a sidecar
+   is already at the new start, the stub's sidecar stays behind**
+   (`replace_stub()`, "Leaving sidecar"). The new activity then has the
+   other sidecar and the Strava ID/title/user notes stay on the orphaned
+   `<old>.json`, with no `.fit` any more. Nothing is lost, but nothing
+   merges either. Rare: needs an orphan sidecar at the new start. Test
+   `test_replace_sidecar_in_the_way` pins the current behavior.
+4. **Suggestion: FIT files that legitimately have no records count as
+   stubs.** Garmin strength/yoga activities have sets but no record
+   messages. By the spec's content test they're stubs: the screen says
+   "only a summary" (true enough), and Garmin's download will fetch such
+   a workout once more, the inbox sets it aside as a duplicate
+   (incoming is a stub too), and `duplicates` then keeps Garmin from
+   asking again. Wahoo's download (after spec 46) has no such memory:
+   check there that a stub-like workout that Wahoo has is not fetched on
+   every run.
+5. **Suggestion: `Filename` is joined to the export directory as is**
+   (`export_dir / found->second.file`). An absolute path or `..` in the
+   CSV reads any file; it would only be used if it's a FIT file with
+   records, and the CSV is the user's own, so low risk.
+6. **Suggestion: when `import_originals()` fails half way** (it returns an
+   error only from the listing), `job_import_strava_export()` reports it
+   without sending `StubsReplaced`, but that happens before any
+   replacement, so nothing is stale. No action.
+7. **Not found: bugs in the focus areas.** `replace_stub()` renames and
+   rolls back as specified, never overwrites, and moves the sidecar;
+   `slot_for()` orders exact real, nearest stub within 60 s, then
+   `has_activity()`; `organize_fit_file()` falls through to the
+   duplicate path for an incoming stub; `process_inbox()` counts
+   Replaced and calls `on_filed()` then `on_replaced()`; Garmin's
+   `wants_activity()` change is right; `gunzip()` is sound, including at
+   the ratio limit (a 20 MB file of zeros passes); `.fit.stub` is passed
+   by listing and `month_starts()`. `ActivityMap` drawing is untested
+   and unseen, as noted.
+
+Tests added by the Reviewer (`test/StubsTest.cpp`, `test/ZipTest.cpp`; all
+pass): `test_replace_across_months` (stub and original in different month
+directories), `test_replace_sidecar_in_the_way`, `test_inbox_bad_sidecar`,
+`test_gunzip_sizes` (sizes around the initial buffer, 20 MB of zeros,
+trailing garbage). The full run passes.

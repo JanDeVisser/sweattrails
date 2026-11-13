@@ -119,6 +119,21 @@ void test_gunzip()
     CHECK(unzipped.value_or("") == big);
 }
 
+// Sizes around the first guess at the output's size, and what gzip
+// leaves after the data.
+void test_gunzip_sizes()
+{
+    for (size_t const size : { 1uz, 4095uz, 4096uz, 4097uz, 8192uz, 8193uz }) {
+        std::string const data(size, 'z');
+        auto const        unzipped = gunzip(gzip(data));
+        CHECK(unzipped.has_value());
+        CHECK(unzipped.value_or("") == data);
+    }
+    std::string const zeros(20'000'000, '\0');
+    CHECK(gunzip(gzip(zeros)).value_or("") == zeros);
+    CHECK_EQ(gunzip(gzip(Text) + "trailing garbage").value_or(""), Text);
+}
+
 void test_gunzip_damaged()
 {
     CHECK(!gunzip("").has_value());
@@ -143,6 +158,7 @@ int main()
     test_truncated_and_corrupt();
     test_impossible_size();
     test_gunzip();
+    test_gunzip_sizes();
     test_gunzip_damaged();
     return ST::Test::test_result();
 }

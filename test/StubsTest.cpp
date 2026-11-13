@@ -372,6 +372,60 @@ void test_inbox_real_is_duplicate()
     CHECK_EQ(contents(fit_at(store, 10)), stub_fit());
 }
 
+// A stub filed in one month, its recording a few seconds later in the
+// next: the files move to the new month's directory.
+void test_replace_across_months()
+{
+    Test::TempStore store;
+    auto const      month_of = [](i64 offset) {
+        auto const date = DateTime::from_timestamp(static_cast<i32>(unix_start(offset)));
+        return Month { static_cast<size_t>(date.year), date.month };
+    };
+    i64 boundary = 0;
+    while (month_of(boundary) == month_of(0)) {
+        boundary += 3600;
+    }
+    while (month_of(boundary - 1) != month_of(0)) {
+        boundary -= 1;
+    }
+    auto const before = boundary - 3;
+    auto const after = boundary + 2;
+    file(store, before, stub_fit(static_cast<u32>(before)), R"({ "start_time": 1, "title": "Mine" })");
+    CHECK(slot_for(store.storage, unix_start(after)).kind == Slot::Kind::Stub);
+    CHECK(replace_stub(store.storage, stored(store, before), recorded_fit(static_cast<u32>(after)), unix_start(after)).has_value());
+    CHECK(month_dir(store, before) != month_dir(store, after));
+    CHECK_EQ(contents(fit_at(store, after)), recorded_fit(static_cast<u32>(after)));
+    CHECK_EQ(contents(fit_at(store, after, ".stub")), stub_fit(static_cast<u32>(before)));
+    CHECK(!fs::exists(fit_at(store, before)));
+    CHECK(!fs::exists(sidecar_at(store, before)));
+    CHECK_EQ(json_at(sidecar_at(store, after)).try_get<std::string>("title").value_or(""), "Mine");
+}
+
+// A sidecar already at the original's start (without a FIT file) isn't
+// overwritten, and the stub's isn't lost.
+void test_replace_sidecar_in_the_way()
+{
+    Test::TempStore store;
+    file(store, 0, stub_fit(), R"({ "title": "Mine" })");
+    MUST(write_file_by_name(sidecar_at(store, 5).string(), std::string_view { R"({ "title": "Theirs" })" }));
+    CHECK(replace_stub(store.storage, stored(store, 0), recorded_fit(5), unix_start(5)).has_value());
+    CHECK_EQ(contents(fit_at(store, 5)), recorded_fit(5));
+    CHECK_EQ(json_at(sidecar_at(store, 5)).try_get<std::string>("title").value_or(""), "Theirs");
+    CHECK_EQ(json_at(sidecar_at(store, 0)).try_get<std::string>("title").value_or(""), "Mine");
+}
+
+// An inbox sidecar that isn't JSON doesn't stop the replacement.
+void test_inbox_bad_sidecar()
+{
+    Test::TempStore store;
+    file(store, 0, stub_fit(), R"({ "title": "Mine" })");
+    to_inbox(store, "wahoo-1", recorded_fit(), "not json");
+    auto const filed = process(store);
+    CHECK_EQ(filed.count, 1u);
+    CHECK_EQ(contents(fit_at(store, 0)), recorded_fit());
+    CHECK_EQ(json_at(sidecar_at(store, 0)).try_get<std::string>("title").value_or(""), "Mine");
+}
+
 }
 
 int main()
@@ -397,5 +451,8 @@ int main()
     test_inbox_replaces_stub();
     test_inbox_stub_over_stub();
     test_inbox_real_is_duplicate();
+    test_inbox_bad_sidecar();
+    test_replace_across_months();
+    test_replace_sidecar_in_the_way();
     return ST::Test::test_result();
 }
