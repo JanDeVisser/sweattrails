@@ -345,7 +345,7 @@ std::string start_date(Activity const &activity)
 
 std::string delete_question(Activity const &activity)
 {
-    constexpr std::string_view Where = "It's moved to the deleted folder.";
+    constexpr std::string_view Where = "It will be moved to the deleted folder.";
     if (activity.recordings < 2) {
         return std::format("Delete {} of {}? {}", quoted_title(activity), start_date(activity), Where);
     }

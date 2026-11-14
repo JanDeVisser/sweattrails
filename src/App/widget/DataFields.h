@@ -55,7 +55,7 @@ std::string device_name(Activity const &activity);
 std::string activity_summary(Activity const &activity);
 
 // The question before deleting the activity on display, e.g. "Delete
-// “Morning Ride” of 2025-02-27? It's moved to the deleted folder.", or
+// “Morning Ride” of 2025-02-27? It will be moved to the deleted folder.", or
 // for one of several recordings, the recording: "Delete recording 2 of 3
 // (Wahoo) of “Morning Ride”? ...". See specs/54-delete-activity.md.
 std::string delete_question(Activity const &activity);

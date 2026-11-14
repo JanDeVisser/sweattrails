@@ -50,7 +50,7 @@ fitness, and the downloads don't bring it back.
   mistake. It works on what's on display, on the activity screen only
   (`when()`), and not with an empty store.
 - **It asks first**, as a yes/no query, with the activity's name and
-  date: "Delete “Morning Ride” of 2025-02-27? It's moved to the deleted
+  date: "Delete “Morning Ride” of 2025-02-27? It will be moved to the deleted
   folder." No is the default, so Enter right after opening it does
   nothing.
 - **What goes**: the activity's files, `.fit`, `.json`, `.fit.original`,
@@ -214,7 +214,7 @@ as `list_box()` does with its `initial`.
   `delete_question(Activity const &)` and `deleted_status(Activity const
   &)`. The date is the start's, `YYYY-MM-DD`; the name is the activity's
   `title`, which is the activity's whichever recording is shown. The
-  question for a recording also says "It's moved to the deleted
+  question for a recording also says "It will be moved to the deleted
   folder.", as the activity's does.
 - **`st-delete-activity`**, titled "Delete activity", no key,
   `.when()` on the activity screen with an activity on display (none
