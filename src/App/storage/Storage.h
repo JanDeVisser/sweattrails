@@ -54,12 +54,6 @@ struct Storage {
     // Called with the name of each inbox file before it's processed, its index
     // and the number of files.
     using InboxProgress = std::function<void(std::string_view const &file_name, size_t index, size_t count)>;
-    // Called with the start time of each activity the inbox files.
-    using InboxFiled = std::function<void(i64 start)>;
-    // Called, after InboxFiled, for each activity that replaced a stub
-    // (storage/Stubs.h), with the stub's start time, and its own.
-    using InboxReplaced = std::function<void(i64 stub_start, i64 start)>;
-
     enum class InboxOutcome {
         Organized, // Moved into the activity store.
         Replaced,  // Took the place of a stub: see storage/Stubs.h.
@@ -107,15 +101,24 @@ struct Storage {
     StorageResult<std::optional<Activity>>   find_newest();
     StorageResult<Activities>                set_current_folder(Month const &month);
     StorageResult<std::optional<Activity>>   load_activity(ActivityID const &id);
-    // Files what's in the inbox. The number filed: organized, or
-    // replacing a stub.
-    StorageResult<u32> process_inbox(InboxProgress const &on_file = { }, InboxFiled const &on_filed = { }, InboxReplaced const &on_replaced = { });
     // What the inbox did with a file, and the start time it filed it by.
     struct InboxFiling {
         InboxOutcome outcome { InboxOutcome::Skipped };
         i64          start { 0 };
         i64          stub_start { 0 }; // For Replaced: the stub's
+
+        // Whether the file is in the store now: organized, or replacing a
+        // stub.
+        [[nodiscard]] bool filed() const { return outcome == InboxOutcome::Organized || outcome == InboxOutcome::Replaced; }
     };
+    // Called with the name of each inbox file after it's processed, and
+    // what the inbox did with it, whatever that was. Not for a file that
+    // couldn't be read.
+    using InboxFiled = std::function<void(std::string_view file_name, InboxFiling const &filing)>;
+
+    // Files what's in the inbox. The number filed: organized, or
+    // replacing a stub.
+    StorageResult<u32>         process_inbox(InboxProgress const &on_file = { }, InboxFiled const &on_filed = { });
     StorageResult<InboxFiling> organize_fit_file(std::string_view const &file_name);
     // Whether the store has an activity that starts at `start_time`, a Unix
     // time: the inbox files activities by their start time. Also one that's

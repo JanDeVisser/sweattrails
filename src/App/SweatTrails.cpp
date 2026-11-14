@@ -250,19 +250,22 @@ void process_inbox(pSweatTrails const &the)
     };
     // A recording of an activity in the store goes with it.
     std::vector<Grouped> groups;
-    auto const           on_filed = [&the, &groups](i64 start) {
-        auto grouped = group_new(the->storage, start);
+    StubsReplaced        replaced;
+    auto const           on_filed = [&the, &groups, &replaced](std::string_view, Storage::InboxFiling const &filing) {
+        if (!filing.filed()) {
+            return;
+        }
+        auto grouped = group_new(the->storage, filing.start);
         if (!grouped) {
-            warning(ST, "Can't group the activity starting at {} with its recordings: {}", start, grouped.error().to_string());
+            warning(ST, "Can't group the activity starting at {} with its recordings: {}", filing.start, grouped.error().to_string());
         } else if (*grouped) {
             groups.push_back(std::move(**grouped));
         }
+        if (filing.outcome == Storage::InboxOutcome::Replaced) {
+            replaced.moved.emplace_back(filing.stub_start, filing.start);
+        }
     };
-    StubsReplaced replaced;
-    auto const    on_replaced = [&replaced](i64 stub_start, i64 start) {
-        replaced.moved.emplace_back(stub_start, start);
-    };
-    auto res = the->storage.process_inbox(on_file, on_filed, on_replaced);
+    auto res = the->storage.process_inbox(on_file, on_filed);
     the->notify_latest<NotificationType::ImportingFile>(ImportingFile { });
     if (!replaced.moved.empty()) {
         the->notify<NotificationType::StubsReplaced>(std::move(replaced));

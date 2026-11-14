@@ -316,8 +316,14 @@ Filed process(Test::TempStore &store)
     Filed      ret;
     auto const count = store.storage.process_inbox(
         { },
-        [&ret](i64 start) { ret.filed.push_back(start); },
-        [&ret](i64 stub_start, i64 start) { ret.replaced.emplace_back(stub_start, start); });
+        [&ret](std::string_view, Storage::InboxFiling const &filing) {
+            if (filing.filed()) {
+                ret.filed.push_back(filing.start);
+            }
+            if (filing.outcome == Storage::InboxOutcome::Replaced) {
+                ret.replaced.emplace_back(filing.stub_start, filing.start);
+            }
+        });
     CHECK(count.has_value());
     ret.count = count.value_or(0);
     return ret;
