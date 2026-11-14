@@ -92,25 +92,6 @@ GarminResult<void> write_whole_file(fs::path const &path, std::string_view conte
     return { };
 }
 
-// The IDs of the activities the inbox set aside as duplicates:
-// `garmin-<id>.fit`, or `garmin-<id>-<n>.fit` for later copies.
-std::set<u64> set_aside_as_duplicates(Storage const &storage)
-{
-    std::set<u64>   ret;
-    std::error_code ec { };
-    for (fs::directory_iterator it { storage.inbox_dir / "duplicates", ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
-        auto const name = it->path().filename().string();
-        if (!name.starts_with("garmin-") || !name.ends_with(".fit")) {
-            continue;
-        }
-        auto const id = std::string_view { name }.substr(7, name.size() - 11);
-        if (auto const parsed = string_to_integer<u64>(id.substr(0, id.find('-')), 10); parsed) {
-            ret.insert(*parsed);
-        }
-    }
-    return ret;
-}
-
 }
 
 fs::path garmin_unavailable_file(Storage const &storage)
@@ -294,7 +275,7 @@ GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage cons
     if (!listed) {
         return std::unexpected(listed.error());
     }
-    auto const                  duplicates = set_aside_as_duplicates(storage);
+    auto const                  duplicates = storage.set_aside_as_duplicates("garmin");
     auto const                  unavailable_ones = read_unavailable(garmin_unavailable_file(storage));
     std::vector<GarminActivity> wanted;
     for (auto const &activity : *listed) {
