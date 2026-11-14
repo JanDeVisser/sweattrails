@@ -1,6 +1,6 @@
 # Activities that are only a summary
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -337,7 +337,8 @@ With Jan's export (2026-11-11) on a copy of the store:
 3. The inbox.
 4. Strava's export.
 5. The activity screen.
-6. Garmin's and Wahoo's downloads; Wahoo's after spec 46 is merged.
+6. Garmin's and Wahoo's downloads. Wahoo's follows on main once spec 46
+   is merged, with review finding 4 (below).
 7. README.
 
 ## Test plan
@@ -452,3 +453,5 @@ trailing garbage). The full run passes.
    workout without records isn't fetched on every run.
 5. Left as it is: the CSV is the user's own.
 6. No action, as the Reviewer says.
+
+Jan looked at the line on the activity screen in the app: it's fine.
