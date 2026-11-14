@@ -31,16 +31,22 @@ namespace fs = std::filesystem;
 struct Activity;
 
 // A world, as share/zwift-worlds.json has it: Zwift's image of it, and
-// where on the earth that image lies. Zwift places its worlds on the earth:
+// where on the earth that image lies, once turned north up. Zwift places its worlds on the earth:
 // the made-up ones, such as Watopia, in the Pacific.
 struct ZwiftWorld {
     std::string name { };
     std::string image { }; // The image's URL
     Coordinates north_west { };
     Coordinates south_east { };
+    // Zwift's image of France and of the Makuri Islands has north to the
+    // right: it's turned counter-clockwise before it's cut. `"turn": "ccw"`.
+    bool turned { false };
 
-    // The cache's name for it, from the image's file name, such as
-    // "MiniMap_Watopia_2": a new image is a new URL, and so a new cache.
+    // The name of the image's file, such as "MiniMap_Watopia_2".
+    [[nodiscard]] std::string image_name() const;
+    // The cache's name for its tiles: the image's name, and "_ccw" for a
+    // turned one, so that tiles cut before it was turned aren't used. A
+    // new image is a new URL, and so a new cache.
     [[nodiscard]] std::string cache_name() const;
     [[nodiscard]] Box         box() const;
 
@@ -98,8 +104,8 @@ struct WorldMap {
 // `world.json`, written last, says so.
 std::optional<WorldMap> cut_world(fs::path const &cache, ZwiftWorld const &world);
 
-// Downloads the world's image to `<cache>/<cache name>.png`, unless it's
-// there, and cuts it into tiles from MinWorldZoom to its native zoom, on
+// Downloads the world's image to `<cache>/<image name>.png`, unless it's
+// there, turns it if it has to be, and cuts it into tiles from MinWorldZoom to its native zoom, on
 // the background where a tile goes past the image. Only call this on the
 // job thread: it downloads, and takes some seconds.
 std::expected<WorldMap, LibCError> prepare_zwift_world(fs::path const &cache, ZwiftWorld const &world);

@@ -73,6 +73,12 @@ ride never went down.
   ]
   ```
 
+- *(Added later.)* Zwift's images of France and the Makuri Islands have
+  north to the right, so their routes landed in the wrong place. Their
+  worlds have `"turn": "ccw"`: the image is turned counter-clockwise
+  before it's cut, and its tiles are cached as `<image>_ccw`. The corners
+  are those of the turned image. The sea is still the image's top left
+  pixel before turning.
 - A downloaded image is cached with the map tiles, and used from the
   cache from then on, as a tile is. A world whose image changes gets a
   new URL in the JSON, and so a new download.

@@ -43,6 +43,11 @@ Decoded<Coordinates> decode_corner(JSONValue const &json, std::string_view key)
 
 std::string ZwiftWorld::cache_name() const
 {
+    return turned ? std::format("{}_ccw", image_name()) : image_name();
+}
+
+std::string ZwiftWorld::image_name() const
+{
     auto path = std::string_view { image };
     if (auto const query = path.find_first_of("?#"); query != std::string_view::npos) {
         path = path.substr(0, query);
@@ -69,12 +74,19 @@ Decoded<ZwiftWorld> ZwiftWorld::decode(JSONValue const &json)
     if (!json.is_object()) {
         return std::unexpected(JSONError::expected(JSONType::Object, json.type(), "ZwiftWorld"));
     }
-    return ZwiftWorld {
+    ZwiftWorld ret {
         .name = TRY_EVAL(json.try_get<std::string>("name")),
         .image = TRY_EVAL(json.try_get<std::string>("image")),
         .north_west = TRY_EVAL(decode_corner(json, "north_west")),
         .south_east = TRY_EVAL(decode_corner(json, "south_east")),
     };
+    if (json.get("turn")) {
+        if (TRY_EVAL(json.try_get<std::string>("turn")) != "ccw") {
+            return std::unexpected(JSONError { JSONError::Code::TypeMismatch, "a world's \"turn\" can only be \"ccw\"" });
+        }
+        ret.turned = true;
+    }
+    return ret;
 }
 
 std::expected<std::vector<ZwiftWorld>, LibCError> read_zwift_worlds(fs::path const &file)
@@ -188,12 +200,12 @@ std::expected<void, LibCError> write_tile(fs::path const &dir, WorldTile const &
 // From the native zoom down, each zoom's tiles are cut from the image
 // scaled to that zoom, which is half the one before: scaling the whole
 // image once a zoom is quicker than scaling each tile from the original.
-std::expected<WorldMap, LibCError> cut_tiles(fs::path const &dir, ZwiftWorld const &world, Image &image)
+std::expected<WorldMap, LibCError> cut_tiles(fs::path const &dir, ZwiftWorld const &world, Image &image, Color background)
 {
     WorldMap map {
         .dir = dir,
         .native_zoom = native_zoom(world, static_cast<float>(image.width)),
-        .background = GetImageColor(image, 0, 0),
+        .background = background,
     };
     for (auto zoom = static_cast<int>(map.native_zoom); zoom >= MinWorldZoom; --zoom) {
         auto const z = static_cast<u8>(zoom);
@@ -249,7 +261,7 @@ std::optional<WorldMap> cut_world(fs::path const &cache, ZwiftWorld const &world
 
 std::expected<WorldMap, LibCError> prepare_zwift_world(fs::path const &cache, ZwiftWorld const &world)
 {
-    auto const      image_file = cache / std::format("{}.png", world.cache_name());
+    auto const      image_file = cache / std::format("{}.png", world.image_name());
     std::error_code ec { };
     if (!fs::exists(image_file, ec)) {
         TRY(download_file(world.image, image_file, DownloadLimit::Stall));
@@ -262,8 +274,15 @@ std::expected<WorldMap, LibCError> prepare_zwift_world(fs::path const &cache, Zw
         return std::unexpected(LibCError { "Could not decode {}'s map, `{}`", world.name, world.image });
     }
     ImageFormat(&image, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    // The sea is the top left corner of Zwift's image, also of a turned
+    // one: turned, that corner is at the bottom left, and the top left is
+    // France's land.
+    auto const background = GetImageColor(image, 0, 0);
+    if (world.turned) {
+        ImageRotateCCW(&image);
+    }
     auto const dir = cache / world.cache_name();
-    auto       map = cut_tiles(dir, world, image);
+    auto       map = cut_tiles(dir, world, image, background);
     UnloadImage(image);
     return map;
 }
