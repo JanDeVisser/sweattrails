@@ -430,6 +430,26 @@ void test_message()
         "Strava's export has none of the descriptions missing here. Replaced 1 activity that was only a summary with its recording.");
     CHECK_EQ((ExportImport { .stubs = { .unreadable = 1 } }).message(),
         "Strava's export has none of the descriptions missing here. 1 activity that's only a summary has a GPX or TCX file, which SweatTrails can't read.");
+
+    // The activities the store didn't have.
+    CHECK_EQ((ExportImport {
+                  .descriptions = 1,
+                  .missing = { .unreadable = 15, .added = 493, .set_aside = 163 },
+              })
+                 .message(),
+        "Strava's export: 1 description, 0 of them empty. Added 493 activities from the export; 163 were already here. "
+        "15 more have a GPX or TCX file, which SweatTrails can't read.");
+    CHECK_EQ((ExportImport { .missing = { .added = 1 } }).message(),
+        "Strava's export has none of the descriptions missing here. Added 1 activity from the export.");
+    CHECK_EQ((ExportImport { .missing = { .added = 2, .set_aside = 1 } }).message(),
+        "Strava's export has none of the descriptions missing here. Added 2 activities from the export; 1 was already here.");
+    CHECK_EQ((ExportImport { .missing = { .set_aside = 2 } }).message(),
+        "Strava's export has none of the descriptions missing here. 2 of the export's activities were already here.");
+    CHECK_EQ((ExportImport { .stubs = { .replaced = 2, .unreadable = 3 }, .missing = { .unreadable = 15, .added = 4 } }).message(),
+        "Strava's export has none of the descriptions missing here. Replaced 2 activities that were only a summary with their recordings. "
+        "Added 4 activities from the export. 18 more have a GPX or TCX file, which SweatTrails can't read.");
+    CHECK_EQ((ExportImport { .stubs = { .unreadable = 3 }, .missing = { .unreadable = 1 } }).message(),
+        "Strava's export has none of the descriptions missing here. 4 activities have a GPX or TCX file, which SweatTrails can't read.");
 }
 
 }

@@ -40,6 +40,20 @@ std::string count_of(size_t count, std::string_view one, std::string_view more)
     return std::format("{} {}", count, count == 1 ? one : more);
 }
 
+// The sentence on what came in through the inbox, if anything did.
+std::string missing_message(MissingImport const &missing)
+{
+    auto const were = (missing.set_aside == 1) ? "was" : "were";
+    if (missing.added > 0) {
+        return std::format(" Added {} from the export{}.", count_of(missing.added, "activity", "activities"),
+            missing.set_aside > 0 ? std::format("; {} {} already here", missing.set_aside, were) : std::string { });
+    }
+    if (missing.set_aside > 0) {
+        return std::format(" {} of the export's activities {} already here.", missing.set_aside, were);
+    }
+    return { };
+}
+
 }
 
 bool is_csv_file(fs::path const &path)
@@ -101,10 +115,13 @@ std::string ExportImport::message() const
             count_of(stubs.replaced, "activity", "activities"), stubs.replaced == 1 ? "was" : "were",
             stubs.replaced == 1 ? "its" : "their", stubs.replaced == 1 ? "" : "s");
     }
-    if (stubs.unreadable > 0) {
-        ret += std::format(" {} {} a GPX or TCX file, which SweatTrails can't read.",
-            stubs.replaced > 0 ? std::format("{} more", stubs.unreadable) : count_of(stubs.unreadable, "activity that's only a summary", "activities that are only a summary"),
-            stubs.unreadable == 1 ? "has" : "have");
+    ret += missing_message(missing);
+    auto const unreadable = stubs.unreadable + missing.unreadable;
+    if (unreadable > 0) {
+        auto const which = (stubs.replaced > 0 || missing.added > 0) ? std::format("{} more", unreadable)
+            : (missing.unreadable > 0)                               ? count_of(unreadable, "activity", "activities")
+                                                                     : count_of(unreadable, "activity that's only a summary", "activities that are only a summary");
+        ret += std::format(" {} {} a GPX or TCX file, which SweatTrails can't read.", which, unreadable == 1 ? "has" : "have");
     }
     return ret;
 }
