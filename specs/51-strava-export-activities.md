@@ -1,6 +1,6 @@
 # Importing the activities in Strava's export
 
-Status: In progress, on branch feature/51-strava-export-activities
+Status: In review, on branch feature/51-strava-export-activities
 
 <!--
 Status is one of:
