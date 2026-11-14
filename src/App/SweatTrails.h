@@ -120,6 +120,14 @@ struct RecordingsRequest {
     std::filesystem::path fit { };
 };
 
+// The DeleteActivity job: the activity or recording on display, and what
+// the status line says when it's deleted. See specs/54-delete-activity.md.
+struct DeleteRequest {
+    ActivityID            id { };
+    std::filesystem::path fit { };
+    std::string           done { };
+};
+
 // The FindNewestActivity job. At startup, it also tells the UI whether
 // the store is empty, which then offers to download its history.
 struct FindNewest {
@@ -156,7 +164,8 @@ struct DescribingProgress {
     S(SplitRecordings, RecordingsRequest)      \
     S(GroupWithMain, RecordingsRequest)        \
     S(ImportStravaExport, StravaExportRequest) \
-    S(DescribeFromStrava, DescribingProgress)
+    S(DescribeFromStrava, DescribingProgress)  \
+    S(DeleteActivity, DeleteRequest)
 
 enum class JobType {
     JOBTYPE(ENUMVALUE2)
@@ -233,6 +242,15 @@ struct RecordingsChanged {
     std::string error { };
 };
 
+// Sent when the DeleteActivity job is done: the activity to show, none if
+// the store is empty now, what it did, for the status line, and why it
+// couldn't.
+struct ActivityDeleted {
+    std::optional<ActivityID> show { };
+    std::string               done { };
+    std::string               error { };
+};
+
 // The steps of the ImportStravaExport job, in order.
 enum class ImportStep {
     Descriptions,
@@ -295,7 +313,8 @@ struct StoreChecked {
     S(ImportingDescriptions, ImportingDescriptions) \
     S(Describing, Describing)                       \
     S(DescribingPaused, DescribingPaused)           \
-    S(StubsReplaced, StubsReplaced)
+    S(StubsReplaced, StubsReplaced)                 \
+    S(ActivityDeleted, ActivityDeleted)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -327,6 +346,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void job_group_with_main(Job::Payload const &data);
     static void job_import_strava_export(Job::Payload const &data);
     static void job_describe_from_strava(Job::Payload const &data);
+    static void job_delete_activity(Job::Payload const &data);
 
     // The payload variant starts with a std::monostate, so a job type's
     // payload comes one after its value.
@@ -351,6 +371,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 job_group_with_main,
                 job_import_strava_export,
                 job_describe_from_strava,
+                job_delete_activity,
             });
     }
 
@@ -379,6 +400,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_describing(Notification::Payload const &data);
     static void notif_describing_paused(Notification::Payload const &data);
     static void notif_stubs_replaced(Notification::Payload const &data);
+    static void notif_activity_deleted(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -405,6 +427,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_describing,
                 notif_describing_paused,
                 notif_stubs_replaced,
+                notif_activity_deleted,
             });
     }
 

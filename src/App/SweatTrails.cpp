@@ -583,6 +583,52 @@ void SweatTrails::job_group_with_main(Job::Payload const &data)
     });
 }
 
+// The activity to show after deleting `id`, an activity of one recording:
+// the one after it, else the one before it, else none. Asked before
+// deleting: after, `id` isn't listed, and activity_next_to() would pass
+// over the rest of its month.
+std::optional<ActivityID> shown_after_deleting(Storage &storage, ActivityID const &id)
+{
+    for (auto const step : { 1, -1 }) {
+        auto const next = storage.activity_next_to(id, step);
+        if (!next) {
+            warning(ST, "Can't find the activity next to {}: {}", id, next.error().to_string());
+        } else if (*next) {
+            return *next;
+        }
+    }
+    return { };
+}
+
+void SweatTrails::job_delete_activity(Job::Payload const &data)
+{
+    auto const &request = std::get<DeleteRequest>(data);
+    auto const  the = SweatTrails::the();
+    auto const  next = request.id.recording.empty() && recordings_of(request.fit).empty()
+        ? shown_after_deleting(the->storage, request.id)
+        : std::optional<ActivityID> { };
+    auto const  deleted = delete_recording(the->storage, request.fit);
+    if (auto const rescanned = the->storage.rescan(); !rescanned) {
+        warning(ST, "Can't read the store after deleting: {}", rescanned.error().to_string());
+    }
+    if (!deleted) {
+        // Its files may have moved before it failed.
+        auto const      main = activity_id_of(main_of(request.fit));
+        std::error_code ec { };
+        the->notify<NotificationType::ActivityDeleted>(ActivityDeleted {
+            .show = fs::exists(main_of(request.fit), ec) ? main : next,
+            .done = "Not deleted",
+            .error = std::format("Couldn't delete the activity: {}", deleted.error().to_string()),
+        });
+        return;
+    }
+    info(ST, "Deleted `{}`: it's `{}` now", request.fit.string(), deleted->to.string());
+    the->notify<NotificationType::ActivityDeleted>(ActivityDeleted {
+        .show = deleted->main ? activity_id_of(*deleted->main) : next,
+        .done = request.done,
+    });
+}
+
 void SweatTrails::job_download(Job::Payload const &data)
 {
     run_downloads(SweatTrails::the(), std::get<DownloadRequest>(data));
@@ -2017,6 +2063,25 @@ void cmd_split_recordings(pSweatTrails const &sweattrails, JSONValue const &)
     query_box(sweattrails, std::format("Split the {} recordings into separate activities?", activity.recordings), split, QueryOptionYesNo);
 }
 
+// The palette's "Delete activity": the activity on display, or the
+// recording on display of several, into deleted/, after asking. No is
+// selected, so that Enter right after opening it does nothing. See
+// specs/54-delete-activity.md.
+void cmd_delete_activity(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    auto const displayed = activity_for_keys(sweattrails);
+    if (!displayed) {
+        return;
+    }
+    auto const &activity = displayed->activity;
+    auto        remove = [request = DeleteRequest { .id = activity.id, .fit = fit_path(activity), .done = deleted_status(activity) }](pSweatTrails const &st, QueryOption selection) {
+        if (selection == QueryOption::QueryOptionYes) {
+            st->schedule<JobType::DeleteActivity>(request);
+        }
+    };
+    query_box(sweattrails, delete_question(activity), remove, QueryOptionYesNo, QueryOptionNo);
+}
+
 // Ctrl+J: groups the activity on display with the activities that are
 // recordings of the same one, those split before too, with it as the main
 // one.
@@ -2343,6 +2408,24 @@ void SweatTrails::notif_recordings_changed(Notification::Payload const &data)
         message_box(changed.error);
     }
     show_again(SweatTrails::the(), changed.id, changed.done);
+}
+
+void SweatTrails::notif_activity_deleted(Notification::Payload const &data)
+{
+    auto const &deleted = std::get<ActivityDeleted>(data);
+    auto const  the = SweatTrails::the();
+    if (!deleted.error.empty()) {
+        message_box(deleted.error);
+    }
+    if (deleted.show) {
+        show_again(the, *deleted.show, deleted.done);
+        return;
+    }
+    // The store is empty now.
+    the->last_activity = { };
+    the->activity_display->clear_activity();
+    the->set_status(deleted.done);
+    the->update_summaries();
 }
 
 void SweatTrails::notif_describing(Notification::Payload const &data)
@@ -2745,6 +2828,10 @@ void SweatTrails::initialize()
 #else
     auto const split_recordings_key = KeyCombo { KEY_R, KModControl | KModAlt };
 #endif
+    // No key: deleting is rare, and a key is easy to hit by mistake.
+    bus.add_task<SweatTrails>("st-delete-activity", self(), cmd_delete_activity)
+        .titled("Delete activity")
+        .when([this] { return !showing_summaries() && activity_display->activity != nullptr; });
     bus.add_task<SweatTrails>("st-split-recordings", self(), cmd_split_recordings)
         .titled("Split the recordings")
         .bind(split_recordings_key)
