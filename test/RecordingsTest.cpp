@@ -125,6 +125,42 @@ void test_same_activity()
     CHECK(!same_activity(ride(1000, 0), ride(1000, 3600)));
 }
 
+void test_same_recording()
+{
+    auto const with = [](u32 serial, u32 elapsed, float32 distance) {
+        auto ret = ride(1000, elapsed);
+        ret.serial = serial;
+        ret.distance = distance;
+        return ret;
+    };
+    // By the serial number, when both have one, whatever the totals.
+    CHECK(same_recording(with(7, 3600, 30000), with(7, 3000, 0)));
+    CHECK(!same_recording(with(7, 3600, 30000), with(8, 3600, 30000)));
+    // Else by the totals: Garmin Connect's copy of Zwift's file.
+    CHECK(same_recording(with(0, 3600, 30000), with(7, 3605, 30150)));
+    CHECK(!same_recording(with(0, 3600, 30000), with(0, 3606, 30000)));
+    CHECK(!same_recording(with(0, 3600, 30000), with(0, 3600, 30151)));
+    // A head unit indoors has no distance, and Zwift's file has.
+    CHECK(!same_recording(with(0, 3600, 0), with(7, 3600, 30000)));
+    CHECK(same_recording(with(0, 3600, 0), with(0, 3600, 0)));
+}
+
+void test_recording_info_from_memory()
+{
+    Test::TempStore store { };
+    auto const      info = recording_info(store.storage, std::string_view { Test::recording_fit({ .serial = 1234, .start = 60, .count = 900, .distance = 7500 }) });
+    CHECK(info.has_value());
+    if (!info) {
+        return;
+    }
+    CHECK(info->fit.empty());
+    CHECK_EQ(info->serial, 1234u);
+    CHECK_EQ(info->elapsed, 900u);
+    CHECK_EQ(info->distance, 7500.0f);
+    CHECK_EQ(info->start, unix_start(60));
+    CHECK(!recording_info(store.storage, std::string_view { "not a FIT file" }).has_value());
+}
+
 void test_main_recording()
 {
     std::vector<RecordingInfo> const two { ride(1000, 3600, manufacturer::wahoo_fitness), ride(1010, 3500, manufacturer::garmin) };
@@ -1129,6 +1165,8 @@ int main()
 {
     test_manufacturer_by_name();
     test_same_activity();
+    test_same_recording();
+    test_recording_info_from_memory();
     test_main_recording();
     test_filing_groups();
     test_filing_by_the_longest();

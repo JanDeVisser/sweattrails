@@ -31,6 +31,12 @@ struct Storage;
 // Recordings overlap for at least this much of the shorter one's time.
 constexpr double SameActivityOverlap = 0.8;
 
+// Two files without both a serial number are one recording, rewritten,
+// when their totals are this close: Garmin Connect's copy of Zwift's
+// file starts some seconds off, but keeps its time and distance.
+constexpr u32    SameRecordingSeconds = 5;
+constexpr double SameRecordingDistance = 0.005;
+
 struct RecordingInfo {
     fs::path                         fit { };
     i64                              start { 0 };   // A Unix time
@@ -38,6 +44,8 @@ struct RecordingInfo {
     FIT::sport                       sport { FIT::sport::Generic };
     std::optional<FIT::sub_sport>    sub_sport { };
     std::optional<FIT::manufacturer> manufacturer { };
+    u32                              serial { 0 };       // file_id's: 0 for none
+    float32                          distance { 0 };     // m
     bool                             separate { false }; // Split by the user: never grouped again
     bool                             chosen { false };   // Made the main one by the user, with Ctrl+J
 };
@@ -46,9 +54,19 @@ struct RecordingInfo {
 // if it can't be read.
 [[nodiscard]] std::optional<RecordingInfo> recording_info(Storage &storage, fs::path const &fit);
 
+// The same of a FIT file in memory, which has no path: `fit` stays empty.
+[[nodiscard]] std::optional<RecordingInfo> recording_info(Storage &storage, std::string_view fit);
+
 // Whether two recordings are of one activity: the same sport, as the
 // totals count it, overlapping for most of the shorter one's time.
 [[nodiscard]] bool same_activity(RecordingInfo const &a, RecordingInfo const &b);
+
+// Whether two FIT files are one recording: the device's own file and a
+// copy rewritten by Garmin Connect or SweatTrails, say. By the serial
+// number when both have one, else by the totals. Only file_id's serial
+// counts: two head units paired with one power meter both list its
+// serial in their device_info.
+[[nodiscard]] bool same_recording(RecordingInfo const &a, RecordingInfo const &b);
 
 // The FIT file of the main recording of the one at `fit`: its own for a
 // listed activity, else the one whose folder it's in.
