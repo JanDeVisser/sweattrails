@@ -75,10 +75,11 @@ fs::path certificate_key_file(fs::path const &config_dir)
     return config_dir / "localhost-key.pem";
 }
 
-SourceOutcome failed(SourceOutcome outcome, std::string message)
+SourceOutcome failed(SourceOutcome outcome, std::string message, bool limited = false)
 {
     outcome.kind = SourceOutcome::Kind::Failed;
     outcome.message = std::move(message);
+    outcome.limited = limited;
     return outcome;
 }
 
@@ -140,7 +141,7 @@ SourceOutcome download_from_garmin(pSweatTrails const &the, int days)
     return outcome;
 }
 
-SourceOutcome download_from_wahoo(pSweatTrails const &the, std::optional<std::string> const &client_id, int days)
+SourceOutcome download_from_wahoo(pSweatTrails const &the, std::optional<std::string> const &client_id, int days, int overlap_days)
 {
     SourceOutcome outcome { .source = "Wahoo" };
     if (!client_id) {
@@ -161,14 +162,15 @@ SourceOutcome download_from_wahoo(pSweatTrails const &the, std::optional<std::st
     auto const on_workout = [&the](size_t index, size_t count) {
         the->notify_latest<NotificationType::Downloading>(Downloading { "Wahoo", index, count });
     };
-    auto const since = static_cast<i64>(std::time(nullptr)) - static_cast<i64>(days) * 24 * 60 * 60;
-    auto const count = download_new_workouts(wahoo, the->storage, since, on_workout, paced(the, "Wahoo"));
+    constexpr i64 Day = 24 * 60 * 60;
+    auto const    since = static_cast<i64>(std::time(nullptr)) - static_cast<i64>(days) * Day;
+    auto const    count = download_wahoo_history(wahoo, the->storage, since, static_cast<i64>(overlap_days) * Day, on_workout, paced(the, "Wahoo"));
     if (!count && count.error().kind == WahooError::Kind::NotLoggedIn) {
         outcome.kind = SourceOutcome::Kind::NeedsLogin;
         return outcome;
     }
     if (!count) {
-        return failed(outcome, count.error().to_string());
+        return failed(outcome, count.error().to_string(), count.error().status == TooManyRequests);
     }
     info(ST, "Downloaded {} workouts from Wahoo", *count);
     outcome.count = *count;
@@ -221,7 +223,7 @@ SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<Strava
             outcome.kind = SourceOutcome::Kind::NeedsLogin;
             return outcome;
         case StravaError::Kind::RateLimited:
-            return failed(outcome, std::format("Strava: its limit is reached for now. Try again after {}.", clock_time(update.error().resets_at)));
+            return failed(outcome, std::format("Strava: its limit is reached for now. Try again after {}.", clock_time(update.error().resets_at)), true);
         case StravaError::Kind::Failed:
             return failed(outcome, update.error().to_string());
         }
@@ -365,7 +367,7 @@ void run_downloads(pSweatTrails const &the, DownloadRequest const &request)
         outcomes.push_back(download_from_garmin(the, request.garmin_days));
     }
     if (request.wahoo) {
-        outcomes.push_back(download_from_wahoo(the, request.wahoo_client_id, request.wahoo_days));
+        outcomes.push_back(download_from_wahoo(the, request.wahoo_client_id, request.wahoo_days, request.wahoo_overlap_days));
     }
     // What was downloaded before an error is in the inbox too.
     auto const brought_any = std::ranges::any_of(outcomes, [](SourceOutcome const &outcome) {
@@ -382,6 +384,9 @@ void run_downloads(pSweatTrails const &the, DownloadRequest const &request)
     auto report = download_report(outcomes, request.quiet);
     report.login_arguments = login_arguments(request, report.ask_login);
     report.describe = request.strava && request.strava_descriptions;
+    if (!report.status.empty()) {
+        warning(ST, "The download at startup stopped: {}", report.status);
+    }
     the->notify<NotificationType::DownloadDone>(report);
 }
 
@@ -583,7 +588,7 @@ void SweatTrails::job_wahoo_login(Job::Payload const &data)
     info(ST, "Logged in to Wahoo");
     the->notify<NotificationType::LoginEnded>(LoginEnded { .downloading = true });
     // What the user logged in for. The report says how it went.
-    run_downloads(the, DownloadRequest { .wahoo = true, .wahoo_days = login.days, .wahoo_client_id = login.client_id });
+    run_downloads(the, DownloadRequest { .wahoo = true, .wahoo_days = login.days, .wahoo_overlap_days = login.overlap_days, .wahoo_client_id = login.client_id });
 }
 
 // Fetches the titles the request asks for, and tells the UI how it went.
@@ -1034,7 +1039,7 @@ void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &arguments
                     "\"wahoo\": { \"client_id\": \"...\" }. The README says how.");
         return;
     }
-    auto const days = make_download_request(sweattrails->settings, arguments, Sources { .wahoo = true }).wahoo_days;
+    auto const request = make_download_request(sweattrails->settings, arguments, Sources { .wahoo = true });
     auto const pkce = Pkce::make();
     auto const state = random_token(16);
     start_login(sweattrails,
@@ -1042,8 +1047,8 @@ void cmd_wahoo_login(pSweatTrails const &sweattrails, JSONValue const &arguments
             .service = "Wahoo",
             .url = Wahoo { .client_id = *client_id }.authorize_url(pkce.challenge, state),
             .state = state,
-            .on_code = [client_id = *client_id, verifier = pkce.verifier, days](pSweatTrails const &the, std::string const &code) {
-                the->schedule<JobType::WahooLogin>(WahooLogin { .client_id = client_id, .code = code, .verifier = verifier, .days = days });
+            .on_code = [client_id = *client_id, verifier = pkce.verifier, days = request.wahoo_days, overlap_days = request.wahoo_overlap_days](pSweatTrails const &the, std::string const &code) {
+                the->schedule<JobType::WahooLogin>(WahooLogin { .client_id = client_id, .code = code, .verifier = verifier, .days = days, .overlap_days = overlap_days });
             },
         });
 }
@@ -2076,7 +2081,8 @@ void SweatTrails::notif_download_done(Notification::Payload const &data)
     auto const &report = std::get<DownloadReport>(data);
     auto const  the = SweatTrails::the();
     the->downloading = false;
-    the->set_status("");
+    // A limit at startup stays until something else is put there.
+    the->set_status(report.status);
     // A running chain has read the store before these titles: it looks
     // again when it's done. One waiting for Strava's limit reads the store
     // when it goes on; started now, it would spend a request of the ones

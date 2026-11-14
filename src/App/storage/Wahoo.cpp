@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <format>
 #include <system_error>
 
@@ -12,6 +14,7 @@
 #include <IO.h>
 #include <StringUtil.h>
 
+#include <storage/Download.h>
 #include <storage/Storage.h>
 #include <storage/Wahoo.h>
 
@@ -326,13 +329,19 @@ WahooResult<std::vector<WahooWorkout>> Wahoo::list_workouts(i64 since)
         if (!listed) {
             return std::unexpected(failed(std::format("Unexpected list of workouts from Wahoo: {}", listed.error().to_string())));
         }
+        auto const total = json->try_get<i64>("total");
+        // Wahoo doesn't document how its paging ends: this says what it sent.
+        trace(Wahoo, "Page {}: {} workouts, {} new, total {}, oldest {}", page, listed->size(),
+            std::ranges::count_if(*listed, [&workouts](WahooWorkout const &workout) {
+                return std::ranges::none_of(workouts, [&workout](WahooWorkout const &seen) { return seen.id == workout.id; });
+            }),
+            json->get("total") ? json->get("total")->serialize() : std::string { "missing" }, listed->empty() ? std::string { "-" } : std::format("{:%F}", std::chrono::sys_seconds { std::chrono::seconds { listed->back().start_time } }));
         for (auto const &workout : *listed) {
             if (workout.start_time < since) {
                 return workouts;
             }
             workouts.push_back(workout);
         }
-        auto const total = json->try_get<i64>("total");
         if (listed->empty() || (total && page * PageSize >= *total)) {
             return workouts;
         }
@@ -397,6 +406,75 @@ WahooResult<size_t> download_new_workouts(Wahoo &wahoo, Storage const &storage, 
         ++downloaded;
     }
     return downloaded;
+}
+
+fs::path wahoo_complete_file(Storage const &storage)
+{
+    return storage.data_dir / "wahoo-complete.txt";
+}
+
+std::optional<i64> read_wahoo_complete(fs::path const &file)
+{
+    std::error_code ec { };
+    if (!fs::exists(file, ec)) {
+        return { };
+    }
+    auto const contents = read_file_by_name(file.string());
+    if (!contents) {
+        warning(Wahoo, "Can't read `{}`: {}", file.string(), contents.error().to_string());
+        return { };
+    }
+    auto const complete = DateTime::parse_iso8601(strip(*contents));
+    if (!complete) {
+        warning(Wahoo, "`{}` doesn't hold a time: {}", file.string(), complete.error().to_string());
+        return { };
+    }
+    return static_cast<i64>(complete->timestamp);
+}
+
+WahooResult<void> write_wahoo_complete(fs::path const &file, i64 complete)
+{
+    auto const time = std::chrono::sys_seconds { std::chrono::seconds { complete } };
+    return write_whole_file(file, std::format("{:%FT%TZ}\n", time));
+}
+
+bool whole_history(i64 since)
+{
+    using namespace std::chrono;
+    // A day into the year, so that "Everything" counted in local time
+    // anywhere is before it.
+    auto const second_of_january = sys_days { year { EverythingSinceYear } / January / 2 };
+    return since < duration_cast<seconds>(second_of_january.time_since_epoch()).count();
+}
+
+WahooPlan plan_wahoo_download(i64 since, std::optional<i64> complete, i64 overlap)
+{
+    if (whole_history(since)) {
+        return WahooPlan { .since = complete ? *complete - overlap : since, .completes = true };
+    }
+    return WahooPlan { .since = since, .completes = complete && since <= *complete };
+}
+
+WahooResult<size_t> download_wahoo_history(Wahoo &wahoo, Storage const &storage, i64 since, i64 overlap, WahooProgress const &progress, Pacing const &pacing)
+{
+    auto const started = wahoo.now();
+    auto const file = wahoo_complete_file(storage);
+    auto       complete = read_wahoo_complete(file);
+    // A clock set back would leave T in the future, and "Everything" would
+    // list too little.
+    if (complete && *complete > started) {
+        complete = started;
+    }
+    auto const plan = plan_wahoo_download(since, complete, overlap);
+    trace(Wahoo, "Listing back to {}{}", plan.since, plan.completes ? ", which completes the store" : "");
+    auto const count = download_new_workouts(wahoo, storage, plan.since, progress, pacing);
+    if (count && plan.completes) {
+        // Not written, the next "Everything" lists more than it has to.
+        if (auto const written = write_wahoo_complete(file, started); !written) {
+            warning(Wahoo, "Can't remember how far Wahoo's history is complete: {}", written.error().to_string());
+        }
+    }
+    return count;
 }
 
 }

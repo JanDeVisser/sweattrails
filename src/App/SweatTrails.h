@@ -79,7 +79,8 @@ struct WahooLogin {
     std::string client_id { };
     std::string code { };
     std::string verifier { };
-    int         days { WahooDefaultDays }; // For the download after the login
+    int         days { WahooDefaultDays };         // For the download after the login
+    int         overlap_days { WahooDefaultDays }; // `wahoo.days` from the settings, for that download
 };
 
 // The st-strava-titles task: the titles of the last `days`, or, without,

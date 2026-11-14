@@ -134,4 +134,37 @@ using WahooProgress = std::function<void(size_t index, size_t count)>;
 // downloaded as `pacing` says: see specs/43-download-history.md.
 WahooResult<size_t> download_new_workouts(Wahoo &wahoo, Storage const &storage, i64 since, WahooProgress const &progress = { }, Pacing const &pacing = { });
 
+// `wahoo-complete.txt` in the data folder: the time up to which the store
+// has everything Wahoo had, as ISO 8601 in UTC. See
+// specs/46-wahoo-everything.md.
+fs::path wahoo_complete_file(Storage const &storage);
+
+// The time in `file`, or nothing if there's no file, or it can't be read.
+std::optional<i64> read_wahoo_complete(fs::path const &file);
+
+WahooResult<void> write_wahoo_complete(fs::path const &file, i64 complete);
+
+// Whether a download that looks back to `since`, a Unix time, asks for
+// Wahoo's whole history, as "Everything" does: since before
+// EverythingSinceYear, give or take a time zone.
+bool whole_history(i64 since);
+
+// What a download from Wahoo lists, by how far the store is complete.
+struct WahooPlan {
+    i64  since { 0 };         // Lists back to here
+    bool completes { false }; // Done without an error, the store is complete up to its start
+};
+
+// For a download that looks back to `since`, with the store complete up
+// to `complete`. "Everything" lists back to `complete` less `overlap`
+// seconds, which catches a workout synced to Wahoo after it, or the whole
+// history without it. Any other download completes the store only if it
+// looks back as far as `complete`, so that there's no gap.
+WahooPlan plan_wahoo_download(i64 since, std::optional<i64> complete, i64 overlap);
+
+// download_new_workouts() for a download that looks back to `since`, as
+// plan_wahoo_download() has it with wahoo_complete_file(), and, if it
+// completes, the file set to the time it started.
+WahooResult<size_t> download_wahoo_history(Wahoo &wahoo, Storage const &storage, i64 since, i64 overlap, WahooProgress const &progress = { }, Pacing const &pacing = { });
+
 }

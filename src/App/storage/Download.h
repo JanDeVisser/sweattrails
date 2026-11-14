@@ -89,6 +89,7 @@ struct DownloadRequest {
     bool                        strava { false }; // Titles: after the others, and the inbox
     int                         garmin_days { 30 };
     int                         wahoo_days { 30 };
+    int                         wahoo_overlap_days { 30 }; // `wahoo.days` from the settings, whatever `days` says: see specs/46-wahoo-everything.md
     int                         strava_days { 30 };
     std::optional<std::string>  wahoo_client_id { };          // Without one, Wahoo isn't set up
     std::optional<StravaClient> strava_client { };            // Without one, Strava isn't set up
@@ -121,9 +122,10 @@ struct SourceOutcome {
 
     std::string source { }; // "Garmin Connect", "Wahoo", "Strava"
     Kind        kind { Kind::Downloaded };
-    size_t      count { 0 };   // For Downloaded: activities; for Titled: titles
-    size_t      waiting { 0 }; // For Titled: descriptions that follow in the background
-    std::string message { };   // For NotSetUp and Failed: what to tell the user; for Titled, what stopped the list short
+    size_t      count { 0 };       // For Downloaded: activities; for Titled: titles
+    size_t      waiting { 0 };     // For Titled: descriptions that follow in the background
+    std::string message { };       // For NotSetUp and Failed: what to tell the user; for Titled, what stopped the list short
+    bool        limited { false }; // For Failed: stopped by the source's limit on requests, not waited out
 };
 
 // What to tell the user when the download is done.
@@ -132,13 +134,16 @@ struct DownloadReport {
     std::string ask_login { };       // The source to offer the login to, if any
     JSONValue   login_arguments { }; // For the login's task: what to fetch after it
     bool        describe { false };  // Strava's titles ran: its descriptions follow in the background
+    std::string status { };          // Quiet: the limits that stopped it, for the status line
 };
 
 // One sentence per source, such as "Garmin Connect: 2 new activities.
 // Wahoo: nothing new." A source that isn't set up is left out, unless it's
 // the only one asked for, so that a user who doesn't use Wahoo never hears
 // of it. When none is, the first one's message says how to set it up.
-// Quiet, only failures are reported, and the login isn't offered. Of two
+// Quiet, only failures are reported, and the login isn't offered, and a
+// source's limit goes in `status`, not in a message box at every start
+// until it resets: see specs/46-wahoo-everything.md. Of two
 // sources that need a login, the first is offered.
 DownloadReport download_report(std::vector<SourceOutcome> const &outcomes, bool quiet);
 
