@@ -335,7 +335,7 @@ StorageResult<std::vector<StoredStart>> Storage::month_starts(Month const &month
     return ret;
 }
 
-StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file, InboxFiled const &on_filed, InboxReplaced const &on_replaced)
+StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file, InboxFiled const &on_filed)
 {
     // Collect the file names first: organizing a file moves it out of the
     // inbox, and it's unspecified whether a directory_iterator sees that.
@@ -375,14 +375,11 @@ StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file, InboxFil
             warning(Storage, "Error organizing inbox file {}: {}", file_name, res.error().to_string());
             continue;
         }
-        if (res->outcome == InboxOutcome::Organized || res->outcome == InboxOutcome::Replaced) {
+        if (res->filed()) {
             processed += 1;
-            if (on_filed) {
-                on_filed(res->start);
-            }
         }
-        if (res->outcome == InboxOutcome::Replaced && on_replaced) {
-            on_replaced(res->stub_start, res->start);
+        if (on_filed) {
+            on_filed(file_name, *res);
         }
     }
     if (processed > 0) {

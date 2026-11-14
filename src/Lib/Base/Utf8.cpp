@@ -75,6 +75,8 @@ struct UTF8_std {
     }
 };
 
+// An iconv descriptor keeps state between calls, so two threads mustn't
+// share one: each thread, such as the UI and the job thread, gets its own.
 struct UTF8 {
     UTF8()
         : cd_in(iconv_open("UTF-32-INTERNAL", "UTF-8"))
@@ -84,7 +86,19 @@ struct UTF8 {
         // assert(cd_out != reinterpret_cast<iconv_t>(-1));
     }
 
-    static UTF8 utf8;
+    ~UTF8()
+    {
+        for (auto const cd : { cd_in, cd_out }) {
+            if (cd != reinterpret_cast<iconv_t>(-1)) {
+                iconv_close(cd);
+            }
+        }
+    }
+
+    UTF8(UTF8 const &) = delete;
+    UTF8 &operator=(UTF8 const &) = delete;
+
+    static thread_local UTF8 utf8;
 
     iconv_t cd_in;
     iconv_t cd_out;
@@ -156,7 +170,7 @@ struct UTF8 {
     }
 };
 
-UTF8 UTF8::utf8 { };
+thread_local UTF8 UTF8::utf8 { };
 
 std::expected<std::string, LibCError> to_utf8(std::wstring_view const &s)
 {

@@ -52,8 +52,10 @@ void record(Test::TempStore const &store, u16 device, u32 offset, u32 seconds, u
 // The inbox, as the app runs it: grouping what it files.
 void file(Test::TempStore &store)
 {
-    auto const filed = store.storage.process_inbox({ }, [&store](i64 start) {
-        CHECK(group_new(store.storage, start).has_value());
+    auto const filed = store.storage.process_inbox({ }, [&store](std::string_view, Storage::InboxFiling const &filing) {
+        if (filing.filed()) {
+            CHECK(group_new(store.storage, filing.start).has_value());
+        }
     });
     CHECK(filed.has_value());
 }
@@ -751,8 +753,11 @@ void test_former_main_with_folder()
 
     record(store, Garmin, 60, 3540);
     std::vector<Grouped> groups;
-    auto const           filed = store.storage.process_inbox({ }, [&store, &groups](i64 start) {
-        if (auto grouped = group_new(store.storage, start); grouped && *grouped) {
+    auto const           filed = store.storage.process_inbox({ }, [&store, &groups](std::string_view, Storage::InboxFiling const &filing) {
+        if (!filing.filed()) {
+            return;
+        }
+        if (auto grouped = group_new(store.storage, filing.start); grouped && *grouped) {
             groups.push_back(**grouped);
         }
     });

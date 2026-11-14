@@ -371,6 +371,7 @@ sweattrails_test(csv_test test/CSVTest.cpp)
 sweattrails_test(json_test test/JSONTest.cpp)
 sweattrails_test(cursor_test test/CursorTest.cpp)
 sweattrails_test(string_util_test test/StringUtilTest.cpp)
+sweattrails_test(utf8_test test/Utf8Test.cpp)
 sweattrails_test(io_test test/IOTest.cpp)
 sweattrails_test(date_test test/DateTest.cpp)
 
@@ -1163,6 +1164,8 @@ sweattrails_test(
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
+        src/App/storage/Recordings.cpp
+        src/App/storage/Volume.cpp
         src/App/storage/Stubs.cpp
         src/App/storage/Types.cpp
         src/App/fit/FIT.cpp
