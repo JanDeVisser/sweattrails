@@ -62,8 +62,9 @@ struct RecordingInfo {
 [[nodiscard]] bool same_activity(RecordingInfo const &a, RecordingInfo const &b);
 
 // Whether two FIT files are one recording: the device's own file and a
-// copy rewritten by Garmin Connect or SweatTrails, say. By the serial
-// number when both have one, else by the totals. Only file_id's serial
+// copy rewritten by Garmin Connect or SweatTrails, say. The same when
+// they start in the same second, else by the serial number when both
+// have one, else by the totals. Only file_id's serial
 // counts: two head units paired with one power meter both list its
 // serial in their device_info.
 [[nodiscard]] bool same_recording(RecordingInfo const &a, RecordingInfo const &b);

@@ -533,6 +533,57 @@ void test_other_recordings_through_inbox()
     CHECK(store.inbox().empty());
 }
 
+// Strava's file is in the store already, at its own start, without the
+// ID, which is on another activity: a multisport file filed by its last
+// session, say. The title moves to it, unless it has a Strava title of
+// its own, and nothing goes to the inbox. Nor does another recording
+// that's in the store as an activity of its own.
+void test_strava_file_already_here()
+{
+    TempStore  store { };
+    TempDir    export_dir { "strava-export" };
+    auto const files = export_dir.path / "activities";
+    fs::create_directories(files);
+    auto const export_file = [&files](std::string_view name, std::string_view fit) {
+        MUST(write_file_by_name((files / name).string(), fit));
+    };
+    // 61 is on 100, but Strava's file is 5000, here without a title.
+    put(store, 100, recording_fit({ .manufacturer = 1, .serial = 77, .start = 100 }), 61);
+    auto const here = recording_fit({ .manufacturer = 1, .serial = 78, .start = 5000 });
+    store.add_activity(fit_start(5000));
+    MUST(write_file_by_name(fs::path { store.storage.sidecar_of(fit_start(5000)) }.replace_extension(".fit").string(), std::string_view { here }));
+    export_file("161.fit", recording_fit({ .manufacturer = 255, .start = 5000, .count = 590 }));
+    // 62 is on 10000, but Strava's file is 15000, which has a title.
+    put(store, 10000, recording_fit({ .manufacturer = 1, .serial = 79, .start = 10000 }), 62);
+    put(store, 15000, recording_fit({ .manufacturer = 1, .serial = 80, .start = 15000 }), 65);
+    export_file("162.fit", recording_fit({ .manufacturer = 255, .start = 15000, .count = 590 }));
+    // 63 is on 20000, and Strava's file is another recording of it, which
+    // is here as an activity of its own.
+    put(store, 20000, recording_fit({ .manufacturer = 1, .serial = 81, .start = 20000 }), 63);
+    store.add_activity(fit_start(20010));
+    MUST(write_file_by_name(fs::path { store.storage.sidecar_of(fit_start(20010)) }.replace_extension(".fit").string(),
+        std::string_view { recording_fit({ .manufacturer = 32, .serial = 82, .start = 20010 }) }));
+    export_file("163.fit", recording_fit({ .manufacturer = 255, .start = 20010, .count = 590 }));
+    auto const activities = read_export("Activity ID,Activity Name,Activity Description,Filename\n"
+                                        "61,Triathlon,Hot,activities/161.fit\n"
+                                        "62,Twice,,activities/162.fit\n"
+                                        "63,Wahoo,,activities/163.fit\n",
+        "activities.csv")
+                                .value_or(ExportActivities { });
+
+    auto const missing = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 });
+    CHECK_EQ(missing.queued, 0uz);
+    CHECK(store.inbox().empty());
+    CHECK_EQ(missing.titles_moved, 1uz);
+    CHECK((missing.retitled == std::vector { fit_start(100), fit_start(5000), fit_start(10000) }));
+    CHECK(!strava_of(store, fit_start(100)).has_value());
+    CHECK((strava_of(store, fit_start(5000)) == StravaTitle { .id = 61, .name = "Triathlon", .description = "Hot" }));
+    CHECK(!strava_of(store, fit_start(10000)).has_value());
+    CHECK_EQ(strava_of(store, fit_start(15000)).value_or(StravaTitle { }).id, 65u);
+    CHECK_EQ(strava_of(store, fit_start(20000)).value_or(StravaTitle { }).id, 63u);
+    CHECK(!strava_of(store, fit_start(20010)).has_value());
+}
+
 void test_message()
 {
     CHECK_EQ((ExportImport { .descriptions = 4502, .empty = 3911, .untitled = 142 }).message(),
@@ -592,6 +643,7 @@ int main()
     test_same_start_twice_in_export();
     test_classify_export_file();
     test_other_recordings_through_inbox();
+    test_strava_file_already_here();
     test_message();
     return test_result();
 }

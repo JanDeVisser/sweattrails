@@ -155,6 +155,12 @@ std::optional<RecordingInfo> recording_info(Storage &storage, std::string_view f
 
 bool same_recording(RecordingInfo const &a, RecordingInfo const &b)
 {
+    // A rewrite keeps the start, and may count the pauses differently.
+    // Two devices don't start in the same second, and the inbox couldn't
+    // file both anyway.
+    if (a.start == b.start) {
+        return true;
+    }
     if (a.serial != 0 && b.serial != 0) {
         return a.serial == b.serial;
     }

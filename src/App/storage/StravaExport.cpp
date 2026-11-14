@@ -369,6 +369,55 @@ struct ToQueue {
     std::vector<fs::path> with_id { };
 };
 
+// The start of the listed activity a FIT file in the store is of, as
+// TitlesChanged has it.
+std::optional<i64> listed_start(fs::path const &fit)
+{
+    return parse_id(main_of(fit).stem().string()).transform([](u64 start) { return static_cast<i64>(start); });
+}
+
+bool queue(Storage const &storage, MissingImport &ret, u64 id, ExportActivity const &activity, std::string_view fit)
+{
+    if (auto const queued = to_inbox(storage, id, activity, fit); !queued) {
+        warning(StravaExport, "Couldn't put `{}` in the inbox: {}", activity.file, queued.error().to_string());
+        return false;
+    }
+    ++ret.queued;
+    return true;
+}
+
+// Takes Strava's activity `id` off the FIT files `wrong`, whose activity
+// Strava's file isn't.
+void reject(MissingImport &ret, u64 id, std::vector<fs::path> const &wrong)
+{
+    for (auto const &fit : wrong) {
+        if (auto const rejected = reject_sidecar_strava(fs::path { fit }.replace_extension(".json"), id); !rejected) {
+            warning(StravaExport, "Couldn't take Strava's activity {} off `{}`: {}", id, fit.string(), rejected.error().to_string());
+        } else if (auto const start = listed_start(fit); start) {
+            ret.retitled.push_back(*start);
+        }
+    }
+}
+
+// Gives the FIT file `fit` in the store, which is Strava's activity `id`'s,
+// its Strava title, unless it has one: two Strava activities of one file
+// were uploaded twice, and the first keeps it.
+void give_title(MissingImport &ret, u64 id, ExportActivity const &activity, fs::path const &fit)
+{
+    auto const sidecar = fs::path { fit }.replace_extension(".json");
+    if (sidecar_titles(sidecar).strava) {
+        return;
+    }
+    if (auto const saved = save_sidecar_strava(sidecar, StravaTitle { .id = id, .name = activity.name, .description = activity.description }); !saved) {
+        warning(StravaExport, "Couldn't give `{}` Strava's title: {}", fit.string(), saved.error().to_string());
+        return;
+    }
+    ++ret.titles_moved;
+    if (auto const start = listed_start(fit); start) {
+        ret.retitled.push_back(*start);
+    }
+}
+
 bool same_bytes(std::string_view fit, std::vector<fs::path> const &stored)
 {
     return std::ranges::any_of(stored, [fit](fs::path const &path) {
@@ -436,41 +485,41 @@ StorageResult<MissingImport> queue_missing(Storage &storage, ExportActivities co
         if (!fit) {
             continue;
         }
-        auto kind = ExportFile::OtherActivity;
-        if (!with_id.empty()) {
-            // Most of them are the stored file, byte for byte: no need to
-            // read them as FIT files.
-            if (same_bytes(*fit, with_id)) {
-                continue;
-            }
-            auto const info = recording_info(storage, std::string_view { *fit });
-            if (!info) {
-                warning(StravaExport, "Not using `{}`: it's no activity", activity->file);
-                continue;
-            }
-            kind = classify_export_file(*info, stored_with_id(storage, with_id));
-            if (kind == ExportFile::Same) {
-                continue;
-            }
-        }
-        if (auto const queued = to_inbox(storage, id, *activity, *fit); !queued) {
-            warning(StravaExport, "Couldn't put `{}` in the inbox: {}", activity->file, queued.error().to_string());
+        if (with_id.empty()) {
+            queue(storage, ret, id, *activity, *fit);
             continue;
         }
-        ++ret.queued;
-        if (with_id.empty() || kind != ExportFile::OtherActivity) {
+        // Most of them are the stored file, byte for byte: no need to read
+        // them as FIT files.
+        if (same_bytes(*fit, with_id)) {
             continue;
         }
-        for (auto const &wrong : with_id) {
-            if (auto const rejected = reject_sidecar_strava(fs::path { wrong }.replace_extension(".json"), id); !rejected) {
-                warning(StravaExport, "Couldn't take Strava's activity {} off `{}`: {}", id, wrong.string(), rejected.error().to_string());
-            } else if (auto const start = parse_id(main_of(wrong).stem().string()); start) {
-                ret.retitled.push_back(static_cast<i64>(*start));
-            }
+        auto const info = recording_info(storage, std::string_view { *fit });
+        if (!info) {
+            warning(StravaExport, "Not using `{}`: it's no activity", activity->file);
+            continue;
         }
-        ++ret.titles_moved;
+        auto const kind = classify_export_file(*info, stored_with_id(storage, with_id));
+        if (kind == ExportFile::Same) {
+            continue;
+        }
+        // Strava's file is in the store already, without the ID: the inbox
+        // would set it aside. A stub there it would replace.
+        if (auto const here = storage.fit_at(info->start); here && !is_stub_file(*here).value_or(false)) {
+            if (kind == ExportFile::OtherActivity) {
+                reject(ret, id, with_id);
+                give_title(ret, id, *activity, *here);
+            }
+            continue;
+        }
+        if (queue(storage, ret, id, *activity, *fit) && kind == ExportFile::OtherActivity) {
+            reject(ret, id, with_id);
+            ++ret.titles_moved;
+        }
     }
     std::ranges::sort(ret.retitled);
+    auto const duplicates = std::ranges::unique(ret.retitled);
+    ret.retitled.erase(duplicates.begin(), duplicates.end());
     return ret;
 }
 

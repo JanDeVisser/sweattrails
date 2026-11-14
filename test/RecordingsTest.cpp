@@ -127,22 +127,29 @@ void test_same_activity()
 
 void test_same_recording()
 {
-    auto const with = [](u32 serial, u32 elapsed, float32 distance) {
-        auto ret = ride(1000, elapsed);
+    // The second of each pair starts 10 s after the first.
+    auto const with = [](u32 serial, u32 elapsed, float32 distance, i64 start = 1000) {
+        auto ret = ride(start, elapsed);
         ret.serial = serial;
         ret.distance = distance;
         return ret;
     };
+    auto const later = [&with](u32 serial, u32 elapsed, float32 distance) { return with(serial, elapsed, distance, 1010); };
     // By the serial number, when both have one, whatever the totals.
-    CHECK(same_recording(with(7, 3600, 30000), with(7, 3000, 0)));
-    CHECK(!same_recording(with(7, 3600, 30000), with(8, 3600, 30000)));
+    CHECK(same_recording(with(7, 3600, 30000), later(7, 3000, 0)));
+    CHECK(!same_recording(with(7, 3600, 30000), later(8, 3600, 30000)));
     // Else by the totals: Garmin Connect's copy of Zwift's file.
-    CHECK(same_recording(with(0, 3600, 30000), with(7, 3605, 30150)));
-    CHECK(!same_recording(with(0, 3600, 30000), with(0, 3606, 30000)));
-    CHECK(!same_recording(with(0, 3600, 30000), with(0, 3600, 30151)));
+    CHECK(same_recording(with(0, 3600, 30000), later(7, 3605, 30150)));
+    CHECK(!same_recording(with(0, 3600, 30000), later(0, 3606, 30000)));
+    CHECK(!same_recording(with(0, 3600, 30000), later(0, 3600, 30151)));
     // A head unit indoors has no distance, and Zwift's file has.
-    CHECK(!same_recording(with(0, 3600, 0), with(7, 3600, 30000)));
-    CHECK(same_recording(with(0, 3600, 0), with(0, 3600, 0)));
+    CHECK(!same_recording(with(0, 3600, 0), later(7, 3600, 30000)));
+    CHECK(same_recording(with(0, 3600, 0), later(0, 3600, 0)));
+    // A rewrite in the same second, which counts the pauses otherwise,
+    // whatever the serials.
+    CHECK(same_recording(with(0, 2094, 4862), with(7, 2252, 6175)));
+    CHECK(same_recording(with(8, 2094, 4862), with(7, 2252, 6175)));
+    CHECK(!same_recording(with(0, 2094, 4862), later(7, 2252, 6175)));
 }
 
 void test_recording_info_from_memory()

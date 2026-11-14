@@ -227,6 +227,11 @@ StorageResult<std::optional<Activity>> Storage::load_activity(ActivityID const &
 
 bool Storage::has_activity(i64 start_time) const
 {
+    return fit_at(start_time).has_value();
+}
+
+std::optional<fs::path> Storage::fit_at(i64 start_time) const
+{
     auto const      start = DateTime::from_timestamp(static_cast<i32>(start_time));
     auto const      file = std::format("{}.fit", start_time);
     std::error_code ec { };
@@ -236,17 +241,17 @@ bool Storage::has_activity(i64 start_time) const
     for (auto const step : { -1, 0, 1 }) {
         auto const dir = activity_dir / month.plus(step).dir_name();
         if (fs::exists(dir / file, ec)) {
-            return true;
+            return dir / file;
         }
         for (fs::directory_iterator it { dir, ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
             std::error_code entry_ec { };
             if (it->path().filename().string().ends_with(".recordings") && fs::exists(it->path() / file, entry_ec)) {
-                return true;
+                return it->path() / file;
             }
         }
         ec.clear();
     }
-    return false;
+    return { };
 }
 
 fs::path Storage::sidecar_of(i64 start_time) const
