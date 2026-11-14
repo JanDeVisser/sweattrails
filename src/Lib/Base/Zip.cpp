@@ -9,6 +9,7 @@
  * of its local header, which the file's data follows.
  */
 
+#include <algorithm>
 #include <format>
 #include <optional>
 
@@ -203,6 +204,44 @@ std::expected<std::string, LibCError> unzip(std::string_view zip, std::string_vi
         }
     }
     return std::unexpected(LibCError { std::format("ZIP archive has no `{}`", name) });
+}
+
+std::expected<std::string, LibCError> gunzip(std::string_view gz)
+{
+    auto const gzip_error = [](std::string_view what) {
+        return std::unexpected(LibCError { std::format("Invalid gzip file: {}", what) });
+    };
+    // The size isn't known up front: the trailer has it, but only modulo
+    // 4 GB, and a damaged file can claim anything. So grow the output,
+    // up to what deflate can make of this much input.
+    auto const  limit = (gz.size() + 1) * MaxDeflateRatio;
+    std::string out(std::min(limit, std::max(gz.size() * 4, size_t { 4096 })), '\0');
+    z_stream    stream { };
+    // 16 + MAX_WBITS: a gzip header and trailer around the deflated data.
+    if (inflateInit2(&stream, 16 + MAX_WBITS) != Z_OK) {
+        return gzip_error("can't initialize zlib");
+    }
+    stream.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(gz.data()));
+    stream.avail_in = static_cast<uInt>(gz.size());
+    auto result = Z_OK;
+    while (result == Z_OK) {
+        if (stream.total_out == out.size()) {
+            if (out.size() >= limit) {
+                inflateEnd(&stream);
+                return gzip_error("it claims to inflate to more than deflate can make");
+            }
+            out.resize(std::min(limit, out.size() * 2));
+        }
+        stream.next_out = reinterpret_cast<Bytef *>(out.data() + stream.total_out);
+        stream.avail_out = static_cast<uInt>(out.size() - stream.total_out);
+        result = inflate(&stream, Z_NO_FLUSH);
+    }
+    out.resize(stream.total_out);
+    inflateEnd(&stream);
+    if (result != Z_STREAM_END) {
+        return gzip_error((result == Z_OK || result == Z_BUF_ERROR) ? "it ends too soon" : "corrupt deflated data");
+    }
+    return out;
 }
 
 }

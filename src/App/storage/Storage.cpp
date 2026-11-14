@@ -19,11 +19,13 @@
 #include <system_error>
 
 #include <IO.h>
+#include <JSON.h>
 #include <Logging.h>
 #include <StringUtil.h>
 
 #include <storage/Activity.h>
 #include <storage/Storage.h>
+#include <storage/Stubs.h>
 
 namespace ST {
 
@@ -315,7 +317,7 @@ StorageResult<std::vector<StoredStart>> Storage::month_starts(Month const &month
     return ret;
 }
 
-StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file, InboxFiled const &on_filed)
+StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file, InboxFiled const &on_filed, InboxReplaced const &on_replaced)
 {
     // Collect the file names first: organizing a file moves it out of the
     // inbox, and it's unspecified whether a directory_iterator sees that.
@@ -355,11 +357,14 @@ StorageResult<u32> Storage::process_inbox(InboxProgress const &on_file, InboxFil
             warning(Storage, "Error organizing inbox file {}: {}", file_name, res.error().to_string());
             continue;
         }
-        if (res->outcome == InboxOutcome::Organized) {
+        if (res->outcome == InboxOutcome::Organized || res->outcome == InboxOutcome::Replaced) {
             processed += 1;
             if (on_filed) {
                 on_filed(res->start);
             }
+        }
+        if (res->outcome == InboxOutcome::Replaced && on_replaced) {
+            on_replaced(res->stub_start, res->start);
         }
     }
     if (processed > 0) {
@@ -389,6 +394,11 @@ StorageResult<Storage::InboxFiling> Storage::organize_fit_file(std::string_view 
     auto const dest_dir_name = month_dir_name(activity.segment.start_time);
     auto const dest_dir = TRY_EVAL(ensure_directory(activity_dir / dest_dir_name));
     auto const dest_stem = std::format("{}", activity.segment.start_time.timestamp);
+    if (auto const slot = slot_for(*this, activity.segment.start_time.timestamp); slot.kind == Slot::Kind::Stub) {
+        if (TRY_EVAL(replace_from_inbox(file_name, slot.stub, activity.segment.start_time.timestamp))) {
+            return InboxFiling { .outcome = InboxOutcome::Replaced, .start = activity.segment.start_time.timestamp, .stub_start = slot.stub.start };
+        }
+    }
     if (has_activity(activity.segment.start_time.timestamp)) {
         // renamePreserve: never clobber an existing file. Set the duplicate
         // aside so it isn't processed again on every start. The same file can
@@ -404,6 +414,40 @@ StorageResult<Storage::InboxFiling> Storage::organize_fit_file(std::string_view 
     }
     TRY(move_with_sidecar(file_name, dest_dir, dest_stem));
     return InboxFiling { .outcome = InboxOutcome::Organized, .start = activity.segment.start_time.timestamp };
+}
+
+// An inbox file that's a stub's recording replaces it, with its sidecar,
+// and leaves the inbox. One that's a stub itself doesn't: it's filed or
+// set aside as any other.
+StorageResult<bool> Storage::replace_from_inbox(std::string_view const &file_name, StoredStart const &stub, i64 start) const
+{
+    auto const fit = TRY_EVAL(read_file_by_name((inbox_dir / file_name).string()));
+    if (is_stub(fit).value_or(true)) {
+        return false;
+    }
+    auto const               sidecar = inbox_dir / fs::path { file_name }.replace_extension(".json");
+    std::optional<JSONValue> incoming { };
+    if (TRY_EVAL(path_exists(sidecar))) {
+        auto const json = JSONValue::deserialize(TRY_EVAL(read_file_by_name(sidecar.string())));
+        if (json) {
+            incoming = *json;
+        } else {
+            warning(Storage, "Ignoring sidecar `{}`: it isn't JSON", sidecar.string());
+        }
+    }
+    TRY(replace_stub(*this, stub, fit, start, incoming));
+    info(Storage, "File `{}` replaces `{}`, which was only a summary", file_name, fs::path { stub.sidecar }.replace_extension(".fit").string());
+    std::vector<fs::path> done { inbox_dir / file_name };
+    if (incoming) {
+        done.push_back(sidecar);
+    }
+    for (auto const &path : done) {
+        std::error_code ec { };
+        if (fs::remove(path, ec); ec) {
+            warning(Storage, "Couldn't remove `{}` from the inbox: {}", path.string(), LibCError { ec }.to_string());
+        }
+    }
+    return true;
 }
 
 // Moves inbox file `file_name` to `<dest_dir>/<dest_stem>.fit`. The Garmin

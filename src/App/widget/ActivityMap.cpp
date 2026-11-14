@@ -52,9 +52,17 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
     failed.clear();
     track.clear();
     has_map = false;
+    summary_only = false;
     map_id = next_tile_owner();
     this->activity = activity;
     if (!this->activity) {
+        return;
+    }
+    // Without a word, an empty map would look like a bug. See
+    // specs/50-stub-activities.md.
+    if (this->activity->activity.is_stub()) {
+        policy = SizePolicy::Relative;
+        summary_only = true;
         return;
     }
     choose_source();
@@ -325,6 +333,10 @@ void ActivityMap::unload_least_recently_drawn()
 void ActivityMap::draw()
 {
     ++frame;
+    if (activity && summary_only) {
+        draw_summary_only();
+        return;
+    }
     if (!activity || !has_map) {
         return;
     }
@@ -418,6 +430,19 @@ void ActivityMap::draw_attribution() const
     auto const y = viewport.height - size.y - 4;
     draw_rectangle_no_normalize(x - 4, y - 2, size.x + 8, size.y + 4, Fade(BLACK, 0.5f));
     render_text(x, y, source.attribution, FontSize::Small, RAYWHITE);
+}
+
+// In the middle of where the map would be, smaller if it doesn't fit.
+void ActivityMap::draw_summary_only() const
+{
+    constexpr char const *Text = "This activity is only a summary: no track or graphs.";
+    auto                  font = FontSize::Medium;
+    auto                  size = App::measure_text(Text, font);
+    if (size.x > viewport.width) {
+        font = FontSize::Small;
+        size = App::measure_text(Text, font);
+    }
+    render_text((viewport.width - size.x) / 2, (viewport.height - size.y) / 2, Text, font, RAYWHITE);
 }
 
 // Drops the tiles still waiting to be downloaded, and the status line

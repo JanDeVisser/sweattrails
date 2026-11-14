@@ -463,6 +463,33 @@ Delete Your Account) has them all: drop its `activities.csv` on the
 window to bring a long history's descriptions in at once. A description changed on Strava, without the
 name, isn't seen again. One you wrote in SweatTrails wins over Strava's.
 
+## Activities that are only a summary
+
+Some activities have no map, no graphs and no laps: their FIT file has
+only the totals, no records, because a program made it from a summary,
+not the device that recorded it. SweatTrails calls such an activity a
+stub, and says on the activity screen that it's only a summary.
+
+Stubs get their real recordings in two ways:
+
+- Dropping Strava's `activities.csv`, in the folder of the export it came
+  in, replaces each stub with a Strava title by the FIT file Strava keeps
+  of it, in the export's `activities` folder. A GPX or TCX file isn't
+  used, as SweatTrails reads only FIT files; the closing message says how
+  many there are.
+- The Garmin Connect and Wahoo downloads fetch an activity whose start
+  time only a stub has, or one within a minute of it, and the inbox
+  replaces the stub with it.
+
+The recording is filed under its own start time, and the stub is kept
+next to it as `<start>.fit.stub`. The name, notes and laps stay with the
+activity.
+
+A recording that came in before SweatTrails knew about stubs was set
+aside in the inbox's `duplicates` folder. To have it replace its stub,
+move it, with its `.json` file, back into the inbox: SweatTrails takes
+it the next time it starts.
+
 ## Video overlay
 
 SweatTrails draws an activity's data as a video overlay, to put over the

@@ -107,6 +107,44 @@ void test_impossible_size()
     CHECK(!unzip(zip, "a.fit").has_value());
 }
 
+void test_gunzip()
+{
+    CHECK_EQ(gunzip(gzip(Text)).value_or(""), Text);
+    CHECK_EQ(gunzip(gzip("")).value_or("x"), "");
+    // Bigger than the first guess at the size, so the output grows.
+    std::string const big(1'000'000, 'r');
+    auto const        unzipped = gunzip(gzip(big));
+    CHECK(unzipped.has_value());
+    CHECK_EQ(unzipped.value_or("").size(), big.size());
+    CHECK(unzipped.value_or("") == big);
+}
+
+// Sizes around the first guess at the output's size, and what gzip
+// leaves after the data.
+void test_gunzip_sizes()
+{
+    for (size_t const size : { 1uz, 4095uz, 4096uz, 4097uz, 8192uz, 8193uz }) {
+        std::string const data(size, 'z');
+        auto const        unzipped = gunzip(gzip(data));
+        CHECK(unzipped.has_value());
+        CHECK(unzipped.value_or("") == data);
+    }
+    std::string const zeros(20'000'000, '\0');
+    CHECK(gunzip(gzip(zeros)).value_or("") == zeros);
+    CHECK_EQ(gunzip(gzip(Text) + "trailing garbage").value_or(""), Text);
+}
+
+void test_gunzip_damaged()
+{
+    CHECK(!gunzip("").has_value());
+    CHECK(!gunzip(Text).has_value());
+    auto const gz = gzip(Text);
+    CHECK(!gunzip(std::string_view { gz }.substr(0, gz.size() / 2)).has_value());
+    auto corrupt = gz;
+    corrupt[corrupt.size() / 2] ^= 0x55;
+    CHECK(!gunzip(corrupt).has_value());
+}
+
 }
 
 int main()
@@ -119,5 +157,8 @@ int main()
     test_not_a_zip();
     test_truncated_and_corrupt();
     test_impossible_size();
+    test_gunzip();
+    test_gunzip_sizes();
+    test_gunzip_damaged();
     return ST::Test::test_result();
 }

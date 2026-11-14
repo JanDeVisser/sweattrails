@@ -354,6 +354,28 @@ void test_download_new_activities()
     CHECK(progress == (std::vector<std::pair<size_t, size_t>> { { 0, 1 } }));
 }
 
+// An activity the store has only a summary of is downloaded, at its start
+// or near it, to replace it: see specs/50-stub-activities.md.
+void test_stubs_are_downloaded()
+{
+    TempStore  store;
+    auto const put = [&store](i64 start, std::string const &fit) {
+        auto const path = fs::path { store.storage.sidecar_of(start) }.replace_extension(".fit");
+        fs::create_directories(path.parent_path());
+        MUST(write_file_by_name(path.string(), std::string_view { fit }));
+    };
+    put(1792700000, summary_fit());
+    put(1792600030, summary_fit());
+    put(1792500000, recorded_fit());
+    FakeGarmin fake;
+    fake.answer(ListPath, { .status = 200, .body = list_of({ list_entry(6, 1792700000, "C"), list_entry(5, 1792600000, "B"), list_entry(4, 1792500000, "A") }) });
+    fake.answer(download_path(6), { .status = 200, .body = fit_zip(6, "c") });
+    fake.answer(download_path(5), { .status = 200, .body = fit_zip(5, "b") });
+    GarminConnect garmin { .fetch = fake.fetch(), .token = "token" };
+    CHECK_EQ(download_new_activities(garmin, store.storage, "2026-09-23").value_or(99), 2uz);
+    CHECK_EQ(store.inbox(), (std::vector<std::string> { "garmin-5.fit", "garmin-5.json", "garmin-6.fit", "garmin-6.json" }));
+}
+
 // An activity uploaded as a TCX file has no FIT file to download: it's
 // skipped, and the ones after it still come. It used to stop the download.
 void test_activity_without_a_fit_file_is_skipped()
@@ -628,6 +650,10 @@ void test_downloaded_activity_goes_through_the_inbox()
     fit.byte(1); // Running
     fit.u32_le(3600 * 1000);
     fit.u32_le(3600 * 1000);
+    // A record, or it's only a summary, which is downloaded again.
+    fit.definition(5, 20, { { .num = 253, .size = 4, .base_type = Uint32 } });
+    fit.message(5);
+    fit.u32_le(fit_start);
 
     TempStore  store;
     FakeGarmin fake;
@@ -681,6 +707,7 @@ int main()
     test_download_unzips_the_fit_file();
     test_download_without_a_fit_file();
     test_download_new_activities();
+    test_stubs_are_downloaded();
     test_activity_without_a_fit_file_is_skipped();
     test_duplicates_set_aside_are_not_downloaded_again();
     test_download_pauses_between_batches();

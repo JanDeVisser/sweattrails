@@ -76,8 +76,9 @@ StorageResult<fs::path> move_recording(fs::path const &fit, fs::path const &dir)
     if (fs::exists(dest, ec)) {
         return std::unexpected(StorageError { LibCError { "`{}` already exists", dest.string() } });
     }
-    // A .strava file is the old app's name and description.
-    for (auto const *ext : { ".fit", ".json", ".fit.original", ".strava" }) {
+    // A .strava file is the old app's name and description; a .fit.stub
+    // the summary the recording replaced (specs/50-stub-activities.md).
+    for (auto const *ext : { ".fit", ".json", ".fit.original", ".fit.stub", ".strava" }) {
         auto const from = fit.parent_path() / std::format("{}{}", stem, ext);
         if (!fs::exists(from, ec)) {
             continue;

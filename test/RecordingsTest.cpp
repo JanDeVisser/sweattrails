@@ -152,6 +152,8 @@ void test_filing_groups()
     CHECK_EQ(listed(store), 1uz);
     MUST(write_file_by_name(fs::path { fit_of(store, 0) }.replace_extension(".json").string(), std::string_view { R"({ "title": "Comparing" })" }));
     MUST(write_file_by_name(fs::path { fit_of(store, 0) }.replace_extension(".fit.original").string(), std::string_view { "the watch's" }));
+    // A stub it replaced (specs/50-stub-activities.md) goes along too.
+    MUST(write_file_by_name(fs::path { fit_of(store, 0) }.replace_extension(".fit.stub").string(), std::string_view { "a summary" }));
 
     record(store, Garmin, 60, 3540);
     file(store);
@@ -163,6 +165,8 @@ void test_filing_groups()
     CHECK(fs::exists(folder / std::format("{}.fit", unix_start(0))));
     CHECK(fs::exists(folder / std::format("{}.json", unix_start(0))));
     CHECK(fs::exists(folder / std::format("{}.fit.original", unix_start(0))));
+    CHECK(fs::exists(folder / std::format("{}.fit.stub", unix_start(0))));
+    CHECK(!fs::exists(fs::path { fit_of(store, 0) }.replace_extension(".fit.stub")));
     CHECK_EQ(sidecar_value(main, "title"), "Comparing");
     CHECK(store.storage.has_activity(unix_start(0)));
     CHECK(store.storage.has_activity(unix_start(60)));

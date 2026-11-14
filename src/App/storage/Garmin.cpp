@@ -17,6 +17,7 @@
 
 #include <storage/Garmin.h>
 #include <storage/Storage.h>
+#include <storage/Stubs.h>
 
 namespace ST {
 
@@ -300,7 +301,7 @@ GarminResult<size_t> download_new_activities(GarminConnect &garmin, Storage cons
         // Downloaded before, but not organized yet: the inbox will.
         std::error_code ec { };
         auto const      in_inbox = fs::exists(storage.inbox_dir / std::format("garmin-{}.fit", activity.id), ec);
-        if (activity.has_file && !in_inbox && !duplicates.contains(activity.id) && !unavailable_ones.contains(activity.id) && !storage.has_activity(activity.start_time)) {
+        if (activity.has_file && !in_inbox && !duplicates.contains(activity.id) && !unavailable_ones.contains(activity.id) && wants_activity(storage, activity.start_time)) {
             wanted.push_back(activity);
         }
     }
