@@ -1163,6 +1163,8 @@ sweattrails_test(
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
+        src/App/storage/Recordings.cpp
+        src/App/storage/Volume.cpp
         src/App/storage/Stubs.cpp
         src/App/storage/Types.cpp
         src/App/fit/FIT.cpp

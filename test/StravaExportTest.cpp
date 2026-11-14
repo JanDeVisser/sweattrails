@@ -16,6 +16,7 @@
 #include <IO.h>
 
 #include <storage/Activity.h>
+#include <storage/Recordings.h>
 #include <storage/StravaExport.h>
 
 #include <TempDir.h>
@@ -279,6 +280,140 @@ void test_import_originals()
     CHECK_EQ(again.value_or(StubImport { .replaced = 99 }).replaced, 0uz);
 }
 
+// What the inbox holds as strava-<id>.<extension>.
+std::string in_inbox(TempStore const &store, u64 id, std::string_view extension)
+{
+    return read_file_by_name((store.storage.inbox_dir / std::format("strava-{}.{}", id, extension)).string()).value_or("");
+}
+
+// The activities listed in the store, by start time.
+std::vector<i64> listed(TempStore const &store)
+{
+    std::vector<i64> ret;
+    for (auto const &month : MUST_EVAL(store.storage.months_with_activities())) {
+        for (auto const &stored : MUST_EVAL(store.storage.month_starts(month))) {
+            ret.push_back(stored.start);
+        }
+    }
+    std::ranges::sort(ret);
+    return ret;
+}
+
+void test_queue_missing()
+{
+    TempStore  store { };
+    TempDir    export_dir { "strava-export" };
+    auto const files = export_dir.path / "activities";
+    fs::create_directories(files);
+    // In the store: 1 listed, 3 a recording in 2's folder, and 4 set aside
+    // by the inbox before.
+    put(store, 0, recorded_fit(0), 1);
+    put(store, 1000, recorded_fit(1000), 2);
+    auto const folder = recordings_dir(fs::path { store.storage.sidecar_of(fit_start(1000)) }.replace_extension(".fit"));
+    fs::create_directories(folder);
+    MUST(write_file_by_name((folder / std::format("{}.fit", fit_start(1010))).string(), std::string_view { recorded_fit(1010) }));
+    MUST(save_sidecar_strava(folder / std::format("{}.json", fit_start(1010)), { .id = 3, .name = "Zwift" }));
+    fs::create_directories(store.storage.inbox_dir / "duplicates");
+    MUST(write_file_by_name((store.storage.inbox_dir / "duplicates" / "strava-4.fit").string(), std::string_view { recorded_fit(2000) }));
+
+    for (auto const id : { 1, 3, 4 }) {
+        MUST(write_file_by_name((files / std::format("{}.fit", 100 + id)).string(), std::string_view { recorded_fit(3000) }));
+    }
+    MUST(write_file_by_name((files / "105.fit.gz").string(), std::string_view { gzip(recorded_fit(5000)) }));
+    MUST(write_file_by_name((files / "106.fit").string(), std::string_view { recorded_fit(6000) }));
+    MUST(write_file_by_name((files / "107.gpx").string(), std::string_view { "<gpx/>" }));
+    MUST(write_file_by_name((files / "109.fit.gz").string(), std::string_view { "not gzip" }));
+    auto const read = read_export("Activity ID,Activity Name,Activity Description,Filename\n"
+                                  "1,Listed,,activities/101.fit\n"
+                                  "3,Recording,,activities/103.fit\n"
+                                  "4,Set aside,,activities/104.fit\n"
+                                  "5,Morning Ride,Fun,activities/105.fit.gz\n"
+                                  "6,Zwift,,activities/106.fit\n"
+                                  "7,GPX,,activities/107.gpx\n"
+                                  "8,Missing,,activities/108.fit.gz\n"
+                                  "9,Corrupt,,activities/109.fit.gz\n"
+                                  "10,By hand,,\n",
+        "activities.csv");
+    CHECK(read.has_value());
+
+    std::vector<std::pair<size_t, size_t>> progress;
+    auto const                             queued = queue_missing(store.storage, read.value_or(ExportActivities { }), export_dir.path, [&progress](size_t index, size_t count) {
+        progress.emplace_back(index, count);
+    });
+    CHECK(queued.has_value());
+    if (!queued) {
+        return;
+    }
+    CHECK_EQ(queued->queued, 2uz);
+    CHECK_EQ(queued->unreadable, 1uz);
+    CHECK_EQ(progress.size(), 4uz);
+    CHECK((progress.back() == std::pair<size_t, size_t> { 3, 4 }));
+    CHECK((store.inbox() == std::vector<std::string> { "duplicates", "strava-5.fit", "strava-5.json", "strava-6.fit", "strava-6.json" }));
+    CHECK_EQ(in_inbox(store, 5, "fit"), recorded_fit(5000));
+    CHECK_EQ(in_inbox(store, 6, "fit"), recorded_fit(6000));
+    auto const title = sidecar_titles(store.storage.inbox_dir / "strava-5.json").strava;
+    CHECK((title == StravaTitle { .id = 5, .name = "Morning Ride", .description = "Fun" }));
+}
+
+void test_count()
+{
+    using Outcome = Storage::InboxOutcome;
+    MissingImport missing;
+    missing.count("strava-1.fit", { .outcome = Outcome::Organized });
+    missing.count("strava-2.fit", { .outcome = Outcome::Replaced });
+    missing.count("strava-3.fit", { .outcome = Outcome::Duplicate });
+    missing.count("strava-4.fit", { .outcome = Outcome::Skipped });
+    missing.count("garmin-5.fit", { .outcome = Outcome::Organized });
+    missing.count("wahoo-6.fit", { .outcome = Outcome::Duplicate });
+    CHECK_EQ(missing.added, 2uz);
+    CHECK_EQ(missing.set_aside, 1uz);
+}
+
+// The export's missing activities through the real inbox, as the job runs
+// it: filed, set aside, and grouped with their activity.
+void test_missing_through_inbox()
+{
+    TempStore  store { };
+    TempDir    export_dir { "strava-export" };
+    auto const files = export_dir.path / "activities";
+    fs::create_directories(files);
+    put(store, 10000, recorded_fit(10000), 20);
+    put(store, 20000, recorded_fit(20000), 21);
+    MUST(write_file_by_name((store.storage.inbox_dir / "garmin-1.fit").string(), std::string_view { recorded_fit(40000) }));
+    MUST(write_file_by_name((files / "130.fit").string(), std::string_view { recorded_fit(30000) }));
+    MUST(write_file_by_name((files / "131.fit").string(), std::string_view { recorded_fit(10005) }));
+    MUST(write_file_by_name((files / "132.fit").string(), std::string_view { recorded_fit(20000) }));
+    auto const activities = read_export("Activity ID,Activity Name,Activity Description,Filename\n"
+                                        "30,Missing,,activities/130.fit\n"
+                                        "31,Another recording,,activities/131.fit\n"
+                                        "32,The same,,activities/132.fit\n",
+        "activities.csv")
+                                .value_or(ExportActivities { });
+
+    auto missing = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { });
+    CHECK_EQ(missing.queued, 3uz);
+    auto const filed = store.storage.process_inbox({ }, [&store, &missing](std::string_view file_name, Storage::InboxFiling const &filing) {
+        missing.count(file_name, filing);
+        if (filing.filed()) {
+            CHECK(group_new(store.storage, filing.start).has_value());
+        }
+    });
+    CHECK_EQ(filed.value_or(0), 3u);
+    CHECK_EQ(missing.added, 2uz);
+    CHECK_EQ(missing.set_aside, 1uz);
+    CHECK_EQ(strava_of(store, fit_start(30000)).value_or(StravaTitle { }).name, "Missing");
+    // 10005 is a recording of 10000, in one's folder or the other's.
+    CHECK((listed(store) == std::vector { fit_start(10000), fit_start(20000), fit_start(30000), fit_start(40000) })
+        || (listed(store) == std::vector { fit_start(10005), fit_start(20000), fit_start(30000), fit_start(40000) }));
+    CHECK(store.storage.has_activity(fit_start(10005)));
+    CHECK(fs::exists(store.storage.inbox_dir / "duplicates" / "strava-32.fit"));
+
+    // Dropped again, the export has nothing more.
+    auto const again = queue_missing(store.storage, activities, export_dir.path);
+    CHECK_EQ(again.value_or(MissingImport { .queued = 99 }).queued, 0uz);
+    CHECK((store.inbox() == std::vector<std::string> { "duplicates" }));
+}
+
 void test_message()
 {
     CHECK_EQ((ExportImport { .descriptions = 4502, .empty = 3911, .untitled = 142 }).message(),
@@ -308,6 +443,9 @@ int main()
     test_import();
     test_filename();
     test_import_originals();
+    test_queue_missing();
+    test_count();
+    test_missing_through_inbox();
     test_message();
     return test_result();
 }
