@@ -298,6 +298,45 @@ void test_delete_the_main_one_of_two()
     CHECK_EQ(listed(store), 1uz);
 }
 
+// A file that isn't in the store is an error, and nothing moves.
+void test_delete_missing()
+{
+    Test::TempStore store;
+    auto const      deleted = delete_recording(store.storage, filed(store, 0));
+    CHECK(!deleted.has_value());
+    CHECK(!fs::exists(store.storage.deleted_dir));
+}
+
+// Deleting the main one when another recording can't be read leaves the
+// store as it was: the main one is still there, with its folder.
+void test_delete_the_main_one_unreadable_other()
+{
+    Test::TempStore store;
+    three_recordings(store);
+    auto const main = filed(store, 0);
+    MUST(write_file_by_name(in_folder(main, 120).string(), std::string_view { "not a fit file" }));
+    auto const deleted = delete_recording(store.storage, main);
+    CHECK(!deleted.has_value());
+    CHECK(fs::exists(main));
+    CHECK(fs::exists(in_folder(main, 60)));
+    CHECK(fs::exists(in_folder(main, 120)));
+    CHECK(!fs::exists(in_deleted(store, 0)));
+}
+
+// A recording of a start that's in deleted/ already is kept next to it.
+void test_delete_another_recording_twice()
+{
+    Test::TempStore store;
+    three_recordings(store);
+    auto const main = filed(store, 0);
+    deleted(store, unix_start(60));
+    auto const result = delete_recording(store.storage, in_folder(main, 60));
+    CHECK(result.has_value());
+    CHECK(fs::exists(in_deleted(store, 60)));
+    CHECK_EQ(result.value_or(Deleted { }).to.filename().string(), std::format("{}-1.fit", unix_start(60)));
+    CHECK(fs::exists(result.value_or(Deleted { }).to));
+}
+
 }
 
 int main()
@@ -311,5 +350,8 @@ int main()
     test_delete_the_main_one();
     test_delete_the_main_one_preferred();
     test_delete_the_main_one_of_two();
+    test_delete_missing();
+    test_delete_the_main_one_unreadable_other();
+    test_delete_another_recording_twice();
     return ST::Test::test_result();
 }

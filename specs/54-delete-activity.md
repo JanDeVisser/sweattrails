@@ -276,4 +276,33 @@ A section on deleting, as the spec says.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug**, `job_delete_activity()`, `src/App/SweatTrails.cpp`: when
+   `delete_recording()` fails after the main one of several recordings was
+   moved (the regrouping failed, e.g. a rename error), `main_of(request.fit)`
+   no longer exists and `next` is empty, because it's only computed for an
+   activity of one recording. `ActivityDeleted.show` is then empty, and
+   `notif_activity_deleted()` takes the "store is empty" path: it clears the
+   display and `last_activity` although the store still has the other
+   recordings and all other activities. Fix: on failure with no main left,
+   show the first of `recordings_of()`/a rescanned neighbour, or compute
+   `next` before deleting for every main-recording case. Not testable
+   without a window; the storage half is covered by
+   `test_delete_the_main_one_unreadable_other`.
+2. **Suggestion**, `queue_missing()`, `StravaExport.cpp`: the `with_id.empty()`
+   branch now reads every missing file through `recording_info()` just to
+   ask `was_deleted()`, before `queue()` copies it. With "Everything" and a
+   large export that is a second full parse per file. Checking the start from
+   the export's own metadata, if it has it, would avoid that.
+3. **Missing test, added**: `test_delete_missing` (file not in the store:
+   error, nothing moved, no `deleted/` made),
+   `test_delete_the_main_one_unreadable_other` (an unreadable other recording
+   leaves the store untouched, as the Architecture promises) and
+   `test_delete_another_recording_twice` (a folder recording whose start is
+   in `deleted/` already becomes `<start>-1.fit`). All pass.
+4. **Not checked**: the palette task, job and handler (needs a window),
+   including deleting the middle, last and only activity of a month, and the
+   last one in the store. The code reads right for those, apart from 1.
+
+Everything else in Version 1 scope matches the spec: `has_activity()` /
+`was_deleted()`, the inbox using `fit_at()`, `query_box`'s `initial`, the
+texts, the README. `ninja` and `ctest` pass, except `oauth_test` (known flaky).
