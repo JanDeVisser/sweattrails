@@ -283,6 +283,19 @@ void test_clicks_that_dont_choose(TestList &list)
     CHECK(list.submitted.empty());
 }
 
+// Two clicks on the same row number are not a double click when the entries
+// changed in between, as with a search typed after the first.
+void test_double_click_after_search_changes_entries(TestList &list)
+{
+    list.setup(numbered(60));
+    place_rows(list);
+    list.handle_mouse(click_at(5, 1.0));
+    list.type("e5");
+    list.handle_mouse(click_at(5, 1.2));
+    CHECK(list.submitted.empty());
+    CHECK(list.status == ModalStatus::Active);
+}
+
 void test_empty_list(TestList &list)
 {
     list.setup({ });
@@ -511,6 +524,7 @@ int main()
     test_double_click();
     test_click_selects(*list);
     test_clicks_that_dont_choose(*list);
+    test_double_click_after_search_changes_entries(*list);
     test_search_ignores_prefix_and_columns();
     test_select();
     test_widths();

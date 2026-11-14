@@ -142,4 +142,23 @@ lines of the popup.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. Bug (low): `DoubleClick` state outlives a change of entries. In
+   `ListBox::handle_mouse()` (`src/Lib/Widget/Modal.h`) the target is a
+   row number, so a click on row 0, then a typed search letter or
+   Left/Right in `ActivitySelector` (`populate()`), then a click on row 0
+   within 0.4 s counts as a double click and submits a different entry.
+   `test_double_click_after_search_changes_entries` in `ListBoxTest.cpp`
+   fails on this. Fix: reset `double_click` when the search or entries
+   change (`filter()`, `populate()`), or key the target on the payload.
+2. Suggestion: `ActivityInfoBox::draw()` finds the file's row by comparing
+   the row's text to `info.file`; it works, but a flag on `InfoRow`
+   would be sturdier than a text match.
+3. Suggestion: `hint_area` and `file_area` are stale between a Tab and the
+   next draw(); harmless, as a frame is 16 ms.
+
+Checked and fine: `entry_at()` matches `draw_entries()` (row height,
+`rows_area`, `top_line`); a double click that opens another modal doesn't
+leak, as the new modal first gets input next frame and the click that
+opens the palette from the status bar is spent in `Layout::process_input()`;
+`hint_area` is emptied when the hint isn't drawn; "Copied" and Tab's reset;
+`GetTime()` in `process_key` is fine.
