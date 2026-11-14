@@ -1,6 +1,6 @@
 # Importing the other recordings in Strava's export
 
-Status: In progress, on branch feature/52-strava-export-other-recordings
+Status: In review
 
 <!--
 Status is one of:
@@ -184,8 +184,11 @@ Deferred:
 - `recording_info()` gets an overload for a FIT file in memory,
   `recording_info(storage, std::string_view fit)`, for the export's
   ungzipped files; the path one fills `fit` as now.
-- `same_recording(a, b)`: the same serial number when both have one;
-  else elapsed within 5 s and distance within 0.5%
+- `same_recording(a, b)`: the same start second (added after the trial
+  run below: rewrites keep the start but count pauses otherwise, so
+  their elapsed time can differ by minutes; and the inbox can't file
+  two files at one second anyway); else the same serial number when
+  both have one; else elapsed within 5 s and distance within 0.5%
   (`SameRecordingSeconds`, `SameRecordingDistance`). Two serials that
   differ are different recordings, whatever the totals.
 - Only `file_id`'s serial, not the `device_info` listings' as the spec
@@ -204,19 +207,43 @@ Deferred:
   those of its group (main and `.recordings`). Same if any of the group
   is `same_recording()`; OtherRecording if a file with the ID is
   `same_activity()` with it (spec 31); else OtherActivity.
-- `queue_missing()` handles the IDs the store has after the missing
-  ones: reads Strava's file, skips it if it's byte for byte a stored
-  one (cheap, and 3081 of Jan's are), else loads the infos and
+- `queue_missing()` handles the IDs the store has along with the
+  missing ones: reads Strava's file, skips it if it's byte for byte a
+  stored one (cheap, and 3081 of Jan's are), else loads the infos and
   classifies. Same: nothing. OtherRecording: `to_inbox()` as now.
   OtherActivity: `to_inbox()`, then, once it's there, removes the
   `"strava"` key from the sidecars with the ID (`reject_sidecar_strava()`
   in `storage/Activity.*`, next to `save_sidecar_strava()`).
+- Added after the trial run: when the store has a FIT file at Strava's
+  file's own start (`Storage::fit_at()`, which `has_activity()` now
+  uses), Strava's file is there already, without the ID, and isn't
+  queued: the inbox would set it aside. For OtherActivity, the title
+  moves to that file's sidecar (`give_title()`), unless it has a Strava
+  title of its own. Multisport files are the common case: SweatTrails
+  files them by their last session's start. A stub there isn't
+  "there": the inbox replaces it.
 - `MissingImport` gets `titles_moved`; `message()` adds "Moved 64
   Strava titles to the right activity." The progress callback counts
   over all lines it checks, so the status line moves while the store's
   files are compared.
 - Loading 2 × ~2600 files shallowly on the job thread takes some
   seconds; reading every FIT file is what the stub step does too.
+
+### Trial run on a copy of Jan's store
+
+With a scratch driver (not committed) running `queue_missing()` and the
+inbox, as the job does, on a copy of the store under another `HOME`,
+with Jan's export of 2026-11-11, in 74 s:
+
+| Version                         | Queued | Filed | Set aside | Titles moved |
+|---------------------------------|-------:|------:|----------:|-------------:|
+| First                           |    227 |    64 |       161 |           58 |
+| Same second is the same         |    121 |    64 |        55 |           57 |
+| And not what's here at its start |     71 |    64 |         5 |            9 |
+
+63 of the 64 filed were grouped as another recording. The 5 set aside
+are one file Strava has 5 uploads of. `2026/10/1791310990` became a group
+with Zwift's file as the main one (Jan's settings prefer Zwift).
 
 ### The map (`widget/DisplayedActivity.*`, `widget/ActivityMap.cpp`, `SweatTrails.cpp`)
 
