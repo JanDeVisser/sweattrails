@@ -414,6 +414,34 @@ void test_missing_through_inbox()
     CHECK((store.inbox() == std::vector<std::string> { "duplicates" }));
 }
 
+// Two lines of the export with the same start, such as an activity uploaded
+// twice: the inbox files the first and sets the second aside, and a second
+// import queues neither.
+void test_same_start_twice_in_export()
+{
+    TempStore  store { };
+    TempDir    export_dir { "strava-export" };
+    auto const files = export_dir.path / "activities";
+    fs::create_directories(files);
+    MUST(write_file_by_name((files / "201.fit").string(), std::string_view { recorded_fit(50000) }));
+    MUST(write_file_by_name((files / "202.fit").string(), std::string_view { recorded_fit(50000) }));
+    auto const activities = read_export("Activity ID,Activity Name,Activity Description,Filename\n"
+                                        "41,First,,activities/201.fit\n"
+                                        "42,Twice,,activities/202.fit\n",
+        "activities.csv")
+                                .value_or(ExportActivities { });
+    auto       missing = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { });
+    CHECK_EQ(missing.queued, 2uz);
+    auto const filed = store.storage.process_inbox({ }, [&missing](std::string_view file_name, Storage::InboxFiling const &filing) {
+        missing.count(file_name, filing);
+    });
+    CHECK_EQ(filed.value_or(0), 1u);
+    CHECK_EQ(missing.added, 1uz);
+    CHECK_EQ(missing.set_aside, 1uz);
+    CHECK_EQ(listed(store).size(), 1uz);
+    CHECK_EQ(queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 }).queued, 0uz);
+}
+
 void test_message()
 {
     CHECK_EQ((ExportImport { .descriptions = 4502, .empty = 3911, .untitled = 142 }).message(),
@@ -466,6 +494,7 @@ int main()
     test_queue_missing();
     test_count();
     test_missing_through_inbox();
+    test_same_start_twice_in_export();
     test_message();
     return test_result();
 }
