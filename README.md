@@ -187,7 +187,10 @@ it looks through the whole store once, in the background.
 The summary line under the title says which recording is on display,
 and on which device: "Recording 1 of 2: Garmin". Tab shows the next
 recording, and Shift+Tab the one before. The map stays where it is, and
-so does the selected lap, so you can flip between them to compare.
+so does the selected lap, so you can flip between them to compare. A
+recording without positions, such as a head unit's indoors, shows the
+route of another recording that has them, "Route: Zwift" in the map's
+corner.
 Laps, fills and the overlay work on the recording on display, while the
 name (F2) is the activity's. Ctrl+J on a recording that isn't the main
 one makes it the main one.
@@ -480,6 +483,13 @@ then fills every gap it can in one go:
   of an activity that's already here is set aside in `inbox/duplicates`,
   and isn't added again when you drop the file again. One that's another
   recording of an activity here is grouped with it.
+- It adds Strava's file of an activity here when it's another recording
+  than the one here: Zwift's file of a ride your Garmin recorded indoors,
+  say, which gets the ride a map. A copy of the recording here, as Garmin
+  Connect rewrites them, isn't added. When Strava's file is another
+  activity altogether, Strava's title was on the wrong one: it moves to
+  the activity Strava's file adds, and getting the titles from Strava
+  again doesn't put it back.
 
 Activities entered by hand on Strava, without a file, aren't added. Nor
 are GPX or TCX files, as SweatTrails reads only FIT files; the closing
