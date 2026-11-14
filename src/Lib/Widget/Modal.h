@@ -196,6 +196,7 @@ struct ListBox : public Modal {
     Scrollbar                        scrollbar { };
     Rectangle                        track { };     // The scrollbar's, where draw() drew it
     Rectangle                        rows_area { }; // The entries', where draw() drew them
+    DoubleClick                      double_click { };
     int                              selection { -1 };
     ToString                         to_string_fnc { nullptr };
     std::map<std::string, Texture2D> icons { }; // By file, loaded when first drawn
@@ -403,17 +404,50 @@ struct ListBox : public Modal {
         scroll_to_selection();
     }
 
-    // The scrollbar and the mouse wheel. They scroll, and leave the
-    // selection where it is.
     void process_input() override
     {
-        handle_scrolling(ScrollInput::current());
+        handle_mouse(ScrollInput::current());
     }
 
-    void handle_scrolling(ScrollInput const &input)
+    // The scrollbar and the mouse wheel scroll, and leave the selection
+    // where it is. A click on an entry selects it, and a double click
+    // chooses it, as Enter does.
+    void handle_mouse(ScrollInput const &input)
     {
         scroll.count = shown_count();
-        scrollbar.handle(scroll, track, rows_area, input);
+        if (scrollbar.handle(scroll, track, rows_area, input) || !input.pressed) {
+            return;
+        }
+        auto const entry = entry_at(input.mouse);
+        if (!entry) {
+            return;
+        }
+        selection = *entry;
+        if (double_click.click(*entry, input.time)) {
+            choose();
+            close_when_done();
+        }
+    }
+
+    // The entry on display at `mouse`, in screen coordinates, as draw()
+    // last drew them. None outside the rows, or below the last entry.
+    [[nodiscard]] std::optional<int> entry_at(Vector2 mouse) const
+    {
+        if (scroll.lines <= 0 || !CheckCollisionPointRec(mouse, rows_area)) {
+            return { };
+        }
+        auto const row_height = rows_area.height / static_cast<float>(scroll.lines);
+        auto const entry = scroll.top_line + static_cast<int>((mouse.y - rows_area.y) / row_height);
+        return (entry < shown_count()) ? std::optional { entry } : std::nullopt;
+    }
+
+    // Submits the selected entry, if there is one.
+    void choose()
+    {
+        if (selection >= 0 && selection < shown_count()) {
+            status = ModalStatus::Submitted;
+            submit();
+        }
     }
 
     bool character(int ch) override
@@ -448,10 +482,7 @@ struct ListBox : public Modal {
             }
             case KEY_ENTER:
             case KEY_KP_ENTER: {
-                if (selection >= 0 && selection < count) {
-                    status = ModalStatus::Submitted;
-                    submit();
-                }
+                choose();
                 return true;
             }
             case KEY_UP: {
@@ -504,10 +535,16 @@ struct ListBox : public Modal {
         };
 
         bool ret = handle();
+        close_when_done();
+        return ret;
+    }
+
+    // Takes the list off the screen once it's submitted or dismissed.
+    void close_when_done()
+    {
         if (status != ModalStatus::Active) {
             App::the()->pop_modal(self());
         }
-        return ret;
     }
 
     void sort()
@@ -520,6 +557,8 @@ struct ListBox : public Modal {
     void filter()
     {
         matches.clear();
+        // A click on a row before is on another entry now.
+        double_click = { };
         if constexpr (Config.search) {
             // The list on display changes, so start at its top. Also when the
             // search is cleared: the selection indexed the matches.

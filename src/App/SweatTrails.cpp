@@ -1990,7 +1990,8 @@ void cmd_activity_info(pSweatTrails const &sweattrails, JSONValue const &)
             sweattrails->set_status(std::format("Couldn't show the file: {}", revealed.error().to_string()));
         }
     };
-    auto const box = Widget::make<ActivityInfoBox>(describe_shown, switch_recording, reveal);
+    auto const copy = [](std::string const &text) { SetClipboardText(text.c_str()); };
+    auto const box = Widget::make<ActivityInfoBox>(describe_shown, switch_recording, reveal, copy);
     box->show();
 }
 
@@ -2591,6 +2592,7 @@ void SweatTrails::initialize()
         .titled("Show the command palette")
         .bind(palette_key);
     status->hint = std::format("{} for commands", key_text(palette_key));
+    status->on_hint = [this]() { bus.submit("st-command-palette", JSONValue { }); };
     bus.add_task<SweatTrails>("st-quit", self(), cmd_quit)
         .titled("Quit")
         .bind(KeyCombo { KEY_Q, KModControl });

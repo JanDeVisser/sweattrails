@@ -50,6 +50,7 @@ struct TestList : ListBox<std::string> {
         scroll.top_line = 0;
         scroll.lines = page;
         submitted = { };
+        double_click = { };
         status = ModalStatus::Active;
     }
 
@@ -168,7 +169,7 @@ void test_wheel_keeps_selection(TestList &list)
     list.setup(numbered(60));
     place_rows(list);
     list.key(KEY_DOWN, 3);
-    list.handle_scrolling(ScrollInput { .mouse = { .x = 50, .y = 50 }, .wheel = -5 });
+    list.handle_mouse(ScrollInput { .mouse = { .x = 50, .y = 50 }, .wheel = -5 });
     CHECK_EQ(list.scroll.top_line, 5);
     CHECK_EQ(list.selection, 3);
     // The keys bring the selection back on screen.
@@ -182,7 +183,7 @@ void test_scrollbar_pages(TestList &list)
     list.setup(numbered(60));
     place_rows(list);
     // Below the thumb, which is a third of the track at the top.
-    list.handle_scrolling(ScrollInput { .mouse = { .x = 195, .y = 150 }, .pressed = true, .down = true });
+    list.handle_mouse(ScrollInput { .mouse = { .x = 195, .y = 150 }, .pressed = true, .down = true });
     CHECK_EQ(list.scroll.top_line, 20);
     CHECK_EQ(list.selection, 0);
 }
@@ -194,13 +195,13 @@ void test_scrolling_after_search(TestList &list)
     list.setup(numbered(60));
     place_rows(list);
     list.key(KEY_PAGE_DOWN, 3);
-    list.handle_scrolling(ScrollInput { .mouse = { .x = 50, .y = 50 } });
+    list.handle_mouse(ScrollInput { .mouse = { .x = 50, .y = 50 } });
     CHECK_EQ(list.scroll.top_line, 40);
     list.type("e5");
-    list.handle_scrolling(ScrollInput { .mouse = { .x = 50, .y = 50 }, .wheel = -1 });
+    list.handle_mouse(ScrollInput { .mouse = { .x = 50, .y = 50 }, .wheel = -1 });
     CHECK(!list.scroll.overflows());
     CHECK_EQ(list.scroll.top_line, 0);
-    list.handle_scrolling(ScrollInput { .mouse = { .x = 195, .y = 150 }, .pressed = true, .down = true });
+    list.handle_mouse(ScrollInput { .mouse = { .x = 195, .y = 150 }, .pressed = true, .down = true });
     CHECK_EQ(list.scroll.top_line, 0);
     CHECK(list.selection_ok());
 }
@@ -212,11 +213,102 @@ void test_page_down_after_wheel(TestList &list)
     list.setup(numbered(60));
     place_rows(list);
     list.key(KEY_DOWN, 3);
-    list.handle_scrolling(ScrollInput { .mouse = { .x = 50, .y = 50 }, .wheel = -25 });
+    list.handle_mouse(ScrollInput { .mouse = { .x = 50, .y = 50 }, .wheel = -25 });
     CHECK_EQ(list.scroll.top_line, 25);
     list.key(KEY_PAGE_DOWN);
     CHECK_EQ(list.selection, 23);
     CHECK(list.selection_ok());
+}
+
+// Two clicks on one target within the interval are a double click; a
+// third starts over, as do another target and a pause.
+void test_double_click()
+{
+    DoubleClick clicks;
+    CHECK(!clicks.click(3, 10.0));
+    CHECK(clicks.click(3, 10.3));
+    CHECK(!clicks.click(3, 10.5));
+    CHECK(clicks.click(3, 10.6));
+    CHECK(!clicks.click(3, 11.0));
+    CHECK(!clicks.click(4, 11.1));
+    CHECK(!clicks.click(4, 11.6));
+}
+
+// A click at `y` in the rows, at `time`.
+ScrollInput click_at(float y, double time)
+{
+    return ScrollInput { .mouse = { .x = 50, .y = y }, .pressed = true, .down = true, .time = time };
+}
+
+// A click selects the entry under it, scrolled down too; a double click
+// submits it. Rows are 10 high: place_rows() puts 20 in 200.
+void test_click_selects(TestList &list)
+{
+    list.setup(numbered(60));
+    place_rows(list);
+    list.handle_mouse(click_at(35, 1.0));
+    CHECK_EQ(list.selection, 3);
+    CHECK(list.submitted.empty());
+    list.handle_mouse(ScrollInput { .mouse = { .x = 50, .y = 50 }, .wheel = -10 });
+    list.handle_mouse(click_at(5, 5.0));
+    CHECK_EQ(list.selection, 10);
+    CHECK(list.status == ModalStatus::Active);
+    list.handle_mouse(click_at(8, 5.2));
+    CHECK_EQ(list.submitted, list.entries[10].payload);
+    CHECK(list.status == ModalStatus::Submitted);
+}
+
+// A double click closes the list, as Enter does: the command palette
+// stayed open over the command it ran.
+void test_double_click_closes(TestList &list)
+{
+    list.setup(numbered(5));
+    place_rows(list);
+    auto const &modals = App::the()->modals;
+    App::the()->push_modal(list.self());
+    list.handle_mouse(click_at(15, 1.0));
+    CHECK_EQ(modals.size(), 1uz);
+    list.handle_mouse(click_at(15, 1.2));
+    CHECK_EQ(list.submitted, list.entries[1].payload);
+    CHECK(modals.empty());
+}
+
+// A double click on two entries isn't one; nor are a release, a click on
+// the scrollbar, and a click below the last entry.
+void test_clicks_that_dont_choose(TestList &list)
+{
+    list.setup(numbered(5));
+    place_rows(list);
+    list.handle_mouse(click_at(15, 1.0));
+    list.handle_mouse(click_at(25, 1.1));
+    CHECK_EQ(list.selection, 2);
+    CHECK(list.submitted.empty());
+    list.handle_mouse(ScrollInput { .mouse = { .x = 50, .y = 25 }, .time = 1.2 });
+    CHECK(list.submitted.empty());
+    list.handle_mouse(click_at(95, 1.3));
+    list.handle_mouse(click_at(95, 1.4));
+    CHECK_EQ(list.selection, 2);
+    CHECK(list.submitted.empty());
+
+    list.setup(numbered(60));
+    place_rows(list);
+    list.handle_mouse(ScrollInput { .mouse = { .x = 195, .y = 150 }, .pressed = true, .down = true, .time = 2.0 });
+    list.handle_mouse(ScrollInput { .mouse = { .x = 195, .y = 150 }, .pressed = true, .down = true, .time = 2.1 });
+    CHECK_EQ(list.selection, 0);
+    CHECK(list.submitted.empty());
+}
+
+// Two clicks on the same row number are not a double click when the entries
+// changed in between, as with a search typed after the first.
+void test_double_click_after_search_changes_entries(TestList &list)
+{
+    list.setup(numbered(60));
+    place_rows(list);
+    list.handle_mouse(click_at(5, 1.0));
+    list.type("e5");
+    list.handle_mouse(click_at(5, 1.2));
+    CHECK(list.submitted.empty());
+    CHECK(list.status == ModalStatus::Active);
 }
 
 void test_empty_list(TestList &list)
@@ -444,6 +536,11 @@ int main()
     test_scrolling_after_search(*list);
     test_page_down_after_wheel(*list);
     test_empty_list(*list);
+    test_double_click();
+    test_click_selects(*list);
+    test_clicks_that_dont_choose(*list);
+    test_double_click_closes(*list);
+    test_double_click_after_search_changes_entries(*list);
     test_search_ignores_prefix_and_columns();
     test_select();
     test_widths();
