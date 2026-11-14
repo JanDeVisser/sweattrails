@@ -1,6 +1,6 @@
 # Small UI upgrades: double click, the status bar's hint, copying the file's path
 
-Status: In progress, on branch feature/53-small-ui-upgrades
+Status: In review
 
 <!--
 Status is one of:
