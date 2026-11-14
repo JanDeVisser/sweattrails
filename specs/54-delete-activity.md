@@ -1,6 +1,6 @@
 # Deleting an activity
 
-Status: In progress, on branch feature/54-delete-activity
+Status: In review
 
 <!--
 Status is one of:
@@ -213,14 +213,17 @@ as `list_box()` does with its `initial`.
   the summary line's recording suffix, so a test reaches them:
   `delete_question(Activity const &)` and `deleted_status(Activity const
   &)`. The date is the start's, `YYYY-MM-DD`; the name is the activity's
-  `title`, which is the activity's whichever recording is shown.
+  `title`, which is the activity's whichever recording is shown. The
+  question for a recording also says "It's moved to the deleted
+  folder.", as the activity's does.
 - **`st-delete-activity`**, titled "Delete activity", no key,
   `.when()` on the activity screen with an activity on display (none
   with an empty store). `cmd_delete_activity()` asks with
   `query_box(..., QueryOptionYesNo, QueryOptionNo)`, and Yes schedules a
   job.
-- **`JobType::DeleteActivity`**, with a `RecordingsRequest` (the shown
-  ID and FIT file), as Ctrl+J's and Ctrl+Shift+R's jobs. The job runs on
+- **`JobType::DeleteActivity`**, with a `DeleteRequest`: the shown ID
+  and FIT file, as Ctrl+J's `RecordingsRequest`, and the status text,
+  made on the UI thread from the activity, which the job doesn't have. The job runs on
   the job thread because it changes the store and rescans. For an
   activity of one recording it asks `activity_next_to()` (+1, else -1)
   *before* deleting: after, the ID isn't listed, and `activity_next_to()`
@@ -238,8 +241,8 @@ A section on deleting, as the spec says.
 
 ## Test plan
 
-- **`RecordingsTest`** (storage, in a `TempStore`, which gets a
-  `deleted_dir`):
+- **`DeleteTest`**, a new test of its own (storage, in a `TempStore`,
+  which gets a `deleted_dir`):
   - Deleting an activity of one recording moves all five kinds of file
     into `deleted/<year>/<month>/`, keeping names; nothing is left in
     `activity/`; the month no longer lists it.
@@ -255,18 +258,17 @@ A section on deleting, as the spec says.
     no folder left.
   - Deleting a start that's in `deleted/` already keeps both, the new
     one as `<start>-1.*`.
-  - `has_activity()` is true for a deleted start, also one deleted from
-    a folder and one in the month next to it; `fit_at()` is not.
-- **`GarminTest`** or **`DownloadTest`**: `wants_activity()` is false for
-  a deleted start.
+  - `has_activity()` is true for a deleted start, also one in the month
+    next to it, and `wants_activity()`, which the downloads ask, is
+    false; `fit_at()` doesn't find it.
 - **`StravaExportTest`**: the import doesn't queue an activity whose
   start was deleted.
-- **Inbox**: a file dropped at a deleted start is filed, not set aside,
-  and the deleted copy stays.
+- **Inbox** (`DeleteTest`): a file dropped at a deleted start is filed,
+  not set aside, and the deleted copy stays.
 - **`DataFieldsTest`**: `delete_question()` and `deleted_status()` for
   an activity, and for recording 2 of 3 with and without a device name.
-- **`InputBoxTest`** (where `query_box()` is tested): with
-  `QueryOptionNo` as `initial`, Enter submits No.
+- **`QueryBoxTest`**, new: Enter answers with the first option, or with
+  `initial`, or the first if `initial` isn't offered.
 - **Not automated**: the palette task, the job and the notification
   handler live in `SweatTrails.cpp`, which needs a window; checked by
   hand in the app: deleting the middle, the last and the only activity of
