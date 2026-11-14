@@ -458,10 +458,32 @@ the status line says how many are to go while a batch comes in. It stops
 20 requests short of either limit, so that Ctrl+G still works, and
 carries on when the limit resets, also after a restart.
 `"strava": { "descriptions": false }` in the settings turns this off.
-Strava's account export (on Strava, Settings, My Account, Download or
-Delete Your Account) has them all: drop its `activities.csv` on the
-window to bring a long history's descriptions in at once. A description changed on Strava, without the
-name, isn't seen again. One you wrote in SweatTrails wins over Strava's.
+Strava's account export has them all: see below. A description changed
+on Strava, without the name, isn't seen again. One you wrote in
+SweatTrails wins over Strava's.
+
+## Strava's export
+
+Strava makes an export of your account on request (on Strava, Settings,
+My Account, Download or Delete Your Account), and emails it as a zip
+file. Unzip it, and drop `activities.csv` from it on the window ("Import
+Strava's export…" in the command palette says the same). SweatTrails
+then fills every gap it can in one go:
+
+- It brings in the descriptions of the activities that have none, which
+  would take days to fetch one by one.
+- It replaces the activities that are only a summary with their
+  recordings: see below.
+- It adds the activities it doesn't have, such as the years before
+  Garmin Connect or Wahoo, or Zwift rides uploaded straight to Strava.
+  They go through the inbox, as a download's do: one at the start time
+  of an activity that's already here is set aside in `inbox/duplicates`,
+  and isn't added again when you drop the file again. One that's another
+  recording of an activity here is grouped with it.
+
+Activities entered by hand on Strava, without a file, aren't added. Nor
+are GPX or TCX files, as SweatTrails reads only FIT files; the closing
+message says how many there are.
 
 ## Activities that are only a summary
 
