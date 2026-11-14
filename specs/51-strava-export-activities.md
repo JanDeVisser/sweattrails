@@ -1,6 +1,6 @@
 # Importing the activities in Strava's export
 
-Status: In review, on branch feature/51-strava-export-activities
+Status: Done
 
 <!--
 Status is one of:
@@ -266,10 +266,14 @@ Jan checks the import on the real export by hand.
 ## Review notes
 
 1. Suggestion: `MissingImport::count()` (`StravaExport.cpp`) counts every inbox file starting with `strava-`, not only those this import queued. If the inbox also holds `strava-` files from the Strava download (same naming), they are counted as added or set aside by the export. Only the closing message is off, and only when both run together. Matching on the queued IDs would be exact.
+   *Left as is, with Jan's OK:* no download writes `strava-` files to the inbox. Any there are leftovers of an earlier import, which this one would queue again anyway, so counting them is right.
 2. Suggestion: in `job_import_strava_export()` the status line's "N of M" in the Activities step changes meaning and total between queuing (M = files queued) and filing (M = everything in the inbox, including a `garmin-` or `wahoo-` backlog), so the count can jump. Cosmetic.
+   *Left as is, with Jan's OK:* the spec asks for two passes, so the count starting again is expected.
 3. Suggestion: `to_inbox()` leaves the sidecar behind if writing the FIT file fails. The inbox then has a lone `strava-<id>.json`. A retry overwrites it, so it's harmless.
+   *Left as is, with Jan's OK:* the inbox ignores a sidecar on its own.
 4. Missing test (added): two export lines with the same start in one run. The inbox files one and sets the other aside, and a second `queue_missing()` queues neither (`test_same_start_twice_in_export` in `test/StravaExportTest.cpp`).
 5. Suggestion: `test_missing_through_inbox` accepts either start for the grouped pair (10000 or 10005), so it doesn't pin which recording becomes the main one. That is fine if spec 31 leaves the choice open.
+   *Left as is, with Jan's OK:* both recordings are as long and from the same device, so spec 31 picks neither.
 
 No bugs found against the spec. Version 1 scope is covered, the order of steps matches, and failures are logged and skipped. The full test run passes.
 
