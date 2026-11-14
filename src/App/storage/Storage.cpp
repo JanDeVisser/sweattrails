@@ -11,6 +11,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <charconv>
 #include <cstdlib>
@@ -65,6 +66,7 @@ StorageResult<Storage> Storage::init(std::string_view const &app_name)
     ret.tiles_dir = TRY_EVAL(ensure_directory(ret.data_dir / "tiles"));
     // Made at the start, so that it's there to be found.
     ret.overlays_dir = TRY_EVAL(ensure_directory(ret.data_dir / "overlays"));
+    ret.deleted_dir = ret.data_dir / "deleted";
     return ret;
 }
 
@@ -227,7 +229,18 @@ StorageResult<std::optional<Activity>> Storage::load_activity(ActivityID const &
 
 bool Storage::has_activity(i64 start_time) const
 {
-    return fit_at(start_time).has_value();
+    return fit_at(start_time).has_value() || was_deleted(start_time);
+}
+
+bool Storage::was_deleted(i64 start_time) const
+{
+    auto const      start = DateTime::from_timestamp(static_cast<i32>(start_time));
+    auto const      file = std::format("{}.fit", start_time);
+    Month const     month { static_cast<size_t>(start.year), start.month };
+    std::error_code ec { };
+    return std::ranges::any_of(std::array { -1, 0, 1 }, [&](int step) {
+        return fs::exists(deleted_dir / month.plus(step).dir_name() / file, ec);
+    });
 }
 
 std::optional<fs::path> Storage::fit_at(i64 start_time) const
@@ -419,7 +432,9 @@ StorageResult<Storage::InboxFiling> Storage::organize_fit_file(std::string_view 
             return InboxFiling { .outcome = InboxOutcome::Replaced, .start = activity.segment.start_time.timestamp, .stub_start = slot.stub.start };
         }
     }
-    if (has_activity(activity.segment.start_time.timestamp)) {
+    // Not has_activity(): a file put in the inbox at a deleted start is
+    // filed, as the user asked for it.
+    if (fit_at(activity.segment.start_time.timestamp)) {
         // renamePreserve: never clobber an existing file. Set the duplicate
         // aside so it isn't processed again on every start. The same file can
         // arrive more than once, so number the copies.

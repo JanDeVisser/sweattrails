@@ -947,6 +947,28 @@ target_include_directories(recordings_test PRIVATE src/App)
 target_link_libraries(recordings_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
+        delete_test
+        test/DeleteTest.cpp
+        src/App/storage/Recordings.cpp
+        src/App/storage/Summaries.cpp
+        src/App/storage/PowerCurve.cpp
+        src/App/storage/PaceCurve.cpp
+        src/App/storage/Volume.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Devices.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Stubs.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(delete_test PRIVATE src/App)
+target_link_libraries(delete_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
         stubs_test
         test/StubsTest.cpp
         src/App/storage/Activity.cpp
