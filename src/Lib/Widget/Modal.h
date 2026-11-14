@@ -550,6 +550,8 @@ struct ListBox : public Modal {
     void filter()
     {
         matches.clear();
+        // A click on a row before is on another entry now.
+        double_click = { };
         if constexpr (Config.search) {
             // The list on display changes, so start at its top. Also when the
             // search is cleared: the selection indexed the matches.
