@@ -327,6 +327,7 @@ constexpr char const OwnNotesKey[] = "notes";
 
 // And for what Strava has for it.
 constexpr char const StravaKey[] = "strava";
+constexpr char const StravaRejectedKey[] = "strava_rejected";
 
 // And for the laps the user made.
 constexpr char const LapsKey[] = "laps";
@@ -416,6 +417,13 @@ SidecarTitles sidecar_titles(fs::path const &sidecar)
             trace(Storage, "Ignoring `{}`'s \"strava\": {}", sidecar.string(), decoded.error().to_string());
         }
     }
+    if (json->get(StravaRejectedKey)) {
+        if (auto rejected = json->try_get_array<u64>(StravaRejectedKey); rejected) {
+            ret.strava_rejected = std::move(*rejected);
+        } else {
+            warning(Storage, "Ignoring `{}`'s rejected Strava activities: {}", sidecar.string(), rejected.error().to_string());
+        }
+    }
     return ret;
 }
 
@@ -497,6 +505,26 @@ std::expected<void, LibCError> save_sidecar_strava(fs::path const &sidecar, Stra
 {
     return update_sidecar(sidecar, [&strava](JSONValue &json) {
         json.set(StravaKey, strava.encode());
+    });
+}
+
+std::expected<void, LibCError> reject_sidecar_strava(fs::path const &sidecar, u64 id)
+{
+    auto rejected = sidecar_titles(sidecar).strava_rejected;
+    if (!std::ranges::contains(rejected, id)) {
+        rejected.push_back(id);
+    }
+    return update_sidecar(sidecar, [id, &rejected](JSONValue &json) {
+        if (auto const strava = json.get(StravaKey); strava) {
+            if (auto const title = StravaTitle::decode(*strava); title && title->id == id) {
+                json.erase(StravaKey);
+            }
+        }
+        auto list = JSONValue::array();
+        for (auto const rejected_id : rejected) {
+            list.append(JSONValue { rejected_id });
+        }
+        json.set(StravaRejectedKey, list);
     });
 }
 

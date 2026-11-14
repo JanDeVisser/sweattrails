@@ -46,8 +46,13 @@ namespace {
 void save_title(StravaMatch const &match, StravaUpdate &update)
 {
     auto const &sidecar = match.stored.sidecar;
-    auto const  old = sidecar_titles(sidecar).strava;
+    auto const  titles = sidecar_titles(sidecar);
+    auto const &old = titles.strava;
     if (old && old->id == match.strava.id && old->name == match.strava.name) {
+        return;
+    }
+    // The export import found Strava's file isn't this activity's.
+    if (std::ranges::contains(titles.strava_rejected, match.strava.id)) {
         return;
     }
     StravaTitle title { .id = match.strava.id, .name = match.strava.name };
