@@ -900,8 +900,30 @@ void test_route_index()
     CHECK_EQ(d.route_index(42), 42uz);
 }
 
+// The route's nearest record in time, at the edges and with a gap.
+void test_nearest_records()
+{
+    auto const at = [](std::initializer_list<u32> times) {
+        std::vector<record> ret;
+        for (auto const time : times) {
+            record rec { };
+            rec.timestamp.timestamp = time;
+            ret.push_back(rec);
+        }
+        return ret;
+    };
+    auto const route = at({ 100, 101, 110 });
+    // Before, on, between (a tie takes the earlier), after.
+    auto const shown = at({ 50, 100, 105, 106, 109, 110, 500 });
+    CHECK((nearest_records(shown, route) == std::vector<size_t> { 0, 0, 1, 2, 2, 2, 2 }));
+    // One record of the route: always that.
+    CHECK((nearest_records(shown, at({ 300 })) == std::vector<size_t>(7, 0)));
+    CHECK(nearest_records({ }, route).empty());
+}
+
 int main()
 {
+    test_nearest_records();
     test_route_source();
     test_route_index();
     test_current_record();

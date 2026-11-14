@@ -582,6 +582,13 @@ void test_strava_file_already_here()
     CHECK_EQ(strava_of(store, fit_start(15000)).value_or(StravaTitle { }).id, 65u);
     CHECK_EQ(strava_of(store, fit_start(20000)).value_or(StravaTitle { }).id, 63u);
     CHECK(!strava_of(store, fit_start(20010)).has_value());
+
+    // A second import queues nothing. 62's file is here, but 62 is on none
+    // of the files now (15000 has its own title), so the import takes it
+    // for missing and queues it for the inbox to set aside.
+    auto const again = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 });
+    CHECK_EQ(again.queued, 0uz);
+    CHECK_EQ(again.titles_moved, 0uz);
 }
 
 void test_message()

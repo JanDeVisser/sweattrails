@@ -299,4 +299,13 @@ with Zwift's file as the main one (Jan's settings prefer Zwift).
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug: a second import isn't idempotent when Strava's file is here and has a title of its own.**
+   `queue_missing()`, the `fit_at()` branch (StravaExport.cpp, "Strava's file is in the store already"): for OtherActivity, `reject()` takes the ID off the wrong activity, and `give_title()` returns early when the file at Strava's start already has a Strava title. The ID is then on no file, so the next import finds `stored.find(id) == end`, queues the file, and the inbox sets it aside (queued 1, set aside 1, a "was already here" sentence), once more. Test: `test_strava_file_already_here()` in StravaExportTest.cpp now runs the import twice and fails at `again.queued` (is 1, expected 0). The spec promises a second import queues nothing. Fix: in that branch don't queue lines whose file is here (for instance add the ID to the set-aside list, or leave the ID on the stored file instead of rejecting it when nobody can take it).
+2. **Suggestion: stored files that can't be read count as "no stored file".** `stored_with_id()` leaves out files `recording_info()` can't read, with a warning. If all of a line's files are left out, `classify_export_file()` gets an empty list and returns OtherActivity: Strava's file is queued and the ID is rejected from the unreadable file. Probably harmless for a corrupt file, but a transient read error moves a title for no reason. Skipping the line when `stored` comes back empty is safer.
+3. **Suggestion: `route_for()` loads every other recording in full on the UI thread** each time an activity without positions and with several recordings is shown, and on every Tab (`show_recording()`), and `compare_if_on()` loads them again. Fine for Jan's rides; a cache of the route's `Activity` by id would avoid the repeat.
+4. **Suggestion: the spec's Architecture says the route's records are paired by `pair_records()`; the code uses `nearest_records()`** (nearest in time, which suits the mark better). Update the spec text.
+5. **Suggestion: `titles_moved` is counted when the file was queued, also when `reject()` failed to write the sidecar** (the warning is logged, the count says moved). Minor.
+
+Checked and found right: `same_recording()`'s unsigned differences, `route_index()` at both ends and with an empty shown list (nearest is empty, so the last route record), the selected range's `min`/`max` mapped before the `points.size()` check, comparing mode (the compared recording is separate from the route), recordings of one (no route), stubs (the stub branch returns before the route), the Zwift world taken from the route, and the titles run's `strava_rejected`.
+
+Tests added: `test_nearest_records()` (DisplayedActivityTest.cpp), `test_fit_at()` (GarminTest.cpp), and the second import in `test_strava_file_already_here()` (fails, finding 1).
