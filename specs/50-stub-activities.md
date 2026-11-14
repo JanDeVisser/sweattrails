@@ -337,8 +337,11 @@ With Jan's export (2026-11-11) on a copy of the store:
 3. The inbox.
 4. Strava's export.
 5. The activity screen.
-6. Garmin's and Wahoo's downloads. Wahoo's follows on main once spec 46
-   is merged, with review finding 4 (below).
+6. Garmin's and Wahoo's downloads. Wahoo's came after spec 46 was
+   merged, on `feature/50-wahoo-stubs`, with review finding 4 (below):
+   Wahoo's download now also skips what the inbox set aside as a
+   duplicate, as Garmin's did, through
+   `Storage::set_aside_as_duplicates(source)`, moved from `Garmin.cpp`.
 7. README.
 
 ## Test plan
@@ -449,9 +452,55 @@ trailing garbage). The full run passes.
    `recordings_test` check fails against the old code. It was more
    likely than it looked: the inbox groups right after a replacement.
 3. Left as it is, pinned by `test_replace_sidecar_in_the_way`.
-4. Taken up in the Wahoo step, after spec 46 is merged: check that a
-   workout without records isn't fetched on every run.
+4. Fixed in the Wahoo step (f312ccc): Wahoo's download skips the
+   workouts in `inbox/duplicates`, as Garmin's does, so a workout
+   without records is fetched once, set aside, and not again. Tested in
+   `wahoo_test`.
 5. Left as it is: the CSV is the user's own.
 6. No action, as the Reviewer says.
 
 Jan looked at the line on the activity screen in the app: it's fine.
+
+### Wahoo step (feature/50-wahoo-stubs)
+
+1. **Suggestion (behaviour, for Jan to decide): stubs older than
+   `wahoo-complete.txt` are never replaced by "Everything".** With T set,
+   "Everything" lists back to T less `wahoo.days` (`plan_wahoo_download()`),
+   so `wants_activity()` is only asked about workouts after that. A stub
+   that was in the store before T (or that came in later, e.g. a Strava
+   export imported after T) and whose RIVAL workout is older is not asked
+   about, whatever `wants_activity()` says. This is the interaction with
+   spec 46, not a bug in either: the completion logic itself is unchanged
+   (`count` and `plan.completes` don't depend on `wants_activity()`; a
+   skipped stub counts as "not wanted", as a present activity did). To
+   get such stubs replaced, delete `wahoo-complete.txt` once. Worth a line
+   in spec 46's section on what "Everything" no longer brings back, or
+   a rule that a stub in the store resets T. Nothing to change in this
+   branch.
+2. **Suggestion: a set-aside is final.** `duplicates` is by ID and
+   forever: a workout that the inbox set aside because the replacement
+   failed (`replace_from_inbox()` returned false, then `has_activity()`)
+   is not asked for again either, even after the cause is gone. Same as
+   Garmin's; deleting the file in `inbox/duplicates` brings it back.
+3. **Verified, no finding: ID parsing in `Storage::set_aside_as_duplicates()`.**
+   `wahoo-12.fit` and `wahoo-12-3.fit` give 12; `garmin-` and `wahoo-`
+   files don't mix (the prefix includes the dash); `.json`, `.fit.stub`,
+   `wahoo-.fit`, `wahoo-x.fit`, `wahoo-9x.fit` and names like
+   `20260604_172943_activity.fit` give nothing. The `substr()` cannot
+   run past the end: the prefix ends in `-` and `.fit` starts with `.`,
+   so a name with both is at least prefix + 4 long. The only thing to
+   know: `string_to_integer()` on a view reads `s[size]` for an empty or
+   one-digit ID (existing code; it reads the `-` or `.` that follows, so
+   fine here).
+4. **Missing test, added:** `test_set_aside_as_duplicates_by_source` in
+   `test/WahooTest.cpp` covers point 3 directly, including no
+   `duplicates` directory, for both prefixes and an unknown one. The
+   Developer's `test_stubs_are_downloaded` is good (stub at the start,
+   stub 30 s off, real activity, set aside; checks the inbox contents)
+   and no change is wanted. It doesn't check `wahoo-complete.txt`; the
+   Everything logic is unchanged by the diff and is covered by the
+   existing tests of spec 46.
+5. The move of `set_aside_as_duplicates()` to `Storage` is behaviour
+   preserving (Garmin's test `test_duplicates_set_aside_are_not_downloaded_again`
+   still passes, and it now also shows a `wahoo-` file is ignored for
+   `garmin`). The full run passes (75 of 75).

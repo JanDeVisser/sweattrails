@@ -291,6 +291,24 @@ StorageResult<std::optional<i64>> Storage::oldest_start() const
     return std::optional<i64> { };
 }
 
+std::set<u64> Storage::set_aside_as_duplicates(std::string_view source) const
+{
+    auto const      prefix = std::format("{}-", source);
+    std::set<u64>   ret;
+    std::error_code ec { };
+    for (fs::directory_iterator it { inbox_dir / "duplicates", ec }; !ec && it != fs::directory_iterator { }; it.increment(ec)) {
+        auto const name = it->path().filename().string();
+        if (!name.starts_with(prefix) || !name.ends_with(".fit")) {
+            continue;
+        }
+        auto const id = std::string_view { name }.substr(prefix.size(), name.size() - prefix.size() - 4);
+        if (auto const parsed = string_to_integer<u64>(id.substr(0, id.find('-')), 10); parsed) {
+            ret.insert(*parsed);
+        }
+    }
+    return ret;
+}
+
 StorageResult<std::vector<StoredStart>> Storage::month_starts(Month const &month) const
 {
     std::vector<StoredStart> ret;

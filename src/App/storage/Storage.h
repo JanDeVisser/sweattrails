@@ -17,6 +17,8 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <set>
+#include <string_view>
 #include <vector>
 
 #include <Error.h>
@@ -133,6 +135,13 @@ struct Storage {
     // The start time of the store's oldest activity, as activity_starts()
     // sees them.
     StorageResult<std::optional<i64>> oldest_start() const;
+
+    // The IDs of the activities from `source`, such as "garmin", that the
+    // inbox set aside as duplicates: `<source>-<id>.fit`, or
+    // `<source>-<id>-<n>.fit` for later copies. A download doesn't fetch
+    // them again, as the store has them, or a stub that only a recording
+    // replaces (storage/Stubs.h).
+    [[nodiscard]] std::set<u64> set_aside_as_duplicates(std::string_view source) const;
 
     // The activities filed in `month`'s directory, in no order.
     StorageResult<std::vector<StoredStart>> month_starts(Month const &month) const;

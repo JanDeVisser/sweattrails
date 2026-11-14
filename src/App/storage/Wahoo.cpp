@@ -16,6 +16,7 @@
 
 #include <storage/Download.h>
 #include <storage/Storage.h>
+#include <storage/Stubs.h>
 #include <storage/Wahoo.h>
 
 namespace ST {
@@ -367,12 +368,13 @@ WahooResult<size_t> download_new_workouts(Wahoo &wahoo, Storage const &storage, 
     if (!listed) {
         return std::unexpected(listed.error());
     }
+    auto const                duplicates = storage.set_aside_as_duplicates("wahoo");
     std::vector<WahooWorkout> wanted;
     for (auto const &workout : *listed) {
         // Downloaded before, but not organized yet: the inbox will.
         std::error_code ec { };
         auto const      in_inbox = fs::exists(storage.inbox_dir / std::format("wahoo-{}.fit", workout.id), ec);
-        if (!workout.file_url.empty() && !in_inbox && !storage.has_activity(workout.start_time)) {
+        if (!workout.file_url.empty() && !in_inbox && !duplicates.contains(workout.id) && wants_activity(storage, workout.start_time)) {
             wanted.push_back(workout);
         }
     }
