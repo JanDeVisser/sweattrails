@@ -644,6 +644,24 @@ void test_stubs_are_downloaded()
     CHECK_EQ(store.inbox(), (std::vector<std::string> { "duplicates", "wahoo-1.fit", "wahoo-1.json", "wahoo-2.fit", "wahoo-2.json" }));
 }
 
+// The IDs of what the inbox set aside, by file-name prefix: later copies
+// count for their ID, other sources' files and files from elsewhere, such
+// as Jan's `20260604_172943_activity.fit`, for none.
+void test_set_aside_as_duplicates_by_source()
+{
+    TempStore  store;
+    auto const duplicates = store.storage.inbox_dir / "duplicates";
+    CHECK(store.storage.set_aside_as_duplicates("wahoo").empty());
+    fs::create_directories(duplicates);
+    for (auto const *name : { "wahoo-12.fit", "wahoo-12-3.fit", "wahoo-7-1.fit", "wahoo-7.json", "wahoo-8.fit.stub", "wahoo-.fit", "wahoo-x.fit", "wahoo-9x.fit", "wahoo-0.fit",
+             "garmin-5.fit", "garmin-6-2.fit", "wahoo", "wahoo-", "20260604_172943_activity.fit", "20260604_172943_activity-1.fit" }) {
+        MUST(write_file_by_name((duplicates / name).string(), std::string_view { "set aside" }));
+    }
+    CHECK_EQ(store.storage.set_aside_as_duplicates("wahoo"), (std::set<u64> { 0, 12, 7 }));
+    CHECK_EQ(store.storage.set_aside_as_duplicates("garmin"), (std::set<u64> { 5, 6 }));
+    CHECK(store.storage.set_aside_as_duplicates("strava").empty());
+}
+
 void test_download_new_workouts()
 {
     FakeWahoo fake;
@@ -995,6 +1013,7 @@ int main()
     test_list_stops_at_an_empty_page();
     test_download_new_workouts();
     test_stubs_are_downloaded();
+    test_set_aside_as_duplicates_by_source();
     test_unavailable_file_is_skipped();
     test_failed_download_keeps_the_earlier_ones();
     test_download_is_paced();
