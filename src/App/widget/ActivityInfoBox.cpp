@@ -81,6 +81,7 @@ std::string info_hint(ActivityInfo const &info)
     std::vector<std::string> keys;
     if (!info.path.empty()) {
         keys.push_back(std::format("F: {}", RevealName));
+        keys.emplace_back("C: copy path");
     }
     if (!info.recording.empty()) {
         keys.emplace_back("Tab: next recording");
@@ -89,11 +90,12 @@ std::string info_hint(ActivityInfo const &info)
     return join(keys, " · ");
 }
 
-ActivityInfoBox::ActivityInfoBox(Describe describe, SwitchRecording switch_recording, Reveal reveal)
+ActivityInfoBox::ActivityInfoBox(Describe describe, SwitchRecording switch_recording, Reveal reveal, Copy copy)
     : Modal("Activity info")
     , describe_fnc(std::move(describe))
     , switch_fnc(std::move(switch_recording))
     , reveal_fnc(std::move(reveal))
+    , copy_fnc(std::move(copy))
 {
     background = BLACK;
 }
@@ -123,6 +125,22 @@ void ActivityInfoBox::reveal()
     }
 }
 
+void ActivityInfoBox::copy(double now)
+{
+    if (!info.path.empty()) {
+        copy_fnc(info.path.string());
+        copied_at = now;
+    }
+}
+
+std::string ActivityInfoBox::hint_text(double now) const
+{
+    if (copied_at && now - *copied_at < CopiedSeconds) {
+        return "Copied";
+    }
+    return info_hint(info);
+}
+
 bool ActivityInfoBox::process_key(KeyboardModifier modifier, int key)
 {
     if (status == ModalStatus::Dormant) {
@@ -130,6 +148,7 @@ bool ActivityInfoBox::process_key(KeyboardModifier modifier, int key)
     }
     if (key == KEY_TAB && (modifier == KModNone || modifier == KModShift)) {
         switch_fnc(modifier == KModShift ? -1 : 1);
+        copied_at.reset();
         refresh();
         resize();
         return true;
@@ -145,19 +164,37 @@ bool ActivityInfoBox::process_key(KeyboardModifier modifier, int key)
     case KEY_F:
         reveal();
         return true;
+    case KEY_C:
+        copy(GetTime());
+        return true;
     default:
         return false;
     }
 }
 
-// A click on the hint shows the file, as F does.
 void ActivityInfoBox::process_input()
 {
-    if (info.path.empty() || !CheckCollisionPointRec(GetMousePosition(), hint_area)) {
+    handle_input(ScrollInput::current());
+}
+
+// As F and C do.
+void ActivityInfoBox::handle_input(ScrollInput const &input)
+{
+    if (info.path.empty()) {
+        return;
+    }
+    auto const on_hint = CheckCollisionPointRec(input.mouse, hint_area);
+    auto const on_file = CheckCollisionPointRec(input.mouse, file_area);
+    if (!on_hint && !on_file) {
         return;
     }
     App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);
-    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    if (!input.pressed) {
+        return;
+    }
+    if (on_file) {
+        copy(input.time);
+    } else {
         reveal();
     }
 }
@@ -200,12 +237,16 @@ void ActivityInfoBox::draw()
     draw_line(2, y + Margin / 2, -2, y + Margin / 2, RAYWHITE);
     y += Margin;
 
+    file_area = { };
     for (auto const &row : info_rows(info)) {
         auto const x = (row.kind == InfoRow::Kind::Heading) ? Margin : EntryIndent;
         auto const color = (row.kind == InfoRow::Kind::Heading) ? HeadingColor : RAYWHITE;
         auto       small_x = x;
         if (!row.line.text.empty()) {
             render_text(x, y, row.line.text, FontSize::Medium, color);
+            if (row.kind == InfoRow::Kind::Entry && row.line.text == info.file && !info.file.empty()) {
+                file_area = Rectangle { .x = viewport.x + x, .y = viewport.y + y, .width = text_width(row.line.text, FontSize::Medium), .height = medium.y };
+            }
             small_x += text_width(row.line.text, FontSize::Medium) + text_width(" ", FontSize::Medium);
         }
         if (!row.line.small.empty()) {
@@ -218,7 +259,7 @@ void ActivityInfoBox::draw()
 
     draw_line(2, y + Margin / 2, -2, y + Margin / 2, RAYWHITE);
     y += Margin;
-    auto const hint = info_hint(info);
+    auto const hint = hint_text(GetTime());
     render_text(Margin, y, hint, FontSize::Small, SmallColor);
     hint_area = Rectangle {
         .x = viewport.x + Margin,

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  *
  * Tests the activity info popup (specs/48-device-info.md) without a
- * window: its rows, its hint, and its keys.
+ * window: its rows, its hint, its keys, and clicks on it.
  */
 
 #include <filesystem>
@@ -43,12 +43,13 @@ ActivityInfo recording(int number)
 // A box on two recordings, which Tab switches between, that records
 // what it was asked to show. resize() measures text, which needs fonts.
 struct TestBox : public ActivityInfoBox {
-    int                   shown { 1 };
-    std::vector<int>      steps { };
-    std::vector<fs::path> revealed { };
+    int                      shown { 1 };
+    std::vector<int>         steps { };
+    std::vector<fs::path>    revealed { };
+    std::vector<std::string> copied { };
 
     TestBox()
-        : ActivityInfoBox(nullptr, nullptr, nullptr)
+        : ActivityInfoBox(nullptr, nullptr, nullptr, nullptr)
     {
         describe_fnc = [this]() -> std::optional<ActivityInfo> { return recording(shown); };
         switch_fnc = [this](int step) {
@@ -56,6 +57,7 @@ struct TestBox : public ActivityInfoBox {
             shown = (shown == 1) ? 2 : 1;
         };
         reveal_fnc = [this](fs::path const &file) { revealed.push_back(file); };
+        copy_fnc = [this](std::string const &text) { copied.push_back(text); };
     }
 
     void resize() override
@@ -115,10 +117,10 @@ void test_title_and_hint()
     std::string const reveal = "F: Open folder";
 #endif
     CHECK_EQ(info_title(recording(2)), "Activity info · Recording 2 of 2");
-    CHECK_EQ(info_hint(recording(2)), reveal + " · Tab: next recording · Esc closes");
+    CHECK_EQ(info_hint(recording(2)), reveal + " · C: copy path · Tab: next recording · Esc closes");
     ActivityInfo const one_recording { .file = "activity/2026/11/1.fit", .path = "/store/activity/2026/11/1.fit" };
     CHECK_EQ(info_title(one_recording), "Activity info");
-    CHECK_EQ(info_hint(one_recording), reveal + " · Esc closes");
+    CHECK_EQ(info_hint(one_recording), reveal + " · C: copy path · Esc closes");
     // Without a file there's nothing to show.
     CHECK_EQ(info_hint(ActivityInfo { }), "Esc closes");
 }
@@ -178,13 +180,67 @@ void test_nothing_to_describe_keeps_the_info()
     box->hide();
 }
 
+// C copies the full path, not the name the popup shows, and "Copied"
+// replaces the hint for a while. Tab ends it.
+void test_c_copies_the_path()
+{
+    auto box = std::make_shared<TestBox>();
+    box->open();
+    CHECK(box->process_key(KModNone, KEY_C));
+    CHECK(box->copied == (std::vector<std::string> { "/store/activity/2026/11/1.fit" }));
+    CHECK(box->status == ModalStatus::Active);
+
+    box->copy(100.0);
+    CHECK_EQ(box->hint_text(100.0), "Copied");
+    CHECK_EQ(box->hint_text(101.9), "Copied");
+    CHECK_EQ(box->hint_text(102.0), info_hint(box->info));
+    box->copy(200.0);
+    CHECK(box->process_key(KModNone, KEY_TAB));
+    CHECK_EQ(box->hint_text(200.5), info_hint(box->info));
+    box->hide();
+}
+
+void test_c_without_a_file_does_nothing()
+{
+    auto box = std::make_shared<TestBox>();
+    box->describe_fnc = []() -> std::optional<ActivityInfo> { return ActivityInfo { }; };
+    box->open();
+    CHECK(box->process_key(KModNone, KEY_C));
+    CHECK(box->copied.empty());
+    CHECK_EQ(box->hint_text(0), "Esc closes");
+    box->hide();
+}
+
+// A click on the file's line copies the path; one on the hint shows the
+// file; a move over them, and a click elsewhere, do neither.
+void test_clicks()
+{
+    auto box = std::make_shared<TestBox>();
+    box->open();
+    box->file_area = Rectangle { .x = 100, .y = 100, .width = 200, .height = 20 };
+    box->hint_area = Rectangle { .x = 100, .y = 300, .width = 300, .height = 15 };
+    box->handle_input(ScrollInput { .mouse = { .x = 150, .y = 110 }, .time = 5.0 });
+    box->handle_input(ScrollInput { .mouse = { .x = 150, .y = 200 }, .pressed = true, .time = 5.0 });
+    CHECK(box->copied.empty());
+    CHECK(box->revealed.empty());
+    box->handle_input(ScrollInput { .mouse = { .x = 150, .y = 110 }, .pressed = true, .time = 5.0 });
+    CHECK(box->copied == (std::vector<std::string> { "/store/activity/2026/11/1.fit" }));
+    CHECK_EQ(box->hint_text(6.0), "Copied");
+    box->handle_input(ScrollInput { .mouse = { .x = 150, .y = 305 }, .pressed = true, .time = 7.0 });
+    CHECK(box->revealed == (std::vector<fs::path> { "/store/activity/2026/11/1.fit" }));
+    CHECK_EQ(box->copied.size(), 1uz);
+    box->hide();
+}
+
 void test_other_keys_are_not_taken()
 {
     auto box = std::make_shared<TestBox>();
     box->open();
     CHECK(!box->process_key(KModNone, KEY_G));
     CHECK(!box->process_key(KModControl, KEY_F));
+    CHECK(!box->process_key(KModControl, KEY_C));
     CHECK(box->revealed.empty());
+    CHECK(box->copied.empty());
     box->hide();
 }
 
@@ -202,6 +258,9 @@ int main()
     test_f_without_a_file_does_nothing();
     test_tab_switches_recordings();
     test_nothing_to_describe_keeps_the_info();
+    test_c_copies_the_path();
+    test_c_without_a_file_does_nothing();
+    test_clicks();
     test_other_keys_are_not_taken();
     return test_result();
 }
