@@ -328,6 +328,40 @@ std::string activity_summary(Activity const &activity)
     return segment_summary(activity, activity.segment) + recording_suffix(activity);
 }
 
+namespace {
+
+std::string quoted_title(Activity const &activity)
+{
+    return std::format("“{}”", activity.title);
+}
+
+std::string start_date(Activity const &activity)
+{
+    auto const &start = activity.segment.start_time;
+    return std::format("{:04}-{:02}-{:02}", start.year, static_cast<int>(start.month) + 1, start.day_of_month);
+}
+
+}
+
+std::string delete_question(Activity const &activity)
+{
+    constexpr std::string_view Where = "It's moved to the deleted folder.";
+    if (activity.recordings < 2) {
+        return std::format("Delete {} of {}? {}", quoted_title(activity), start_date(activity), Where);
+    }
+    auto const device = device_name(activity);
+    return std::format("Delete recording {} of {}{} of {}? {}", activity.recording_number, activity.recordings,
+        device.empty() ? "" : std::format(" ({})", device), quoted_title(activity), Where);
+}
+
+std::string deleted_status(Activity const &activity)
+{
+    if (activity.recordings < 2) {
+        return std::format("Deleted {}", quoted_title(activity));
+    }
+    return std::format("Deleted recording {} of {} of {}", activity.recording_number, activity.recordings, quoted_title(activity));
+}
+
 std::string lap_summary(Activity const &activity, size_t lap)
 {
     return std::format("Lap {} of {} · {}{}", lap + 1, activity.laps.size(), segment_summary(activity, activity.laps[lap].segment), recording_suffix(activity));

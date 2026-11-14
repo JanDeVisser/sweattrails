@@ -630,6 +630,22 @@ void test_summary()
     CHECK_EQ(activity_summary(t.activity), "30.0 km · 50:00 · TSS 44 · Recording 2 of 2: Wahoo ELEMNT ROAM");
 }
 
+// See specs/54-delete-activity.md.
+void test_delete_texts()
+{
+    TestActivity t { sport::Cycling, std::vector<record>(10) };
+    t.activity.title = "Morning Ride";
+    t.activity.segment.start_time = DateTime { .year = 2025, .month = DateTime::Month::February, .day_of_month = 27 };
+    CHECK_EQ(delete_question(t.activity), "Delete “Morning Ride” of 2025-02-27? It's moved to the deleted folder.");
+    CHECK_EQ(deleted_status(t.activity), "Deleted “Morning Ride”");
+    t.activity.recordings = 3;
+    t.activity.recording_number = 2;
+    CHECK_EQ(delete_question(t.activity), "Delete recording 2 of 3 of “Morning Ride”? It's moved to the deleted folder.");
+    t.activity.manufacturer = FIT::manufacturer::wahoo_fitness;
+    CHECK_EQ(delete_question(t.activity), "Delete recording 2 of 3 (Wahoo) of “Morning Ride”? It's moved to the deleted folder.");
+    CHECK_EQ(deleted_status(t.activity), "Deleted recording 2 of 3 of “Morning Ride”");
+}
+
 void test_device_name()
 {
     TestActivity t { sport::Cycling, std::vector<record>(10) };
@@ -1365,6 +1381,7 @@ int main()
     test_panel_has_no_distance_or_moving_time();
     test_summary();
     test_device_name();
+    test_delete_texts();
     test_format_compared();
     test_format_compared_zero();
     test_data_fields_compared();
