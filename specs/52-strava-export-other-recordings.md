@@ -1,6 +1,6 @@
 # Importing the other recordings in Strava's export
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -249,7 +249,9 @@ with Zwift's file as the main one (Jan's settings prefer Zwift).
 
 - `DisplayedActivity` gets `std::optional<RouteRecording> route`: the
   other recording's `Activity`, and `pairs`, the shown records paired
-  with its records by `pair_records()` (spec 33). The mark and the
+  with its records by `nearest_records()`: the route's record nearest
+  in time to each shown one, which, unlike spec 33's `pair_records()`,
+  always has one, before the route starts or after it ends. The mark and the
   selected range go through `pairs` to the route's records:
   `route_index(size_t shown)`.
 - `route_source(std::span<Activity const> recordings)`, pure: the index
@@ -309,3 +311,18 @@ with Zwift's file as the main one (Jan's settings prefer Zwift).
 Checked and found right: `same_recording()`'s unsigned differences, `route_index()` at both ends and with an empty shown list (nearest is empty, so the last route record), the selected range's `min`/`max` mapped before the `points.size()` check, comparing mode (the compared recording is separate from the route), recordings of one (no route), stubs (the stub branch returns before the route), the Zwift world taken from the route, and the titles run's `strava_rejected`.
 
 Tests added: `test_nearest_records()` (DisplayedActivityTest.cpp), `test_fit_at()` (GarminTest.cpp), and the second import in `test_strava_file_already_here()` (fails, finding 1).
+
+### Resolution
+
+Gone through with Jan:
+
+1. Fixed in e7a452e: when no activity can take the title, Strava's file
+   goes to the inbox, which sets it aside and remembers it, so a second
+   import skips it, as any activity that's here already.
+2. Fixed in fccbf06: a line whose files with the ID can't be read is
+   skipped, and the ID stays. `test_unreadable_stored_file_keeps_its_id`.
+3. Not changed: groups are 2 or 3 recordings, and comparing loads them
+   the same way. A cache by activity if it turns out slow.
+4. Fixed: the Architecture names `nearest_records()`.
+5. Fixed in e7a452e: a title counts as moved only when the wrong
+   activity's sidecar could be changed.
