@@ -25,6 +25,7 @@
 
 #include <TempStore.h>
 #include <TestApp.h>
+#include <TestFit.h>
 
 using namespace ST;
 using namespace ST::Test;
@@ -608,6 +609,41 @@ void test_list_stops_at_an_empty_page()
     CHECK_EQ(fake.count("/v1/workouts"), 1uz);
 }
 
+// A workout the store has only a summary of is downloaded, at its start
+// or near it, to replace it: see specs/50-stub-activities.md. One the
+// inbox set aside before isn't, as Garmin Connect's isn't: a workout
+// without records, such as strength training, would come every time.
+void test_stubs_are_downloaded()
+{
+    FakeWahoo  fake;
+    TempDir    dir { "wahoo-stubs" };
+    TempStore  store;
+    auto       wahoo = logged_in(fake, dir);
+    auto const put = [&store](i64 start, std::string const &fit) {
+        auto const path = fs::path { store.storage.sidecar_of(start) }.replace_extension(".fit");
+        fs::create_directories(path.parent_path());
+        MUST(write_file_by_name(path.string(), std::string_view { fit }));
+    };
+    constexpr i64 Day = 86400;
+    put(Start - Day, Test::summary_fit());
+    put(Start - 2 * Day + 30, Test::summary_fit());
+    put(Start - 3 * Day, Test::recorded_fit());
+    put(Start - 4 * Day, Test::summary_fit());
+    fs::create_directories(store.storage.inbox_dir / "duplicates");
+    MUST(write_file_by_name((store.storage.inbox_dir / "duplicates" / "wahoo-4.fit").string(), std::string_view { "set aside" }));
+    fake.answer("/v1/workouts", { .status = 200, .body = page_of({
+                                                                     workout(1, starts(1), "Stub"),
+                                                                     workout(2, starts(2), "Stub, 30 s off"),
+                                                                     workout(3, starts(3), "Recorded"),
+                                                                     workout(4, starts(4), "Set aside"),
+                                                                 },
+                                                     4) });
+    fake.answer(cdn_url(1), { .status = 200, .body = "fit 1" });
+    fake.answer(cdn_url(2), { .status = 200, .body = "fit 2" });
+    CHECK_EQ(download_new_workouts(wahoo, store.storage, 0).value_or(99), 2uz);
+    CHECK_EQ(store.inbox(), (std::vector<std::string> { "duplicates", "wahoo-1.fit", "wahoo-1.json", "wahoo-2.fit", "wahoo-2.json" }));
+}
+
 void test_download_new_workouts()
 {
     FakeWahoo fake;
@@ -958,6 +994,7 @@ int main()
     test_list_pages();
     test_list_stops_at_an_empty_page();
     test_download_new_workouts();
+    test_stubs_are_downloaded();
     test_unavailable_file_is_skipped();
     test_failed_download_keeps_the_earlier_ones();
     test_download_is_paced();
