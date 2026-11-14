@@ -51,6 +51,18 @@ void test_shipped_worlds()
     CHECK_EQ(box.south(), -11.74087f);
     CHECK_EQ(box.west(), 166.87747f);
     CHECK_EQ(box.east(), 167.03255f);
+    CHECK(!watopia.turned);
+
+    // Zwift's France and Makuri Islands have north to the right.
+    for (auto const &world : *worlds) {
+        CHECK_EQ(world.turned, world.name == "France" || world.name == "Makuri Islands");
+    }
+    auto const makuri = std::ranges::find(*worlds, "Makuri Islands", &ZwiftWorld::name);
+    CHECK(makuri != worlds->end());
+    if (makuri != worlds->end()) {
+        CHECK_EQ(makuri->image_name(), "MiniMap_Japan");
+        CHECK_EQ(makuri->cache_name(), "MiniMap_Japan_ccw");
+    }
 }
 
 void test_worlds_left_out()
@@ -61,11 +73,14 @@ void test_worlds_left_out()
         { "name": "Good", "image": "https://x/Good.png", "north_west": [1, 2], "south_east": [0, 3] },
         { "name": "No corner", "image": "https://x/No.png", "north_west": [1, 2] },
         { "name": "Bad corner", "image": "https://x/Bad.png", "north_west": [1], "south_east": [0, 3] },
+        { "name": "Turned", "image": "https://x/Turned.png", "north_west": [1, 2], "south_east": [0, 3], "turn": "ccw" },
+        { "name": "Clockwise", "image": "https://x/Cw.png", "north_west": [1, 2], "south_east": [0, 3], "turn": "cw" },
         "not a world"
     ])" }));
     auto const worlds = read_zwift_worlds(file);
     CHECK(worlds.has_value());
-    CHECK_EQ(worlds.value_or(std::vector<ZwiftWorld> { }).size(), 1uz);
+    CHECK_EQ(worlds.value_or(std::vector<ZwiftWorld> { }).size(), 2uz);
+    CHECK(worlds && worlds->back().name == "Turned" && worlds->back().turned);
 }
 
 void test_worlds_that_arent_json()
@@ -121,6 +136,34 @@ void test_zwift_world()
     CHECK_EQ(name_of(zwift_world(worlds, Ride { FIT::manufacturer::zwift, box(-11.70f, 166.90f, -11.65f, 167.10f) }.activity)), "none");
     // Indoors, without a position.
     CHECK_EQ(name_of(zwift_world(worlds, Ride { FIT::manufacturer::zwift, std::nullopt }.activity)), "none");
+}
+
+// Zwift's London is just west of 0°, and Singapore just north of the
+// equator: their positions make a box, and a ride in Zwift's London is in
+// its world. Positions at 0, 0 are no fix.
+void test_box_near_zero()
+{
+    auto const box_of = [](std::vector<Coordinates> const &positions) {
+        std::vector<record> records;
+        for (auto const &position : positions) {
+            records.push_back(record { .position = position });
+        }
+        Segment segment { };
+        segment.analyze(records, false);
+        return segment.box;
+    };
+    auto const london = box_of({ { .lat = 51.5077f, .lon = -0.1642f }, { .lat = 0, .lon = 0 }, { .lat = 51.4849f, .lon = -0.1251f } });
+    CHECK(london.has_value());
+    if (london) {
+        CHECK_EQ(london->west(), -0.1642f);
+        CHECK_EQ(london->east(), -0.1251f);
+        CHECK_EQ(london->south(), 51.4849f);
+    }
+    CHECK(box_of({ { .lat = 1.29f, .lon = 103.85f }, { .lat = 0.9f, .lon = 103.8f } }).has_value());
+    CHECK(!box_of({ { .lat = 0, .lon = 0 } }).has_value());
+
+    auto const worlds = MUST_EVAL(read_zwift_worlds(ShippedWorlds));
+    CHECK_EQ(name_of(zwift_world(worlds, Ride { FIT::manufacturer::zwift, london }.activity)), "London");
 }
 
 // Watopia's image, 8192x6144.
@@ -297,6 +340,43 @@ void test_cut_a_world()
     }
 }
 
+// A turned world: Zwift's image has north to the right. Its top right
+// corner, green here, is the world's north west once turned, and the sea
+// is still the image's top left pixel, blue.
+void test_cut_a_turned_world()
+{
+    SmallWorld small;
+    small.world.turned = true;
+    auto image = GenImageColor(64, 48, RED);
+    ImageDrawPixel(&image, 0, 0, BLUE);
+    ImageDrawRectangle(&image, 56, 0, 8, 8, GREEN);
+    CHECK(ExportImage(image, (small.dir.path / "Small.png").c_str()));
+    UnloadImage(image);
+
+    auto const map = prepare_zwift_world(small.dir.path, small.world);
+    CHECK(map.has_value());
+    if (!map) {
+        std::println(stderr, "{}", map.error().to_string());
+        return;
+    }
+    CHECK_EQ(map->dir.string(), (small.dir.path / "Small_ccw").string());
+    CHECK(same(map->background, BLUE));
+    auto const tiles = world_tiles(small.world, map->native_zoom);
+    auto const first = std::ranges::find_if(tiles, [](WorldTile const &t) { return t.source.x == 0 && t.source.y == 0; });
+    CHECK(first != tiles.end());
+    if (first == tiles.end()) {
+        return;
+    }
+    auto const png = first->tile.get_cached_tile(map->dir);
+    CHECK(png.has_value());
+    if (!png) {
+        return;
+    }
+    auto tile = LoadImageFromMemory(".png", reinterpret_cast<unsigned char const *>(png->data()), static_cast<int>(png->size()));
+    CHECK(same(GetImageColor(tile, static_cast<int>(first->place.x) + 2, static_cast<int>(first->place.y) + 2), GREEN));
+    UnloadImage(tile);
+}
+
 void test_cut_a_world_that_doesnt_decode()
 {
     SmallWorld small;
@@ -439,11 +519,13 @@ int main()
     test_worlds_that_arent_json();
     test_cache_name();
     test_zwift_world();
+    test_box_near_zero();
     test_native_zoom();
     test_world_tiles();
     test_world_tiles_at_16();
     test_world_tiles_of_nothing();
     test_cut_a_world();
+    test_cut_a_turned_world();
     test_cut_a_world_that_doesnt_decode();
     test_cut_world_with_a_bad_world_file();
     test_no_column_is_lost_at_a_seam();
