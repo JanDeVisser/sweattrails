@@ -99,6 +99,8 @@ void test_bad_lines_are_skipped()
         CHECK_EQ(descriptions->size(), 2uz);
         CHECK_EQ(descriptions->at(1).description, "Fun");
         CHECK_EQ(descriptions->at(4).description, "");
+        CHECK_EQ(descriptions->at(1).name, "Ride");
+        CHECK_EQ(descriptions->at(4).name, "Hike");
     }
 }
 
@@ -188,6 +190,7 @@ void test_filename()
     if (without) {
         CHECK_EQ(without->at(1).description, "Fun");
         CHECK_EQ(without->at(1).file, "");
+        CHECK_EQ(without->at(1).name, "");
     }
 }
 

@@ -65,7 +65,11 @@ std::expected<ExportActivities, std::string> read_export(std::string_view csv, s
     if (!description_column) {
         return not_strava("it has no Activity Description column.");
     }
-    auto const       file_column = parsed->column("Filename");
+    auto const name_column = parsed->column("Activity Name");
+    auto const file_column = parsed->column("Filename");
+    auto const optional = [](std::optional<size_t> column, CSVRow const &row) {
+        return (column && *column < row.size()) ? row[*column] : std::string { };
+    };
     ExportActivities ret;
     for (auto const &row : parsed->rows) {
         auto const id = (*id_column < row.size()) ? parse_id(row[*id_column]) : std::nullopt;
@@ -74,8 +78,9 @@ std::expected<ExportActivities, std::string> read_export(std::string_view csv, s
             continue;
         }
         ret[*id] = ExportActivity {
+            .name = optional(name_column, row),
             .description = row[*description_column],
-            .file = (file_column && *file_column < row.size()) ? row[*file_column] : std::string { },
+            .file = optional(file_column, row),
         };
     }
     return ret;

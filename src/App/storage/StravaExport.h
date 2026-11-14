@@ -29,6 +29,7 @@ bool is_csv_file(fs::path const &path);
 
 // A line of the export's activities.csv.
 struct ExportActivity {
+    std::string name { }; // Empty without an Activity Name column
     std::string description { };
     // The original file, relative to the CSV's directory, named by
     // Strava's upload ID: "activities/14666148179.fit.gz". Empty for an
@@ -40,7 +41,8 @@ using ExportActivities = std::map<u64, ExportActivity>;
 
 // The lines of the export's activities.csv, `csv`, by Strava's ID, or why
 // it isn't Strava's list of activities. `file_name` is for the message.
-// Without a Filename column, there are no files.
+// Without a Filename column, there are no files, and without an Activity
+// Name column, no names.
 std::expected<ExportActivities, std::string> read_export(std::string_view csv, std::string_view file_name);
 
 // What replacing the stubs with the export's files did.
