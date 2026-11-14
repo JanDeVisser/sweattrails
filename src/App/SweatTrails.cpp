@@ -706,6 +706,9 @@ void SweatTrails::job_import_strava_export(Job::Payload const &data)
         done(std::format("{} Couldn't add the activities that aren't here: {}", imported->message(), missing.error().to_string()));
         return;
     }
+    if (!missing->retitled.empty()) {
+        the->notify<NotificationType::TitlesChanged>(TitlesChanged { missing->retitled });
+    }
     if (missing->queued > 0) {
         auto const filed = file_inbox(
             the,
@@ -717,8 +720,8 @@ void SweatTrails::job_import_strava_export(Job::Payload const &data)
             return;
         }
     }
-    info(ST, "Strava's export: put {} activities in the inbox, which added {} and set {} aside; {} have a GPX or TCX file",
-        missing->queued, missing->added, missing->set_aside, missing->unreadable);
+    info(ST, "Strava's export: put {} activities in the inbox, which added {} and set {} aside; {} have a GPX or TCX file; moved {} Strava titles",
+        missing->queued, missing->added, missing->set_aside, missing->unreadable, missing->titles_moved);
     imported->missing = std::move(*missing);
     done(imported->message());
 }
