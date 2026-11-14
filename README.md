@@ -248,9 +248,19 @@ folder, next to `activity/`, in the same `<year>/<month>/` folders,
 with their names. A recording of an activity with several lands there
 next to the others, not in a `.recordings/` folder. SweatTrails never
 empties `deleted/`; you can, whenever you want. *(Undo, or a restore
-command, isn't there yet.)* To get an activity back, move its files back
-into `activity/` by hand, or put its `.fit` and `.json` files in the
-inbox.
+command, isn't there yet.)*
+
+To get an activity back, move its `.fit` and `.json` files from
+`deleted/` into the inbox: it's filed as if it had just come in, and a
+recording is grouped with its activity again. The inbox only takes
+those two, though. If the activity also has a `.fit.original` (from
+filling a gap, without which Ctrl+Shift+F can't undo the fill), a
+`.fit.stub` or a `.strava` file, move all its files by hand into
+`activity/<year>/<month>/` instead. Moved by hand, a recording isn't
+grouped: it's listed as an activity of its own, and a former main one
+next to the new one. Ctrl+J on the one you want as the main one groups
+them again. Move the files rather than copy them: as long as a copy is
+in `deleted/`, the downloads take that activity as deleted.
 
 `deleted/` is also how SweatTrails remembers what you deleted: the
 downloads from Garmin Connect and Wahoo, "Everything" too, and importing
