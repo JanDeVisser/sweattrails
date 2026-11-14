@@ -172,3 +172,8 @@ Gone through with Jan:
    `populate()` needn't.
 2. Fixed in 314abad: `InfoRow::file` marks the file's row.
 3. Not changed: the areas are a frame old at most.
+
+After review, Jan found that a double click in the command palette ran the
+command but left the palette open over it: Enter's `process_key()` took the
+list off the screen, and the double click didn't. Both go through
+`close_when_done()` now; `test_double_click_closes` covers it.

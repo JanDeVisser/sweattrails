@@ -425,6 +425,7 @@ struct ListBox : public Modal {
         selection = *entry;
         if (double_click.click(*entry, input.time)) {
             choose();
+            close_when_done();
         }
     }
 
@@ -534,10 +535,16 @@ struct ListBox : public Modal {
         };
 
         bool ret = handle();
+        close_when_done();
+        return ret;
+    }
+
+    // Takes the list off the screen once it's submitted or dismissed.
+    void close_when_done()
+    {
         if (status != ModalStatus::Active) {
             App::the()->pop_modal(self());
         }
-        return ret;
     }
 
     void sort()

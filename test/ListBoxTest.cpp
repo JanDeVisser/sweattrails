@@ -258,6 +258,21 @@ void test_click_selects(TestList &list)
     CHECK(list.status == ModalStatus::Submitted);
 }
 
+// A double click closes the list, as Enter does: the command palette
+// stayed open over the command it ran.
+void test_double_click_closes(TestList &list)
+{
+    list.setup(numbered(5));
+    place_rows(list);
+    auto const &modals = App::the()->modals;
+    App::the()->push_modal(list.self());
+    list.handle_mouse(click_at(15, 1.0));
+    CHECK_EQ(modals.size(), 1uz);
+    list.handle_mouse(click_at(15, 1.2));
+    CHECK_EQ(list.submitted, list.entries[1].payload);
+    CHECK(modals.empty());
+}
+
 // A double click on two entries isn't one; nor are a release, a click on
 // the scrollbar, and a click below the last entry.
 void test_clicks_that_dont_choose(TestList &list)
@@ -524,6 +539,7 @@ int main()
     test_double_click();
     test_click_selects(*list);
     test_clicks_that_dont_choose(*list);
+    test_double_click_closes(*list);
     test_double_click_after_search_changes_entries(*list);
     test_search_ignores_prefix_and_columns();
     test_select();
