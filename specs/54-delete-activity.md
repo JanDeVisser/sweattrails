@@ -288,11 +288,21 @@ A section on deleting, as the spec says.
    `next` before deleting for every main-recording case. Not testable
    without a window; the storage half is covered by
    `test_delete_the_main_one_unreadable_other`.
+   **Resolved** in 606890c: the job finds the activity next to it for
+   every main recording, before deleting, and shows that one if no main
+   one is left. Still in that failure, the others stay in the old
+   `.recordings/` folder without a main one, so nothing lists them until
+   they're moved by hand. Left as it is: it takes a rename failing
+   halfway, and undoing it would move files back from `deleted/`, which
+   can fail too.
 2. **Suggestion**, `queue_missing()`, `StravaExport.cpp`: the `with_id.empty()`
    branch now reads every missing file through `recording_info()` just to
    ask `was_deleted()`, before `queue()` copies it. With "Everything" and a
    large export that is a second full parse per file. Checking the start from
    the export's own metadata, if it has it, would avoid that.
+   **Not changed**, agreed with Jan: after the first import few files get
+   that far, and the export's date column is text that may not match the
+   FIT file's start to the second, so it can't stand in for reading it.
 3. **Missing test, added**: `test_delete_missing` (file not in the store:
    error, nothing moved, no `deleted/` made),
    `test_delete_the_main_one_unreadable_other` (an unreadable other recording
