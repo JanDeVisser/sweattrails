@@ -583,8 +583,9 @@ void SweatTrails::job_group_with_main(Job::Payload const &data)
     });
 }
 
-// The activity to show after deleting `id`, an activity of one recording:
-// the one after it, else the one before it, else none. Asked before
+// The activity to show after deleting `id`, a listed activity, if it
+// isn't there any more: the one after it, else the one before it, else
+// none. Asked before
 // deleting: after, `id` isn't listed, and activity_next_to() would pass
 // over the rest of its month.
 std::optional<ActivityID> shown_after_deleting(Storage &storage, ActivityID const &id)
@@ -604,10 +605,12 @@ void SweatTrails::job_delete_activity(Job::Payload const &data)
 {
     auto const &request = std::get<DeleteRequest>(data);
     auto const  the = SweatTrails::the();
-    auto const  next = request.id.recording.empty() && recordings_of(request.fit).empty()
+    // Also for the main one of several: if regrouping the others fails
+    // after it moved, there's no main one left to show.
+    auto const next = request.id.recording.empty()
         ? shown_after_deleting(the->storage, request.id)
         : std::optional<ActivityID> { };
-    auto const  deleted = delete_recording(the->storage, request.fit);
+    auto const deleted = delete_recording(the->storage, request.fit);
     if (auto const rescanned = the->storage.rescan(); !rescanned) {
         warning(ST, "Can't read the store after deleting: {}", rescanned.error().to_string());
     }
