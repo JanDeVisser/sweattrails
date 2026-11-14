@@ -337,8 +337,11 @@ With Jan's export (2026-11-11) on a copy of the store:
 3. The inbox.
 4. Strava's export.
 5. The activity screen.
-6. Garmin's and Wahoo's downloads. Wahoo's follows on main once spec 46
-   is merged, with review finding 4 (below).
+6. Garmin's and Wahoo's downloads. Wahoo's came after spec 46 was
+   merged, on `feature/50-wahoo-stubs`, with review finding 4 (below):
+   Wahoo's download now also skips what the inbox set aside as a
+   duplicate, as Garmin's did, through
+   `Storage::set_aside_as_duplicates(source)`, moved from `Garmin.cpp`.
 7. README.
 
 ## Test plan
@@ -449,8 +452,10 @@ trailing garbage). The full run passes.
    `recordings_test` check fails against the old code. It was more
    likely than it looked: the inbox groups right after a replacement.
 3. Left as it is, pinned by `test_replace_sidecar_in_the_way`.
-4. Taken up in the Wahoo step, after spec 46 is merged: check that a
-   workout without records isn't fetched on every run.
+4. Fixed in the Wahoo step (f312ccc): Wahoo's download skips the
+   workouts in `inbox/duplicates`, as Garmin's does, so a workout
+   without records is fetched once, set aside, and not again. Tested in
+   `wahoo_test`.
 5. Left as it is: the CSV is the user's own.
 6. No action, as the Reviewer says.
 
