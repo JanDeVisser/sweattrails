@@ -11,6 +11,7 @@
 #pragma once
 
 #include <algorithm>
+#include <optional>
 
 #include <raylib.h>
 
@@ -91,6 +92,20 @@ struct WheelNotches {
     // The whole notches, up positive, with this frame's wheel, at `now`,
     // added.
     int add(float wheel, double now);
+};
+
+// Tells a double click from a single one: a second click on the same
+// target, such as a row, soon after the first. A third click starts over.
+// raylib has no double click of its own.
+struct DoubleClick {
+    static constexpr double Interval = 0.4; // s
+
+    std::optional<int> target { }; // Of the click before, unless it ended a double click
+    double             at { 0 };
+
+    // A click on `target` at `now`, in seconds: whether it makes a double
+    // click with the one before.
+    bool click(int clicked, double now);
 };
 
 // A vertical scrollbar along a track, for a ScrollRange. It shows, and

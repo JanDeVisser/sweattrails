@@ -24,6 +24,14 @@ ScrollInput ScrollInput::current()
     };
 }
 
+bool DoubleClick::click(int clicked, double now)
+{
+    auto const twice = target == clicked && now - at <= Interval;
+    target = twice ? std::nullopt : std::optional { clicked };
+    at = now;
+    return twice;
+}
+
 int WheelNotches::add(float wheel, double now)
 {
     if (wheel == 0) {
