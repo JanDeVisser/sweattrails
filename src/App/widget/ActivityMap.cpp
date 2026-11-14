@@ -20,6 +20,7 @@
 #include <Map.h>
 #include <SweatTrails.h>
 #include <widget/Activity.h>
+#include <widget/DataFields.h>
 
 namespace ST {
 
@@ -65,8 +66,10 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
         summary_only = true;
         return;
     }
-    choose_source();
-    auto const &box = this->activity->activity.segment.box;
+    // A recording without positions shows another recording's route.
+    auto const &route = this->activity->route ? this->activity->route->activity : this->activity->activity;
+    choose_source(route);
+    auto const &box = route.segment.box;
     if (!box || !navigator.start(*box, viewport.width, viewport.height)) {
         policy = SizePolicy::Hide;
         return;
@@ -79,7 +82,7 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
 
     // A record without a position is drawn where the one before it was.
     auto const none = std::numeric_limits<double>::quiet_NaN();
-    for (auto const &record : this->activity->activity.records) {
+    for (auto const &record : route.records) {
         if (record.position && record.position->has_fix()) {
             track.push_back(world_pixel(*record.position, 0));
         } else {
@@ -95,13 +98,13 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
 // Until a world is, it's OpenStreetMap, and the job cuts it, after it has
 // downloaded the view's tiles: there's one job thread, and the cut takes
 // some seconds, which would leave the map grey.
-void ActivityMap::choose_source()
+void ActivityMap::choose_source(Activity const &route)
 {
     auto const the = SweatTrails::the();
     source = MapSource { .dir = the->storage.tiles_dir };
     waiting_for_world.clear();
     world_to_cut.reset();
-    auto const *world = zwift_world(the->zwift_worlds, activity->activity);
+    auto const *world = zwift_world(the->zwift_worlds, route);
     if (world == nullptr) {
         return;
     }
@@ -348,6 +351,7 @@ void ActivityMap::draw()
     draw_tiles();
     draw_track();
     draw_attribution();
+    draw_route_caption();
     EndScissorMode();
 }
 
@@ -413,11 +417,15 @@ void ActivityMap::draw_track() const
         }
     };
     draw_path(0, points.size(), RED);
-    if (activity->segment && activity->segment->min < points.size()) {
-        draw_path(activity->segment->min, std::min(activity->segment->max + 1, points.size()), BLUE);
+    if (activity->segment) {
+        auto const min = activity->route_index(activity->segment->min);
+        auto const max = activity->route_index(activity->segment->max);
+        if (min < points.size()) {
+            draw_path(min, std::min(max + 1, points.size()), BLUE);
+        }
     }
-    if (activity->mark && *activity->mark < points.size()) {
-        DrawCircleV(points[*activity->mark], TrackWidth, BLACK);
+    if (activity->mark && activity->route_index(*activity->mark) < points.size()) {
+        DrawCircleV(points[activity->route_index(*activity->mark)], TrackWidth, BLACK);
     }
 }
 
@@ -430,6 +438,21 @@ void ActivityMap::draw_attribution() const
     auto const y = viewport.height - size.y - 4;
     draw_rectangle_no_normalize(x - 4, y - 2, size.x + 8, size.y + 4, Fade(BLACK, 0.5f));
     render_text(x, y, source.attribution, FontSize::Small, RAYWHITE);
+}
+
+// Whose route it is, when it's another recording's, in the attribution's
+// style, top left.
+void ActivityMap::draw_route_caption() const
+{
+    if (!activity->route) {
+        return;
+    }
+    auto const text = std::format("Route: {}", device_name(activity->route->activity));
+    auto const size = App::measure_text(text.c_str(), FontSize::Small);
+    auto const x = viewport.x + 6;
+    auto const y = viewport.y + 4;
+    draw_rectangle_no_normalize(x - 4, y - 2, size.x + 8, size.y + 4, Fade(BLACK, 0.5f));
+    render_text(x, y, text, FontSize::Small, RAYWHITE);
 }
 
 // In the middle of where the map would be, smaller if it doesn't fit.

@@ -117,7 +117,7 @@ struct ActivityMap : public Widget {
     void show_whole_route();
 
 private:
-    void                            choose_source();
+    void                            choose_source(Activity const &route);
     void                            change_source(MapSource new_source);
     void                            view_changed();
     void                            request_tiles();
@@ -129,6 +129,7 @@ private:
     void                            draw_tiles();
     void                            draw_track() const;
     void                            draw_attribution() const;
+    void                            draw_route_caption() const;
     void                            draw_summary_only() const;
     void                            stop_download();
 };
@@ -208,10 +209,12 @@ struct ActivityDisplay : public Layout {
     std::shared_ptr<ActivityGraph>       graph;
 
     explicit ActivityDisplay(pWidget const &parent);
-    void set_activity(Activity const &activity);
+    // `route` is another recording of the activity, whose route the map
+    // shows when the activity has none.
+    void set_activity(Activity const &activity, std::optional<Activity> const &route = { });
     // Another recording of the activity on display: as set_activity(), but
     // the map's view and the selected lap stay as they were.
-    void switch_recording(Activity const &recording);
+    void switch_recording(Activity const &recording, std::optional<Activity> const &route = { });
     // Compares the activity on display with `other`, another recording of
     // it, or stops comparing.
     void compare_with(std::optional<Activity> const &other);
@@ -226,7 +229,7 @@ struct ActivityDisplay : public Layout {
 
 private:
     void show_laps();
-    void show(Activity const &activity, bool keep_view);
+    void show(Activity const &activity, std::optional<Activity> const &route, bool keep_view);
 };
 
 }

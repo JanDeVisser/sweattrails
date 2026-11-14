@@ -282,6 +282,55 @@ void DisplayedActivity::compare_with(std::optional<Activity> const &other)
     compared = ComparedRecording { .activity = *other, .pairs = pair_records(activity.recorded, other->recorded) };
 }
 
+void DisplayedActivity::set_route(std::optional<Activity> const &other)
+{
+    if (!other || other->records.empty()) {
+        route.reset();
+        return;
+    }
+    route = RouteRecording { .activity = *other, .nearest = nearest_records(activity.records, other->records) };
+}
+
+size_t DisplayedActivity::route_index(size_t t) const
+{
+    if (!route) {
+        return t;
+    }
+    return (t < route->nearest.size()) ? route->nearest[t] : route->activity.records.size() - 1;
+}
+
+std::optional<size_t> route_source(std::span<Activity const> recordings)
+{
+    std::optional<size_t> ret;
+    for (size_t ix = 0; ix < recordings.size(); ++ix) {
+        auto const &recording = recordings[ix];
+        if (!recording.segment.box || recording.records.empty()) {
+            continue;
+        }
+        if (!ret || recording.segment.elapsed.elapsed > recordings[*ret].segment.elapsed.elapsed) {
+            ret = ix;
+        }
+    }
+    return ret;
+}
+
+std::vector<size_t> nearest_records(std::span<FIT::record const> shown, std::span<FIT::record const> route)
+{
+    std::vector<size_t> ret;
+    ret.reserve(shown.size());
+    auto const time = [](FIT::record const &rec) { return static_cast<i64>(rec.timestamp.timestamp); };
+    for (auto const &rec : shown) {
+        auto const t = time(rec);
+        auto const after = std::ranges::lower_bound(route, t, { }, time);
+        auto       ix = static_cast<size_t>(after - route.begin());
+        if (ix == route.size() || (ix > 0 && t - time(route[ix - 1]) <= time(route[ix]) - t)) {
+            --ix;
+        }
+        ret.push_back(ix);
+    }
+    return ret;
+}
+
 std::optional<Comparison> DisplayedActivity::comparison_of(size_t first, size_t end) const
 {
     if (!compared) {
