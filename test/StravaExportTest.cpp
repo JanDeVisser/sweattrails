@@ -596,6 +596,24 @@ void test_strava_file_already_here()
     CHECK_EQ(again.titles_moved, 0uz);
 }
 
+// The store's file with the ID can't be read: its ID stays, and Strava's
+// file isn't queued, as it can't be compared with anything.
+void test_unreadable_stored_file_keeps_its_id()
+{
+    TempStore  store { };
+    TempDir    export_dir { "strava-export" };
+    auto const files = export_dir.path / "activities";
+    fs::create_directories(files);
+    put(store, 100, "not a FIT file", 71);
+    MUST(write_file_by_name((files / "171.fit").string(), std::string_view { recording_fit({ .start = 9000 }) }));
+    auto const activities = read_export("Activity ID,Activity Name,Activity Description,Filename\n71,Unreadable,,activities/171.fit\n", "activities.csv")
+                                .value_or(ExportActivities { });
+    auto const missing = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 });
+    CHECK_EQ(missing.queued, 0uz);
+    CHECK_EQ(missing.titles_moved, 0uz);
+    CHECK_EQ(strava_of(store, fit_start(100)).value_or(StravaTitle { }).id, 71u);
+}
+
 void test_message()
 {
     CHECK_EQ((ExportImport { .descriptions = 4502, .empty = 3911, .untitled = 142 }).message(),
@@ -656,6 +674,7 @@ int main()
     test_classify_export_file();
     test_other_recordings_through_inbox();
     test_strava_file_already_here();
+    test_unreadable_stored_file_keeps_its_id();
     test_message();
     return test_result();
 }

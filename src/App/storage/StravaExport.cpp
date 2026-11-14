@@ -502,7 +502,13 @@ StorageResult<MissingImport> queue_missing(Storage &storage, ExportActivities co
             warning(StravaExport, "Not using `{}`: it's no activity", activity->file);
             continue;
         }
-        auto const kind = classify_export_file(*info, stored_with_id(storage, with_id));
+        auto const stored_infos = stored_with_id(storage, with_id);
+        // Without the store's files to compare with, the ID stays where it
+        // is: a file that can't be read now may be read the next time.
+        if (stored_infos.empty()) {
+            continue;
+        }
+        auto const kind = classify_export_file(*info, stored_infos);
         if (kind == ExportFile::Same) {
             continue;
         }
