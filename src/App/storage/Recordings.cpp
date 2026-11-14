@@ -5,6 +5,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cmath>
 #include <format>
@@ -63,9 +64,15 @@ fs::path filed_path(Storage const &storage, i64 start)
     return storage.activity_dir / std::format("{:04}/{:02}", static_cast<u16>(date.year), static_cast<u8>(date.month) + 1) / std::format("{}.fit", start);
 }
 
+// The files of a recording, `<stem>.fit` and those named after it. A
+// .strava file is the old app's name and description; a .fit.stub the
+// summary the recording replaced (specs/50-stub-activities.md).
+constexpr std::array<std::string_view, 5> RecordingFiles { ".fit", ".json", ".fit.original", ".fit.stub", ".strava" };
+
 // Moves a recording's files, `<stem>.fit` and what goes with it, into
-// `dir`, keeping their names. Its FIT file's new path.
-StorageResult<fs::path> move_recording(fs::path const &fit, fs::path const &dir)
+// `dir`, keeping their names, or named `<dest_stem>.*` if given. Its FIT
+// file's new path.
+StorageResult<fs::path> move_recording(fs::path const &fit, fs::path const &dir, std::string_view dest_stem = { })
 {
     std::error_code ec { };
     fs::create_directories(dir, ec);
@@ -73,23 +80,59 @@ StorageResult<fs::path> move_recording(fs::path const &fit, fs::path const &dir)
         return std::unexpected(StorageError { LibCError { ec } });
     }
     auto const stem = fit.stem().string();
-    auto const dest = dir / fit.filename();
+    if (dest_stem.empty()) {
+        dest_stem = stem;
+    }
+    auto const dest = dir / std::format("{}.fit", dest_stem);
     if (fs::exists(dest, ec)) {
         return std::unexpected(StorageError { LibCError { "`{}` already exists", dest.string() } });
     }
-    // A .strava file is the old app's name and description; a .fit.stub
-    // the summary the recording replaced (specs/50-stub-activities.md).
-    for (auto const *ext : { ".fit", ".json", ".fit.original", ".fit.stub", ".strava" }) {
+    for (auto const ext : RecordingFiles) {
         auto const from = fit.parent_path() / std::format("{}{}", stem, ext);
         if (!fs::exists(from, ec)) {
             continue;
         }
-        fs::rename(from, dir / from.filename(), ec);
+        fs::rename(from, dir / std::format("{}{}", dest_stem, ext), ec);
         if (ec) {
             return std::unexpected(StorageError { LibCError { ec } });
         }
     }
     return dest;
+}
+
+// `stem`, or `<stem>-<n>` with the first `n` no recording's file in `dir`
+// has: a start deleted before, filed again from the inbox and deleted
+// again, keeps both copies.
+std::string free_stem(fs::path const &dir, std::string const &stem)
+{
+    auto const taken = [&dir](std::string const &candidate) {
+        return std::ranges::any_of(RecordingFiles, [&](std::string_view ext) {
+            std::error_code ec { };
+            return fs::exists(dir / std::format("{}{}", candidate, ext), ec);
+        });
+    };
+    auto ret = stem;
+    for (auto n = 1; taken(ret); ++n) {
+        ret = std::format("{}-{}", stem, n);
+    }
+    return ret;
+}
+
+// Gives the main recording the activity's name, the user's own, unless
+// it has one of its own.
+void give_title(fs::path const &main_fit, std::optional<std::string> const &title)
+{
+    if (!title) {
+        return;
+    }
+    auto const named = update_sidecar(sidecar_of(main_fit), [&title](JSONValue &json) {
+        if (!json.has(TitleKey)) {
+            json.set(TitleKey, JSONValue { *title });
+        }
+    });
+    if (!named) {
+        warning(Storage, "Couldn't give `{}` its activity's name: {}", main_fit.string(), named.error().to_string());
+    }
 }
 
 std::expected<void, LibCError> mark_separate(fs::path const &fit)
@@ -318,16 +361,7 @@ StorageResult<Grouped> group_recordings(Storage &storage, std::vector<RecordingI
         fs::remove(recordings_dir(fit), ec);
         TRY(move_recording(fit, folder));
     }
-    if (title) {
-        auto const named = update_sidecar(sidecar_of(main_fit), [&title](JSONValue &json) {
-            if (!json.has(TitleKey)) {
-                json.set(TitleKey, JSONValue { *title });
-            }
-        });
-        if (!named) {
-            warning(Storage, "Couldn't give `{}` its activity's name: {}", main_fit.string(), named.error().to_string());
-        }
-    }
+    give_title(main_fit, title);
     return ret;
 }
 
@@ -510,6 +544,46 @@ StorageResult<size_t> split_recordings(Storage &storage, fs::path const &main_fi
         }
     }
     return ret;
+}
+
+StorageResult<Deleted> delete_recording(Storage &storage, fs::path const &fit)
+{
+    if (std::error_code ec { }; !fs::exists(fit, ec)) {
+        return std::unexpected(StorageError { LibCError { "`{}` isn't in the store any more", fit.filename().string() } });
+    }
+    // Under the month of the activity it's a recording of, flat.
+    auto const main = main_of(fit);
+    auto const dir = storage.deleted_dir / main.parent_path().lexically_relative(storage.activity_dir);
+    auto const stem = free_stem(dir, fit.stem().string());
+    if (in_folder(fit)) {
+        auto const to = TRY_EVAL(move_recording(fit, dir, stem));
+        // Only if it's empty: the main one is an activity of its own then.
+        std::error_code ec { };
+        fs::remove(fit.parent_path(), ec);
+        return Deleted { .to = to, .main = main };
+    }
+    // The main one: the others are read before anything moves, so that
+    // one that can't be read leaves the store as it was.
+    std::vector<RecordingInfo> others;
+    for (auto const &recording : recordings_of(fit)) {
+        auto info = recording_info(storage, recording);
+        if (!info) {
+            return std::unexpected(StorageError { LibCError { "`{}`, another recording of the activity, can't be read", recording.filename().string() } });
+        }
+        others.push_back(std::move(*info));
+    }
+    auto const title = sidecar_own_title(sidecar_of(fit));
+    auto const to = TRY_EVAL(move_recording(fit, dir, stem));
+    if (others.empty()) {
+        return Deleted { .to = to };
+    }
+    // The others are regrouped as the inbox would group them, without the
+    // deleted one's choice; with one left, it's moved out of the folder.
+    auto const      grouped = TRY_EVAL(group_recordings(storage, others));
+    std::error_code ec { };
+    fs::remove(recordings_dir(fit), ec);
+    give_title(grouped.main, title);
+    return Deleted { .to = to, .main = grouped.main };
 }
 
 }

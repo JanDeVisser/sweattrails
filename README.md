@@ -228,6 +228,46 @@ grouped again. Ctrl+J groups the activity on display with its other
 recordings, those split before too, with it as the main one. It stays
 the main one when a recording from a preferred device comes in later.
 
+## Deleting an activity
+
+"Delete activity" in the command palette deletes the activity on
+display, after asking; it has no key, so it isn't hit by mistake. The
+next activity is shown, or the one before it if it was the last, and the
+totals and the fitness no longer count it. Garmin Connect, Wahoo and
+Strava keep it: this deletes it from SweatTrails only.
+
+For an activity with several recordings, it deletes the recording on
+display, such as a head unit's that dropped out. Deleting the main one
+makes another the main one, as when they came in: the preferred
+device's, else the longest. It gets the activity's name, unless you gave
+it one of its own. The laps and fills made on the deleted one go with
+it. With one recording left, it's an activity of its own.
+
+Nothing is removed outright: the files go into `deleted/` in the data
+folder, next to `activity/`, in the same `<year>/<month>/` folders,
+with their names. A recording of an activity with several lands there
+next to the others, not in a `.recordings/` folder. SweatTrails never
+empties `deleted/`; you can, whenever you want. *(Undo, or a restore
+command, isn't there yet.)*
+
+To get an activity back, move its `.fit` and `.json` files from
+`deleted/` into the inbox: it's filed as if it had just come in, and a
+recording is grouped with its activity again. The inbox only takes
+those two, though. If the activity also has a `.fit.original` (from
+filling a gap, without which Ctrl+Shift+F can't undo the fill), a
+`.fit.stub` or a `.strava` file, move all its files by hand into
+`activity/<year>/<month>/` instead. Moved by hand, a recording isn't
+grouped: it's listed as an activity of its own, and a former main one
+next to the new one. Ctrl+J on the one you want as the main one groups
+them again. Move the files rather than copy them: as long as a copy is
+in `deleted/`, the downloads take that activity as deleted.
+
+`deleted/` is also how SweatTrails remembers what you deleted: the
+downloads from Garmin Connect and Wahoo, "Everything" too, and importing
+Strava's export, skip an activity that's in it. Once you empty it, they
+may fetch those activities again. A file you put in the inbox yourself
+is filed even if it was deleted: the copy in `deleted/` stays.
+
 ## Totals
 
 Ctrl+T shows how far and how long you've run or ridden, per week, month

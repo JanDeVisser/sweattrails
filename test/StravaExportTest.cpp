@@ -445,6 +445,39 @@ void test_same_start_twice_in_export()
     CHECK_EQ(queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 }).queued, 0uz);
 }
 
+// An activity the user deleted isn't brought back by the import: neither
+// one the store doesn't have by its Strava ID, nor another recording of
+// one it has. See specs/54-delete-activity.md.
+void test_deleted_is_not_queued()
+{
+    TempStore  store { };
+    TempDir    export_dir { "strava-export" };
+    auto const files = export_dir.path / "activities";
+    fs::create_directories(files);
+    put(store, 10000, recorded_fit(10000), 20);
+    // Zwift's recording of 10000's ride, shorter: Strava has it under
+    // 10000's ID.
+    Test::FITBuilder zwift;
+    Test::add_file_id(zwift, 260);
+    Test::add_session(zwift, 550, 10, Test::NoSubSport, 10010);
+    for (auto const &[offset, contents] : { std::pair { 10010, zwift.file() }, std::pair { 30000, recorded_fit(30000) } }) {
+        auto const fit = fs::path { store.storage.sidecar_of(fit_start(offset)) }.replace_extension(".fit");
+        auto const deleted = store.storage.deleted_dir / fit.parent_path().lexically_relative(store.storage.activity_dir) / fit.filename();
+        fs::create_directories(deleted.parent_path());
+        MUST(write_file_by_name(deleted.string(), std::string_view { contents }));
+    }
+    MUST(write_file_by_name((files / "120.fit").string(), std::string_view { zwift.file() }));
+    MUST(write_file_by_name((files / "130.fit").string(), std::string_view { recorded_fit(30000) }));
+    auto const activities = read_export("Activity ID,Activity Name,Activity Description,Filename\n"
+                                        "20,Another recording,,activities/120.fit\n"
+                                        "30,Deleted,,activities/130.fit\n",
+        "activities.csv")
+                                .value_or(ExportActivities { });
+    auto const missing = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 });
+    CHECK_EQ(missing.queued, 0uz);
+    CHECK(store.inbox().empty());
+}
+
 // A head unit's ride indoors, 3600 s from 1000, and what Strava's file
 // for it may be.
 RecordingInfo indoors(i64 start, u32 serial, float32 distance, u32 elapsed = 3600)
@@ -668,6 +701,7 @@ int main()
     test_filename();
     test_import_originals();
     test_queue_missing();
+    test_deleted_is_not_queued();
     test_count();
     test_missing_through_inbox();
     test_same_start_twice_in_export();

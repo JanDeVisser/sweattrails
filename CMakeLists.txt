@@ -365,6 +365,7 @@ sweattrails_test(window_test test/WindowTest.cpp)
 sweattrails_test(font_cache_test test/FontCacheTest.cpp)
 sweattrails_test(pick_box_test test/PickBoxTest.cpp)
 sweattrails_test(input_box_test test/InputBoxTest.cpp)
+sweattrails_test(query_box_test test/QueryBoxTest.cpp)
 sweattrails_test(key_binding_test test/KeyBindingTest.cpp)
 sweattrails_test(zip_test test/ZipTest.cpp)
 sweattrails_test(csv_test test/CSVTest.cpp)
@@ -944,6 +945,28 @@ sweattrails_test(
 )
 target_include_directories(recordings_test PRIVATE src/App)
 target_link_libraries(recordings_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        delete_test
+        test/DeleteTest.cpp
+        src/App/storage/Recordings.cpp
+        src/App/storage/Summaries.cpp
+        src/App/storage/PowerCurve.cpp
+        src/App/storage/PaceCurve.cpp
+        src/App/storage/Volume.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Devices.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Stubs.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(delete_test PRIVATE src/App)
+target_link_libraries(delete_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         stubs_test

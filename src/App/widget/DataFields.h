@@ -54,6 +54,16 @@ std::string device_name(Activity const &activity);
 // Wahoo", as the lap's and the range's lines say too.
 std::string activity_summary(Activity const &activity);
 
+// The question before deleting the activity on display, e.g. "Delete
+// “Morning Ride” of 2025-02-27? It will be moved to the deleted folder.", or
+// for one of several recordings, the recording: "Delete recording 2 of 3
+// (Wahoo) of “Morning Ride”? ...". See specs/54-delete-activity.md.
+std::string delete_question(Activity const &activity);
+
+// The status line after deleting it: "Deleted “Morning Ride”", or
+// "Deleted recording 2 of 3 of “Morning Ride”".
+std::string deleted_status(Activity const &activity);
+
 // The line under the title while lap `lap` is selected: which lap it is,
 // and its summary, e.g. "Lap 3 of 8 · 1.00 km · 4:52".
 std::string lap_summary(Activity const &activity, size_t lap);

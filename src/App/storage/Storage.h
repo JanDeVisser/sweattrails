@@ -66,6 +66,9 @@ struct Storage {
     fs::path activity_dir { };
     fs::path tiles_dir { };
     fs::path overlays_dir { }; // The user's overlay layouts
+    // Where deleted activities go, `<year>/<month>/` as in activity_dir.
+    // Made by the first delete. See specs/54-delete-activity.md.
+    fs::path deleted_dir { };
     // From the settings, set once before any job runs: the scores of the
     // activities, read from any thread, as the paths are.
     ThresholdList thresholds { };
@@ -120,14 +123,19 @@ struct Storage {
     // replacing a stub.
     StorageResult<u32>         process_inbox(InboxProgress const &on_file = { }, InboxFiled const &on_filed = { });
     StorageResult<InboxFiling> organize_fit_file(std::string_view const &file_name);
-    // Whether the store has an activity that starts at `start_time`, a Unix
-    // time: the inbox files activities by their start time. Also one that's
-    // a recording of another (specs/31-multiple-recordings.md), in the
-    // folders. Both in its month and the months around it, as one filed in
-    // another time zone can be.
+    // Whether the store has, or had, an activity that starts at
+    // `start_time`, a Unix time, for the downloads: one fit_at() finds, or
+    // one the user deleted, which they don't fetch again.
     [[nodiscard]] bool has_activity(i64 start_time) const;
-    // The FIT file has_activity() finds, if there is one.
+    // The FIT file of the activity in the store that starts at
+    // `start_time`, a Unix time: the inbox files activities by their start
+    // time. Also one that's a recording of another
+    // (specs/31-multiple-recordings.md), in the folders. Both in its month
+    // and the months around it, as one filed in another time zone can be.
     [[nodiscard]] std::optional<fs::path> fit_at(i64 start_time) const;
+    // Whether an activity that starts at `start_time` was deleted: it's in
+    // deleted_dir, in its month or the months around it, as fit_at() looks.
+    [[nodiscard]] bool was_deleted(i64 start_time) const;
     // The sidecar of the activity that starts at `start_time`, as the inbox
     // would file it now, whether it's there or not. An activity filed in
     // another time zone may be in the month before or after: activity_starts()

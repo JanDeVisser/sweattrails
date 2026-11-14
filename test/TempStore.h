@@ -14,9 +14,10 @@
 
 #include <Date.h>
 #include <IO.h>
-#include <TempDir.h>
 
 #include <storage/Storage.h>
+
+#include <TempDir.h>
 
 namespace ST::Test {
 
@@ -32,6 +33,7 @@ struct TempStore {
         storage.data_dir = dir.path;
         storage.inbox_dir = dir.path / "inbox";
         storage.activity_dir = dir.path / "activity";
+        storage.deleted_dir = dir.path / "deleted";
         fs::create_directories(storage.inbox_dir);
         fs::create_directories(storage.activity_dir);
     }

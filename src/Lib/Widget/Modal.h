@@ -11,6 +11,7 @@
 #include <cmath>
 #include <functional>
 #include <map>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -729,8 +730,12 @@ void input_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
     inputbox->show();
 }
 
+// Asks `prompt`, with the answers in `options`. Enter calls `fnc(target,
+// answer)` with the selected one: `initial`, if it's one of them, else the
+// first. A question whose Yes can't be undone selects No, so that an Enter
+// pressed by mistake does nothing.
 template<typename C, typename Submit>
-void query_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit fnc, QueryOption options)
+void query_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit fnc, QueryOption options, std::optional<QueryOption> initial = { })
 {
     using pC = std::shared_ptr<C>;
     struct QueryBox : public ListBox<QueryOption, ListBoxConfig { false, false, true }> {
@@ -756,13 +761,28 @@ void query_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
             }
         }
 
+        void select(QueryOption option)
+        {
+            auto const &shown = this->shown();
+            for (auto ix = 0uz; ix < shown.size(); ++ix) {
+                if (shown[ix].payload == option) {
+                    selection = static_cast<int>(ix);
+                    return;
+                }
+            }
+        }
+
         void submit() override
         {
             submit_fnc(target, selected().payload);
         }
     };
     auto const &qbox = Widget::make<QueryBox>(target, prompt, fnc, options);
+    // After show(), which selects the first entry.
     qbox->show();
+    if (initial) {
+        qbox->select(*initial);
+    }
 }
 
 // A list of entries to pick one of, each a text and a payload. Enter calls

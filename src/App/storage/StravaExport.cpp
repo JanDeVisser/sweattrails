@@ -376,6 +376,15 @@ std::optional<i64> listed_start(fs::path const &fit)
     return parse_id(main_of(fit).stem().string()).transform([](u64 start) { return static_cast<i64>(start); });
 }
 
+// Whether the user deleted the activity of Strava's file `fit`: like a
+// download, the import doesn't bring it back. See
+// specs/54-delete-activity.md.
+bool deleted(Storage &storage, std::string_view fit)
+{
+    auto const info = recording_info(storage, fit);
+    return info && storage.was_deleted(info->start);
+}
+
 bool queue(Storage const &storage, MissingImport &ret, u64 id, ExportActivity const &activity, std::string_view fit)
 {
     if (auto const queued = to_inbox(storage, id, activity, fit); !queued) {
@@ -489,7 +498,9 @@ StorageResult<MissingImport> queue_missing(Storage &storage, ExportActivities co
             continue;
         }
         if (with_id.empty()) {
-            queue(storage, ret, id, *activity, *fit);
+            if (!deleted(storage, *fit)) {
+                queue(storage, ret, id, *activity, *fit);
+            }
             continue;
         }
         // Most of them are the stored file, byte for byte: no need to read
@@ -500,6 +511,11 @@ StorageResult<MissingImport> queue_missing(Storage &storage, ExportActivities co
         auto const info = recording_info(storage, std::string_view { *fit });
         if (!info) {
             warning(StravaExport, "Not using `{}`: it's no activity", activity->file);
+            continue;
+        }
+        // Another recording of an activity the store has, which the user
+        // deleted.
+        if (storage.was_deleted(info->start)) {
             continue;
         }
         auto const stored_infos = stored_with_id(storage, with_id);
