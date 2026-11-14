@@ -272,3 +272,14 @@ Jan checks the import on the real export by hand.
 5. Suggestion: `test_missing_through_inbox` accepts either start for the grouped pair (10000 or 10005), so it doesn't pin which recording becomes the main one. That is fine if spec 31 leaves the choice open.
 
 No bugs found against the spec. Version 1 scope is covered, the order of steps matches, and failures are logged and skipped. The full test run passes.
+
+### Found trying the import on Jan's export
+
+- **Crash after the import (fixed, cc6ce77).** The import worked, then the
+  app aborted drawing a graph's tick label. All UTF-8 conversions shared
+  one iconv descriptor, which isn't thread-safe; loading an activity
+  converts its device name on the job thread (spec 48) while the UI
+  converts every label it draws. The ~670 activities through the inbox
+  made them collide. Each thread now has its own descriptors;
+  `utf8_test` converts from two threads at once, and fails against the
+  old code.
