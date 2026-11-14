@@ -1,6 +1,6 @@
 # Small UI upgrades: double click, the status bar's hint, copying the file's path
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -162,3 +162,13 @@ leak, as the new modal first gets input next frame and the click that
 opens the palette from the status bar is spent in `Layout::process_input()`;
 `hint_area` is emptied when the hint isn't drawn; "Copied" and Tab's reset;
 `GetTime()` in `process_key` is fine.
+
+### Resolution
+
+Gone through with Jan:
+
+1. Fixed in d27c37e: `filter()` forgets the click before. The activity
+   list's Left and Right go through it too, in `refresh()`, so
+   `populate()` needn't.
+2. Fixed in 314abad: `InfoRow::file` marks the file's row.
+3. Not changed: the areas are a frame old at most.
