@@ -481,9 +481,34 @@ void StatusBar::draw()
     auto const width = [](std::string_view text) {
         return App::measure_text(std::string { text }.c_str(), FontSize::Medium).x;
     };
+    hint_area = { };
     if (!right.empty() && hint_fits(width(left), width(right), viewport.width)) {
         // A negative x puts the text's right edge that far from the right.
         render_text(-PADDING, y, right, FontSize::Medium, LIGHTGRAY);
+        auto const hint_width = width(right);
+        hint_area = Rectangle {
+            .x = viewport.x + viewport.width - PADDING - hint_width,
+            .y = viewport.y,
+            .width = hint_width,
+            .height = viewport.height,
+        };
+    }
+}
+
+void StatusBar::process_input()
+{
+    handle_input(ScrollInput::current());
+}
+
+void StatusBar::handle_input(ScrollInput const &input)
+{
+    // A message may have come since draw() drew the hint.
+    if (shown().right.empty() || !CheckCollisionPointRec(input.mouse, hint_area)) {
+        return;
+    }
+    App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);
+    if (input.pressed && on_hint) {
+        on_hint();
     }
 }
 }

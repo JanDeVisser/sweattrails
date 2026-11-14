@@ -23,6 +23,8 @@
 #include <Logging.h>
 #include <Utf8.h>
 
+#include <Scroll.h>
+
 namespace ST {
 
 #define PADDING 5.0f
@@ -1028,6 +1030,11 @@ struct StatusBar : public Widget {
     std::string message { };
     std::string idle { };
     std::string hint { };
+    // A click on the hint: the app opens the command palette.
+    std::function<void()> on_hint { };
+    // Where draw() drew the hint, in screen coordinates: empty when it
+    // didn't, under a message or without room.
+    Rectangle hint_area { };
 
     struct Shown {
         std::string_view left { };
@@ -1042,6 +1049,9 @@ struct StatusBar : public Widget {
     // left has the bar.
     [[nodiscard]] static bool hint_fits(float left_width, float hint_width, float bar_width);
     void                      draw() override;
+    void                      process_input() override;
+    // Over the hint, the pointing hand, and a click calls on_hint.
+    void handle_input(ScrollInput const &input);
 };
 
 template<>

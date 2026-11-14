@@ -2591,6 +2591,7 @@ void SweatTrails::initialize()
         .titled("Show the command palette")
         .bind(palette_key);
     status->hint = std::format("{} for commands", key_text(palette_key));
+    status->on_hint = [this]() { bus.submit("st-command-palette", JSONValue { }); };
     bus.add_task<SweatTrails>("st-quit", self(), cmd_quit)
         .titled("Quit")
         .bind(KeyCombo { KEY_Q, KModControl });

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: MIT
  *
  * Tests what StatusBar shows: a message on its own, or the idle text and
- * the hint. draw() needs raylib, so the tests ask shown() and
- * hint_fits().
+ * the hint, and what a click on the hint does. draw() needs raylib, so
+ * the tests ask shown() and hint_fits(), and set hint_area by hand.
  */
 
 #include <memory>
@@ -84,6 +84,29 @@ void test_hint_fits()
     CHECK(StatusBar::hint_fits(0, 200, 200 + 4 * PADDING));
 }
 
+// A click on the hint, where draw() drew it, calls on_hint; one beside
+// it, a move, and one while a message hides the hint don't.
+void test_click_on_hint()
+{
+    auto const bar = idle_bar();
+    auto       clicks = 0;
+    bar->on_hint = [&clicks]() { ++clicks; };
+    bar->hint_area = Rectangle { .x = 600, .y = 780, .width = 200, .height = 20 };
+    bar->handle_input(ScrollInput { .mouse = { .x = 700, .y = 790 }, .pressed = true });
+    CHECK_EQ(clicks, 1);
+    bar->handle_input(ScrollInput { .mouse = { .x = 500, .y = 790 }, .pressed = true });
+    bar->handle_input(ScrollInput { .mouse = { .x = 700, .y = 790 } });
+    CHECK_EQ(clicks, 1);
+    bar->message = "Downloading from Garmin Connect";
+    bar->handle_input(ScrollInput { .mouse = { .x = 700, .y = 790 }, .pressed = true });
+    CHECK_EQ(clicks, 1);
+    // Not drawn: no room for it, say.
+    bar->message.clear();
+    bar->hint_area = { };
+    bar->handle_input(ScrollInput { .mouse = { .x = 0, .y = 0 }, .pressed = true });
+    CHECK_EQ(clicks, 1);
+}
+
 }
 
 int main()
@@ -95,5 +118,6 @@ int main()
     test_no_idle_yet();
     test_always_a_line();
     test_hint_fits();
+    test_click_on_hint();
     return Test::test_result();
 }
