@@ -12,6 +12,7 @@
 
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include <storage/Activity.h>
@@ -41,10 +42,20 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
         std::vector<std::optional<size_t>> pairs { };
     };
 
-    Activity                   activity;
-    std::optional<size_t>      mark { };
-    std::optional<RecordRange> segment;
-    std::optional<size_t>      lap { }; // The selected lap, whose records `segment` is
+    // The route of another recording of the activity, for the map, when
+    // this one has none (specs/52-strava-export-other-recordings.md): a
+    // Garmin's ride in Zwift, with Zwift's file next to it. `nearest` is
+    // the route's record nearest in time to each of this one's records.
+    struct RouteRecording {
+        Activity            activity;
+        std::vector<size_t> nearest { };
+    };
+
+    Activity                      activity;
+    std::optional<RouteRecording> route { };
+    std::optional<size_t>         mark { };
+    std::optional<RecordRange>    segment;
+    std::optional<size_t>         lap { }; // The selected lap, whose records `segment` is
     // A dragged range's stats, for the data panel, once the drag has ended.
     std::optional<Segment> range_stats { };
     // Where a drag in the graph started, while it goes on.
@@ -120,6 +131,14 @@ struct DisplayedActivity : public std::enable_shared_from_this<DisplayedActivity
 
     // Compares the activity with `other`, another recording of it, or stops.
     void compare_with(std::optional<Activity> const &other);
+
+    // The map shows the route of `other`, another recording of the
+    // activity with positions, or, for nothing, this one's.
+    void set_route(std::optional<Activity> const &other);
+    // The record of the route the map shows for record `t`: the route's
+    // nearest in time, or `t` itself without a route of another
+    // recording.
+    [[nodiscard]] size_t route_index(size_t t) const;
     // The comparison of what's selected: the lap, the dragged range once
     // the drag has ended, or else the whole activity. None while not
     // comparing.
@@ -143,6 +162,15 @@ private:
     };
     mutable std::optional<CachedComparison> cached { };
 };
+
+// Which of `recordings` the map shows the route of, for a recording
+// without one: the longest with positions, by elapsed time. None if none
+// has positions.
+[[nodiscard]] std::optional<size_t> route_source(std::span<Activity const> recordings);
+
+// For each of `shown`, the index of the record of `route` nearest to it in
+// time. `route` is in time order, and not empty.
+[[nodiscard]] std::vector<size_t> nearest_records(std::span<FIT::record const> shown, std::span<FIT::record const> route);
 
 // A lap's part of the strip under the graph, from x0 up to x1. The graph's
 // x-axis is the record, so a lap is as wide as its share of the records.

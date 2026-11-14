@@ -20,6 +20,7 @@
 #include <string_view>
 #include <vector>
 
+#include <storage/Recordings.h>
 #include <storage/Storage.h>
 
 namespace ST {
@@ -56,10 +57,14 @@ struct StubImport {
 // What putting the export's missing activities in the inbox did, and
 // then what the inbox did with them.
 struct MissingImport {
-    size_t queued { 0 };     // FIT files put in the inbox
-    size_t unreadable { 0 }; // GPX or TCX files
-    size_t added { 0 };      // Filed by the inbox, or replacing a stub
-    size_t set_aside { 0 };  // Set aside by the inbox as duplicates
+    size_t queued { 0 };       // FIT files put in the inbox
+    size_t unreadable { 0 };   // GPX or TCX files
+    size_t titles_moved { 0 }; // Strava IDs taken off the wrong activity
+    // The starts of the listed activities that lost a Strava title, as
+    // TitlesChanged has them.
+    std::vector<i64> retitled { };
+    size_t           added { 0 };     // Filed by the inbox, or replacing a stub
+    size_t           set_aside { 0 }; // Set aside by the inbox as duplicates
 
     // Counts what the inbox did with `file_name`, if it's one of the
     // export's: a Storage::InboxFiled.
@@ -92,11 +97,31 @@ StorageResult<ExportImport> import_descriptions(Storage const &storage, ExportAc
 // `progress` called before each. Runs on the job thread.
 StorageResult<StubImport> import_originals(Storage &storage, ExportActivities const &activities, fs::path const &export_dir, ExportProgress const &progress = { });
 
+// What Strava's file is to the store's files with its Strava ID. See
+// specs/52-strava-export-other-recordings.md.
+enum class ExportFile {
+    Same,           // One of them, or one of their activity's recordings
+    OtherRecording, // Another recording of one's activity
+    OtherActivity,  // The ID is on the wrong activity
+};
+
+// A FIT file in the store with a Strava ID, and its activity's
+// recordings: the main one and those in its folder, itself among them.
+struct StoredWithID {
+    RecordingInfo              info { };
+    std::vector<RecordingInfo> recordings { };
+};
+
+[[nodiscard]] ExportFile classify_export_file(RecordingInfo const &strava_file, std::vector<StoredWithID> const &stored);
+
 // Puts the FIT file, gzipped or not, of each line of `activities` whose
 // Strava ID no activity in the store has, listed or a recording, into the
 // inbox as strava-<id>.fit, ungzipped, with a sidecar that has its Strava
-// title. Skips the IDs the inbox set aside before. `progress` is called
-// before each file. Runs on the job thread; the inbox then files them.
-StorageResult<MissingImport> queue_missing(Storage const &storage, ExportActivities const &activities, fs::path const &export_dir, ExportProgress const &progress = { });
+// title. Skips the IDs the inbox set aside before. Then does the same
+// with the files of the IDs the store has, if classify_export_file() says
+// they're another recording or another activity; for another activity,
+// the wrong one's sidecar rejects the ID. `progress` is called before
+// each file. Runs on the job thread; the inbox then files them.
+StorageResult<MissingImport> queue_missing(Storage &storage, ExportActivities const &activities, fs::path const &export_dir, ExportProgress const &progress = { });
 
 }

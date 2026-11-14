@@ -838,8 +838,94 @@ void test_zoom_after_the_laps_change()
     CHECK(none.displayed->view().count() == 0);
 }
 
+// Records a second apart from `from`, `count` of them.
+Activity with_records(Storage &storage, u32 from, size_t count, u32 elapsed, bool positions)
+{
+    Activity ret { storage, ActivityID { } };
+    for (size_t ix = 0; ix < count; ++ix) {
+        record rec { };
+        rec.timestamp.timestamp = from + static_cast<u32>(ix);
+        ret.records.push_back(rec);
+    }
+    ret.segment.elapsed = Duration { elapsed };
+    if (positions) {
+        ret.segment.box = Box { };
+    }
+    return ret;
+}
+
+// The longest with positions: not the longer one without, nor one with a
+// box but no records.
+void test_route_source()
+{
+    Storage               storage { };
+    std::vector<Activity> recordings {
+        with_records(storage, 0, 10, 7200, false),
+        with_records(storage, 0, 10, 3000, true),
+        with_records(storage, 0, 10, 3600, true),
+        with_records(storage, 0, 0, 9000, true),
+    };
+    CHECK_EQ(route_source(recordings).value_or(99), 2uz);
+    CHECK(!route_source(std::span { recordings }.first(1)).has_value());
+    CHECK(!route_source({ }).has_value());
+}
+
+// The shown recording's records 1'000'000 to 1'000'099; the route's start
+// 16 s earlier, a record each 2 s, and stop 20 s early.
+void test_route_index()
+{
+    TestActivity t;
+    auto        &d = *t.displayed;
+    CHECK_EQ(d.route_index(42), 42uz);
+    Storage  storage { };
+    Activity route { storage, ActivityID { } };
+    for (u32 at = 1'000'000 - 16; at < 1'000'080; at += 2) {
+        record rec { };
+        rec.timestamp.timestamp = at;
+        route.records.push_back(rec);
+    }
+    d.set_route(route);
+    CHECK(d.route.has_value());
+    // 1'000'000 is the route's record 8; 1'000'001 is as near 8 as 9, and
+    // takes the one before.
+    CHECK_EQ(d.route_index(0), 8uz);
+    CHECK_EQ(d.route_index(1), 8uz);
+    CHECK_EQ(d.route_index(2), 9uz);
+    // After the route stopped: its last record.
+    CHECK_EQ(d.route_index(99), route.records.size() - 1);
+    CHECK_EQ(d.route_index(1000), route.records.size() - 1);
+
+    d.set_route(std::nullopt);
+    CHECK(!d.route.has_value());
+    CHECK_EQ(d.route_index(42), 42uz);
+}
+
+// The route's nearest record in time, at the edges and with a gap.
+void test_nearest_records()
+{
+    auto const at = [](std::initializer_list<u32> times) {
+        std::vector<record> ret;
+        for (auto const time : times) {
+            record rec { };
+            rec.timestamp.timestamp = time;
+            ret.push_back(rec);
+        }
+        return ret;
+    };
+    auto const route = at({ 100, 101, 110 });
+    // Before, on, between (a tie takes the earlier), after.
+    auto const shown = at({ 50, 100, 105, 106, 109, 110, 500 });
+    CHECK((nearest_records(shown, route) == std::vector<size_t> { 0, 0, 1, 2, 2, 2, 2 }));
+    // One record of the route: always that.
+    CHECK((nearest_records(shown, at({ 300 })) == std::vector<size_t>(7, 0)));
+    CHECK(nearest_records({ }, route).empty());
+}
+
 int main()
 {
+    test_nearest_records();
+    test_route_source();
+    test_route_index();
     test_current_record();
     test_zoom();
     test_no_zoom_to_one_record();

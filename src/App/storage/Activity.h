@@ -95,6 +95,9 @@ struct SidecarTitles {
     std::optional<std::string> own { };       // sidecar_own_title()
     std::optional<std::string> own_notes { }; // The user's description, "notes"
     std::optional<StravaTitle> strava { };
+    // Strava activities that aren't this one, though the titles run
+    // matched them: see reject_sidecar_strava().
+    std::vector<u64> strava_rejected { };
 };
 
 SidecarTitles sidecar_titles(fs::path const &sidecar);
@@ -118,6 +121,12 @@ std::expected<void, LibCError> update_sidecar(fs::path const &sidecar, std::func
 // Saves what Strava has for the activity in its sidecar, with
 // update_sidecar().
 std::expected<void, LibCError> save_sidecar_strava(fs::path const &sidecar, StravaTitle const &strava);
+
+// Removes Strava's activity `id` from the sidecar, where the titles run
+// put it on the wrong activity, and remembers it as rejected under
+// `"strava_rejected"`, so that the titles run doesn't put it back. See
+// specs/52-strava-export-other-recordings.md.
+std::expected<void, LibCError> reject_sidecar_strava(fs::path const &sidecar, u64 id);
 
 // The laps the user made, under SweatTrails' key `"laps"` in the sidecar:
 // the Unix times the laps after the first start. Nothing for the device's

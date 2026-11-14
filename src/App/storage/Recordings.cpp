@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <format>
 #include <ranges>
 
@@ -108,6 +109,19 @@ std::expected<void, LibCError> mark(fs::path const &fit, std::optional<std::stri
     });
 }
 
+RecordingInfo info_of(Activity const &activity)
+{
+    return RecordingInfo {
+        .start = activity.segment.start_time.timestamp,
+        .elapsed = activity.segment.elapsed.elapsed,
+        .sport = activity.sport,
+        .sub_sport = activity.sub_sport,
+        .manufacturer = activity.manufacturer,
+        .serial = activity.serial,
+        .distance = activity.segment.distance,
+    };
+}
+
 }
 
 std::optional<RecordingInfo> recording_info(Storage &storage, fs::path const &fit)
@@ -118,20 +132,41 @@ std::optional<RecordingInfo> recording_info(Storage &storage, fs::path const &fi
     if (!loaded || !*loaded) {
         return { };
     }
-    RecordingInfo ret {
-        .fit = fit,
-        .start = activity.segment.start_time.timestamp,
-        .elapsed = activity.segment.elapsed.elapsed,
-        .sport = activity.sport,
-        .sub_sport = activity.sub_sport,
-        .manufacturer = activity.manufacturer,
-    };
+    auto ret = info_of(activity);
+    ret.fit = fit;
     if (auto const sidecar = read_sidecar(fit); sidecar) {
         auto const marked = sidecar->try_get<std::string>(RecordingsKey).value_or("");
         ret.separate = marked == Separate;
         ret.chosen = marked == Chosen;
     }
     return ret;
+}
+
+std::optional<RecordingInfo> recording_info(Storage &storage, std::string_view fit)
+{
+    Activity activity { storage, ActivityID::dummy(ActivityFile::Fit) };
+    activity.depth = LoadingDepth::Shallow;
+    auto const loaded = activity.load_from_slice(fit);
+    if (!loaded || !*loaded) {
+        return { };
+    }
+    return info_of(activity);
+}
+
+bool same_recording(RecordingInfo const &a, RecordingInfo const &b)
+{
+    // A rewrite keeps the start, and may count the pauses differently.
+    // Two devices don't start in the same second, and the inbox couldn't
+    // file both anyway.
+    if (a.start == b.start) {
+        return true;
+    }
+    if (a.serial != 0 && b.serial != 0) {
+        return a.serial == b.serial;
+    }
+    auto const elapsed = (a.elapsed > b.elapsed) ? a.elapsed - b.elapsed : b.elapsed - a.elapsed;
+    auto const distance = std::abs(a.distance - b.distance);
+    return elapsed <= SameRecordingSeconds && distance <= SameRecordingDistance * std::max(a.distance, b.distance);
 }
 
 bool same_activity(RecordingInfo const &a, RecordingInfo const &b)

@@ -126,6 +126,8 @@ struct Storage {
     // folders. Both in its month and the months around it, as one filed in
     // another time zone can be.
     [[nodiscard]] bool has_activity(i64 start_time) const;
+    // The FIT file has_activity() finds, if there is one.
+    [[nodiscard]] std::optional<fs::path> fit_at(i64 start_time) const;
     // The sidecar of the activity that starts at `start_time`, as the inbox
     // would file it now, whether it's there or not. An activity filed in
     // another time zone may be in the month before or after: activity_starts()

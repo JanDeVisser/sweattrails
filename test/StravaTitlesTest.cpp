@@ -342,6 +342,34 @@ void test_sync_keeps_the_users_notes()
     CHECK((names.strava == StravaTitle { .id = 101, .name = "Ride to Niagara" }));
 }
 
+// The export import found Strava's file of 101 isn't the ride's: the
+// titles run doesn't give the ride 101 again, but does give it another.
+// The rejection keeps the rest of the sidecar, and only removes the
+// title of the activity rejected.
+void test_rejected_isnt_given_again()
+{
+    StravaStore t;
+    auto const  sidecar = t.store.storage.sidecar_of(Ride);
+    MUST(write_file_by_name(sidecar.string(), std::string_view { R"({"activityName": "Morning Ride", "title": "Niagara", "notes": "Mine", "strava": {"id": 101, "name": "Ride to Niagara"}})" }));
+    MUST(reject_sidecar_strava(sidecar, 999));
+    CHECK((t.saved(Ride) == StravaTitle { .id = 101, .name = "Ride to Niagara" }));
+    MUST(reject_sidecar_strava(sidecar, 101));
+    MUST(reject_sidecar_strava(sidecar, 101));
+    auto const names = sidecar_titles(sidecar);
+    CHECK(!names.strava.has_value());
+    CHECK((names.strava_rejected == std::vector<u64> { 999, 101 }));
+    CHECK_EQ(names.own.value_or(""), "Niagara");
+    CHECK_EQ(names.own_notes.value_or(""), "Mine");
+    CHECK_EQ(names.service.value_or(""), "Morning Ride");
+
+    t.list({ strava_activity(101, "2026-10-27T12:05:30Z", "Ride to Niagara") });
+    CHECK_EQ(t.update().titles, 0u);
+    CHECK(!t.saved(Ride).has_value());
+    t.list({ strava_activity(104, "2026-10-27T12:05:30Z", "Ride to Hamilton") });
+    CHECK_EQ(t.update().titles, 1u);
+    CHECK((t.saved(Ride) == StravaTitle { .id = 104, .name = "Ride to Hamilton" }));
+}
+
 }
 
 int main()
@@ -363,5 +391,6 @@ int main()
     test_two_devices_get_the_title();
     test_activity_filed_in_another_time_zone();
     test_sync_keeps_the_users_notes();
+    test_rejected_isnt_given_again();
     return ST::Test::test_result();
 }

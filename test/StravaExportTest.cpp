@@ -346,8 +346,11 @@ void test_queue_missing()
     }
     CHECK_EQ(queued->queued, 2uz);
     CHECK_EQ(queued->unreadable, 1uz);
-    CHECK_EQ(progress.size(), 4uz);
-    CHECK((progress.back() == std::pair<size_t, size_t> { 3, 4 }));
+    // 1 and 3 are checked against the store's files too: they're the same
+    // recording, by their totals.
+    CHECK_EQ(progress.size(), 6uz);
+    CHECK((progress.back() == std::pair<size_t, size_t> { 5, 6 }));
+    CHECK_EQ(queued->titles_moved, 0uz);
     CHECK((store.inbox() == std::vector<std::string> { "duplicates", "strava-5.fit", "strava-5.json", "strava-6.fit", "strava-6.json" }));
     CHECK_EQ(in_inbox(store, 5, "fit"), recorded_fit(5000));
     CHECK_EQ(in_inbox(store, 6, "fit"), recorded_fit(6000));
@@ -442,6 +445,175 @@ void test_same_start_twice_in_export()
     CHECK_EQ(queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 }).queued, 0uz);
 }
 
+// A head unit's ride indoors, 3600 s from 1000, and what Strava's file
+// for it may be.
+RecordingInfo indoors(i64 start, u32 serial, float32 distance, u32 elapsed = 3600)
+{
+    return RecordingInfo { .start = start, .elapsed = elapsed, .sport = sport::Cycling, .serial = serial, .distance = distance };
+}
+
+void test_classify_export_file()
+{
+    auto const                      head_unit = indoors(1000, 77, 0);
+    auto const                      zwift = indoors(984, 0, 30000);
+    std::vector<StoredWithID> const stored { { .info = head_unit, .recordings = { head_unit } } };
+    CHECK(classify_export_file(zwift, stored) == ExportFile::OtherRecording);
+    // Garmin Connect's copy of the head unit's file: no serial, same totals.
+    CHECK(classify_export_file(indoors(1003, 0, 0, 3602), stored) == ExportFile::Same);
+    // Zwift's file is in the group already, rewritten, and the ID landed
+    // on the head unit's.
+    std::vector<StoredWithID> const grouped { { .info = head_unit, .recordings = { head_unit, indoors(990, 0, 30010, 3601) } } };
+    CHECK(classify_export_file(zwift, grouped) == ExportFile::Same);
+    // Strava's file is another activity: the ID is on the wrong one.
+    CHECK(classify_export_file(indoors(9000, 0, 30000), stored) == ExportFile::OtherActivity);
+    // The ID on two activities, the second of which it overlaps.
+    std::vector<StoredWithID> const two { stored[0], { .info = indoors(9010, 88, 0), .recordings = { indoors(9010, 88, 0) } } };
+    CHECK(classify_export_file(indoors(9000, 0, 30000), two) == ExportFile::OtherRecording);
+}
+
+// Strava's files for the IDs the store has, through the real inbox:
+// Zwift's file next to the head unit's is grouped with it, a rewrite and
+// the same file are skipped, and a file that's another activity is filed
+// as one, and takes the ID along. A second import adds nothing.
+void test_other_recordings_through_inbox()
+{
+    TempStore  store { };
+    TempDir    export_dir { "strava-export" };
+    auto const files = export_dir.path / "activities";
+    fs::create_directories(files);
+    auto const export_file = [&files](std::string_view name, std::string_view fit) {
+        MUST(write_file_by_name((files / name).string(), fit));
+    };
+    put(store, 100, recording_fit({ .manufacturer = 1, .serial = 77, .start = 100, .count = 3600 }), 51);
+    export_file("151.fit", recording_fit({ .manufacturer = 260, .start = 84, .count = 3600, .distance = 30000, .positions = true }));
+    put(store, 10000, recording_fit({ .start = 10000, .count = 1200, .distance = 10000 }), 52);
+    export_file("152.fit", recording_fit({ .manufacturer = 255, .start = 10003, .count = 1202, .distance = 10020 }));
+    put(store, 20000, recorded_fit(20000), 53);
+    export_file("153.fit", recorded_fit(20000));
+    put(store, 30000, recording_fit({ .manufacturer = 1, .serial = 88, .start = 30000 }), 54);
+    MUST(save_sidecar_title(store.storage.sidecar_of(fit_start(30000)), "Mine"));
+    export_file("154.fit", recording_fit({ .serial = 99, .start = 40000, .count = 3000, .distance = 20000 }));
+    auto const activities = read_export("Activity ID,Activity Name,Activity Description,Filename\n"
+                                        "51,Zwift - Watopia,,activities/151.fit\n"
+                                        "52,Rewritten,,activities/152.fit\n"
+                                        "53,The same,,activities/153.fit\n"
+                                        "54,Elsewhere,,activities/154.fit\n",
+        "activities.csv")
+                                .value_or(ExportActivities { });
+
+    auto missing = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { });
+    CHECK_EQ(missing.queued, 2uz);
+    CHECK_EQ(missing.titles_moved, 1uz);
+    CHECK((missing.retitled == std::vector { fit_start(30000) }));
+    CHECK((store.inbox() == std::vector<std::string> { "strava-51.fit", "strava-51.json", "strava-54.fit", "strava-54.json" }));
+    auto const wrong = sidecar_titles(store.storage.sidecar_of(fit_start(30000)));
+    CHECK(!wrong.strava.has_value());
+    CHECK((wrong.strava_rejected == std::vector<u64> { 54 }));
+    CHECK_EQ(wrong.own.value_or(""), "Mine");
+
+    auto const filed = store.storage.process_inbox({ }, [&store, &missing](std::string_view file_name, Storage::InboxFiling const &filing) {
+        missing.count(file_name, filing);
+        if (filing.filed()) {
+            CHECK(group_new(store.storage, filing.start).has_value());
+        }
+    });
+    CHECK_EQ(filed.value_or(0), 2u);
+    CHECK_EQ(missing.added, 2uz);
+    // Zwift's file is a recording of the head unit's, in one's folder or
+    // the other's; the other activity is listed, with Strava's title.
+    auto const listed_now = listed(store);
+    CHECK_EQ(listed_now.size(), 5uz);
+    CHECK(std::ranges::contains(listed_now, fit_start(100)) != std::ranges::contains(listed_now, fit_start(84)));
+    CHECK(store.storage.has_activity(fit_start(84)));
+    CHECK((strava_of(store, fit_start(40000)) == StravaTitle { .id = 54, .name = "Elsewhere", .description = "" }));
+
+    auto const again = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 });
+    CHECK_EQ(again.queued, 0uz);
+    CHECK_EQ(again.titles_moved, 0uz);
+    CHECK(store.inbox().empty());
+}
+
+// Strava's file is in the store already, at its own start, without the
+// ID, which is on another activity: a multisport file filed by its last
+// session, say. The title moves to it, unless it has a Strava title of
+// its own, and nothing goes to the inbox. Nor does another recording
+// that's in the store as an activity of its own.
+void test_strava_file_already_here()
+{
+    TempStore  store { };
+    TempDir    export_dir { "strava-export" };
+    auto const files = export_dir.path / "activities";
+    fs::create_directories(files);
+    auto const export_file = [&files](std::string_view name, std::string_view fit) {
+        MUST(write_file_by_name((files / name).string(), fit));
+    };
+    // 61 is on 100, but Strava's file is 5000, here without a title.
+    put(store, 100, recording_fit({ .manufacturer = 1, .serial = 77, .start = 100 }), 61);
+    auto const here = recording_fit({ .manufacturer = 1, .serial = 78, .start = 5000 });
+    store.add_activity(fit_start(5000));
+    MUST(write_file_by_name(fs::path { store.storage.sidecar_of(fit_start(5000)) }.replace_extension(".fit").string(), std::string_view { here }));
+    export_file("161.fit", recording_fit({ .manufacturer = 255, .start = 5000, .count = 590 }));
+    // 62 is on 10000, but Strava's file is 15000, which has a title.
+    put(store, 10000, recording_fit({ .manufacturer = 1, .serial = 79, .start = 10000 }), 62);
+    put(store, 15000, recording_fit({ .manufacturer = 1, .serial = 80, .start = 15000 }), 65);
+    export_file("162.fit", recording_fit({ .manufacturer = 255, .start = 15000, .count = 590 }));
+    // 63 is on 20000, and Strava's file is another recording of it, which
+    // is here as an activity of its own.
+    put(store, 20000, recording_fit({ .manufacturer = 1, .serial = 81, .start = 20000 }), 63);
+    store.add_activity(fit_start(20010));
+    MUST(write_file_by_name(fs::path { store.storage.sidecar_of(fit_start(20010)) }.replace_extension(".fit").string(),
+        std::string_view { recording_fit({ .manufacturer = 32, .serial = 82, .start = 20010 }) }));
+    export_file("163.fit", recording_fit({ .manufacturer = 255, .start = 20010, .count = 590 }));
+    auto const activities = read_export("Activity ID,Activity Name,Activity Description,Filename\n"
+                                        "61,Triathlon,Hot,activities/161.fit\n"
+                                        "62,Twice,,activities/162.fit\n"
+                                        "63,Wahoo,,activities/163.fit\n",
+        "activities.csv")
+                                .value_or(ExportActivities { });
+
+    auto missing = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 });
+    // 62's file goes to the inbox, to be set aside: no file has 62 now.
+    CHECK_EQ(missing.queued, 1uz);
+    CHECK((store.inbox() == std::vector<std::string> { "strava-62.fit", "strava-62.json" }));
+    CHECK_EQ(missing.titles_moved, 1uz);
+    CHECK((missing.retitled == std::vector { fit_start(100), fit_start(5000), fit_start(10000) }));
+    CHECK(!strava_of(store, fit_start(100)).has_value());
+    CHECK((strava_of(store, fit_start(5000)) == StravaTitle { .id = 61, .name = "Triathlon", .description = "Hot" }));
+    CHECK(!strava_of(store, fit_start(10000)).has_value());
+    CHECK_EQ(strava_of(store, fit_start(15000)).value_or(StravaTitle { }).id, 65u);
+    CHECK_EQ(strava_of(store, fit_start(20000)).value_or(StravaTitle { }).id, 63u);
+    CHECK(!strava_of(store, fit_start(20010)).has_value());
+
+    auto const filed = store.storage.process_inbox({ }, [&missing](std::string_view file_name, Storage::InboxFiling const &filing) {
+        missing.count(file_name, filing);
+    });
+    CHECK_EQ(filed.value_or(99), 0u);
+    CHECK_EQ(missing.set_aside, 1uz);
+
+    // A second import queues nothing: 62 was set aside.
+    auto const again = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 });
+    CHECK_EQ(again.queued, 0uz);
+    CHECK_EQ(again.titles_moved, 0uz);
+}
+
+// The store's file with the ID can't be read: its ID stays, and Strava's
+// file isn't queued, as it can't be compared with anything.
+void test_unreadable_stored_file_keeps_its_id()
+{
+    TempStore  store { };
+    TempDir    export_dir { "strava-export" };
+    auto const files = export_dir.path / "activities";
+    fs::create_directories(files);
+    put(store, 100, "not a FIT file", 71);
+    MUST(write_file_by_name((files / "171.fit").string(), std::string_view { recording_fit({ .start = 9000 }) }));
+    auto const activities = read_export("Activity ID,Activity Name,Activity Description,Filename\n71,Unreadable,,activities/171.fit\n", "activities.csv")
+                                .value_or(ExportActivities { });
+    auto const missing = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 });
+    CHECK_EQ(missing.queued, 0uz);
+    CHECK_EQ(missing.titles_moved, 0uz);
+    CHECK_EQ(strava_of(store, fit_start(100)).value_or(StravaTitle { }).id, 71u);
+}
+
 void test_message()
 {
     CHECK_EQ((ExportImport { .descriptions = 4502, .empty = 3911, .untitled = 142 }).message(),
@@ -476,6 +648,10 @@ void test_message()
     CHECK_EQ((ExportImport { .stubs = { .replaced = 2, .unreadable = 3 }, .missing = { .unreadable = 15, .added = 4 } }).message(),
         "Strava's export has none of the descriptions missing here. Replaced 2 activities that were only a summary with their recordings. "
         "Added 4 activities from the export. 18 more have a GPX or TCX file, which SweatTrails can't read.");
+    CHECK_EQ((ExportImport { .missing = { .titles_moved = 64, .added = 64 } }).message(),
+        "Strava's export has none of the descriptions missing here. Added 64 activities from the export. Moved 64 Strava titles to the right activity.");
+    CHECK_EQ((ExportImport { .missing = { .titles_moved = 1, .set_aside = 1 } }).message(),
+        "Strava's export has none of the descriptions missing here. 1 of the export's activities was already here. Moved 1 Strava title to the right activity.");
     CHECK_EQ((ExportImport { .stubs = { .unreadable = 3 }, .missing = { .unreadable = 1 } }).message(),
         "Strava's export has none of the descriptions missing here. 4 activities have a GPX or TCX file, which SweatTrails can't read.");
 }
@@ -495,6 +671,10 @@ int main()
     test_count();
     test_missing_through_inbox();
     test_same_start_twice_in_export();
+    test_classify_export_file();
+    test_other_recordings_through_inbox();
+    test_strava_file_already_here();
+    test_unreadable_stored_file_keeps_its_id();
     test_message();
     return test_result();
 }

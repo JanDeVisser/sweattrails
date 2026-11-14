@@ -685,9 +685,9 @@ ActivityDisplay::ActivityDisplay(pWidget const &parent)
 // The table only shows for more than one lap: one lap is the whole
 // activity, which the data panel shows. The map fits the route to its new
 // size when the layout resizes it.
-void ActivityDisplay::set_activity(Activity const &activity)
+void ActivityDisplay::set_activity(Activity const &activity, std::optional<Activity> const &route)
 {
-    show(activity, false);
+    show(activity, route, false);
 }
 
 void ActivityDisplay::compare_with(std::optional<Activity> const &other)
@@ -702,16 +702,17 @@ void ActivityDisplay::compare_with(std::optional<Activity> const &other)
     resize();
 }
 
-void ActivityDisplay::switch_recording(Activity const &recording)
+void ActivityDisplay::switch_recording(Activity const &recording, std::optional<Activity> const &route)
 {
     auto const lap = activity ? activity->lap : std::nullopt;
-    show(recording, true);
+    show(recording, route, true);
     activity->keep_lap(lap);
 }
 
-void ActivityDisplay::show(Activity const &activity, bool keep_view)
+void ActivityDisplay::show(Activity const &activity, std::optional<Activity> const &route, bool keep_view)
 {
     this->activity = std::make_shared<DisplayedActivity>(activity);
+    this->activity->set_route(route);
     show_laps();
     data_display->set_activity(this->activity);
     map->set_activity(this->activity, keep_view);

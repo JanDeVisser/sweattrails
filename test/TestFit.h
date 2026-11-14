@@ -239,6 +239,83 @@ inline std::string summary_fit(u32 start = 0)
     return fit.file();
 }
 
+// A recording as a test of recordings needs it: who made it, the
+// device's serial number (0 for none, as Zwift's and rewritten files
+// have), when it starts after Start, how long and how far it is, and
+// whether its records have positions.
+struct TestRecording {
+    u16  manufacturer { 32 };
+    u32  serial { 0 };
+    u32  start { 0 };
+    u32  count { 600 };
+    u32  distance { 0 }; // m
+    bool positions { false };
+};
+
+inline constexpr u8 Uint32z = 0x8C;
+
+inline std::string recording_fit(TestRecording const &recording)
+{
+    FITBuilder                   fit;
+    std::vector<FieldDefinition> file_id_fields {
+        { .num = 0, .size = 1, .base_type = Enum },
+        { .num = 1, .size = 2, .base_type = Uint16 },
+        { .num = 4, .size = 4, .base_type = Uint32 },
+    };
+    if (recording.serial != 0) {
+        file_id_fields.push_back({ .num = 3, .size = 4, .base_type = Uint32z });
+    }
+    fit.definition(4, 0, file_id_fields);
+    fit.message(4);
+    fit.byte(4); // An activity
+    fit.u16_le(recording.manufacturer);
+    fit.u32_le(Start); // Created
+    if (recording.serial != 0) {
+        fit.u32_le(recording.serial);
+    }
+
+    std::vector<FieldDefinition> record_fields {
+        { .num = 253, .size = 4, .base_type = Uint32 },
+        { .num = 3, .size = 1, .base_type = Uint8 },
+        { .num = 7, .size = 2, .base_type = Uint16 },
+    };
+    if (recording.positions) {
+        record_fields.push_back({ .num = 0, .size = 4, .base_type = Sint32 });
+        record_fields.push_back({ .num = 1, .size = 4, .base_type = Sint32 });
+    }
+    fit.definition(5, 20, record_fields);
+    // Innsbruck, going east a little each second, in semicircles.
+    constexpr double Semicircles = 2147483648.0 / 180.0;
+    for (auto at = 0u; at < recording.count; ++at) {
+        fit.message(5);
+        fit.u32_le(Start + recording.start + at);
+        fit.byte(140);
+        fit.u16_le(200);
+        if (recording.positions) {
+            fit.u32_le(static_cast<u32>(static_cast<i32>(47.26 * Semicircles)));
+            fit.u32_le(static_cast<u32>(static_cast<i32>((11.39 + at * 0.0001) * Semicircles)));
+        }
+    }
+
+    fit.definition(0, 18,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 2, .size = 4, .base_type = Uint32 },
+            { .num = 5, .size = 1, .base_type = Enum },
+            { .num = 7, .size = 4, .base_type = Uint32 },
+            { .num = 8, .size = 4, .base_type = Uint32 },
+            { .num = 9, .size = 4, .base_type = Uint32 },
+        });
+    fit.message(0);
+    fit.u32_le(Start + recording.start + recording.count);
+    fit.u32_le(Start + recording.start);
+    fit.byte(2); // Cycling
+    fit.u32_le(recording.count * 1000);
+    fit.u32_le(recording.count * 1000);
+    fit.u32_le(recording.distance * 100);
+    return fit.file();
+}
+
 // What a Wahoo device recorded of the same: the session, and a record a
 // second.
 inline std::string recorded_fit(u32 start = 0)

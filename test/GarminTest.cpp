@@ -688,6 +688,23 @@ void test_has_activity()
     CHECK(!store.storage.has_activity(1792498172));
 }
 
+// fit_at() says where the file is: the activity's, or a recording's in the
+// `.recordings` folder of an activity next to it.
+void test_fit_at()
+{
+    TempStore store;
+    CHECK(!store.storage.fit_at(1792498171).has_value());
+    store.add_activity(1792498171);
+    auto const main = store.storage.fit_at(1792498171);
+    CHECK(main.has_value());
+    CHECK_EQ(main.value_or(fs::path { }).filename().string(), "1792498171.fit");
+    auto const folder = main.value_or(fs::path { }).parent_path() / "1792498100.recordings";
+    fs::create_directories(folder);
+    MUST(write_file_by_name((folder / "1792498150.fit").string(), std::string_view { "fit" }));
+    CHECK((store.storage.fit_at(1792498150) == std::optional<fs::path> { folder / "1792498150.fit" }));
+    CHECK(!store.storage.fit_at(1792498151).has_value());
+}
+
 }
 
 int main()
@@ -721,6 +738,7 @@ int main()
     test_unavailable_activities_are_remembered();
     test_read_unavailable();
     test_has_activity();
+    test_fit_at();
     test_downloaded_activity_goes_through_the_inbox();
     return ST::Test::test_result();
 }

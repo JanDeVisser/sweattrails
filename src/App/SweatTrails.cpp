@@ -706,6 +706,9 @@ void SweatTrails::job_import_strava_export(Job::Payload const &data)
         done(std::format("{} Couldn't add the activities that aren't here: {}", imported->message(), missing.error().to_string()));
         return;
     }
+    if (!missing->retitled.empty()) {
+        the->notify<NotificationType::TitlesChanged>(TitlesChanged { missing->retitled });
+    }
     if (missing->queued > 0) {
         auto const filed = file_inbox(
             the,
@@ -717,8 +720,8 @@ void SweatTrails::job_import_strava_export(Job::Payload const &data)
             return;
         }
     }
-    info(ST, "Strava's export: put {} activities in the inbox, which added {} and set {} aside; {} have a GPX or TCX file",
-        missing->queued, missing->added, missing->set_aside, missing->unreadable);
+    info(ST, "Strava's export: put {} activities in the inbox, which added {} and set {} aside; {} have a GPX or TCX file; moved {} Strava titles",
+        missing->queued, missing->added, missing->set_aside, missing->unreadable, missing->titles_moved);
     imported->missing = std::move(*missing);
     done(imported->message());
 }
@@ -1157,6 +1160,28 @@ std::expected<Activity, std::string> load_to_show(Storage &storage, ActivityID c
         return std::unexpected(std::format("`{}` isn't there any more", name));
     }
     return **loaded;
+}
+
+// The recording whose route the map shows for `shown`, which has none:
+// the longest of the activity's others with positions, such as Zwift's
+// file of a ride a Garmin recorded indoors. None if `shown` has a route,
+// or none of the others has. See specs/52-strava-export-other-recordings.md.
+std::optional<Activity> route_for(Storage &storage, Activity const &shown)
+{
+    if (shown.segment.box || shown.recordings < 2) {
+        return { };
+    }
+    std::vector<Activity> others;
+    for (auto const &id : recordings_in_order(storage, shown.id)) {
+        if (id == shown.id) {
+            continue;
+        }
+        if (auto loaded = load_to_show(storage, id); loaded) {
+            others.push_back(std::move(*loaded));
+        }
+    }
+    auto const ix = route_source(others);
+    return ix ? std::optional { std::move(others[*ix]) } : std::nullopt;
 }
 
 // The activity before (`step` -1) or after (+1) the one on display, in
@@ -2048,7 +2073,7 @@ void load_again(pSweatTrails const &the, ActivityID const &id)
         the->set_status(loaded.error());
     } else if (the->showing_summaries()) {
         the->last_activity = id;
-        the->activity_display->set_activity(*loaded);
+        the->activity_display->set_activity(*loaded, route_for(the->storage, *loaded));
         the->compare_if_on();
     } else {
         the->show_activity(*loaded);
@@ -2438,7 +2463,7 @@ void SweatTrails::show_activity(Activity const &activity)
     auto display = widget_stack->activate<ActivityDisplay>();
     assert(display != nullptr);
     auto const before = display->activity;
-    display->set_activity(activity);
+    display->set_activity(activity, route_for(storage, activity));
     compare_if_on(before);
 }
 
@@ -2449,7 +2474,7 @@ void SweatTrails::show_recording(Activity const &recording)
     auto display = widget_stack->activate<ActivityDisplay>();
     assert(display != nullptr);
     auto const before = display->activity;
-    display->switch_recording(recording);
+    display->switch_recording(recording, route_for(storage, recording));
     compare_if_on(before);
 }
 
