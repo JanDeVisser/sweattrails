@@ -238,20 +238,18 @@ SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<Strava
     return outcome;
 }
 
-// Moves what the downloads brought into the store, and tells the UI how
-// far it got.
-void process_inbox(pSweatTrails const &the)
+// Files what's in the inbox, and tells the UI what it grouped and which
+// stubs it replaced, with `progress` called for each file, and `also`
+// with what the inbox did with it.
+StorageResult<u32> file_inbox(pSweatTrails const &the, Storage::InboxProgress const &progress, Storage::InboxFiled const &also = { })
 {
-    // Files are processed faster than the UI handles notifications, so each
-    // update replaces the previous one if the UI hasn't got to it yet.
-    auto const on_file = [&the](std::string_view const &file_name, size_t index, size_t count) {
-        trace(ST, "Processing inbox file {}", file_name);
-        the->notify_latest<NotificationType::ImportingFile>(ImportingFile { std::string { file_name }, index, count });
-    };
     // A recording of an activity in the store goes with it.
     std::vector<Grouped> groups;
     StubsReplaced        replaced;
-    auto const           on_filed = [&the, &groups, &replaced](std::string_view, Storage::InboxFiling const &filing) {
+    auto const           on_filed = [&the, &groups, &replaced, &also](std::string_view file_name, Storage::InboxFiling const &filing) {
+        if (also) {
+            also(file_name, filing);
+        }
         if (!filing.filed()) {
             return;
         }
@@ -265,21 +263,36 @@ void process_inbox(pSweatTrails const &the)
             replaced.moved.emplace_back(filing.stub_start, filing.start);
         }
     };
-    auto res = the->storage.process_inbox(on_file, on_filed);
-    the->notify_latest<NotificationType::ImportingFile>(ImportingFile { });
+    auto res = the->storage.process_inbox(progress, on_filed);
     if (!replaced.moved.empty()) {
         the->notify<NotificationType::StubsReplaced>(std::move(replaced));
     }
     if (!groups.empty()) {
         the->notify<NotificationType::RecordingsGrouped>(RecordingsGrouped { .groups = std::move(groups) });
     }
+    if (res) {
+        info(ST, "Processed {} inbox files", res.value());
+        if (res.value() > 0) {
+            the->update_summaries();
+        }
+    }
+    return res;
+}
+
+// Moves what the downloads brought into the store, and tells the UI how
+// far it got.
+void process_inbox(pSweatTrails const &the)
+{
+    // Files are processed faster than the UI handles notifications, so each
+    // update replaces the previous one if the UI hasn't got to it yet.
+    auto const on_file = [&the](std::string_view const &file_name, size_t index, size_t count) {
+        trace(ST, "Processing inbox file {}", file_name);
+        the->notify_latest<NotificationType::ImportingFile>(ImportingFile { std::string { file_name }, index, count });
+    };
+    auto const res = file_inbox(the, on_file);
+    the->notify_latest<NotificationType::ImportingFile>(ImportingFile { });
     if (!res) {
         the->notify<NotificationType::Message>(std::format("Error processing inbox: {}", res.error().to_string()));
-        return;
-    }
-    info(ST, "Processed {} inbox files", res.value());
-    if (res.value() > 0) {
-        the->update_summaries();
     }
 }
 
@@ -625,13 +638,20 @@ void SweatTrails::job_strava_titles(Job::Payload const &data)
 }
 
 // Fills in Strava's descriptions from the activities.csv of its account
-// export. See specs/45-strava-export-import.md.
+// export, replaces the activities that are only a summary, and adds those
+// the store doesn't have. See specs/45-strava-export-import.md,
+// specs/50-stub-activities.md and specs/51-strava-export-activities.md.
 void SweatTrails::job_import_strava_export(Job::Payload const &data)
 {
     auto const &file = std::get<StravaExportRequest>(data).file;
     auto const  the = SweatTrails::the();
     auto const  done = [&the](std::string message) {
         the->notify<NotificationType::ImportingDescriptions>(ImportingDescriptions { .done = std::move(message) });
+    };
+    auto const progress = [&the](ImportStep step) {
+        return [&the, step](size_t index, size_t count) {
+            the->notify_latest<NotificationType::ImportingDescriptions>(ImportingDescriptions { .step = step, .index = index, .count = count });
+        };
     };
     the->notify_latest<NotificationType::ImportingDescriptions>(ImportingDescriptions { });
     auto const csv = read_file_by_name(file.string());
@@ -644,10 +664,7 @@ void SweatTrails::job_import_strava_export(Job::Payload const &data)
         done(activities.error());
         return;
     }
-    auto const on_description = [&the](size_t index, size_t count) {
-        the->notify_latest<NotificationType::ImportingDescriptions>(ImportingDescriptions { .index = index, .count = count });
-    };
-    auto imported = import_descriptions(the->storage, *activities, on_description);
+    auto imported = import_descriptions(the->storage, *activities, progress(ImportStep::Descriptions));
     if (!imported) {
         done(std::format("Couldn't import Strava's descriptions: {}", imported.error().to_string()));
         return;
@@ -657,12 +674,7 @@ void SweatTrails::job_import_strava_export(Job::Payload const &data)
     }
     info(ST, "Strava's export: {} descriptions, {} empty, {} activities without a Strava title", imported->descriptions, imported->empty, imported->untitled);
 
-    // Then the activities that are only a summary: see
-    // specs/50-stub-activities.md.
-    auto const on_stub = [&the](size_t index, size_t count) {
-        the->notify_latest<NotificationType::ImportingDescriptions>(ImportingDescriptions { .index = index, .count = count, .stubs = true });
-    };
-    auto stubs = import_originals(the->storage, *activities, file.parent_path(), on_stub);
+    auto stubs = import_originals(the->storage, *activities, file.parent_path(), progress(ImportStep::Stubs));
     if (!stubs) {
         done(std::format("{} Couldn't replace the activities that are only a summary: {}", imported->message(), stubs.error().to_string()));
         return;
@@ -685,6 +697,29 @@ void SweatTrails::job_import_strava_export(Job::Payload const &data)
         the->update_summaries();
     }
     imported->stubs = std::move(*stubs);
+
+    // Last, so that the stubs' step only sees what was in the store. The
+    // inbox runs here, not as a job of its own, to count what it did.
+    auto const adding = progress(ImportStep::Activities);
+    auto       missing = queue_missing(the->storage, *activities, file.parent_path(), adding);
+    if (!missing) {
+        done(std::format("{} Couldn't add the activities that aren't here: {}", imported->message(), missing.error().to_string()));
+        return;
+    }
+    if (missing->queued > 0) {
+        auto const filed = file_inbox(
+            the,
+            [&adding](std::string_view const &, size_t index, size_t count) { adding(index, count); },
+            [&missing](std::string_view file_name, Storage::InboxFiling const &filing) { missing->count(file_name, filing); });
+        imported->missing = *missing;
+        if (!filed) {
+            done(std::format("{} Couldn't file them: {}", imported->message(), filed.error().to_string()));
+            return;
+        }
+    }
+    info(ST, "Strava's export: put {} activities in the inbox, which added {} and set {} aside; {} have a GPX or TCX file",
+        missing->queued, missing->added, missing->set_aside, missing->unreadable);
+    imported->missing = std::move(*missing);
     done(imported->message());
 }
 
@@ -2336,10 +2371,18 @@ void SweatTrails::notif_importing_descriptions(Notification::Payload const &data
         message_box(*importing.done);
     } else if (importing.count == 0) {
         the->set_status("Importing Strava's descriptions…");
-    } else if (importing.stubs) {
-        the->set_status(std::format("Replacing activities that are only a summary: {} of {}", importing.index, importing.count));
     } else {
-        the->set_status(std::format("Importing Strava's descriptions: {} of {}", importing.index, importing.count));
+        switch (importing.step) {
+        case ImportStep::Descriptions:
+            the->set_status(std::format("Importing Strava's descriptions: {} of {}", importing.index, importing.count));
+            break;
+        case ImportStep::Stubs:
+            the->set_status(std::format("Replacing activities that are only a summary: {} of {}", importing.index, importing.count));
+            break;
+        case ImportStep::Activities:
+            the->set_status(std::format("Adding Strava's activities: {} of {}", importing.index, importing.count));
+            break;
+        }
     }
 }
 
@@ -2548,7 +2591,7 @@ void SweatTrails::initialize()
     // No key: it's for once in a long while, and from the palette, it only
     // says to drop the export on the window.
     bus.add_task<SweatTrails>("st-strava-export", self(), cmd_strava_export)
-        .titled("Import descriptions from Strava's export…");
+        .titled("Import Strava's export…");
     bus.add_task<SweatTrails>("st-strava-login", self(), cmd_strava_login)
         .titled("Log in to Strava");
     bus.add_task<SweatTrails>("st-message", self(), cmd_message);

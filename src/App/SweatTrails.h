@@ -233,13 +233,21 @@ struct RecordingsChanged {
     std::string error { };
 };
 
+// The steps of the ImportStravaExport job, in order.
+enum class ImportStep {
+    Descriptions,
+    Stubs,      // Replacing the activities that are only a summary
+    Activities, // Adding those the store doesn't have, through the inbox
+};
+
 // Sent by the ImportStravaExport job as it starts, before each description
-// it saves, then before each stub it replaces, and when it's done, with
-// what to tell the user.
+// it saves, each stub it replaces, and each activity it puts in the inbox
+// and then the inbox files, and when it's done, with what to tell the
+// user.
 struct ImportingDescriptions {
+    ImportStep                 step { ImportStep::Descriptions };
     size_t                     index { 0 };
     size_t                     count { 0 };
-    bool                       stubs { false }; // Replacing stubs, after the descriptions
     std::optional<std::string> done { };
 };
 
