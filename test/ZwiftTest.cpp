@@ -123,6 +123,34 @@ void test_zwift_world()
     CHECK_EQ(name_of(zwift_world(worlds, Ride { FIT::manufacturer::zwift, std::nullopt }.activity)), "none");
 }
 
+// Zwift's London is just west of 0°, and Singapore just north of the
+// equator: their positions make a box, and a ride in Zwift's London is in
+// its world. Positions at 0, 0 are no fix.
+void test_box_near_zero()
+{
+    auto const box_of = [](std::vector<Coordinates> const &positions) {
+        std::vector<record> records;
+        for (auto const &position : positions) {
+            records.push_back(record { .position = position });
+        }
+        Segment segment { };
+        segment.analyze(records, false);
+        return segment.box;
+    };
+    auto const london = box_of({ { .lat = 51.5077f, .lon = -0.1642f }, { .lat = 0, .lon = 0 }, { .lat = 51.4849f, .lon = -0.1251f } });
+    CHECK(london.has_value());
+    if (london) {
+        CHECK_EQ(london->west(), -0.1642f);
+        CHECK_EQ(london->east(), -0.1251f);
+        CHECK_EQ(london->south(), 51.4849f);
+    }
+    CHECK(box_of({ { .lat = 1.29f, .lon = 103.85f }, { .lat = 0.9f, .lon = 103.8f } }).has_value());
+    CHECK(!box_of({ { .lat = 0, .lon = 0 } }).has_value());
+
+    auto const worlds = MUST_EVAL(read_zwift_worlds(ShippedWorlds));
+    CHECK_EQ(name_of(zwift_world(worlds, Ride { FIT::manufacturer::zwift, london }.activity)), "London");
+}
+
 // Watopia's image, 8192x6144.
 constexpr Vector2 WatopiaImage { .x = 8192, .y = 6144 };
 
@@ -439,6 +467,7 @@ int main()
     test_worlds_that_arent_json();
     test_cache_name();
     test_zwift_world();
+    test_box_near_zero();
     test_native_zoom();
     test_world_tiles();
     test_world_tiles_at_16();

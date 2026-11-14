@@ -139,7 +139,8 @@ void Segment::analyze(std::span<record> records, bool smooth)
         }
         if (rec.position) {
             auto const &position = *rec.position;
-            if (std::abs(position.lat) > 1 && std::abs(position.lon) > 1) {
+            // Not only far from 0 both ways: London is just west of 0°.
+            if (position.has_fix()) {
                 if (box) {
                     box->extend(position);
                 } else {
