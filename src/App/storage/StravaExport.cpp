@@ -387,35 +387,38 @@ bool queue(Storage const &storage, MissingImport &ret, u64 id, ExportActivity co
 }
 
 // Takes Strava's activity `id` off the FIT files `wrong`, whose activity
-// Strava's file isn't.
-void reject(MissingImport &ret, u64 id, std::vector<fs::path> const &wrong)
+// Strava's file isn't. Whether it could take it off all of them.
+bool reject(MissingImport &ret, u64 id, std::vector<fs::path> const &wrong)
 {
+    auto all = true;
     for (auto const &fit : wrong) {
         if (auto const rejected = reject_sidecar_strava(fs::path { fit }.replace_extension(".json"), id); !rejected) {
             warning(StravaExport, "Couldn't take Strava's activity {} off `{}`: {}", id, fit.string(), rejected.error().to_string());
+            all = false;
         } else if (auto const start = listed_start(fit); start) {
             ret.retitled.push_back(*start);
         }
     }
+    return all;
 }
 
 // Gives the FIT file `fit` in the store, which is Strava's activity `id`'s,
-// its Strava title, unless it has one: two Strava activities of one file
-// were uploaded twice, and the first keeps it.
-void give_title(MissingImport &ret, u64 id, ExportActivity const &activity, fs::path const &fit)
+// its Strava title, unless it has one: one file uploaded to Strava twice
+// is two Strava activities, and the first keeps it. Whether it took it.
+bool give_title(MissingImport &ret, u64 id, ExportActivity const &activity, fs::path const &fit)
 {
     auto const sidecar = fs::path { fit }.replace_extension(".json");
     if (sidecar_titles(sidecar).strava) {
-        return;
+        return false;
     }
     if (auto const saved = save_sidecar_strava(sidecar, StravaTitle { .id = id, .name = activity.name, .description = activity.description }); !saved) {
         warning(StravaExport, "Couldn't give `{}` Strava's title: {}", fit.string(), saved.error().to_string());
-        return;
+        return false;
     }
-    ++ret.titles_moved;
     if (auto const start = listed_start(fit); start) {
         ret.retitled.push_back(*start);
     }
+    return true;
 }
 
 bool same_bytes(std::string_view fit, std::vector<fs::path> const &stored)
@@ -506,14 +509,20 @@ StorageResult<MissingImport> queue_missing(Storage &storage, ExportActivities co
         // Strava's file is in the store already, without the ID: the inbox
         // would set it aside. A stub there it would replace.
         if (auto const here = storage.fit_at(info->start); here && !is_stub_file(*here).value_or(false)) {
-            if (kind == ExportFile::OtherActivity) {
-                reject(ret, id, with_id);
-                give_title(ret, id, *activity, *here);
+            if (kind == ExportFile::OtherRecording || !reject(ret, id, with_id)) {
+                continue;
             }
+            if (give_title(ret, id, *activity, *here)) {
+                ++ret.titles_moved;
+                continue;
+            }
+            // It has a Strava title of its own, so no file has the ID now:
+            // the inbox sets Strava's file aside, and remembers it, so that
+            // the next import doesn't queue it again.
+            queue(storage, ret, id, *activity, *fit);
             continue;
         }
-        if (queue(storage, ret, id, *activity, *fit) && kind == ExportFile::OtherActivity) {
-            reject(ret, id, with_id);
+        if (queue(storage, ret, id, *activity, *fit) && kind == ExportFile::OtherActivity && reject(ret, id, with_id)) {
             ++ret.titles_moved;
         }
     }

@@ -571,9 +571,10 @@ void test_strava_file_already_here()
         "activities.csv")
                                 .value_or(ExportActivities { });
 
-    auto const missing = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 });
-    CHECK_EQ(missing.queued, 0uz);
-    CHECK(store.inbox().empty());
+    auto missing = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 });
+    // 62's file goes to the inbox, to be set aside: no file has 62 now.
+    CHECK_EQ(missing.queued, 1uz);
+    CHECK((store.inbox() == std::vector<std::string> { "strava-62.fit", "strava-62.json" }));
     CHECK_EQ(missing.titles_moved, 1uz);
     CHECK((missing.retitled == std::vector { fit_start(100), fit_start(5000), fit_start(10000) }));
     CHECK(!strava_of(store, fit_start(100)).has_value());
@@ -583,9 +584,13 @@ void test_strava_file_already_here()
     CHECK_EQ(strava_of(store, fit_start(20000)).value_or(StravaTitle { }).id, 63u);
     CHECK(!strava_of(store, fit_start(20010)).has_value());
 
-    // A second import queues nothing. 62's file is here, but 62 is on none
-    // of the files now (15000 has its own title), so the import takes it
-    // for missing and queues it for the inbox to set aside.
+    auto const filed = store.storage.process_inbox({ }, [&missing](std::string_view file_name, Storage::InboxFiling const &filing) {
+        missing.count(file_name, filing);
+    });
+    CHECK_EQ(filed.value_or(99), 0u);
+    CHECK_EQ(missing.set_aside, 1uz);
+
+    // A second import queues nothing: 62 was set aside.
     auto const again = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 });
     CHECK_EQ(again.queued, 0uz);
     CHECK_EQ(again.titles_moved, 0uz);
