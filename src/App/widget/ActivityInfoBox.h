@@ -38,6 +38,7 @@ struct InfoRow {
 
     Kind     kind { Kind::Entry };
     InfoLine line { };
+    bool     file { false }; // The file's name, which a click copies
 
     bool operator==(InfoRow const &) const = default;
 };

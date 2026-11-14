@@ -54,7 +54,7 @@ std::vector<InfoRow> info_rows(ActivityInfo const &info)
     std::vector<InfoRow> ret;
     if (!info.file.empty()) {
         ret.push_back({ .kind = Heading, .line = { .text = "File" } });
-        ret.push_back({ .kind = Entry, .line = { .text = info.file } });
+        ret.push_back({ .kind = Entry, .line = { .text = info.file }, .file = true });
     }
     ret.push_back({ .kind = Heading, .line = { .text = "Recorded with" } });
     ret.push_back({ .kind = Entry, .line = info.device });
@@ -244,7 +244,7 @@ void ActivityInfoBox::draw()
         auto       small_x = x;
         if (!row.line.text.empty()) {
             render_text(x, y, row.line.text, FontSize::Medium, color);
-            if (row.kind == InfoRow::Kind::Entry && row.line.text == info.file && !info.file.empty()) {
+            if (row.file) {
                 file_area = Rectangle { .x = viewport.x + x, .y = viewport.y + y, .width = text_width(row.line.text, FontSize::Medium), .height = medium.y };
             }
             small_x += text_width(row.line.text, FontSize::Medium) + text_width(" ", FontSize::Medium);

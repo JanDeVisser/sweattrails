@@ -77,7 +77,7 @@ void test_rows()
     auto const                 rows = info_rows(recording(1));
     std::vector<InfoRow> const expected {
         { .kind = Heading, .line = { .text = "File" } },
-        { .kind = Entry, .line = { .text = "activity/2026/11/1.fit" } },
+        { .kind = Entry, .line = { .text = "activity/2026/11/1.fit" }, .file = true },
         { .kind = Heading, .line = { .text = "Recorded with" } },
         { .kind = Entry, .line = { .text = "Garmin", .small = "(product 4315)" } },
         { .kind = Heading, .line = { .text = "Sensors" } },
