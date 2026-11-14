@@ -85,6 +85,10 @@ a command's name, its words in any order ("garmin down" finds
 "Download from Garmin Connect"), and Enter runs it, as its key would.
 The commands you last ran from it come first. It's also the way to the
 few commands without a key, such as logging in to Wahoo or Strava.
+Clicking "for commands" at the right of the status bar opens it too.
+
+In the palette, and in every other list, a click selects an entry, and
+a double click chooses it, as Enter does.
 
 ## Choosing an activity
 
@@ -152,6 +156,10 @@ time. Up and Down select one, typing searches the titles, Enter shows
 the one selected, and Escape closes the list. Left and Right go to the
 month before or after that has activities, and Shift+Left and
 Shift+Right a year back or on.
+
+Cmd+I (Ctrl+I off macOS) shows the activity's file, the device that
+recorded it and its sensors. F shows the file in the Finder, and C, or
+a click on the file's name, copies its full path to the clipboard.
 
 ## Filling a gap
 
