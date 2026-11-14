@@ -134,4 +134,19 @@ StorageResult<Grouped> make_main(Storage &storage, fs::path const &recording_fit
 // many it moved. An error if `main_fit` isn't a listed activity's.
 StorageResult<size_t> split_recordings(Storage &storage, fs::path const &main_fit);
 
+// What delete_recording() did: where the FIT file went, and the
+// activity's main recording after, if it has one left.
+struct Deleted {
+    fs::path                to { };
+    std::optional<fs::path> main { };
+};
+
+// Moves a recording's files into the store's deleted_dir, in the month of
+// its activity, flat, keeping their names, or `<start>-<n>.*` if that
+// start was deleted before. Another recording leaves its folder, which
+// goes if it's empty after. Deleting the main one of several makes
+// another the main one, as the inbox would choose it, which gets the
+// activity's name. See specs/54-delete-activity.md.
+StorageResult<Deleted> delete_recording(Storage &storage, fs::path const &fit);
+
 }
