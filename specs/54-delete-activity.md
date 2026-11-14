@@ -312,6 +312,7 @@ A section on deleting, as the spec says.
 4. **Not checked**: the palette task, job and handler (needs a window),
    including deleting the middle, last and only activity of a month, and the
    last one in the store. The code reads right for those, apart from 1.
+   **Checked** by Jan, who tested deleting in the app.
 
 Everything else in Version 1 scope matches the spec: `has_activity()` /
 `was_deleted()`, the inbox using `fit_at()`, `query_box`'s `initial`, the
