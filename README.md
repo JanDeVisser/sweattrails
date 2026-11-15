@@ -526,7 +526,8 @@ then fills every gap it can in one go:
 - It brings in the descriptions of the activities that have none, which
   would take days to fetch one by one.
 - It replaces the activities that are only a summary with their
-  recordings: see below.
+  recordings, and gives the rewrites that lost their map their track
+  back: see below.
 - It adds the activities it doesn't have, such as the years before
   Garmin Connect or Wahoo, or Zwift rides uploaded straight to Strava.
   They go through the inbox, as a download's do: one at the start time
@@ -571,6 +572,16 @@ A recording that came in before SweatTrails knew about stubs was set
 aside in the inbox's `duplicates` folder. To have it replace its stub,
 move it, with its `.json` file, back into the inbox: SweatTrails takes
 it the next time it starts.
+
+Some activities have records but no map: their FIT file is a rewrite by
+a program that kept the heart rate but dropped the positions, and has
+no device's serial number. Dropping Strava's `activities.csv` replaces
+such a file with Strava's FIT file of it, when that has a track, starts
+in the same second and is as long, also for a recording in an
+activity's `.recordings` folder. The rewrite is kept next to it as
+`<start>.fit.stub`; the closing message says how many got their map
+back. One without a Strava title, or whose Strava activity has no FIT
+file in the export, keeps its file.
 
 ## Video overlay
 
