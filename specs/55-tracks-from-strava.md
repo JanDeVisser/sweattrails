@@ -1,6 +1,6 @@
 # Tracks from Strava's export
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
