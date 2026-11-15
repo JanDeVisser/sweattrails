@@ -18,6 +18,7 @@
 
 #include <App.h>
 #include <Emoji.h>
+#include <FontCache.h>
 #include <Widget.h>
 
 namespace ST {
@@ -135,16 +136,14 @@ void App::set_fonts(std::string_view const &path)
         auto sz = clamp(font_sizes[ix], 4, 48);
         font_sizes[ix] = sz;
         trace(App, "Loading font '{}', size {}", p, sz);
-        auto const &points = codepoints();
-        // raylib takes the characters as a pointer that isn't const.
-        auto f = LoadFontEx(p.c_str(), sz, const_cast<int *>(points.data()), static_cast<int>(points.size()));
-        if (f.baseSize == 0) {
+        auto f = load_font(p, sz, codepoints());
+        if (!f) {
             return;
         }
         if (fonts[ix]) {
             UnloadFont(*fonts[ix]);
         }
-        fonts[ix] = f;
+        fonts[ix] = *f;
         if (font_path != path) {
             font_path = std::string { path };
         }

@@ -2923,6 +2923,9 @@ void SweatTrails::initialize()
     if (!settings_error.empty()) {
         message_box(std::format("{}. SweatTrails starts without those settings.", settings_error));
     }
+    if (!font_error.empty()) {
+        message_box(std::format("{}. SweatTrails uses its own font instead.", font_error));
+    }
     if (!prefer_error.empty()) {
         message_box(std::format("In the settings, {}. SweatTrails chooses the longest recording of an activity as its main one.", prefer_error));
     }
@@ -3023,7 +3026,7 @@ StringList SweatTrails::get_font_dirs()
 void SweatTrails::load_font()
 {
     auto        appearance = settings["appearance"];
-    std::string default_font { "VictorMono-Medium.ttf" };
+    std::string default_font { "VictorMono-Regular.ttf" };
     std::string font_name { default_font };
     auto const  font_maybe = appearance.try_get<std::string>("font");
     if (font_maybe.has_value()) {
@@ -3049,6 +3052,8 @@ void SweatTrails::load_font()
         return false;
     };
     if (!load(font_name) && (font_name != default_font)) {
+        warning(ST, "Font `{}` not found in the font directories, using `{}`", font_name, default_font);
+        font_error = std::format("The font `{}` in the settings isn't in any of the font directories", font_name);
         assert(load(default_font));
     }
     set_emoji(SWEATTRAILS_DATADIR "/emoji/twemoji.zip");
