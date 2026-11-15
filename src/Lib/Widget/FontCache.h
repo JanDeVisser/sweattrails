@@ -15,6 +15,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -22,6 +23,12 @@
 #include <raylib.h>
 
 namespace ST {
+
+// LoadFontEx(), without raylib's warning about the characters the font
+// doesn't have: asking for more than any one font has is on purpose, and
+// raylib draws those as '?'. Nothing, with a warning of our own, if the
+// font can't be loaded.
+std::optional<Font> load_font(std::filesystem::path const &file, int size, std::span<int const> codepoints);
 
 struct FontCache {
     FontCache() = default;

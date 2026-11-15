@@ -13,6 +13,21 @@
 
 namespace ST {
 
+std::optional<Font> load_font(std::filesystem::path const &file, int size, std::span<int const> codepoints)
+{
+    SetTraceLogLevel(LOG_ERROR);
+    // raylib takes the characters as a pointer that isn't const.
+    auto const font = LoadFontEx(file.string().c_str(), size, const_cast<int *>(codepoints.data()), static_cast<int>(codepoints.size()));
+    SetTraceLogLevel(LOG_WARNING);
+    // raylib gives its default font when it can't load one, which mustn't
+    // be unloaded with the others.
+    if (font.baseSize == 0 || font.texture.id == 0 || font.texture.id == GetFontDefault().texture.id) {
+        warning(App, "Can't load font `{}` at size {}", file.string(), size);
+        return { };
+    }
+    return font;
+}
+
 FontCache::~FontCache()
 {
     clear();
@@ -33,14 +48,12 @@ std::optional<Font> FontCache::get(std::filesystem::path const &file, int size)
     }
     codepoints.insert(codepoints.end(), m_extra.begin(), m_extra.end());
     trace(App, "Loading font '{}', size {}, {} characters", key.first, size, codepoints.size());
-    auto const font = LoadFontEx(key.first.c_str(), size, codepoints.data(), static_cast<int>(codepoints.size()));
-    // raylib gives its default font when it can't load one, which mustn't
-    // be unloaded with the others.
-    if (font.baseSize == 0 || font.texture.id == 0 || font.texture.id == GetFontDefault().texture.id) {
+    auto const font = load_font(file, size, codepoints);
+    if (!font) {
         m_failed.insert(key);
         return { };
     }
-    m_fonts.emplace(key, font);
+    m_fonts.emplace(key, *font);
     return font;
 }
 
