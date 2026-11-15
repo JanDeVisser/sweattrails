@@ -38,8 +38,8 @@ struct ZwiftWorld {
     std::string image { }; // The image's URL
     Coordinates north_west { };
     Coordinates south_east { };
-    // Zwift's image of France and of the Makuri Islands has north to the
-    // right: it's turned counter-clockwise before it's cut. `"turn": "ccw"`.
+    // Zwift's images of France, the Makuri Islands and Scotland have north
+    // to the right: such an image is turned counter-clockwise before it's cut. `"turn": "ccw"`.
     bool turned { false };
 
     // The name of the image's file, such as "MiniMap_Watopia_2".

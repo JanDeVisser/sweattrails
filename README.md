@@ -392,8 +392,8 @@ The worlds, their images and where each lies, are in
 `share/zwift-worlds.json`. Zwift doesn't document its images, and may
 move them: a world whose image doesn't download stays on OpenStreetMap,
 and a new world, or a new image, is an edit to that file (and
-`ninja -C build install`). Zwift's images of France and the Makuri
-Islands have north to the right: `"turn": "ccw"` turns such an image
+`ninja -C build install`). Zwift's images of France, the Makuri
+Islands and Scotland have north to the right: `"turn": "ccw"` turns such an image
 north up before it's cut.
 
 ## Garmin Connect
