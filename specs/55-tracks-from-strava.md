@@ -1,6 +1,6 @@
 # Tracks from Strava's export
 
-Status: Ready
+Status: In progress, on branch feature/55-tracks-from-strava
 
 <!--
 Status is one of:
@@ -106,11 +106,71 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### Which files lost their track: `storage/Stubs.h`
+
+```cpp
+// What a FIT file has, as far as replacing it goes. Reads until that's
+// known: most files stop at the first record with a position.
+struct Recorded {
+    bool records { false };
+    bool positions { false }; // A record with a position
+    bool serial { false };    // file_id's or a device_info's serial number
+    // A program's rewrite that kept the records but lost the track.
+    [[nodiscard]] bool lost_track() const;
+};
+std::expected<Recorded, FITError> what_is_recorded(std::string_view fit);
+
+// Whether `original` is the recording the rewrite `rewrite` lost the
+// track of: the same start second, distances within SameRecordingDistance.
+[[nodiscard]] bool lost_track_of(RecordingInfo const &rewrite, RecordingInfo const &original);
+
+// Replaces the FIT file `stored`, a listed activity's or a recording's in
+// a folder, with `fit`, which starts in the same second: `stored` is kept
+// as `<stored>.stub`, the sidecar stays. Nothing is overwritten.
+Error<StorageError> replace_in_place(fs::path const &stored, std::string_view fit);
+```
+
+`replace_stub()` and `replace_in_place()` share the rename, write and
+put-back steps.
+
+### The import: `import_originals()`
+
+The step that replaces stubs also looks at the recordings in the
+`.recordings` folders. Each stored file with a Strava ID whose line has a
+FIT file is read once with `what_is_recorded()`: without records it's a
+stub (listed activities only, as in spec 50); `lost_track()` makes it a
+candidate. GPX and TCX lines aren't looked at for rewrites, and not
+counted. For a candidate, Strava's file is read; it replaces the stored
+one if it has positions and `lost_track_of()` holds on the two
+`recording_info()`s. `StubImport` gets `tracks`, the number replaced, and
+`retracked`, the listed activities' starts (a folder's recording by its
+main one's). The progress counts stubs and candidates together.
+
+### The app
+
+- `job_import_strava_export()` sends `StubsReplaced` with `(start,
+  start)` for each of `retracked`, so the activity on display is loaded
+  again, and updates the summaries. No grouping: nothing new was filed.
+- The status line for the step becomes "Replacing activities with
+  Strava's files: 3 of 137", as it does both now.
+- `ExportImport::message()` adds "24 activities got their map back from
+  Strava's files." ("1 activity got its map back from Strava's file.").
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `stubs_test`: `what_is_recorded()` with positions, without, with a
+  serial in `file_id`, in a `device_info`, and without records;
+  `lost_track_of()` at and over 0.5%, and a second off;
+  `replace_in_place()` for a listed file and one in a folder, and that an
+  existing `.stub` is an error that changes nothing.
+- `strava_export_test`: `import_originals()` replaces a listed rewrite
+  and one in a folder; leaves alone a stored file with a serial, with
+  positions, a GPX line, Strava's file without positions, and one with
+  another start or distance; a second import replaces nothing; the
+  message's new sentence, for one and more.
+- `TestRecording` (`TestFit.h`) gets a `device_info` serial.
+- By hand: the import on a copy of Jan's store with his export: 24
+  replaced, the Hague ride with its map.
 
 ## Review notes
 
