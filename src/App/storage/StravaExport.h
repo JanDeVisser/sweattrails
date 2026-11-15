@@ -47,11 +47,14 @@ using ExportActivities = std::map<u64, ExportActivity>;
 // Name column, no names.
 std::expected<ExportActivities, std::string> read_export(std::string_view csv, std::string_view file_name);
 
-// What replacing the stubs with the export's files did.
+// What replacing the stubs, and the rewrites that lost their track, with
+// the export's files did.
 struct StubImport {
     size_t                           replaced { 0 };
     size_t                           unreadable { 0 }; // Stubs whose file is GPX or TCX
     std::vector<std::pair<i64, i64>> moved { };        // The stubs' start times, and the files'
+    size_t                           tracks { 0 };     // Rewrites that got their track back
+    std::vector<i64>                 retracked { };    // Their listed activities' start times
 };
 
 // What putting the export's missing activities in the inbox did, and
@@ -93,8 +96,11 @@ StorageResult<ExportImport> import_descriptions(Storage const &storage, ExportAc
 
 // Replaces each activity in the store that is only a summary
 // (storage/Stubs.h), and has a Strava ID, with the FIT file, gzipped or
-// not, that the export's line for it names in `export_dir`, with
-// `progress` called before each. Runs on the job thread.
+// not, that the export's line for it names in `export_dir`. Also replaces
+// each recording, listed or in a folder, that lost its track, if that
+// file is the recording it lost the track of: see
+// specs/55-tracks-from-strava.md. `progress` is called before each. Runs
+// on the job thread.
 StorageResult<StubImport> import_originals(Storage &storage, ExportActivities const &activities, fs::path const &export_dir, ExportProgress const &progress = { });
 
 // What Strava's file is to the store's files with its Strava ID. See
