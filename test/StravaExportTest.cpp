@@ -222,21 +222,23 @@ void test_import_originals()
     auto const files = export_dir.path / "activities";
     fs::create_directories(files);
     // Stubs whose originals are gzipped, plain, with another start, GPX,
-    // missing, and a stub too. A real activity, and a stub without a file.
+    // missing, and a stub too. A device's own recording, and a stub
+    // without a file.
+    auto const real = recording_fit({ .serial = 3412345678, .start = 6000 });
     put(store, 0, summary_fit(0), 1);
     put(store, 1000, summary_fit(1000), 2);
     put(store, 2000, summary_fit(2000), 3);
     put(store, 3000, summary_fit(3000), 4);
     put(store, 4000, summary_fit(4000), 5);
     put(store, 5000, summary_fit(5000), 6);
-    put(store, 6000, recorded_fit(6000), 7);
+    put(store, 6000, real, 7);
     put(store, 7000, summary_fit(7000), 8);
     MUST(write_file_by_name((files / "101.fit.gz").string(), std::string_view { gzip(recorded_fit(0)) }));
     MUST(write_file_by_name((files / "102.fit").string(), std::string_view { recorded_fit(1000) }));
     MUST(write_file_by_name((files / "103.FIT.GZ").string(), std::string_view { gzip(recorded_fit(2005)) }));
     MUST(write_file_by_name((files / "104.gpx.gz").string(), std::string_view { "<gpx/>" }));
     MUST(write_file_by_name((files / "106.fit").string(), std::string_view { summary_fit(5000) }));
-    MUST(write_file_by_name((files / "107.fit").string(), std::string_view { recorded_fit(6000) }));
+    MUST(write_file_by_name((files / "107.fit").string(), std::string_view { real }));
     auto const read = read_export("Activity ID,Activity Description,Filename\n"
                                   "1,,activities/101.fit.gz\n"
                                   "2,,activities/102.fit\n"
@@ -278,6 +280,179 @@ void test_import_originals()
     // Once replaced, they're no stubs any more.
     auto const again = import_originals(store.storage, read.value_or(ExportActivities { }), export_dir.path);
     CHECK_EQ(again.value_or(StubImport { .replaced = 99 }).replaced, 0uz);
+}
+
+// A program's rewrite of a ride, as spec 55 found them: records of heart
+// rate, no positions, no serial number.
+std::string rewrite_fit(u32 offset, u32 distance = 63100)
+{
+    return recording_fit({ .start = offset, .distance = distance });
+}
+
+// The device's own recording of it, as Strava keeps it.
+std::string device_fit(u32 offset, u32 distance = 63100)
+{
+    return recording_fit({ .manufacturer = 1, .serial = 3412345678, .start = offset, .distance = distance, .positions = true });
+}
+
+void test_import_tracks()
+{
+    TempStore  store { };
+    TempDir    export_dir { "strava-export" };
+    auto const files = export_dir.path / "activities";
+    fs::create_directories(files);
+    auto const export_file = [&files](std::string_view name, std::string_view contents) {
+        MUST(write_file_by_name((files / name).string(), contents));
+    };
+    // A rewrite Strava has the recording of, gzipped.
+    put(store, 0, rewrite_fit(0), 1);
+    export_file("101.fit.gz", gzip(device_fit(0)));
+    // Strava's file has no track either.
+    put(store, 1000, rewrite_fit(1000), 2);
+    export_file("102.fit", rewrite_fit(1000));
+    // A device's own recording without positions: a trainer ride.
+    auto const trainer = recording_fit({ .serial = 1234, .start = 2000, .distance = 63100 });
+    put(store, 2000, trainer, 3);
+    export_file("103.fit", device_fit(2000));
+    // A recording with positions.
+    auto const outside = recording_fit({ .start = 3000, .distance = 63100, .positions = true });
+    put(store, 3000, outside, 4);
+    export_file("104.fit", device_fit(3000));
+    // Strava's file is GPX.
+    put(store, 4000, rewrite_fit(4000), 5);
+    export_file("105.gpx.gz", "<gpx/>");
+    // Strava's file starts a second later, or is 1% longer.
+    put(store, 5000, rewrite_fit(5000), 6);
+    export_file("106.fit", device_fit(5001));
+    put(store, 6000, rewrite_fit(6000), 7);
+    export_file("107.fit", device_fit(6000, 63731));
+    // No Strava ID.
+    put(store, 7000, rewrite_fit(7000), 8);
+    MUST(write_file_by_name(store.storage.sidecar_of(fit_start(7000)).string(), std::string_view { "{}" }));
+    // A rewrite in a folder, of an activity with a track of its own.
+    put(store, 8000, device_fit(8000), 9);
+    export_file("109.fit", device_fit(8000));
+    auto const main = fs::path { store.storage.sidecar_of(fit_start(8000)) }.replace_extension(".fit");
+    auto const folder = recordings_dir(main);
+    fs::create_directories(folder);
+    auto const recording = folder / std::format("{}.fit", fit_start(8020));
+    MUST(write_file_by_name(recording.string(), std::string_view { rewrite_fit(8020) }));
+    MUST(save_sidecar_strava(fs::path { recording }.replace_extension(".json"), { .id = 10, .name = "Ride", .description = "" }));
+    export_file("110.fit.gz", gzip(device_fit(8020)));
+
+    auto const read = read_export("Activity ID,Activity Description,Filename\n"
+                                  "1,,activities/101.fit.gz\n"
+                                  "2,,activities/102.fit\n"
+                                  "3,,activities/103.fit\n"
+                                  "4,,activities/104.fit\n"
+                                  "5,,activities/105.gpx.gz\n"
+                                  "6,,activities/106.fit\n"
+                                  "7,,activities/107.fit\n"
+                                  "9,,activities/109.fit\n"
+                                  "10,,activities/110.fit.gz\n",
+        "activities.csv");
+    CHECK(read.has_value());
+
+    size_t     count { 0 };
+    auto const imported = import_originals(store.storage, read.value_or(ExportActivities { }), export_dir.path, [&count](size_t, size_t of) {
+        count = of;
+    });
+    CHECK(imported.has_value());
+    if (!imported) {
+        return;
+    }
+    CHECK_EQ(imported->tracks, 2uz);
+    CHECK_EQ(imported->replaced, 0uz);
+    CHECK_EQ(imported->unreadable, 0uz);
+    CHECK((imported->retracked == std::vector<i64> { fit_start(0), fit_start(8000) }));
+    // The candidates: all rewrites with a FIT file in the export.
+    CHECK_EQ(count, 5uz);
+
+    CHECK_EQ(stored_fit(store, 0), device_fit(0));
+    CHECK_EQ(stored_fit(store, 0, ".stub"), rewrite_fit(0));
+    CHECK_EQ(sidecar_titles(store.storage.sidecar_of(fit_start(0))).strava.value_or(StravaTitle { }).id, 1u);
+    CHECK_EQ(read_file_by_name(recording.string()).value_or(""), device_fit(8020));
+    CHECK_EQ(read_file_by_name(recording.string() + ".stub").value_or(""), rewrite_fit(8020));
+    CHECK_EQ(stored_fit(store, 8000), device_fit(8000));
+
+    CHECK_EQ(stored_fit(store, 1000), rewrite_fit(1000));
+    CHECK_EQ(stored_fit(store, 2000), trainer);
+    CHECK_EQ(stored_fit(store, 3000), outside);
+    for (auto const offset : { 4000, 5000, 6000, 7000 }) {
+        CHECK_EQ(stored_fit(store, offset), rewrite_fit(static_cast<u32>(offset)));
+    }
+    for (auto const offset : { 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000 }) {
+        CHECK_EQ(stored_fit(store, offset, ".stub"), "");
+    }
+
+    // They have their track now.
+    auto const again = import_originals(store.storage, read.value_or(ExportActivities { }), export_dir.path);
+    CHECK_EQ(again.value_or(StubImport { .tracks = 99 }).tracks, 0uz);
+}
+
+// Review of spec 55: a main recording and its recording in a folder that
+// both lost their track, a stub next to a rewrite, a `.stub` in the way, a
+// recording without a sidecar of its own, and what the progress counts.
+void test_import_tracks_mixed()
+{
+    TempStore  store { };
+    TempDir    export_dir { "strava-export" };
+    auto const files = export_dir.path / "activities";
+    fs::create_directories(files);
+    auto const export_file = [&files](std::string_view name, std::string_view contents) {
+        MUST(write_file_by_name((files / name).string(), contents));
+    };
+    // Both the main file and its recording lost their track.
+    put(store, 0, rewrite_fit(0), 1);
+    export_file("101.fit", device_fit(0));
+    auto const main = fs::path { store.storage.sidecar_of(fit_start(0)) }.replace_extension(".fit");
+    fs::create_directories(recordings_dir(main));
+    auto const recording = recordings_dir(main) / std::format("{}.fit", fit_start(20));
+    MUST(write_file_by_name(recording.string(), std::string_view { rewrite_fit(20) }));
+    MUST(save_sidecar_strava(fs::path { recording }.replace_extension(".json"), { .id = 2, .name = "Ride", .description = "" }));
+    export_file("102.fit", device_fit(20));
+    // A recording without a sidecar of its own isn't looked at.
+    auto const bare = recordings_dir(main) / std::format("{}.fit", fit_start(40));
+    MUST(write_file_by_name(bare.string(), std::string_view { rewrite_fit(40) }));
+    // A `.stub` in the way: nothing changes, nothing is counted.
+    put(store, 1000, rewrite_fit(1000), 3);
+    export_file("103.fit", device_fit(1000));
+    MUST(write_file_by_name(fs::path { store.storage.sidecar_of(fit_start(1000)) }.replace_extension(".fit.stub").string(), std::string_view { "kept" }));
+    // A stub, and a rewrite with a GPX file: the GPX one isn't counted.
+    put(store, 2000, summary_fit(2000), 4);
+    export_file("104.fit", recorded_fit(2000));
+    put(store, 3000, rewrite_fit(3000), 5);
+    export_file("105.gpx", "<gpx/>");
+
+    auto const read = read_export("Activity ID,Activity Description,Filename\n"
+                                  "1,,activities/101.fit\n"
+                                  "2,,activities/102.fit\n"
+                                  "3,,activities/103.fit\n"
+                                  "4,,activities/104.fit\n"
+                                  "5,,activities/105.gpx\n",
+        "activities.csv");
+    CHECK(read.has_value());
+    std::vector<std::pair<size_t, size_t>> progress;
+    auto const                             imported = import_originals(store.storage, read.value_or(ExportActivities { }), export_dir.path,
+        [&progress](size_t ix, size_t of) { progress.emplace_back(ix, of); });
+    CHECK(imported.has_value());
+    if (!imported) {
+        return;
+    }
+    CHECK_EQ(imported->tracks, 2uz);
+    CHECK_EQ(imported->replaced, 1uz);
+    CHECK_EQ(imported->unreadable, 0uz);
+    CHECK((imported->retracked == std::vector<i64> { fit_start(0) }));
+    CHECK_EQ(progress.size(), 4uz);
+    if (!progress.empty()) {
+        CHECK_EQ(progress.back().second, 4uz);
+    }
+    CHECK_EQ(stored_fit(store, 0), device_fit(0));
+    CHECK_EQ(read_file_by_name(recording.string()).value_or(""), device_fit(20));
+    CHECK_EQ(read_file_by_name(bare.string()).value_or(""), rewrite_fit(40));
+    CHECK_EQ(stored_fit(store, 1000), rewrite_fit(1000));
+    CHECK_EQ(stored_fit(store, 1000, ".stub"), "kept");
+    CHECK_EQ(stored_fit(store, 3000), rewrite_fit(3000));
 }
 
 // What the inbox holds as strava-<id>.<extension>.
@@ -664,6 +839,13 @@ void test_message()
     CHECK_EQ((ExportImport { .stubs = { .unreadable = 1 } }).message(),
         "Strava's export has none of the descriptions missing here. 1 activity that's only a summary has a GPX or TCX file, which SweatTrails can't read.");
 
+    // The rewrites that lost their track.
+    CHECK_EQ((ExportImport { .stubs = { .replaced = 1, .tracks = 24 } }).message(),
+        "Strava's export has none of the descriptions missing here. Replaced 1 activity that was only a summary with its recording. "
+        "24 activities got their map back from Strava's files.");
+    CHECK_EQ((ExportImport { .stubs = { .tracks = 1 } }).message(),
+        "Strava's export has none of the descriptions missing here. 1 activity got its map back from Strava's file.");
+
     // The activities the store didn't have.
     CHECK_EQ((ExportImport {
                   .descriptions = 1,
@@ -700,6 +882,8 @@ int main()
     test_import();
     test_filename();
     test_import_originals();
+    test_import_tracks();
+    test_import_tracks_mixed();
     test_queue_missing();
     test_deleted_is_not_queued();
     test_count();

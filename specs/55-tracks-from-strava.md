@@ -1,6 +1,6 @@
 # Tracks from Strava's export
 
-Status: Ready
+Status: Done
 
 <!--
 Status is one of:
@@ -106,12 +106,128 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### Which files lost their track: `storage/Stubs.h`
+
+```cpp
+// What a FIT file has, as far as replacing it goes. Reads until that's
+// known: most files stop at the first record with a position.
+struct Recorded {
+    bool records { false };
+    bool positions { false }; // A record with a position
+    bool serial { false };    // file_id's or a device_info's serial number
+    // A program's rewrite that kept the records but lost the track.
+    [[nodiscard]] bool lost_track() const;
+};
+std::expected<Recorded, FITError> what_is_recorded(std::string_view fit);
+
+// Whether `original` is the recording the rewrite `rewrite` lost the
+// track of: the same start second, distances within SameRecordingDistance.
+[[nodiscard]] bool lost_track_of(RecordingInfo const &rewrite, RecordingInfo const &original);
+
+// Replaces the FIT file `stored`, a listed activity's or a recording's in
+// a folder, with `fit`, which starts in the same second: `stored` is kept
+// as `<stored>.stub`, the sidecar stays. Nothing is overwritten.
+Error<StorageError> replace_in_place(fs::path const &stored, std::string_view fit);
+```
+
+`replace_stub()` and `replace_in_place()` share the rename, write and
+put-back steps.
+
+### The import: `import_originals()`
+
+The step that replaces stubs also looks at the recordings in the
+`.recordings` folders. Each stored file with a Strava ID whose line has a
+FIT file is read once with `what_is_recorded()`: without records it's a
+stub (listed activities only, as in spec 50); `lost_track()` makes it a
+candidate. GPX and TCX lines aren't looked at for rewrites, and not
+counted. For a candidate, Strava's file is read; it replaces the stored
+one if it has positions and `lost_track_of()` holds on the two
+`recording_info()`s. `StubImport` gets `tracks`, the number replaced, and
+`retracked`, the listed activities' starts (a folder's recording by its
+main one's). The progress counts stubs and candidates together.
+
+### The app
+
+- `job_import_strava_export()` sends `StubsReplaced` with `(start,
+  start)` for each of `retracked`, so the activity on display is loaded
+  again, and updates the summaries. No grouping: nothing new was filed.
+- The status line for the step becomes "Replacing activities with
+  Strava's files: 3 of 137", as it does both now.
+- `ExportImport::message()` adds "24 activities got their map back from
+  Strava's files." ("1 activity got its map back from Strava's file.").
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `stubs_test`: `what_is_recorded()` with positions, without, with a
+  serial in `file_id`, in a `device_info`, and without records;
+  `lost_track_of()` at and over 0.5%, and a second off;
+  `replace_in_place()` for a listed file and one in a folder, and that an
+  existing `.stub` is an error that changes nothing.
+- `strava_export_test`: `import_originals()` replaces a listed rewrite
+  and one in a folder; leaves alone a stored file with a serial, with
+  positions, a GPX line, Strava's file without positions, and one with
+  another start or distance; a second import replaces nothing; the
+  message's new sentence, for one and more.
+- `TestRecording` (`TestFit.h`) gets a `device_info` serial.
+- By hand: the import on a copy of Jan's store with his export: 24
+  replaced, the Hague ride with its map.
+
+### Changed while building
+
+- `what_is_recorded()` reads until the first position, not until it has
+  a serial and a record: Strava's file has to say whether it has a
+  track, and a device's first records have no position until GPS has a
+  fix. Found in the trial run below.
+
+### Trial run on a copy of Jan's store
+
+With a scratch driver (not committed) running `import_originals()` on a
+copy of the store, with Jan's export of 2026-11-15:
+
+- First 13 replaced, not 24: `what_is_recorded()` stopped at the first
+  record of Strava's files once it had their serial, and 11 had no fix
+  there. Fixed in 47c509f, with a test that fails against the old code.
+- Then 24 replaced, the Hague ride (`2025/05/1747224577.fit`, now
+  278,937 bytes, the rewrite kept as `.fit.stub`) and the recording in
+  `2025/05/1746555280.recordings` among them. `1747031344.fit`, without
+  a Strava ID, is left alone. A second import replaces nothing.
+- 259 candidates the first time, 235 the second: the other files with
+  records, no positions and no serial that have a Strava ID, such as
+  pool swims and treadmill runs. Strava's file of each is read every
+  time; the step takes 11 to 15 s in a debug build.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+No bugs found; the full test run passes (78 of 78).
+
+1. Missing test (added): `test_import_tracks_mixed` in
+   `test/StravaExportTest.cpp`. A main file and its folder recording that
+   both lost their track give `tracks` 2 and one `retracked` entry; a
+   recording in a folder without a sidecar of its own isn't looked at; a
+   `.stub` in the way leaves the file as it was and isn't counted; a stub
+   next to rewrites is replaced; a rewrite whose Strava file is GPX isn't
+   counted in the progress (4 steps for 4 candidates).
+2. Suggestion: `replace_track()` in `StravaExport.cpp` returns without a
+   warning when Strava's file can't be read (`read_fit()` fails), unlike its
+   other skips, so such a candidate is invisible in the log.
+3. Suggestion: `what_is_recorded()` stops at the first record once a serial
+   is known, and otherwise keeps reading. A rewrite whose `device_info` with
+   a serial comes after its first record, with no serial in `file_id`, would
+   count as lost-track. FIT puts `device_info` before the records, and the
+   stored file is kept as `.stub`, so it's undoable; fine as is.
+4. Suggestion: `job_import_strava_export()` calls `update_summaries()` once
+   for `moved` and once for `retracked` when both are there; one call after
+   both would do.
+
+### Resolved, with Jan
+
+1. Kept: the Reviewer's test, in 3c145c9.
+2. No change: `read_fit()` already logs "Not using `<file>`: <why>" when
+   it can't read Strava's file, so a second warning would repeat it.
+3. Left as it is, as the Reviewer says. Since 47c509f,
+   `what_is_recorded()` reads until the first position, so a serial in
+   a later `device_info` is seen anyway.
+4. Fixed in d8672a5: the summaries are updated once.
+
+Found in the trial run, after the review: the early stop in
+`what_is_recorded()`, fixed in 47c509f (see "Trial run" above).

@@ -125,6 +125,10 @@ std::string ExportImport::message() const
             count_of(stubs.replaced, "activity", "activities"), stubs.replaced == 1 ? "was" : "were",
             stubs.replaced == 1 ? "its" : "their", stubs.replaced == 1 ? "" : "s");
     }
+    if (stubs.tracks > 0) {
+        ret += std::format(" {} map back from Strava's file{}.", count_of(stubs.tracks, "activity got its", "activities got their"),
+            stubs.tracks == 1 ? "" : "s");
+    }
     ret += missing_message(missing);
     ret += moved_message(missing);
     auto const unreadable = stubs.unreadable + missing.unreadable;
@@ -202,8 +206,16 @@ OriginalKind original_kind(std::string_view file)
     return name.ends_with(".fit") ? OriginalKind::Fit : OriginalKind::Other;
 }
 
-struct StubWithOriginal {
-    StoredStart stub { };
+// A file in the store to replace with the export's file `original`: a
+// stub, or a recording that lost its track.
+struct ToReplace {
+    enum class Kind {
+        Stub,
+        Track,
+    };
+    Kind        kind { Kind::Stub };
+    StoredStart listed { }; // The activity: the stub, or the recording's main one
+    fs::path    fit { };    // The file to replace
     fs::path    original { };
 };
 
@@ -248,48 +260,121 @@ std::optional<std::pair<std::string, i64>> read_original(Storage &storage, fs::p
 
 }
 
+namespace {
+
+// Whether `listed`'s file, or `fit` in its folder, is to be replaced with
+// its Strava ID's file in the export, and how.
+std::optional<ToReplace> to_replace(ExportActivities const &activities, fs::path const &export_dir, StoredStart const &listed, fs::path const &fit, StubImport &ret)
+{
+    auto const title = sidecar_titles(fs::path { fit }.replace_extension(".json")).strava;
+    auto const found = title ? activities.find(title->id) : activities.end();
+    if (found == activities.end() || found->second.file.empty()) {
+        return { };
+    }
+    // Only now, as reading every FIT file takes a while.
+    auto const contents = read_file_by_name(fit.string());
+    if (!contents) {
+        return { };
+    }
+    auto const recorded = what_is_recorded(*contents);
+    if (!recorded) {
+        return { };
+    }
+    auto const is_main = fit == fs::path { listed.sidecar }.replace_extension(".fit");
+    auto const kind = (!recorded->records && is_main) ? ToReplace::Kind::Stub
+        : recorded->lost_track()                      ? ToReplace::Kind::Track
+                                                      : std::optional<ToReplace::Kind> { };
+    if (!kind) {
+        return { };
+    }
+    if (original_kind(found->second.file) == OriginalKind::Other) {
+        // A GPX file has no track SweatTrails can read, so a rewrite isn't
+        // counted, as the message is about stubs.
+        if (*kind == ToReplace::Kind::Stub) {
+            ++ret.unreadable;
+        }
+        return { };
+    }
+    return ToReplace { .kind = *kind, .listed = listed, .fit = fit, .original = export_dir / found->second.file };
+}
+
+void replace_stub_with(Storage &storage, ToReplace const &stub, StubImport &ret)
+{
+    auto const read = read_original(storage, stub.original);
+    if (!read) {
+        return;
+    }
+    auto const &[fit, start] = *read;
+    if (auto const replaced = replace_stub(storage, stub.listed, fit, start); !replaced) {
+        warning(StravaExport, "Couldn't replace `{}` with `{}`: {}", stub.fit.string(), stub.original.string(), replaced.error().to_string());
+        return;
+    }
+    ++ret.replaced;
+    ret.moved.emplace_back(stub.listed.start, start);
+}
+
+// Replaces the rewrite with Strava's file, if that has the track the
+// rewrite lost: it has positions, and is the same recording.
+void replace_track(Storage &storage, ToReplace const &rewrite, StubImport &ret)
+{
+    auto const skip = [&rewrite](std::string_view why) {
+        warning(StravaExport, "Not replacing `{}` with `{}`: {}", rewrite.fit.string(), rewrite.original.string(), why);
+    };
+    auto const fit = read_fit(rewrite.original);
+    if (!fit) {
+        return;
+    }
+    if (!what_is_recorded(*fit).transform([](Recorded const &r) { return r.positions; }).value_or(false)) {
+        return skip("it has no track either");
+    }
+    auto const stored = recording_info(storage, rewrite.fit);
+    auto const original = recording_info(storage, std::string_view { *fit });
+    if (!stored || !original) {
+        return skip("it can't be read");
+    }
+    if (!lost_track_of(*stored, *original)) {
+        return skip("it's another recording");
+    }
+    if (auto const replaced = replace_in_place(rewrite.fit, *fit); !replaced) {
+        return skip(replaced.error().to_string());
+    }
+    ++ret.tracks;
+    ret.retracked.push_back(rewrite.listed.start);
+}
+
+}
+
 StorageResult<StubImport> import_originals(Storage &storage, ExportActivities const &activities, fs::path const &export_dir, ExportProgress const &progress)
 {
-    StubImport                    ret;
-    std::vector<StubWithOriginal> stubs;
+    StubImport             ret;
+    std::vector<ToReplace> replacing;
     for (auto const &month : TRY_EVAL(storage.months_with_activities())) {
         for (auto const &stored : TRY_EVAL(storage.month_starts(month))) {
-            auto const title = sidecar_titles(stored.sidecar).strava;
-            auto const found = title ? activities.find(title->id) : activities.end();
-            if (found == activities.end() || found->second.file.empty()) {
-                continue;
+            auto const  fit = fs::path { stored.sidecar }.replace_extension(".fit");
+            std::vector files { fit };
+            std::ranges::copy(recordings_of(fit), std::back_inserter(files));
+            for (auto const &file : files) {
+                if (auto replace = to_replace(activities, export_dir, stored, file, ret); replace) {
+                    replacing.push_back(std::move(*replace));
+                }
             }
-            // Only now, as reading every FIT file takes a while.
-            if (!is_stub_file(fs::path { stored.sidecar }.replace_extension(".fit")).value_or(false)) {
-                continue;
-            }
-            if (original_kind(found->second.file) == OriginalKind::Other) {
-                ++ret.unreadable;
-                continue;
-            }
-            stubs.push_back(StubWithOriginal { .stub = stored, .original = export_dir / found->second.file });
         }
     }
     // month_starts() is in no order.
-    std::ranges::sort(stubs, { }, [](StubWithOriginal const &s) { return s.stub.start; });
+    std::ranges::sort(replacing, { }, [](ToReplace const &r) { return std::pair { r.listed.start, r.fit }; });
 
-    for (size_t ix = 0; ix < stubs.size(); ++ix) {
-        auto const &[stub, original] = stubs[ix];
+    for (size_t ix = 0; ix < replacing.size(); ++ix) {
         if (progress) {
-            progress(ix, stubs.size());
+            progress(ix, replacing.size());
         }
-        auto const read = read_original(storage, original);
-        if (!read) {
-            continue;
+        if (replacing[ix].kind == ToReplace::Kind::Stub) {
+            replace_stub_with(storage, replacing[ix], ret);
+        } else {
+            replace_track(storage, replacing[ix], ret);
         }
-        auto const &[fit, start] = *read;
-        if (auto const replaced = replace_stub(storage, stub, fit, start); !replaced) {
-            warning(StravaExport, "Couldn't replace `{}` with `{}`: {}", stub.sidecar.string(), original.string(), replaced.error().to_string());
-            continue;
-        }
-        ++ret.replaced;
-        ret.moved.emplace_back(stub.start, start);
     }
+    auto const duplicates = std::ranges::unique(ret.retracked);
+    ret.retracked.erase(duplicates.begin(), duplicates.end());
     return ret;
 }
 

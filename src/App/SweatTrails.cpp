@@ -689,7 +689,8 @@ void SweatTrails::job_strava_titles(Job::Payload const &data)
 // Fills in Strava's descriptions from the activities.csv of its account
 // export, replaces the activities that are only a summary, and adds those
 // the store doesn't have. See specs/45-strava-export-import.md,
-// specs/50-stub-activities.md and specs/51-strava-export-activities.md.
+// specs/50-stub-activities.md, specs/51-strava-export-activities.md and
+// specs/55-tracks-from-strava.md.
 void SweatTrails::job_import_strava_export(Job::Payload const &data)
 {
     auto const &file = std::get<StravaExportRequest>(data).file;
@@ -728,7 +729,7 @@ void SweatTrails::job_import_strava_export(Job::Payload const &data)
         done(std::format("{} Couldn't replace the activities that are only a summary: {}", imported->message(), stubs.error().to_string()));
         return;
     }
-    info(ST, "Strava's export: replaced {} stubs, {} have a GPX or TCX file", stubs->replaced, stubs->unreadable);
+    info(ST, "Strava's export: replaced {} stubs, {} have a GPX or TCX file; {} activities got their track back", stubs->replaced, stubs->unreadable, stubs->tracks);
     if (!stubs->moved.empty()) {
         // As the inbox does with what it files.
         std::vector<Grouped> groups;
@@ -743,6 +744,16 @@ void SweatTrails::job_import_strava_export(Job::Payload const &data)
         if (!groups.empty()) {
             the->notify<NotificationType::RecordingsGrouped>(RecordingsGrouped { .groups = std::move(groups) });
         }
+    }
+    if (!stubs->retracked.empty()) {
+        // The same start, so the activity on display is loaded again.
+        StubsReplaced retracked;
+        for (auto const start : stubs->retracked) {
+            retracked.moved.emplace_back(start, start);
+        }
+        the->notify<NotificationType::StubsReplaced>(std::move(retracked));
+    }
+    if (!stubs->moved.empty() || !stubs->retracked.empty()) {
         the->update_summaries();
     }
     imported->stubs = std::move(*stubs);
@@ -2489,7 +2500,7 @@ void SweatTrails::notif_importing_descriptions(Notification::Payload const &data
             the->set_status(std::format("Importing Strava's descriptions: {} of {}", importing.index, importing.count));
             break;
         case ImportStep::Stubs:
-            the->set_status(std::format("Replacing activities that are only a summary: {} of {}", importing.index, importing.count));
+            the->set_status(std::format("Replacing activities with Strava's files: {} of {}", importing.index, importing.count));
             break;
         case ImportStep::Activities:
             the->set_status(std::format("Adding Strava's activities: {} of {}", importing.index, importing.count));

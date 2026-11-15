@@ -58,6 +58,51 @@ std::vector<StoredStart> filed_near(Storage const &storage, i64 start)
     return ret;
 }
 
+// Renames `old_fit` to `kept`, and writes `fit` as `fit_path`, which may
+// be `old_fit`. Nothing is overwritten: if `kept` or `fit_path` is there,
+// or `fit` can't be written, `old_fit` is put back.
+Error<StorageError> swap_in(fs::path const &old_fit, fs::path const &kept, fs::path const &fit_path, std::string_view fit)
+{
+    if (TRY_EVAL(path_exists(kept))) {
+        return std::unexpected(StorageError { LibCError { "`{}` already exists", kept.string() } });
+    }
+    std::error_code ec { };
+    fs::rename(old_fit, kept, ec);
+    if (ec) {
+        return std::unexpected(StorageError { LibCError { ec } });
+    }
+    auto const restore = [&](LibCError const &error) -> Error<StorageError> {
+        std::error_code restore_ec { };
+        fs::rename(kept, old_fit, restore_ec);
+        if (restore_ec) {
+            warning(Storage, "Couldn't put `{}` back: {}", old_fit.string(), LibCError { restore_ec }.to_string());
+        }
+        return std::unexpected(StorageError { error });
+    };
+    if (auto const taken = path_exists(fit_path); !taken || *taken) {
+        return restore(taken ? LibCError { "`{}` already exists", fit_path.string() } : taken.error());
+    }
+    if (auto const written = write_file_atomically(fit_path, fit); !written) {
+        return restore(written.error());
+    }
+    return { };
+}
+
+bool has_value(FITDataRecord const &rec, u8 num)
+{
+    auto const field = rec.get_field(num);
+    return field && field->value;
+}
+
+// A serial number of 0 is none, as RecordingInfo has it.
+bool has_serial(FITDataRecord const &rec)
+{
+    auto const field = rec.get_field(3);
+    return field && field->value
+        && (field->type == FITBaseType::uint32 || field->type == FITBaseType::uint32z)
+        && field->value->uint32 != 0;
+}
+
 }
 
 std::expected<bool, FITError> is_stub(std::string_view fit)
@@ -69,6 +114,31 @@ std::expected<bool, FITError> is_stub(std::string_view fit)
         return found;
     }));
     return !found;
+}
+
+std::expected<Recorded, FITError> what_is_recorded(std::string_view fit)
+{
+    FITFile  file { fit };
+    Recorded ret;
+    TRY(file.read_until([&ret](FITDataRecord const &rec) {
+        if (rec.mesg_num == mesg_num::record) {
+            ret.records = true;
+            // Both, as the activity reads them: with one, there's no position.
+            ret.positions = ret.positions || (has_value(rec, 0) && has_value(rec, 1));
+        } else if (rec.mesg_num == mesg_num::file_id || rec.mesg_num == mesg_num::device_info) {
+            ret.serial = ret.serial || has_serial(rec);
+        }
+        // A device's file with a serial has no positions until GPS has a
+        // fix, so only a position ends it.
+        return ret.positions;
+    }));
+    return ret;
+}
+
+bool lost_track_of(RecordingInfo const &rewrite, RecordingInfo const &original)
+{
+    auto const distance = std::abs(rewrite.distance - original.distance);
+    return rewrite.start == original.start && distance <= SameRecordingDistance * std::max(rewrite.distance, original.distance);
 }
 
 StorageResult<bool> is_stub_file(fs::path const &fit)
@@ -102,30 +172,7 @@ Error<StorageError> replace_stub(Storage const &storage, StoredStart const &stub
     auto const dir = TRY_EVAL(ensure_directory(sidecar.parent_path()));
     auto const original = fit_of(sidecar);
     auto const kept = fs::path { original } += StubSuffix;
-    auto const stub_fit = fit_of(stub.sidecar);
-    if (TRY_EVAL(path_exists(kept))) {
-        return std::unexpected(StorageError { LibCError { "`{}` already exists", kept.string() } });
-    }
-    std::error_code ec { };
-    fs::rename(stub_fit, kept, ec);
-    if (ec) {
-        return std::unexpected(StorageError { LibCError { ec } });
-    }
-    // Put the stub back if the original can't take its place.
-    auto const restore = [&](LibCError const &error) -> Error<StorageError> {
-        std::error_code restore_ec { };
-        fs::rename(kept, stub_fit, restore_ec);
-        if (restore_ec) {
-            warning(Storage, "Couldn't put `{}` back: {}", stub_fit.string(), LibCError { restore_ec }.to_string());
-        }
-        return std::unexpected(StorageError { error });
-    };
-    if (auto const taken = path_exists(original); !taken || *taken) {
-        return restore(taken ? LibCError { "`{}` already exists", original.string() } : taken.error());
-    }
-    if (auto const written = write_file_atomically(original, fit); !written) {
-        return restore(written.error());
-    }
+    TRY(swap_in(fit_of(stub.sidecar), kept, original, fit));
 
     // The original is in place: the sidecar is worth a warning at most.
     if (stub.start != start && path_exists(stub.sidecar).value_or(false)) {
@@ -133,6 +180,7 @@ Error<StorageError> replace_stub(Storage const &storage, StoredStart const &stub
             warning(Storage, "Leaving sidecar `{}`: `{}` is there", stub.sidecar.string(), sidecar.string());
             return { };
         }
+        std::error_code ec { };
         fs::rename(stub.sidecar, sidecar, ec);
         if (ec) {
             warning(Storage, "Couldn't move sidecar `{}`: {}", stub.sidecar.string(), LibCError { ec }.to_string());
@@ -155,6 +203,11 @@ Error<StorageError> replace_stub(Storage const &storage, StoredStart const &stub
         warning(Storage, "Couldn't update sidecar `{}`: {}", sidecar.string(), updated.error().to_string());
     }
     return { };
+}
+
+Error<StorageError> replace_in_place(fs::path const &stored, std::string_view fit)
+{
+    return swap_in(stored, fs::path { stored } += StubSuffix, stored, fit);
 }
 
 }

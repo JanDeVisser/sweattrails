@@ -6,7 +6,8 @@
  * Activities that are only a summary: a FIT file without records, made by
  * a program from the totals, not by the device. The store replaces them
  * with their real recordings when those come in. See
- * specs/50-stub-activities.md.
+ * specs/50-stub-activities.md. Also replaces a rewrite that kept the
+ * records but lost the track: see specs/55-tracks-from-strava.md.
  */
 
 #pragma once
@@ -18,6 +19,7 @@
 #include <JSON.h>
 
 #include <fit/FIT.h>
+#include <storage/Recordings.h>
 #include <storage/Storage.h>
 
 namespace ST {
@@ -29,6 +31,25 @@ constexpr std::string_view StubSuffix = ".stub";
 // so a real recording is quick.
 std::expected<bool, FITError> is_stub(std::string_view fit);
 StorageResult<bool>           is_stub_file(fs::path const &fit);
+
+// What a FIT file has, as far as replacing it goes.
+struct Recorded {
+    bool records { false };
+    bool positions { false }; // A record with a position
+    bool serial { false };    // file_id's or a device_info's serial number
+
+    // A program's rewrite that kept the records but lost the track: a
+    // device's own recording has a serial number.
+    [[nodiscard]] bool lost_track() const { return records && !positions && !serial; }
+};
+
+// What `fit` has. Reads until the first record with a position, so a file
+// without a track is read to the end.
+std::expected<Recorded, FITError> what_is_recorded(std::string_view fit);
+
+// Whether `original` is the recording the rewrite `rewrite` lost the track
+// of: the same start second, and distances within SameRecordingDistance.
+[[nodiscard]] bool lost_track_of(RecordingInfo const &rewrite, RecordingInfo const &original);
 
 // What the store has where an activity starting at `start`, a Unix time,
 // would go.
@@ -60,5 +81,12 @@ struct Slot {
 // doesn't have. Nothing is overwritten: if the stub's file can't be kept,
 // or the original can't be written, the store is as it was.
 Error<StorageError> replace_stub(Storage const &storage, StoredStart const &stub, std::string_view fit, i64 start, std::optional<JSONValue> const &incoming = { });
+
+// Replaces the FIT file `stored`, a listed activity's or a recording's in
+// a folder, with `fit`, which starts in the same second: `stored` is kept
+// next to it as `<stored>.stub`, and the sidecar stays as it is. Nothing
+// is overwritten: if `stored` can't be kept, or `fit` can't be written,
+// the store is as it was.
+Error<StorageError> replace_in_place(fs::path const &stored, std::string_view fit);
 
 }
