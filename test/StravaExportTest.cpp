@@ -774,6 +774,13 @@ void test_message()
     CHECK_EQ((ExportImport { .stubs = { .unreadable = 1 } }).message(),
         "Strava's export has none of the descriptions missing here. 1 activity that's only a summary has a GPX or TCX file, which SweatTrails can't read.");
 
+    // The rewrites that lost their track.
+    CHECK_EQ((ExportImport { .stubs = { .replaced = 1, .tracks = 24 } }).message(),
+        "Strava's export has none of the descriptions missing here. Replaced 1 activity that was only a summary with its recording. "
+        "24 activities got their map back from Strava's files.");
+    CHECK_EQ((ExportImport { .stubs = { .tracks = 1 } }).message(),
+        "Strava's export has none of the descriptions missing here. 1 activity got its map back from Strava's file.");
+
     // The activities the store didn't have.
     CHECK_EQ((ExportImport {
                   .descriptions = 1,

@@ -125,6 +125,10 @@ std::string ExportImport::message() const
             count_of(stubs.replaced, "activity", "activities"), stubs.replaced == 1 ? "was" : "were",
             stubs.replaced == 1 ? "its" : "their", stubs.replaced == 1 ? "" : "s");
     }
+    if (stubs.tracks > 0) {
+        ret += std::format(" {} map back from Strava's file{}.", count_of(stubs.tracks, "activity got its", "activities got their"),
+            stubs.tracks == 1 ? "" : "s");
+    }
     ret += missing_message(missing);
     ret += moved_message(missing);
     auto const unreadable = stubs.unreadable + missing.unreadable;

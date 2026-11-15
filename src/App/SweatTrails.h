@@ -254,7 +254,7 @@ struct ActivityDeleted {
 // The steps of the ImportStravaExport job, in order.
 enum class ImportStep {
     Descriptions,
-    Stubs,      // Replacing the activities that are only a summary
+    Stubs,      // Replacing stubs, and rewrites that lost their track
     Activities, // Adding those the store doesn't have, through the inbox
 };
 
@@ -284,7 +284,9 @@ struct DescribingPaused {
 
 // Sent when activities that were only a summary got their recordings, by
 // the inbox or Strava's export: the stubs' start times, and the
-// recordings'. See specs/50-stub-activities.md.
+// recordings'. See specs/50-stub-activities.md. Also when Strava's export
+// gave activities their track back, with the same start twice: see
+// specs/55-tracks-from-strava.md.
 struct StubsReplaced {
     std::vector<std::pair<i64, i64>> moved { };
 };
