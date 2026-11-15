@@ -432,6 +432,94 @@ void test_inbox_bad_sidecar()
     CHECK_EQ(json_at(sidecar_at(store, 0)).try_get<std::string>("title").value_or(""), "Mine");
 }
 
+// A recording as spec 55's rewrites are: records of heart rate, no
+// positions, no serial number.
+std::string rewrite_fit(Test::TestRecording recording = { })
+{
+    recording.distance = 63100;
+    return Test::recording_fit(recording);
+}
+
+void test_what_is_recorded()
+{
+    auto const recorded = [](std::string_view fit) { return what_is_recorded(fit).value_or(Recorded { .positions = true }); };
+    auto const rewrite = recorded(rewrite_fit());
+    CHECK(rewrite.records);
+    CHECK(!rewrite.positions);
+    CHECK(!rewrite.serial);
+    CHECK(rewrite.lost_track());
+
+    auto const with_track = recorded(rewrite_fit({ .positions = true }));
+    CHECK(with_track.positions);
+    CHECK(!with_track.lost_track());
+
+    auto const device = recorded(rewrite_fit({ .serial = 3412345678 }));
+    CHECK(device.serial);
+    CHECK(!device.lost_track());
+
+    auto const sensor = recorded(rewrite_fit({ .device_serial = 123456 }));
+    CHECK(sensor.serial);
+    CHECK(!sensor.lost_track());
+
+    auto const stub = recorded(stub_fit());
+    CHECK(!stub.records);
+    CHECK(!stub.lost_track());
+
+    CHECK(!what_is_recorded("not a FIT file").has_value());
+}
+
+void test_lost_track_of()
+{
+    RecordingInfo const rewrite { .start = 1747224577, .distance = 63100 };
+    auto const          original = [](i64 start, float32 distance) { return RecordingInfo { .start = start, .distance = distance }; };
+    CHECK(lost_track_of(rewrite, original(1747224577, 63100)));
+    CHECK(lost_track_of(rewrite, original(1747224577, 63100 * 1.005f)));
+    CHECK(lost_track_of(rewrite, original(1747224577, 63100 * 0.995f)));
+    CHECK(!lost_track_of(rewrite, original(1747224577, 63100 * 1.006f)));
+    CHECK(!lost_track_of(rewrite, original(1747224577, 63100 * 0.994f)));
+    CHECK(!lost_track_of(rewrite, original(1747224578, 63100)));
+    CHECK(!lost_track_of(rewrite, original(1747224576, 63100)));
+}
+
+void test_replace_in_place()
+{
+    Test::TempStore store;
+    auto const      sidecar = R"({ "strava": { "id": 14666148179, "name": "Tour de La Haye" } })";
+    file(store, 0, rewrite_fit(), sidecar);
+    auto const track = rewrite_fit({ .manufacturer = 1, .serial = 3412345678, .positions = true });
+    CHECK(replace_in_place(fit_at(store, 0), track).has_value());
+    CHECK_EQ(contents(fit_at(store, 0)), track);
+    CHECK_EQ(contents(fit_at(store, 0, ".stub")), rewrite_fit());
+    CHECK_EQ(contents(sidecar_at(store, 0)), sidecar);
+}
+
+void test_replace_in_place_in_folder()
+{
+    Test::TempStore store;
+    file(store, 0, recorded_fit());
+    auto const folder = recordings_dir(fit_at(store, 0));
+    fs::create_directories(folder);
+    auto const recording = folder / std::format("{}.fit", unix_start(20));
+    MUST(write_file_by_name(recording.string(), std::string_view { rewrite_fit({ .start = 20 }) }));
+    auto const track = rewrite_fit({ .start = 20, .positions = true });
+    CHECK(replace_in_place(recording, track).has_value());
+    CHECK_EQ(contents(recording), track);
+    CHECK_EQ(contents(fs::path { recording } += ".stub"), rewrite_fit({ .start = 20 }));
+    CHECK_EQ(contents(fit_at(store, 0)), recorded_fit());
+}
+
+void test_replace_in_place_never_overwrites()
+{
+    Test::TempStore store;
+    file(store, 0, rewrite_fit());
+    MUST(write_file_by_name(fit_at(store, 0, ".stub").string(), std::string_view { "kept before" }));
+    CHECK(!replace_in_place(fit_at(store, 0), recorded_fit()).has_value());
+    CHECK_EQ(contents(fit_at(store, 0)), rewrite_fit());
+    CHECK_EQ(contents(fit_at(store, 0, ".stub")), "kept before");
+    CHECK(!replace_in_place(fit_at(store, 1), recorded_fit()).has_value());
+    CHECK(!fs::exists(fit_at(store, 1)));
+}
+
 }
 
 int main()
@@ -460,5 +548,10 @@ int main()
     test_inbox_bad_sidecar();
     test_replace_across_months();
     test_replace_sidecar_in_the_way();
+    test_what_is_recorded();
+    test_lost_track_of();
+    test_replace_in_place();
+    test_replace_in_place_in_folder();
+    test_replace_in_place_never_overwrites();
     return ST::Test::test_result();
 }

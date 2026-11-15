@@ -241,11 +241,13 @@ inline std::string summary_fit(u32 start = 0)
 
 // A recording as a test of recordings needs it: who made it, the
 // device's serial number (0 for none, as Zwift's and rewritten files
-// have), when it starts after Start, how long and how far it is, and
-// whether its records have positions.
+// have), a sensor's serial number in a device_info (0 for none), when it
+// starts after Start, how long and how far it is, and whether its records
+// have positions.
 struct TestRecording {
     u16  manufacturer { 32 };
     u32  serial { 0 };
+    u32  device_serial { 0 };
     u32  start { 0 };
     u32  count { 600 };
     u32  distance { 0 }; // m
@@ -272,6 +274,16 @@ inline std::string recording_fit(TestRecording const &recording)
     fit.u32_le(Start); // Created
     if (recording.serial != 0) {
         fit.u32_le(recording.serial);
+    }
+    if (recording.device_serial != 0) {
+        fit.definition(6, 23,
+            {
+                { .num = 0, .size = 1, .base_type = Uint8 },
+                { .num = 3, .size = 4, .base_type = Uint32z },
+            });
+        fit.message(6);
+        fit.byte(1); // A sensor, not the device itself
+        fit.u32_le(recording.device_serial);
     }
 
     std::vector<FieldDefinition> record_fields {
