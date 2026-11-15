@@ -172,6 +172,30 @@ main one's). The progress counts stubs and candidates together.
 - By hand: the import on a copy of Jan's store with his export: 24
   replaced, the Hague ride with its map.
 
+### Changed while building
+
+- `what_is_recorded()` reads until the first position, not until it has
+  a serial and a record: Strava's file has to say whether it has a
+  track, and a device's first records have no position until GPS has a
+  fix. Found in the trial run below.
+
+### Trial run on a copy of Jan's store
+
+With a scratch driver (not committed) running `import_originals()` on a
+copy of the store, with Jan's export of 2026-11-15:
+
+- First 13 replaced, not 24: `what_is_recorded()` stopped at the first
+  record of Strava's files once it had their serial, and 11 had no fix
+  there. Fixed in 47c509f, with a test that fails against the old code.
+- Then 24 replaced, the Hague ride (`2025/05/1747224577.fit`, now
+  278,937 bytes, the rewrite kept as `.fit.stub`) and the recording in
+  `2025/05/1746555280.recordings` among them. `1747031344.fit`, without
+  a Strava ID, is left alone. A second import replaces nothing.
+- 259 candidates the first time, 235 the second: the other files with
+  records, no positions and no serial that have a Strava ID, such as
+  pool swims and treadmill runs. Strava's file of each is read every
+  time; the step takes 11 to 15 s in a debug build.
+
 ## Review notes
 
 No bugs found; the full test run passes (78 of 78).
@@ -194,3 +218,16 @@ No bugs found; the full test run passes (78 of 78).
 4. Suggestion: `job_import_strava_export()` calls `update_summaries()` once
    for `moved` and once for `retracked` when both are there; one call after
    both would do.
+
+### Resolved, with Jan
+
+1. Kept: the Reviewer's test, in 3c145c9.
+2. No change: `read_fit()` already logs "Not using `<file>`: <why>" when
+   it can't read Strava's file, so a second warning would repeat it.
+3. Left as it is, as the Reviewer says. Since 47c509f,
+   `what_is_recorded()` reads until the first position, so a serial in
+   a later `device_info` is seen anyway.
+4. Fixed in d8672a5: the summaries are updated once.
+
+Found in the trial run, after the review: the early stop in
+`what_is_recorded()`, fixed in 47c509f (see "Trial run" above).
