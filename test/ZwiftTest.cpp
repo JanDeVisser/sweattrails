@@ -53,9 +53,9 @@ void test_shipped_worlds()
     CHECK_EQ(box.east(), 167.03255f);
     CHECK(!watopia.turned);
 
-    // Zwift's France and Makuri Islands have north to the right.
+    // Zwift's France, Makuri Islands and Scotland have north to the right.
     for (auto const &world : *worlds) {
-        CHECK_EQ(world.turned, world.name == "France" || world.name == "Makuri Islands");
+        CHECK_EQ(world.turned, world.name == "France" || world.name == "Makuri Islands" || world.name == "Scotland");
     }
     auto const makuri = std::ranges::find(*worlds, "Makuri Islands", &ZwiftWorld::name);
     CHECK(makuri != worlds->end());

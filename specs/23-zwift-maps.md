@@ -78,7 +78,8 @@ ride never went down.
   worlds have `"turn": "ccw"`: the image is turned counter-clockwise
   before it's cut, and its tiles are cached as `<image>_ccw`. The corners
   are those of the turned image. The sea is still the image's top left
-  pixel before turning.
+  pixel before turning. *(Later still.)* Scotland's image is turned the
+  same way.
 - A downloaded image is cached with the map tiles, and used from the
   cache from then on, as a tile is. A world whose image changes gets a
   new URL in the JSON, and so a new download.
