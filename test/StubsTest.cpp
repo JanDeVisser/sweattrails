@@ -461,6 +461,12 @@ void test_what_is_recorded()
     CHECK(sensor.serial);
     CHECK(!sensor.lost_track());
 
+    // A device's file finds its positions after its serial number, once GPS
+    // has a fix.
+    auto const late_fix = recorded(rewrite_fit({ .serial = 3412345678, .positions = true, .positions_from = 30 }));
+    CHECK(late_fix.positions);
+    CHECK(late_fix.serial);
+
     auto const stub = recorded(stub_fit());
     CHECK(!stub.records);
     CHECK(!stub.lost_track());

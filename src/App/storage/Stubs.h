@@ -43,8 +43,8 @@ struct Recorded {
     [[nodiscard]] bool lost_track() const { return records && !positions && !serial; }
 };
 
-// What `fit` has. Reads until that's known, so most files stop at their
-// first record with a position.
+// What `fit` has. Reads until the first record with a position, so a file
+// without a track is read to the end.
 std::expected<Recorded, FITError> what_is_recorded(std::string_view fit);
 
 // Whether `original` is the recording the rewrite `rewrite` lost the track

@@ -128,8 +128,9 @@ std::expected<Recorded, FITError> what_is_recorded(std::string_view fit)
         } else if (rec.mesg_num == mesg_num::file_id || rec.mesg_num == mesg_num::device_info) {
             ret.serial = ret.serial || has_serial(rec);
         }
-        // Stop once it's known whether it lost its track.
-        return ret.positions || (ret.records && ret.serial);
+        // A device's file with a serial has no positions until GPS has a
+        // fix, so only a position ends it.
+        return ret.positions;
     }));
     return ret;
 }
