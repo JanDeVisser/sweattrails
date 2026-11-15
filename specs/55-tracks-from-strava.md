@@ -174,4 +174,23 @@ main one's). The progress counts stubs and candidates together.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+No bugs found; the full test run passes (78 of 78).
+
+1. Missing test (added): `test_import_tracks_mixed` in
+   `test/StravaExportTest.cpp`. A main file and its folder recording that
+   both lost their track give `tracks` 2 and one `retracked` entry; a
+   recording in a folder without a sidecar of its own isn't looked at; a
+   `.stub` in the way leaves the file as it was and isn't counted; a stub
+   next to rewrites is replaced; a rewrite whose Strava file is GPX isn't
+   counted in the progress (4 steps for 4 candidates).
+2. Suggestion: `replace_track()` in `StravaExport.cpp` returns without a
+   warning when Strava's file can't be read (`read_fit()` fails), unlike its
+   other skips, so such a candidate is invisible in the log.
+3. Suggestion: `what_is_recorded()` stops at the first record once a serial
+   is known, and otherwise keeps reading. A rewrite whose `device_info` with
+   a serial comes after its first record, with no serial in `file_id`, would
+   count as lost-track. FIT puts `device_info` before the records, and the
+   stored file is kept as `.stub`, so it's undoable; fine as is.
+4. Suggestion: `job_import_strava_export()` calls `update_summaries()` once
+   for `moved` and once for `retracked` when both are there; one call after
+   both would do.
