@@ -744,7 +744,6 @@ void SweatTrails::job_import_strava_export(Job::Payload const &data)
         if (!groups.empty()) {
             the->notify<NotificationType::RecordingsGrouped>(RecordingsGrouped { .groups = std::move(groups) });
         }
-        the->update_summaries();
     }
     if (!stubs->retracked.empty()) {
         // The same start, so the activity on display is loaded again.
@@ -753,6 +752,8 @@ void SweatTrails::job_import_strava_export(Job::Payload const &data)
             retracked.moved.emplace_back(start, start);
         }
         the->notify<NotificationType::StubsReplaced>(std::move(retracked));
+    }
+    if (!stubs->moved.empty() || !stubs->retracked.empty()) {
         the->update_summaries();
     }
     imported->stubs = std::move(*stubs);
