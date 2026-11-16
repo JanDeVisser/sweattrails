@@ -188,6 +188,32 @@ struct Lap {
     Segment     segment { };
 };
 
+// A session of a multisport FIT file: a leg of a triathlon, or a
+// transition between two. See specs/56-multisport.md.
+struct Leg {
+    std::optional<FIT::sport>     sport { };
+    std::optional<FIT::sub_sport> sub_sport { };
+    // From the session; on a deep load, the rest from its records.
+    Segment segment { };
+    // Its records are Activity::records[first_record, end_record): from
+    // its start up to the next leg's.
+    size_t first_record { 0 };
+    size_t end_record { 0 };
+    // The session's laps in the FIT file's, if it says.
+    std::optional<u16> first_lap_index { };
+    std::optional<u16> num_laps { };
+    // The device's laps in it, with their records in Activity::records.
+    std::vector<Lap> laps { };
+};
+
+// Which leg an activity shown on a leg's tab is: its name, and its
+// number among the legs that aren't transitions, of how many.
+struct LegShown {
+    std::string name { };
+    size_t      number { 0 };
+    size_t      count { 0 };
+};
+
 // The folder of a main recording's others, `<start>.recordings/` next to
 // it, and the FIT files in it, by name, which is by start.
 constexpr std::string_view          RecordingsSuffix = ".recordings";
@@ -229,6 +255,11 @@ struct Activity {
     // The starts of the laps the user made, after the first: nothing for
     // the device's laps.
     std::optional<std::vector<i64>> user_lap_starts { };
+    // The FIT file's sessions, one for most. With more, it's a multisport
+    // activity, and its device laps are the legs.
+    std::vector<Leg> legs { };
+    // Set on one leg of a multisport activity, shown on its own tab.
+    std::optional<LegShown> leg { };
 
     // Local time minus UTC in seconds, from the FIT activity message. Empty
     // if the file doesn't record the local time.
@@ -268,6 +299,11 @@ struct Activity {
     StorageResult<bool> load_from_file(fs::path const &file);
     StorageResult<bool> load_from_slice(std::string_view const &buffer);
 
+    [[nodiscard]] bool is_multisport() const
+    {
+        return legs.size() > 1;
+    }
+
     // Whether, loaded deep, it's only a summary: a FIT file without
     // records (storage/Stubs.h), without a track or graphs.
     [[nodiscard]] bool is_stub() const
@@ -297,6 +333,7 @@ struct Activity {
 
 private:
     Error<StorageError> analyze();
+    void                take_legs();
     bool                load_fit_file_filter(FITDataRecord const &rec);
     StorageResult<bool> load_fit_file(FITFile &fit_file);
     StorageResult<bool> load_fit_file_by_name(fs::path const &file);

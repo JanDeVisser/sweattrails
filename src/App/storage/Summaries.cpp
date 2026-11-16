@@ -17,6 +17,7 @@
 #include <StringUtil.h>
 
 #include <storage/Activity.h>
+#include <storage/Legs.h>
 #include <storage/PaceCurve.h>
 #include <storage/PowerCurve.h>
 #include <storage/Storage.h>
@@ -224,12 +225,16 @@ ActivitySummary read_summary(Storage &storage, SummaryFile const &file)
         warning(Storage, "No summary of `{}`: {}", path.string(), loaded ? "it isn't an activity" : loaded.error().to_string());
         return ret;
     }
-    ret.start = activity.segment.start_time.timestamp;
-    ret.sport = activity.sport;
-    ret.sub_sport = activity.sub_sport;
-    ret.distance = activity.segment.distance;
-    ret.moving = activity.segment.moving.elapsed;
-    ret.ascent = activity.segment.total_ascent.value_or(0);
+    // A multisport activity counts as its last leg, as it did before it
+    // loaded as multisport, until the summaries count each leg: see
+    // specs/56-multisport.md.
+    auto const &counted = activity.is_multisport() ? activity.legs.back().segment : activity.segment;
+    ret.start = filing_start(activity).timestamp;
+    ret.sport = activity.is_multisport() ? activity.legs.back().sport : activity.sport;
+    ret.sub_sport = activity.is_multisport() ? activity.legs.back().sub_sport : activity.sub_sport;
+    ret.distance = counted.distance;
+    ret.moving = counted.moving.elapsed;
+    ret.ascent = counted.total_ascent.value_or(0);
     if (auto const &np = activity.segment.computed_normalized_range.range; np && np->normalized > 0) {
         ret.np = np->normalized;
     }

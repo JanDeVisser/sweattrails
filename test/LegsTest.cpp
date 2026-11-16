@@ -1,0 +1,367 @@
+/*
+ * Copyright (c) 2026, Jan de Visser <jan@finiandarcy.com>
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Tests loading a multisport FIT file, one session per leg, and showing a
+ * leg as an activity of its own: see specs/56-multisport.md.
+ */
+
+#include <filesystem>
+#include <format>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include <IO.h>
+
+#include <storage/Activity.h>
+#include <storage/Legs.h>
+#include <storage/Storage.h>
+
+#include <TempStore.h>
+#include <TestApp.h>
+#include <TestFit.h>
+
+using namespace ST;
+using namespace ST::Test;
+
+namespace fs = std::filesystem;
+
+namespace {
+
+constexpr u8 Running = 1;
+constexpr u8 Cycling = 2;
+constexpr u8 Transition = 3;
+constexpr u8 Swimming = 5;
+constexpr u8 Generic = 0;
+constexpr u8 Walking = 11;
+
+i64 unix_start(u32 offset = 0)
+{
+    return static_cast<i64>(Start) + DateTime::FIT_TIMESTAMP_OFFSET + offset;
+}
+
+// A leg's session: its sport, when it starts after Start, how long, how
+// far, its ascent, and, if given, which of the file's laps are its.
+struct TestLeg {
+    u8                 sport { Running };
+    u32                start { 0 };
+    u32                count { 600 };
+    u32                distance { 0 }; // m
+    u16                ascent { 0 };
+    std::optional<u16> first_lap { };
+    std::optional<u16> laps { };
+};
+
+void add_leg(FITBuilder &fit, TestLeg const &leg)
+{
+    fit.definition(0, 18,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 2, .size = 4, .base_type = Uint32 },
+            { .num = 5, .size = 1, .base_type = Enum },
+            { .num = 7, .size = 4, .base_type = Uint32 },
+            { .num = 8, .size = 4, .base_type = Uint32 },
+            { .num = 9, .size = 4, .base_type = Uint32 },
+            { .num = 22, .size = 2, .base_type = Uint16 },
+            { .num = 25, .size = 2, .base_type = Uint16 },
+            { .num = 26, .size = 2, .base_type = Uint16 },
+        });
+    fit.message(0);
+    fit.u32_le(Start + leg.start + leg.count);
+    fit.u32_le(Start + leg.start);
+    fit.byte(leg.sport);
+    fit.u32_le(leg.count * 1000);
+    fit.u32_le(leg.count * 1000);
+    fit.u32_le(leg.distance * 100);
+    fit.u16_le(leg.ascent);
+    // 0xFFFF: FIT's invalid value, as a device that doesn't say writes it.
+    fit.u16_le(leg.first_lap.value_or(0xFFFF));
+    fit.u16_le(leg.laps.value_or(0xFFFF));
+}
+
+void add_lap(FITBuilder &fit, u32 start, u32 count)
+{
+    fit.definition(1, 19,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 2, .size = 4, .base_type = Uint32 },
+            { .num = 7, .size = 4, .base_type = Uint32 },
+            { .num = 8, .size = 4, .base_type = Uint32 },
+        });
+    fit.message(1);
+    fit.u32_le(Start + start + count);
+    fit.u32_le(Start + start);
+    fit.u32_le(count * 1000);
+    fit.u32_le(count * 1000);
+}
+
+// A triathlon of 2400 s with a record a second: swim 0-600 s in two laps,
+// T1 600-660, bike 660-1800 in two laps, T2 1800-1830, run 1830-2400. The
+// sessions come last, as a Garmin writes them, and say which laps are
+// theirs if `lap_index`.
+std::string triathlon(bool lap_index = true)
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    add_records(fit, 2400, 120, 200);
+    add_lap(fit, 0, 300);
+    add_lap(fit, 300, 300);
+    add_lap(fit, 600, 60);
+    add_lap(fit, 660, 540);
+    add_lap(fit, 1200, 600);
+    add_lap(fit, 1800, 30);
+    add_lap(fit, 1830, 570);
+    auto const laps = [lap_index](u16 first, u16 count) {
+        return lap_index ? std::pair { std::optional<u16> { first }, std::optional<u16> { count } } : std::pair<std::optional<u16>, std::optional<u16>> { };
+    };
+    auto const leg = [&fit, &laps](u8 sport, u32 start, u32 count, u32 distance, u16 ascent, u16 first, u16 lap_count) {
+        auto const [first_lap, num_laps] = laps(first, lap_count);
+        add_leg(fit, TestLeg { .sport = sport, .start = start, .count = count, .distance = distance, .ascent = ascent, .first_lap = first_lap, .laps = num_laps });
+    };
+    leg(Swimming, 0, 600, 1000, 0, 0, 2);
+    leg(Transition, 600, 60, 100, 0, 2, 1);
+    leg(Cycling, 660, 1140, 10000, 50, 3, 2);
+    leg(Transition, 1800, 30, 50, 0, 5, 1);
+    leg(Running, 1830, 570, 2000, 10, 6, 1);
+    return fit.file();
+}
+
+struct Loaded {
+    Storage  storage { };
+    Activity activity { storage, ActivityID::dummy(ActivityFile::Fit) };
+    bool     loaded { false };
+
+    explicit Loaded(std::string const &file, LoadingDepth depth = LoadingDepth::Deep)
+    {
+        activity.depth = depth;
+        auto const res = activity.load_from_slice(file);
+        loaded = res.has_value() && *res;
+    }
+};
+
+void test_triathlon_is_one_multisport_activity()
+{
+    Loaded t { triathlon() };
+    CHECK(t.loaded);
+    auto const &a = t.activity;
+    CHECK(a.is_multisport());
+    CHECK(a.sport == FIT::sport::Multisport);
+    CHECK(!a.sub_sport);
+    CHECK_EQ(a.legs.size(), 5uz);
+    CHECK_EQ(static_cast<i64>(a.segment.start_time.timestamp), unix_start());
+    CHECK_EQ(static_cast<i64>(a.segment.end_time.timestamp), unix_start(2400));
+    CHECK_EQ(a.segment.distance, 13150.0f);
+    CHECK_EQ(a.segment.elapsed.elapsed, 2400u);
+    CHECK_EQ(a.segment.moving.elapsed, 2400u);
+    CHECK(a.segment.total_ascent == std::optional<u16> { 60 });
+    std::vector<std::optional<FIT::sport>> sports;
+    for (auto const &leg : a.legs) {
+        sports.push_back(leg.sport);
+    }
+    CHECK(sports == (std::vector<std::optional<FIT::sport>> { FIT::sport::Swimming, FIT::sport::Transition, FIT::sport::Cycling, FIT::sport::Transition, FIT::sport::Running }));
+}
+
+// The month's list loads it shallow: it's a multisport activity there too,
+// for the icon.
+void test_shallow_load_is_multisport()
+{
+    Loaded t { triathlon(), LoadingDepth::Shallow };
+    CHECK(t.loaded);
+    CHECK(t.activity.sport == FIT::sport::Multisport);
+    CHECK_EQ(t.activity.segment.distance, 13150.0f);
+    CHECK(t.activity.laps.empty());
+}
+
+void test_legs_have_their_records()
+{
+    Loaded                                 t { triathlon() };
+    auto const                            &legs = t.activity.legs;
+    std::vector<std::pair<size_t, size_t>> records;
+    for (auto const &leg : legs) {
+        records.emplace_back(leg.first_record, leg.end_record);
+    }
+    CHECK(records == (std::vector<std::pair<size_t, size_t>> { { 0, 600 }, { 600, 660 }, { 660, 1800 }, { 1800, 1830 }, { 1830, 2400 } }));
+    // Their stats come from their records.
+    CHECK(legs[2].segment.computed_power_range.range.has_value());
+    CHECK(legs[2].segment.hr_load.has_value());
+}
+
+void check_leg_laps(Activity const &a)
+{
+    std::vector<size_t> counts;
+    for (auto const &leg : a.legs) {
+        counts.push_back(leg.laps.size());
+    }
+    CHECK(counts == (std::vector<size_t> { 2, 1, 2, 1, 1 }));
+    CHECK_EQ(static_cast<i64>(a.legs[2].laps[1].segment.start_time.timestamp), unix_start(1200));
+    CHECK_EQ(a.legs[2].laps[1].first_record, 1200uz);
+}
+
+void test_legs_have_their_laps_by_index()
+{
+    Loaded t { triathlon(true) };
+    check_leg_laps(t.activity);
+}
+
+void test_legs_have_the_laps_starting_in_them_without_an_index()
+{
+    Loaded t { triathlon(false) };
+    check_leg_laps(t.activity);
+}
+
+void test_whole_laps_are_the_legs()
+{
+    Loaded                   t { triathlon() };
+    auto const              &a = t.activity;
+    std::vector<std::string> titles;
+    for (auto const &lap : a.laps) {
+        titles.push_back(lap.title);
+    }
+    CHECK(titles == (std::vector<std::string> { "Swim", "T1", "Bike", "T2", "Run" }));
+    CHECK_EQ(a.laps[2].first_record, 660uz);
+    CHECK_EQ(a.laps[2].end_record, 1800uz);
+    CHECK_EQ(a.laps[2].segment.distance, 10000.0f);
+    // They're the device's laps, which the user's replace and come back to.
+    CHECK_EQ(a.device_laps.size(), 5uz);
+    CHECK(a.lap_starts() == (std::vector<i64> { unix_start(600), unix_start(660), unix_start(1800), unix_start(1830) }));
+}
+
+void test_brick_without_transitions_is_multisport()
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    add_records(fit, 1200, 120, 200);
+    add_leg(fit, TestLeg { .sport = Cycling, .start = 0, .count = 900, .distance = 8000 });
+    add_leg(fit, TestLeg { .sport = Running, .start = 900, .count = 300, .distance = 1000 });
+    Loaded t { fit.file() };
+    CHECK(t.activity.is_multisport());
+    CHECK(t.activity.sport == FIT::sport::Multisport);
+    CHECK(leg_tabs(t.activity) == (std::vector<size_t> { 0, 1 }));
+}
+
+void test_one_session_is_no_multisport()
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    add_records(fit, 600, 120, 200);
+    add_lap(fit, 0, 300);
+    add_lap(fit, 300, 300);
+    add_leg(fit, TestLeg { .sport = Cycling, .start = 0, .count = 600, .distance = 5000, .ascent = 20 });
+    Loaded      t { fit.file() };
+    auto const &a = t.activity;
+    CHECK(!a.is_multisport());
+    CHECK(a.sport == FIT::sport::Cycling);
+    CHECK_EQ(a.segment.distance, 5000.0f);
+    CHECK(a.segment.total_ascent == std::optional<u16> { 20 });
+    CHECK_EQ(a.laps.size(), 2uz);
+    CHECK(a.laps[0].title.empty());
+    CHECK_EQ(static_cast<i64>(filing_start(a).timestamp), unix_start());
+}
+
+void test_leg_names()
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    add_leg(fit, TestLeg { .sport = Running, .start = 0, .count = 300 });
+    add_leg(fit, TestLeg { .sport = Generic, .start = 300, .count = 180 });
+    add_leg(fit, TestLeg { .sport = Transition, .start = 480, .count = 20 });
+    add_leg(fit, TestLeg { .sport = Walking, .start = 500, .count = 300 });
+    add_leg(fit, TestLeg { .sport = Transition, .start = 800, .count = 20 });
+    add_leg(fit, TestLeg { .sport = Swimming, .start = 820, .count = 300 });
+    Loaded                   t { fit.file() };
+    std::vector<std::string> names;
+    for (size_t ix = 0; ix < t.activity.legs.size(); ++ix) {
+        names.push_back(leg_name(t.activity, ix));
+    }
+    CHECK(names == (std::vector<std::string> { "Run", "Other", "T1", "Walking", "T2", "Swim" }));
+}
+
+void test_tabs_leave_out_transitions()
+{
+    Loaded t { triathlon() };
+    CHECK(leg_tabs(t.activity) == (std::vector<size_t> { 0, 2, 4 }));
+}
+
+void test_leg_activity()
+{
+    Loaded t { triathlon() };
+    t.activity.title = "IM Test";
+    t.activity.notes = "Hot";
+    auto const bike = leg_activity(t.activity, 2);
+    CHECK(bike.sport == FIT::sport::Cycling);
+    CHECK(!bike.is_multisport());
+    CHECK(bike.legs.empty());
+    CHECK_EQ(bike.title, "IM Test");
+    CHECK_EQ(bike.notes, "Hot");
+    CHECK_EQ(bike.segment.distance, 10000.0f);
+    CHECK_EQ(bike.segment.elapsed.elapsed, 1140u);
+    CHECK_EQ(static_cast<i64>(bike.segment.start_time.timestamp), unix_start(660));
+    CHECK_EQ(bike.records.size(), 1140uz);
+    CHECK_EQ(bike.recorded.size(), 1140uz);
+    CHECK_EQ(static_cast<i64>(bike.recorded.front().timestamp.timestamp), unix_start(660));
+    CHECK_EQ(bike.laps.size(), 2uz);
+    CHECK_EQ(bike.laps[0].first_record, 0uz);
+    CHECK_EQ(bike.laps[0].end_record, 540uz);
+    CHECK_EQ(bike.laps[1].first_record, 540uz);
+    CHECK_EQ(bike.laps[1].end_record, 1140uz);
+    CHECK_EQ(bike.device_laps.size(), 2uz);
+    CHECK(!bike.user_lap_starts);
+    CHECK(bike.leg.has_value());
+    CHECK_EQ(bike.leg->name, "Bike");
+    CHECK_EQ(bike.leg->number, 2uz);
+    CHECK_EQ(bike.leg->count, 3uz);
+    // Laps the user made on Whole aren't the leg's.
+    t.activity.user_lap_starts = std::vector<i64> { unix_start(100) };
+    CHECK(!leg_activity(t.activity, 2).user_lap_starts);
+}
+
+// The last lap of a leg runs up to the next leg's first lap: the leg's
+// records cut it off.
+void test_leg_laps_stay_within_the_leg()
+{
+    Loaded     t { triathlon() };
+    auto const swim = leg_activity(t.activity, 0);
+    CHECK_EQ(swim.records.size(), 600uz);
+    for (auto const &lap : swim.laps) {
+        CHECK(lap.end_record <= swim.records.size());
+    }
+}
+
+void test_inbox_files_by_the_last_legs_start()
+{
+    TempStore store;
+    MUST(write_file_by_name((store.storage.inbox_dir / "race.fit").string(), std::string_view { triathlon() }));
+    std::optional<i64> filed_at;
+    auto const         filed = store.storage.process_inbox({ }, [&filed_at](std::string_view, Storage::InboxFiling const &filing) {
+        if (filing.filed()) {
+            filed_at = filing.start;
+        }
+    });
+    CHECK(filed.has_value());
+    CHECK(filed_at == std::optional<i64> { unix_start(1830) });
+    auto const date = DateTime::from_timestamp(static_cast<i32>(unix_start(1830)));
+    auto const dir = store.storage.activity_dir / std::format("{:04}/{:02}", static_cast<u16>(date.year), static_cast<u8>(date.month) + 1);
+    CHECK(fs::exists(dir / std::format("{}.fit", unix_start(1830))));
+}
+
+}
+
+int main()
+{
+    test_triathlon_is_one_multisport_activity();
+    test_shallow_load_is_multisport();
+    test_legs_have_their_records();
+    test_legs_have_their_laps_by_index();
+    test_legs_have_the_laps_starting_in_them_without_an_index();
+    test_whole_laps_are_the_legs();
+    test_brick_without_transitions_is_multisport();
+    test_one_session_is_no_multisport();
+    test_leg_names();
+    test_tabs_leave_out_transitions();
+    test_leg_activity();
+    test_leg_laps_stay_within_the_leg();
+    test_inbox_files_by_the_last_legs_start();
+    return test_result();
+}

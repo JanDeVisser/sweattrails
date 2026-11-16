@@ -58,7 +58,8 @@ struct RecordingInfo {
 [[nodiscard]] std::optional<RecordingInfo> recording_info(Storage &storage, std::string_view fit);
 
 // Whether two recordings are of one activity: the same sport, as the
-// totals count it, overlapping for most of the shorter one's time.
+// totals count it, overlapping for most of the shorter one's time. Never
+// for a multisport activity.
 [[nodiscard]] bool same_activity(RecordingInfo const &a, RecordingInfo const &b);
 
 // Whether two FIT files are one recording: the device's own file and a

@@ -240,6 +240,7 @@ add_executable(
         src/App/widget/SportIcon.cpp
         src/App/widget/Summaries.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Boundaries.cpp
         src/App/storage/Gaps.cpp
@@ -398,6 +399,7 @@ sweattrails_test(
         src/App/storage/Comparison.cpp
         src/App/widget/SportIcon.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -416,6 +418,7 @@ sweattrails_test(
         test/ZwiftTest.cpp
         src/App/Zwift.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -448,6 +451,7 @@ sweattrails_test(
         src/App/widget/DataFields.cpp
         src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -471,6 +475,7 @@ sweattrails_test(
         src/App/widget/DataFields.cpp
         src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -492,6 +497,7 @@ sweattrails_test(
         src/App/widget/DataFields.cpp
         src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -514,6 +520,7 @@ sweattrails_test(
         src/App/storage/Volume.cpp
         src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -533,6 +540,7 @@ sweattrails_test(
         src/App/overlay/Fields.cpp
         src/App/overlay/Template.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -553,6 +561,7 @@ sweattrails_test(
         src/App/overlay/Layout.cpp
         src/App/overlay/Template.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -574,6 +583,7 @@ sweattrails_test(
         src/App/overlay/Shapes.cpp
         src/App/overlay/Template.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -596,6 +606,7 @@ sweattrails_test(
         src/App/overlay/Shapes.cpp
         src/App/overlay/Template.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -618,6 +629,7 @@ sweattrails_test(
         src/App/overlay/Template.cpp
         src/App/overlay/TrackMap.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -649,6 +661,7 @@ sweattrails_test(
         src/App/overlay/LayoutFile.cpp
         src/App/overlay/Template.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -678,6 +691,7 @@ sweattrails_test(
         src/App/overlay/Template.cpp
         src/App/overlay/TrackMap.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -700,6 +714,7 @@ sweattrails_test(
         src/App/overlay/Render.cpp
         src/App/overlay/Template.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -720,6 +735,7 @@ sweattrails_test(
         src/App/overlay/Fields.cpp
         src/App/overlay/Render.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -753,6 +769,7 @@ sweattrails_test(
         src/App/storage/Boundaries.cpp
         src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -781,6 +798,7 @@ sweattrails_test(
         src/App/overlay/Template.cpp
         src/App/overlay/TrackMap.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -799,6 +817,7 @@ sweattrails_test(
         test/BoundariesTest.cpp
         src/App/storage/Boundaries.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -819,6 +838,7 @@ sweattrails_test(
         src/App/storage/Boundaries.cpp
         src/App/storage/Comparison.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -836,6 +856,7 @@ sweattrails_test(
         laps_test
         test/LapsTest.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -853,6 +874,7 @@ sweattrails_test(
         summaries_test
         test/SummariesTest.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -904,6 +926,7 @@ sweattrails_test(
         test/FITPatchTest.cpp
         src/App/fit/FITPatch.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -933,6 +956,7 @@ sweattrails_test(
         src/App/storage/PaceCurve.cpp
         src/App/storage/Volume.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -955,6 +979,7 @@ sweattrails_test(
         src/App/storage/PaceCurve.cpp
         src/App/storage/Volume.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -972,6 +997,7 @@ sweattrails_test(
         stubs_test
         test/StubsTest.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -991,6 +1017,7 @@ sweattrails_test(
         src/App/storage/Gaps.cpp
         src/App/fit/FITPatch.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -1003,6 +1030,24 @@ sweattrails_test(
 )
 target_include_directories(gaps_test PRIVATE src/App)
 target_link_libraries(gaps_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        legs_test
+        test/LegsTest.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
+        src/App/storage/Devices.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Stubs.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(legs_test PRIVATE src/App)
+target_link_libraries(legs_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         fitness_test
@@ -1024,6 +1069,7 @@ sweattrails_test(
         activity_load_test
         test/ActivityLoadTest.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -1050,6 +1096,7 @@ sweattrails_test(
         device_info_test
         test/DeviceInfoTest.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -1067,6 +1114,7 @@ sweattrails_test(
         activity_months_test
         test/ActivityMonthsTest.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -1094,6 +1142,7 @@ sweattrails_test(
         test/GarminTest.cpp
         src/App/storage/Garmin.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -1122,6 +1171,7 @@ sweattrails_test(
         test/WahooTest.cpp
         src/App/storage/Wahoo.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -1143,6 +1193,7 @@ sweattrails_test(
         src/App/storage/Strava.cpp
         src/App/storage/StravaTitles.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -1164,6 +1215,7 @@ sweattrails_test(
         src/App/storage/Strava.cpp
         src/App/storage/StravaBacklog.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp
@@ -1184,6 +1236,7 @@ sweattrails_test(
         test/StravaExportTest.cpp
         src/App/storage/StravaExport.cpp
         src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Storage.cpp

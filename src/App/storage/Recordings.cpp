@@ -16,6 +16,7 @@
 #include <Logging.h>
 
 #include <storage/Activity.h>
+#include <storage/Legs.h>
 #include <storage/Recordings.h>
 #include <storage/Storage.h>
 #include <storage/Volume.h>
@@ -155,7 +156,7 @@ std::expected<void, LibCError> mark(fs::path const &fit, std::optional<std::stri
 RecordingInfo info_of(Activity const &activity)
 {
     return RecordingInfo {
-        .start = activity.segment.start_time.timestamp,
+        .start = filing_start(activity).timestamp,
         .elapsed = activity.segment.elapsed.elapsed,
         .sport = activity.sport,
         .sub_sport = activity.sub_sport,
@@ -214,6 +215,11 @@ bool same_recording(RecordingInfo const &a, RecordingInfo const &b)
 
 bool same_activity(RecordingInfo const &a, RecordingInfo const &b)
 {
+    // Not even with a recording of one of its legs: grouping a leg with
+    // one is a feature of its own (specs/56-multisport.md).
+    if (a.sport == FIT::sport::Multisport || b.sport == FIT::sport::Multisport) {
+        return false;
+    }
     auto const a_kind = volume_sport(a.sport, a.sub_sport);
     auto const b_kind = volume_sport(b.sport, b.sub_sport);
     if (a_kind || b_kind ? a_kind != b_kind : a.sport != b.sport) {

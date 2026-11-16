@@ -169,6 +169,32 @@ void test_read_records()
     CHECK(std::ranges::all_of(ride.power, [](u16 watts) { return watts == 200; }));
 }
 
+// A multisport file counts as its last leg, filed by its start, until the
+// summaries count each leg: a brick of a ride and a run counts as the run.
+void test_read_multisport_as_its_last_leg()
+{
+    Test::TempStore  store;
+    Test::FITBuilder fit;
+    Test::add_file_id(fit, 1);
+    Test::add_session(fit, 1800, 100, Test::NoSubSport, 0, 2);
+    Test::add_session(fit, 600, 20, Test::NoSubSport, 1800, 1);
+    auto const run_start = static_cast<i64>(Test::Start) + DateTime::FIT_TIMESTAMP_OFFSET + 1800;
+    auto const date = DateTime::from_timestamp(static_cast<i32>(run_start));
+    auto const dir = store.storage.activity_dir / std::format("{:04}/{:02}", static_cast<u16>(date.year), static_cast<u8>(date.month) + 1);
+    fs::create_directories(dir);
+    MUST(write_file_by_name((dir / std::format("{}.fit", run_start)).string(), std::string_view { fit.file() }));
+    auto const files = summary_files(store.storage);
+    if (!files || files->size() != 1) {
+        CHECK_EQ(files ? files->size() : 0uz, 1uz);
+        return;
+    }
+    auto const brick = read_summary(store.storage, (*files)[0]);
+    CHECK_EQ(brick.start, run_start);
+    CHECK(brick.sport == FIT::sport::Running);
+    CHECK_EQ(brick.moving, 600u);
+    CHECK_EQ(brick.ascent, 20u);
+}
+
 // A run of 5 minutes at 4 m/s: its best times, up to 1 km. A ride of
 // the same has none.
 void test_read_best_times()
@@ -492,6 +518,7 @@ int main()
     test_plan_from_nothing();
     test_merge_summaries();
     test_read_records();
+    test_read_multisport_as_its_last_leg();
     test_read_records_with_a_pause();
     test_read_best_times();
     test_read_from_the_store();

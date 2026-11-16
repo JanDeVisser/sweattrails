@@ -18,6 +18,7 @@
 #include <fit/FIT.h>
 #include <storage/Activity.h>
 #include <storage/Laps.h>
+#include <storage/Legs.h>
 #include <storage/Storage.h>
 
 namespace ST {
@@ -631,6 +632,24 @@ StorageResult<bool> Activity::load_from_slice(std::string_view const &buffer)
     return true;
 }
 
+// The activity's sport and numbers are its session's, or, for several, a
+// multisport activity's, made from its legs.
+void Activity::take_legs()
+{
+    if (legs.size() == 1) {
+        auto const &leg = legs.front();
+        segment = leg.segment;
+        if (leg.sport) {
+            sport = *leg.sport;
+        }
+        sub_sport = leg.sub_sport;
+    } else if (is_multisport()) {
+        segment = whole_segment(legs);
+        sport = sport::Multisport;
+        sub_sport = { };
+    }
+}
+
 Error<StorageError> Activity::analyze()
 {
     // Laps are contiguous and in chronological order, so a lap runs from its
@@ -649,6 +668,10 @@ Error<StorageError> Activity::analyze()
         lap.first_record = static_cast<size_t>(begin - records.begin());
         lap.end_record = static_cast<size_t>(end - records.begin());
         lap.segment.analyze(std::span { begin, end }, false);
+    }
+    // A shallow load, for a month's list, has neither records nor laps.
+    if (is_multisport() && depth == LoadingDepth::Deep) {
+        split_into_legs(*this);
     }
     // Last: it smooths the records, and the laps should see them as
     // recorded, as the activity does. So should a range, later.
@@ -692,18 +715,21 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
             warning(Storage, "Error converting session message to struct: {}", s.error());
             return true;
         }
-        segment.start_time = s->start_time;
-        segment.moving = Duration { s->total_timer_time.value_or(s->total_elapsed_time) };
-        segment.elapsed = Duration { s->total_elapsed_time };
-        segment.end_time = s->timestamp;
-        if (s->sport) {
-            sport = *s->sport;
-        }
-        sub_sport = s->sub_sport;
-        if (s->total_distance) {
-            segment.distance = *s->total_distance;
-        }
-        segment.total_ascent = s->total_ascent;
+        Leg leg {
+            .sport = s->sport,
+            .sub_sport = s->sub_sport,
+            .segment = Segment {
+                .start_time = s->start_time,
+                .end_time = s->timestamp,
+                .elapsed = Duration { s->total_elapsed_time },
+                .moving = Duration { s->total_timer_time.value_or(s->total_elapsed_time) },
+                .distance = s->total_distance.value_or(0),
+                .total_ascent = s->total_ascent,
+            },
+            .first_lap_index = s->first_lap_index,
+            .num_laps = s->num_laps,
+        };
+        legs.push_back(std::move(leg));
     } break;
     case mesg_num::workout: {
         auto w = make_from_rec<workout>(rec);
@@ -778,6 +804,7 @@ StorageResult<bool> Activity::load_fit_file(FITFile &fit_file)
         trace(Storage, "load_fit_file: read_until failed");
         return std::unexpected(StorageError { read.error() });
     }
+    take_legs();
     sensors = devices.sensors();
     // A Wahoo ELEMNT ROAM names itself in its device_info listing only.
     if (product_name.empty()) {
