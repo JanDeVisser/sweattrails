@@ -57,7 +57,8 @@ struct FitnessWeek {
 [[nodiscard]] std::vector<FitnessWeek> fitness_weeks(std::vector<FitnessDay> const &days, int year);
 
 // The year's activities that have a sport but no training stress: they
-// count as rest.
+// count as rest. A multisport activity counts if none of its legs has
+// any.
 [[nodiscard]] size_t without_stress(ActivitySummaries const &summaries, ThresholdList const &thresholds, int year);
 
 // The years from the first activity's, of any sport, to `this_year`.

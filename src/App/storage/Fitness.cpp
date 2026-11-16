@@ -6,6 +6,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <ranges>
+#include <string_view>
 
 #include <storage/Fitness.h>
 #include <storage/Volume.h>
@@ -108,9 +111,22 @@ std::vector<FitnessWeek> fitness_weeks(std::vector<FitnessDay> const &days, int 
 
 size_t without_stress(ActivitySummaries const &summaries, ThresholdList const &thresholds, int year)
 {
-    return static_cast<size_t>(std::ranges::count_if(summaries, [&](ActivitySummary const &summary) {
-        return summary.sport && start_day(summary).year() == chrono::year { year } && !summary_stress(summary, thresholds);
-    }));
+    size_t ret { 0 };
+    // A multisport activity is one: without stress if none of its legs
+    // has any, as a swim without heart rate doesn't make it rest.
+    std::map<std::string_view, bool> legs_stressed;
+    for (auto const &summary : summaries) {
+        if (!summary.sport || start_day(summary).year() != chrono::year { year }) {
+            continue;
+        }
+        auto const stressed = summary_stress(summary, thresholds).has_value();
+        if (summary.leg) {
+            legs_stressed[summary.source.file] |= stressed;
+        } else if (!stressed) {
+            ++ret;
+        }
+    }
+    return ret + static_cast<size_t>(std::ranges::count(legs_stressed | std::views::values, false));
 }
 
 std::pair<int, int> fitness_years(ActivitySummaries const &summaries, int this_year)
