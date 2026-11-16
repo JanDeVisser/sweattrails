@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cwctype>
 
 #include <raylib.h>
 
@@ -27,11 +26,6 @@ constexpr KeyboardModifier WordModifier = KModAlt;
 constexpr KeyboardModifier PasteModifier = KModControl;
 constexpr KeyboardModifier WordModifier = KModControl;
 #endif
-
-bool is_space(rune ch)
-{
-    return std::iswspace(static_cast<wint_t>(ch)) != 0;
-}
 
 }
 
@@ -71,10 +65,10 @@ bool TextArea::insert(rune ch)
 bool TextArea::put(rune ch)
 {
     auto const is_codepoint = ch >= 0 && ch <= 0x10FFFF && (ch < 0xD800 || ch > 0xDFFF);
-    if (ch == L'\t') {
-        ch = L' ';
+    if (ch == U'\t') {
+        ch = U' ';
     }
-    if (!is_codepoint || (ch != L'\n' && std::iswcntrl(static_cast<wint_t>(ch)))) {
+    if (!is_codepoint || (ch != U'\n' && is_control(ch))) {
         return false;
     }
     text.insert(cursor, 1, ch);
@@ -84,23 +78,23 @@ bool TextArea::put(rune ch)
 
 void TextArea::newline()
 {
-    insert(L'\n');
+    insert(U'\n');
 }
 
 void TextArea::paste(std::string_view const &utf8)
 {
-    auto const pasted = to_wstring(utf8);
+    auto const pasted = to_utf32(utf8);
     if (!pasted) {
         return;
     }
     for (auto ix = 0uz; ix < pasted->length(); ++ix) {
         auto ch = (*pasted)[ix];
-        if (ch == L'\r') {
+        if (ch == U'\r') {
             // \r\n is one line break, and so is \r by itself.
-            if (ix + 1 < pasted->length() && (*pasted)[ix + 1] == L'\n') {
+            if (ix + 1 < pasted->length() && (*pasted)[ix + 1] == U'\n') {
                 continue;
             }
-            ch = L'\n';
+            ch = U'\n';
         }
         put(ch);
     }
@@ -378,7 +372,7 @@ void TextArea::wrap()
     lines.clear();
     size_t start = 0;
     while (true) {
-        auto const paragraph_end = std::min(text.find(L'\n', start), text.length());
+        auto const paragraph_end = std::min(text.find(U'\n', start), text.length());
         do {
             auto const line = wrap_line(start, paragraph_end);
             lines.push_back(line);

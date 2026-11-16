@@ -25,7 +25,7 @@ constexpr KeyboardModifier Paste = KModSuper;
 constexpr KeyboardModifier Paste = KModControl;
 #endif
 
-void type(TextLine &line, std::wstring_view text)
+void type(TextLine &line, std::u32string_view text)
 {
     for (auto ch : text) {
         line.insert(ch);
@@ -42,14 +42,14 @@ void key(TextLine &line, int key, int times = 1)
 void test_typing_outside_ascii()
 {
     TextLine line;
-    type(line, L"Café ride");
+    type(line, U"Café ride");
     CHECK_EQ(line.utf8(), "Café ride");
     CHECK_EQ(line.cursor, 9uz);
     // Back over " ride" and the é: one character each.
     key(line, KEY_LEFT, 5);
     key(line, KEY_BACKSPACE);
     CHECK_EQ(line.utf8(), "Caf ride");
-    type(line, L"é");
+    type(line, U"é");
     CHECK_EQ(line.utf8(), "Café ride");
 }
 
@@ -91,10 +91,10 @@ void test_moving_and_deleting()
 void test_control_characters_are_not_typed()
 {
     TextLine line;
-    CHECK(!line.insert(L'\t'));
-    CHECK(!line.insert(L'\n'));
+    CHECK(!line.insert(U'\t'));
+    CHECK(!line.insert(U'\n'));
     CHECK(!line.insert(0x7f));
-    CHECK(line.insert(L'a'));
+    CHECK(line.insert(U'a'));
     CHECK_EQ(line.utf8(), "a");
 }
 
@@ -169,7 +169,7 @@ void test_editing_in_the_middle()
     TextLine line;
     line.set("a🚴b");
     key(line, KEY_LEFT);
-    type(line, L"é");
+    type(line, U"é");
     CHECK_EQ(line.utf8(), "a🚴éb");
     key(line, KEY_HOME);
     key(line, KEY_RIGHT);

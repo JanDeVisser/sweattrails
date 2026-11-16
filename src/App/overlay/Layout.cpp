@@ -1396,7 +1396,7 @@ std::set<int> layout_codepoints(OverlayLayout const &layout)
     // The units' degrees, °C and °F, which a layout doesn't spell out.
     std::set<int> ret { 0xb0 };
     auto const    add = [&ret](std::string_view text) {
-        for (auto const ch : to_wstring(text).value_or(std::wstring { })) {
+        for (auto const ch : to_utf32(text).value_or(std::u32string { })) {
             if (ch > 126) {
                 ret.insert(static_cast<int>(ch));
             }

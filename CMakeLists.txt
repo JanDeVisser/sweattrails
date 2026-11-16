@@ -13,14 +13,12 @@ set(CMAKE_CXX_STANDARD 26)
 if (APPLE)
   set(IS_APPLE TRUE)
   set(OS macos)
-  set(ICONV -liconv)
 elseif (WIN32)
   set(IS_WINDOWS TRUE)
   set(OS windows)
 else ()
   set(IS_LINUX TRUE)
   set(OS linux)
-  set(ICONV)
 endif ()
 
 # libc++ for compiling as well as linking: Apple's Clang uses it anyway,
@@ -296,7 +294,6 @@ target_link_libraries(
         ${FREETYPE_LIBRARIES}
         ${CURL_LIBRARIES}
         OpenSSL::SSL
-        ${ICONV}
         m
 )
 
@@ -321,7 +318,6 @@ target_link_libraries(
         fitexplore
         PRIVATE
         Base
-        ${ICONV}
         m
 )
 
@@ -346,8 +342,7 @@ function(sweattrails_test name)
             Base
             ${raylib_LIBRARIES}
             ${FREETYPE_LIBRARIES}
-            ${ICONV}
-            m
+                m
     )
     add_test(NAME ${name} COMMAND ${name})
 endfunction()

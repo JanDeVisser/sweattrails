@@ -24,8 +24,8 @@ void test_add_codepoints()
     CHECK(!fonts.add_codepoints("21°"));
     CHECK(fonts.add_codepoints("Rückweg über den Paß"));
     CHECK_EQ(fonts.codepoints().size(), 3uz);
-    CHECK(fonts.codepoints().contains(L'ü'));
-    CHECK(fonts.codepoints().contains(L'ß'));
+    CHECK(fonts.codepoints().contains(U'ü'));
+    CHECK(fonts.codepoints().contains(U'ß'));
     CHECK(!fonts.add_codepoints("Rückweg"));
     CHECK(!fonts.add_codepoints(""));
 }

@@ -71,7 +71,7 @@ enum class SizePolicy {
 extern char const *SizePolicy_name(SizePolicy policy);
 extern char const *ContainerOrientation_name(ContainerOrientation orientation);
 
-using rune = wchar_t;
+using rune = char32_t;
 using rune_view = std::basic_string_view<rune>;
 using rune_string = std::basic_string<rune>;
 
@@ -623,7 +623,7 @@ public:
         requires(std::convertible_to<Tx, float> && std::convertible_to<Ty, float>)
     Vector2 render_text(Tx x, Ty y, std::string_view const &text, Font font, Color color) const
     {
-        return render_sized_text_(x, y, MUST_EVAL(to_wstring(text)), font, 1.0, color);
+        return render_sized_text_(x, y, MUST_EVAL(to_utf32(text)), font, 1.0, color);
     }
 
     template<typename Tx, typename Ty>
@@ -648,7 +648,7 @@ public:
         requires(std::convertible_to<Tx, float> && std::convertible_to<Ty, float>)
     Vector2 render_text(Tx x, Ty y, std::string_view const &text, FontSize font_size, Color color) const
     {
-        return render_sized_text_(x, y, MUST_EVAL(to_wstring(text)), font_size, color);
+        return render_sized_text_(x, y, MUST_EVAL(to_utf32(text)), font_size, color);
     }
 
     template<typename Tx, typename Ty, typename Ts>
@@ -662,7 +662,7 @@ public:
         requires(std::convertible_to<Tx, float> && std::convertible_to<Ty, float> && std::convertible_to<Ts, float>)
     Vector2 render_sized_text(Tx x, Ty y, std::string_view const &text, Font font, Ts size, Color color) const
     {
-        return render_sized_text_(x, y, MUST_EVAL(to_wstring(text)), font, size, color);
+        return render_sized_text_(x, y, MUST_EVAL(to_utf32(text)), font, size, color);
     }
 
     template<typename Tx, typename Ty>

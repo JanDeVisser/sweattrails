@@ -115,7 +115,7 @@ struct LexerConfig {
     bool backquotedStrings { BackquotedStrings };
 };
 
-template<typename Buffer, typename Matcher = NoKeywords<Buffer>, typename Char = wchar_t, bool Whitespace = false, bool Comments = false, bool BackquotedStrings = false>
+template<typename Buffer, typename Matcher = NoKeywords<Buffer>, typename Char = char32_t, bool Whitespace = false, bool Comments = false, bool BackquotedStrings = false>
 class Lexer {
 public:
     using LexerError = Error<LexerErrorMessage>;

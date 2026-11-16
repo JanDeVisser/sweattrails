@@ -33,8 +33,8 @@ std::string product_text(std::string_view name)
     if (trimmed.empty()) {
         return "";
     }
-    auto const runes = to_wstring(trimmed);
-    auto const is_control = [](wchar_t ch) { return ch < 0x20 || (ch >= 0x7F && ch < 0xA0); };
+    auto const runes = to_utf32(trimmed);
+    auto const is_control = [](char32_t ch) { return ch < 0x20 || (ch >= 0x7F && ch < 0xA0); };
     if (!runes || std::ranges::any_of(*runes, is_control)) {
         return "";
     }

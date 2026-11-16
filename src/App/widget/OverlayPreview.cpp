@@ -155,7 +155,7 @@ void OverlayPreview::draw_message(Rectangle const &area, std::string_view messag
     BeginScissorMode(static_cast<int>(area.x), static_cast<int>(area.y), static_cast<int>(area.width), static_cast<int>(area.height));
     auto y = area.y + 10;
     for (auto const &line : wrap_words(message, area.width - 20, measure)) {
-        render_text_no_normalize(area.x + 10 - viewport.x, y - viewport.y, MUST_EVAL(to_wstring(line)), FontSize::Medium, RAYWHITE);
+        render_text_no_normalize(area.x + 10 - viewport.x, y - viewport.y, MUST_EVAL(to_utf32(line)), FontSize::Medium, RAYWHITE);
         y += App::the()->cell(FontSize::Medium).y;
     }
     EndScissorMode();

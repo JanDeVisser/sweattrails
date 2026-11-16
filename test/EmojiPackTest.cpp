@@ -53,31 +53,31 @@ void test_the_pack_loads()
 
 void test_sequences_match_the_real_names()
 {
-    CHECK_EQ(image_of(L"\U0001F44D\U0001F3FD"), "1f44d-1f3fd.png");
-    CHECK_EQ(image_of(L"\U0001F1E8\U0001F1E6"), "1f1e8-1f1e6.png");
+    CHECK_EQ(image_of(U"\U0001F44D\U0001F3FD"), "1f44d-1f3fd.png");
+    CHECK_EQ(image_of(U"\U0001F1E8\U0001F1E6"), "1f1e8-1f1e6.png");
     // 1️⃣, with and without U+FE0F
-    CHECK_EQ(image_of(L"1️⃣"), "31-20e3.png");
-    CHECK_EQ(image_of(L"1⃣"), "31-20e3.png");
-    CHECK_EQ(image_of(L"#️⃣"), "23-20e3.png");
-    CHECK_EQ(image_of(L"\U0001F468‍\U0001F469‍\U0001F467"), "1f468-200d-1f469-200d-1f467.png");
+    CHECK_EQ(image_of(U"1️⃣"), "31-20e3.png");
+    CHECK_EQ(image_of(U"1⃣"), "31-20e3.png");
+    CHECK_EQ(image_of(U"#️⃣"), "23-20e3.png");
+    CHECK_EQ(image_of(U"\U0001F468‍\U0001F469‍\U0001F467"), "1f468-200d-1f469-200d-1f467.png");
     // 🏃‍♀️: Twemoji's name has the U+FE0F, the text may leave it out.
-    CHECK_EQ(image_of(L"\U0001F3C3‍♀️"), "1f3c3-200d-2640-fe0f.png");
-    CHECK_EQ(image_of(L"\U0001F3C3‍♀"), "1f3c3-200d-2640-fe0f.png");
+    CHECK_EQ(image_of(U"\U0001F3C3‍♀️"), "1f3c3-200d-2640-fe0f.png");
+    CHECK_EQ(image_of(U"\U0001F3C3‍♀"), "1f3c3-200d-2640-fe0f.png");
     // 🏳️‍🌈, with U+FE0F in the middle of the name.
-    CHECK_EQ(image_of(L"\U0001F3F3️‍\U0001F308"), "1f3f3-fe0f-200d-1f308.png");
-    CHECK_EQ(image_of(L"\U0001F3F3‍\U0001F308"), "1f3f3-fe0f-200d-1f308.png");
+    CHECK_EQ(image_of(U"\U0001F3F3️‍\U0001F308"), "1f3f3-fe0f-200d-1f308.png");
+    CHECK_EQ(image_of(U"\U0001F3F3‍\U0001F308"), "1f3f3-fe0f-200d-1f308.png");
     // 🏴󠁧󠁢󠁥󠁮󠁧󠁿, a flag of tag characters.
-    CHECK_EQ(image_of(L"\U0001F3F4\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F"), "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f.png");
-    CHECK_EQ(image_of(L"❤️"), "2764.png");
-    CHECK_EQ(image_of(L"©️"), "a9.png");
-    CHECK_EQ(image_of(L"‼️"), "203c.png");
+    CHECK_EQ(image_of(U"\U0001F3F4\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F"), "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f.png");
+    CHECK_EQ(image_of(U"❤️"), "2764.png");
+    CHECK_EQ(image_of(U"©️"), "a9.png");
+    CHECK_EQ(image_of(U"‼️"), "203c.png");
 }
 
 // What the font has stays text: © and ‼ (General Punctuation), and
 // digits and # though they start keycaps.
 void test_text_the_font_has()
 {
-    for (auto const *t : { L"© 2026", L"‼", L"#1 at 12:34", L"Ride 42 km" }) {
+    for (auto const *t : { U"© 2026", U"‼", U"#1 at 12:34", U"Ride 42 km" }) {
         rune_view const text { t };
         CHECK(split_emoji(text, *emoji_set(), App::font_has) == (std::vector { TextRun { .kind = RunKind::Text, .start = 0, .end = text.size() } }));
     }

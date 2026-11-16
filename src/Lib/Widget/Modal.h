@@ -130,7 +130,7 @@ inline std::vector<size_t> char_ends(std::string_view text)
         }
     }
     starts.push_back(text.size());
-    auto const          runes = to_wstring(text).value_or(rune_string { });
+    auto const          runes = to_utf32(text).value_or(rune_string { });
     auto const         *set = emoji_set();
     auto const          runs = (set != nullptr && runes.size() + 1 == starts.size()) ? split_emoji(runes, *set, App::font_has) : std::vector<TextRun> { };
     std::vector<size_t> ret;

@@ -92,13 +92,6 @@ inline void print_message(std::string const &msg)
     std::cerr.flush();
 }
 
-template<>
-inline void print_message(std::wstring const &msg)
-{
-    std::wcerr << msg << std::endl;
-    std::wcerr.flush();
-}
-
 class Logger {
 public:
     template<typename T, typename... Args>

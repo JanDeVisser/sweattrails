@@ -14,7 +14,6 @@
 
 #include <Error.h>
 #include <Expected.h>
-#include <Utf8.h>
 
 namespace ST {
 
@@ -32,16 +31,6 @@ std::expected<std::basic_string<T>, LibCError> read_file_by_name(std::string_vie
     return ret;
 }
 
-template<>
-inline std::expected<std::wstring, LibCError> read_file_by_name(std::string_view const &file_name)
-{
-    std::ifstream is(std::string { file_name });
-    if (!is) {
-        return std::unexpected(LibCError());
-    }
-    return read_utf8(is);
-}
-
 template<typename T = char>
 std::expected<ssize_t, LibCError> write_file_by_name(std::string_view const &file_name, std::basic_string_view<T> const &contents)
 {
@@ -54,16 +43,6 @@ std::expected<ssize_t, LibCError> write_file_by_name(std::string_view const &fil
         return std::unexpected(LibCError());
     }
     return contents.length();
-}
-
-template<>
-inline std::expected<ssize_t, LibCError> write_file_by_name(std::string_view const &file_name, std::wstring_view const &contents)
-{
-    std::ofstream os(std::string { file_name });
-    if (!os) {
-        return std::unexpected(LibCError());
-    }
-    return write_utf8(os, contents);
 }
 
 template<typename T = char>

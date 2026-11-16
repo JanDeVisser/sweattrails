@@ -4,192 +4,126 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include <fstream>
-#include <print>
-
-#include <iconv.h>
+#include <cerrno>
 
 #include <Utf8.h>
 
 namespace ST {
 
-struct UTF8_std {
-    UTF8_std()
-        : converter { std::use_facet<std::codecvt<wchar_t, char, std::mbstate_t>>(locale) }
-    {
-    }
+namespace {
 
-    static UTF8_std utf8;
+constexpr char32_t MaxCodePoint = 0x10FFFF;
 
-    std::locale                                   locale;
-    std::codecvt<wchar_t, char, mbstate_t> const &converter;
+bool is_surrogate(char32_t ch)
+{
+    return ch >= 0xD800 && ch <= 0xDFFF;
+}
 
-    std::expected<std::string, LibCError> to_utf8(std::wstring_view const &s)
-    {
-        std::mbstate_t mb { }; // initial shift state
-        std::string    ret(s.size() * converter.max_length(), '\0');
-        wchar_t const *from_next;
-        char          *to_next;
-        if (auto res = converter.out(mb, &s[0], &s[s.size()], from_next,
-                &ret[0], &ret[ret.size()], to_next);
-            res != std::codecvt_base::ok) {
-            return std::unexpected(LibCError(EINVAL));
+bool is_continuation(unsigned char byte)
+{
+    return (byte & 0xC0) == 0x80;
+}
+
+}
+
+std::expected<std::string, LibCError> to_utf8(std::u32string_view const &s)
+{
+    std::string ret;
+    ret.reserve(s.length());
+    for (auto const ch : s) {
+        if (is_surrogate(ch) || ch > MaxCodePoint) {
+            return std::unexpected(LibCError(EILSEQ));
         }
-        ret.resize(to_next - &ret[0]);
-        return ret;
-    }
-
-    std::expected<std::wstring, LibCError> to_wstring(std::string_view const &s)
-    {
-        std::mbstate_t mb { }; // initial shift state
-        std::wstring   ret(s.size(), '\0');
-        char const    *from_next;
-        wchar_t       *to_next;
-        if (auto res = converter.in(mb, &s[0], &s[s.size()], from_next,
-                &ret[0], &ret[ret.size()], to_next);
-            res != std::codecvt_base::ok) {
-            return std::unexpected(LibCError(EINVAL));
+        if (ch < 0x80) {
+            ret += static_cast<char>(ch);
+        } else if (ch < 0x800) {
+            ret += static_cast<char>(0xC0 | (ch >> 6));
+            ret += static_cast<char>(0x80 | (ch & 0x3F));
+        } else if (ch < 0x10000) {
+            ret += static_cast<char>(0xE0 | (ch >> 12));
+            ret += static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+            ret += static_cast<char>(0x80 | (ch & 0x3F));
+        } else {
+            ret += static_cast<char>(0xF0 | (ch >> 18));
+            ret += static_cast<char>(0x80 | ((ch >> 12) & 0x3F));
+            ret += static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+            ret += static_cast<char>(0x80 | (ch & 0x3F));
         }
-        ret.resize(to_next - &ret[0]);
-        return ret;
     }
+    return ret;
+}
 
-    std::expected<ssize_t, LibCError> write(std::basic_ofstream<wchar_t> &os, std::wstring_view const &contents)
-    {
-        os.imbue(locale);
-        os.write(contents.data(), contents.length());
-        if (os.fail() || os.bad()) {
-            return std::unexpected(LibCError());
+std::expected<std::u32string, LibCError> to_utf32(std::string_view const &s)
+{
+    std::u32string ret;
+    ret.reserve(s.length());
+    for (size_t ix = 0; ix < s.length();) {
+        auto const lead = static_cast<unsigned char>(s[ix]);
+        size_t     length { 0 };
+        char32_t   ch { 0 };
+        char32_t   smallest { 0 }; // Below this, the sequence is overlong
+        if (lead < 0x80) {
+            length = 1;
+            ch = lead;
+        } else if ((lead & 0xE0) == 0xC0) {
+            length = 2;
+            ch = lead & 0x1F;
+            smallest = 0x80;
+        } else if ((lead & 0xF0) == 0xE0) {
+            length = 3;
+            ch = lead & 0x0F;
+            smallest = 0x800;
+        } else if ((lead & 0xF8) == 0xF0) {
+            length = 4;
+            ch = lead & 0x07;
+            smallest = 0x10000;
+        } else {
+            return std::unexpected(LibCError(EILSEQ));
         }
-        return contents.length();
-    }
-
-    std::expected<std::wstring, LibCError> read(std::basic_ifstream<wchar_t> &is)
-    {
-        is.imbue(locale);
-        std::wstring ret;
-        for (wchar_t ch; is.get(ch);) {
-            ret += ch;
+        if (ix + length > s.length()) {
+            return std::unexpected(LibCError(EILSEQ));
         }
-        return ret;
-    }
-};
-
-// An iconv descriptor keeps state between calls, so two threads mustn't
-// share one: each thread, such as the UI and the job thread, gets its own.
-struct UTF8 {
-    UTF8()
-        : cd_in(iconv_open("UTF-32-INTERNAL", "UTF-8"))
-        , cd_out(iconv_open("UTF-8", "UTF-32-INTERNAL"))
-    {
-        // assert(cd_in != reinterpret_cast<iconv_t>(-1));
-        // assert(cd_out != reinterpret_cast<iconv_t>(-1));
-    }
-
-    ~UTF8()
-    {
-        for (auto const cd : { cd_in, cd_out }) {
-            if (cd != reinterpret_cast<iconv_t>(-1)) {
-                iconv_close(cd);
+        for (size_t continuation = 1; continuation < length; ++continuation) {
+            auto const byte = static_cast<unsigned char>(s[ix + continuation]);
+            if (!is_continuation(byte)) {
+                return std::unexpected(LibCError(EILSEQ));
             }
+            ch = (ch << 6) | (byte & 0x3F);
         }
+        if (ch < smallest || is_surrogate(ch) || ch > MaxCodePoint) {
+            return std::unexpected(LibCError(EILSEQ));
+        }
+        ret += ch;
+        ix += length;
     }
-
-    UTF8(UTF8 const &) = delete;
-    UTF8 &operator=(UTF8 const &) = delete;
-
-    static thread_local UTF8 utf8;
-
-    iconv_t cd_in;
-    iconv_t cd_out;
-
-    std::expected<std::string, LibCError> to_utf8(std::wstring_view const &s)
-    {
-        auto        data = const_cast<wchar_t *>(s.data());
-        size_t      in_count = s.length() * sizeof(wchar_t);
-        std::string ret;
-        ret.resize(s.length() * 16, '\0');
-        size_t out_count = s.length() * 16;
-        auto   out_buffer = ret.data();
-        if (auto done = iconv(cd_out,
-                reinterpret_cast<char **>(&data), &in_count,
-                &out_buffer, &out_count);
-            static_cast<int>(done) < 0) {
-            return std::unexpected(LibCError());
-        }
-        ret.resize(s.length() * 16 - out_count);
-        while (!ret.empty() && ret[ret.size() - 1] == 0) {
-            ret.resize(ret.size() - 1); // HACK somehow iconv sometimes leaves
-                                        // '0' chars at the end of the
-                                        // converted string
-        }
-        return ret;
-    }
-
-    std::expected<std::wstring, LibCError> to_wstring(std::string_view const &s)
-    {
-        auto         data = const_cast<char *>(s.data());
-        size_t       in_count = s.length();
-        std::wstring ret;
-        ret.resize(2 * s.length(), '\0');
-        size_t out_count = 2 * s.length() * sizeof(wchar_t);
-        auto   out_buffer = ret.data();
-        if (auto done = iconv(cd_in,
-                &data, &in_count,
-                reinterpret_cast<char **>(&out_buffer), &out_count);
-            static_cast<int>(done) < 0) {
-            return std::unexpected(LibCError());
-        }
-        ret.resize(2 * s.length() * sizeof(wchar_t) - out_count);
-        while (!ret.empty() && ret[ret.size() - 1] == 0) {
-            ret.resize(ret.size() - 1);
-        }
-        return ret;
-    }
-
-    std::expected<ssize_t, LibCError> write(std::ofstream &os, std::wstring_view const &contents)
-    {
-        // TODO stream instead of allocating whole new string but RAM is cheap
-        // so whatever
-        auto converted = TRY_EVAL(to_utf8(contents));
-        os << converted;
-        if (os.fail() || os.bad()) {
-            return std::unexpected(LibCError());
-        }
-        return contents.length();
-    }
-
-    std::expected<std::wstring, LibCError> read(std::ifstream &is)
-    {
-        std::string contents;
-        for (char ch; is.get(ch);) {
-            contents += ch;
-        }
-        auto ret = TRY_EVAL(to_wstring(contents));
-        return ret;
-    }
-};
-
-thread_local UTF8 UTF8::utf8 { };
-
-std::expected<std::string, LibCError> to_utf8(std::wstring_view const &s)
-{
-    return UTF8::utf8.to_utf8(s);
+    return ret;
 }
 
-std::expected<std::wstring, LibCError> to_wstring(std::string_view const &s)
+bool is_space(char32_t ch)
 {
-    return UTF8::utf8.to_wstring(s);
+    switch (ch) {
+    case U'\t':
+    case U'\n':
+    case U'\v':
+    case U'\f':
+    case U'\r':
+    case U' ':
+    case 0x0085:
+    case 0x1680:
+    case 0x2028:
+    case 0x2029:
+    case 0x205F:
+    case 0x3000:
+        return true;
+    default:
+        // U+2007, the figure space, doesn't break.
+        return ch >= 0x2000 && ch <= 0x200A && ch != 0x2007;
+    }
 }
 
-std::expected<ssize_t, LibCError> write_utf8(std::ofstream &os, std::wstring_view const &contents)
+bool is_control(char32_t ch)
 {
-    return UTF8::utf8.write(os, contents);
-}
-
-std::expected<std::wstring, LibCError> read_utf8(std::ifstream &is)
-{
-    return UTF8::utf8.read(is);
+    return ch < 0x20 || (ch >= 0x7F && ch < 0xA0) || ch == 0x2028 || ch == 0x2029;
 }
 
 }

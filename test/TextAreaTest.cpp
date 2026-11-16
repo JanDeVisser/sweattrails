@@ -40,7 +40,7 @@ TextArea area(std::string_view text, int chars = 1000)
     return ret;
 }
 
-void type(TextArea &a, std::wstring_view text)
+void type(TextArea &a, std::u32string_view text)
 {
     for (auto ch : text) {
         a.insert(ch);
@@ -57,14 +57,14 @@ void key(TextArea &a, int key, int times = 1, KeyboardModifier modifier = KModNo
 void test_typing()
 {
     auto a = area("");
-    type(a, L"Windy");
+    type(a, U"Windy");
     key(a, KEY_ENTER);
-    type(a, L"Café");
+    type(a, U"Café");
     CHECK_EQ(a.utf8(), "Windy\nCafé");
     CHECK_EQ(a.cursor, 10uz);
     // A tab is a space, and other control characters aren't typed.
-    CHECK(a.insert(L'\t'));
-    CHECK(!a.insert(L'\x07'));
+    CHECK(a.insert(U'\t'));
+    CHECK(!a.insert(U'\x07'));
     CHECK_EQ(a.utf8(), "Windy\nCafé ");
 }
 
@@ -163,7 +163,7 @@ void test_typing_forgets_the_goal()
     auto a = area("abcdefgh\nab\nabcdefgh");
     a.cursor = 6;
     key(a, KEY_DOWN);
-    type(a, L"c");
+    type(a, U"c");
     key(a, KEY_DOWN);
     CHECK_EQ(a.cursor, 16uz); // After "abc"
 }
@@ -324,7 +324,7 @@ void test_typing_wraps_and_scrolls()
 {
     auto a = area("the quick", 10);
     a.visible_lines = 1;
-    type(a, L" brown");
+    type(a, U" brown");
     CHECK(a.lines == (std::vector<Line> { { 0, 10 }, { 10, 15 } }));
     CHECK_EQ(a.line_of(a.cursor), 1uz);
     CHECK_EQ(a.top_line, 1uz);
@@ -381,7 +381,7 @@ void test_ends_of_wrapped_lines()
     a.cursor = 3;
     key(a, KEY_END);
     CHECK_EQ(a.cursor, 10uz);
-    type(a, L"X");
+    type(a, U"X");
     CHECK_EQ(a.utf8(), "abcdefghijXklmnop");
     CHECK_EQ(a.position_at(0, 500), 10uz);
 
