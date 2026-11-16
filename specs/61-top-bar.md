@@ -232,3 +232,19 @@ The rest matches the spec: the bar is one line at the top on both screens,
 the trail is empty on the totals screen, `activity_trail()` is tested, the
 README is updated, and `crumb_at()` ignores stale areas. No bugs found. I
 added no tests. The full test run passes (83/83).
+
+### How the findings were resolved
+
+1. Fixed (4b0da31), not by passing `shown->month`, which selects
+   nothing if that month isn't in the counts, but by having `show_year()`
+   take the month on display from `activity_on_display()` rather than
+   `last_activity`, as its comment already said. It falls back to the
+   year's latest month through `month_to_select()` as before. No test
+   reaches `show_year()`, which is app code.
+2. Fixed (bfc5b4e): `handle_input()` clears the hover when it handles a
+   click. `test_click_clears_hover` in `top_bar_test` fails without it.
+3. No change, as Jan decided.
+
+Also, at Jan's request and outside this spec (a6a0390): `ListBox` shows
+the pointing hand over an entry, and `PopupMenu` over an item that can
+be chosen, tested in `listbox_test` and `popup_menu_test`.
