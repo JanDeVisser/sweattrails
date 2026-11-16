@@ -1653,6 +1653,31 @@ void test_pace_steps_forward_after_r()
     CHECK(screen->view.curve_end == Today);
 }
 
+// A leg's best is named by its activity and the leg; with no name for
+// the activity, by the leg.
+void test_rows_of_a_leg()
+{
+    auto bike = ride(2026, 5, 1);
+    bike.leg = 2;
+    bike.leg_name = "Bike";
+    ActivitySummaries const     summaries { ride(2026, 5, 2), bike };
+    std::vector<PowerRow> const rows {
+        PowerRow { .seconds = 5, .best = PowerBest { .watts = 800, .summary = 0 } },
+        PowerRow { .seconds = 60, .best = PowerBest { .watts = 400, .summary = 1 } },
+    };
+    auto const table = power_rows(rows, summaries, [](ActivitySummary const &) { return "IM Ottawa"; });
+    CHECK_EQ(table.size(), 2uz);
+    if (table.size() == 2) {
+        CHECK_EQ(table[0][3], "IM Ottawa");
+        CHECK_EQ(table[1][3], "IM Ottawa · Bike");
+    }
+    auto run_leg = run(2026, 5, 1);
+    run_leg.leg = 4;
+    run_leg.leg_name = "Run";
+    auto const runs = pace_rows({ PaceRow { .metres = 400, .best = PaceBest { .seconds = 80, .summary = 0 } } }, { run_leg }, { });
+    CHECK(runs.size() == 1 && runs[0][4] == "Run");
+}
+
 // A marathon's row, over an hour.
 void test_pace_rows_over_an_hour()
 {
@@ -1780,6 +1805,7 @@ int main()
     test_pace_steps_past_a_treadmill();
     test_pace_steps_forward_after_r();
     test_pace_rows_over_an_hour();
+    test_rows_of_a_leg();
     test_pace_refreshed_in_place();
     return Test::test_result();
 }

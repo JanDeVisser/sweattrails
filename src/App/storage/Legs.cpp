@@ -129,6 +129,13 @@ std::vector<size_t> leg_tabs(Activity const &activity)
     return ret;
 }
 
+size_t tab_of_leg(Activity const &activity, size_t leg)
+{
+    auto const tabs = leg_tabs(activity);
+    auto const tab = std::ranges::find(tabs, leg);
+    return (tab == tabs.end()) ? 0 : static_cast<size_t>(tab - tabs.begin()) + 1;
+}
+
 Activity leg_activity(Activity const &whole, size_t leg)
 {
     auto const &the_leg = whole.legs[leg];
@@ -142,9 +149,6 @@ Activity leg_activity(Activity const &whole, size_t leg)
         auto const from = records.begin() + static_cast<std::ptrdiff_t>(first);
         return std::vector<record> { from, from + static_cast<std::ptrdiff_t>(count) };
     };
-    auto const tabs = leg_tabs(whole);
-    auto const tab = std::ranges::find(tabs, leg);
-
     Activity ret { whole };
     ret.sport = the_leg.sport.value_or(sport::Generic);
     ret.sub_sport = the_leg.sub_sport;
@@ -162,8 +166,8 @@ Activity leg_activity(Activity const &whole, size_t leg)
     ret.legs.clear();
     ret.leg = LegShown {
         .name = leg_name(whole, leg),
-        .number = (tab == tabs.end()) ? 0 : static_cast<size_t>(tab - tabs.begin()) + 1,
-        .count = tabs.size(),
+        .number = tab_of_leg(whole, leg),
+        .count = leg_tabs(whole).size(),
     };
     return ret;
 }
