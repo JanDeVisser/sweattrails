@@ -79,6 +79,10 @@ void split_into_legs(Activity &activity)
         leg.end_record = std::max(leg.end_record, leg.first_record);
         leg.segment.analyze(std::span { records }.subspan(leg.first_record, leg.end_record - leg.first_record), false);
         leg.laps = laps_of_leg(legs, ix, activity.laps);
+        // Without a sidecar, read_names() gives it none.
+        if (leg.title.empty()) {
+            leg.title = leg.original_title = leg_name(activity, ix);
+        }
     }
     activity.laps.clear();
     for (size_t ix = 0; ix < legs.size(); ++ix) {
@@ -168,7 +172,12 @@ Activity leg_activity(Activity const &whole, size_t leg)
         .name = leg_name(whole, leg),
         .number = tab_of_leg(whole, leg),
         .count = leg_tabs(whole).size(),
+        .index = leg,
     };
+    ret.title = the_leg.title;
+    ret.original_title = the_leg.original_title;
+    ret.notes = the_leg.notes;
+    ret.original_notes = the_leg.original_notes;
     return ret;
 }
 
@@ -193,6 +202,66 @@ Activity tab_activity(Activity const &whole, size_t tab)
 DateTime filing_start(Activity const &activity)
 {
     return activity.is_multisport() ? activity.legs.back().segment.start_time : activity.segment.start_time;
+}
+
+std::optional<std::string> common_title(std::span<std::string const> titles, bool titled)
+{
+    if (!titled || titles.empty()) {
+        return { };
+    }
+    std::string_view common { titles.front() };
+    for (auto const &title : titles.subspan(1)) {
+        auto const [here, there] = std::ranges::mismatch(common, title);
+        common = common.substr(0, static_cast<size_t>(here - common.begin()));
+    }
+    // Whole words only: "Run 1" and "Ride" have "R" in common, which isn't
+    // a title. Cutting at a space or a separator, which are ASCII, is
+    // never halfway through a UTF-8 character either.
+    auto const boundary = [](char c) { return std::string_view { " |-:" }.contains(c); };
+    auto const mid_word = std::ranges::any_of(titles, [&common, &boundary](std::string const &title) {
+        return title.size() > common.size() && !boundary(title[common.size()]);
+    });
+    if (mid_word && !common.empty() && !boundary(common.back())) {
+        auto const last = std::ranges::find_if(common | std::views::reverse, boundary);
+        common = common.substr(0, static_cast<size_t>(common.rend() - last));
+    }
+    auto const trim_end = [&common]() {
+        for (std::string_view const separator : { " ", "|", "-", "·", ":" }) {
+            if (common.ends_with(separator)) {
+                common.remove_suffix(separator.size());
+                return true;
+            }
+        }
+        return false;
+    };
+    while (trim_end()) { }
+    return common.empty() ? titles.front() : std::string { common };
+}
+
+std::string legs_description(std::span<LegDescription const> legs)
+{
+    std::string ret;
+    for (auto const &leg : legs) {
+        auto const description = strip(leg.description);
+        if (description.empty()) {
+            continue;
+        }
+        if (!ret.empty()) {
+            ret += "\n\n";
+        }
+        ret += std::format("{}: {}", leg.name, description);
+    }
+    return ret;
+}
+
+std::string best_leg_title(Activity const &whole, size_t leg)
+{
+    auto const  name = leg_name(whole, leg);
+    auto const &title = whole.legs[leg].title;
+    if (!title.empty() && title != name) {
+        return title;
+    }
+    return whole.title.empty() ? name : std::format("{} · {}", whole.title, name);
 }
 
 }

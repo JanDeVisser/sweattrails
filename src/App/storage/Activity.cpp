@@ -292,10 +292,14 @@ void Activity::read_names()
     if (activity_sidecar.empty()) {
         return;
     }
+    auto const names = sidecar_titles(activity_sidecar);
+    if (leg) {
+        read_leg_names(names);
+        return;
+    }
     // Each name wins over the ones before: the FIT file's, the service's,
     // the old app's `.strava` file's, Strava's in the sidecar, and the
     // user's. See specs/24-strava-titles.md.
-    auto const names = sidecar_titles(activity_sidecar);
     auto const old_strava = read_strava_file(fs::path { activity_sidecar }.replace_extension(".strava"));
     title = fit_title;
     auto const take = [this](std::optional<std::string> const &name) {
@@ -306,16 +310,98 @@ void Activity::read_names()
     take(names.service);
     take(old_strava.name);
     take(names.strava.transform([](StravaTitle const &strava) { return strava.name; }));
-    original_title = title;
-    take(names.own);
     if (names.strava && names.strava->description) {
         notes = *names.strava->description;
     } else {
         notes = old_strava.description.value_or("");
     }
+    if (is_multisport()) {
+        read_whole_names(names);
+    }
+    original_title = title;
     original_notes = notes;
+    take(names.own);
     if (names.own_notes) {
         notes = *names.own_notes;
+    }
+}
+
+namespace {
+
+// A leg's names, from its own in the sidecar: its name, "Bike", Strava's,
+// and the user's. See specs/58-multisport-leg-titles.md.
+struct LegNames {
+    std::string title { };
+    std::string original_title { };
+    std::string notes { };
+    std::string original_notes { };
+};
+
+LegNames leg_names(std::string const &name, LegTitles const &titles)
+{
+    LegNames ret { .title = name };
+    if (titles.strava && !titles.strava->name.empty()) {
+        ret.title = titles.strava->name;
+    }
+    if (titles.strava && titles.strava->description) {
+        ret.notes = *titles.strava->description;
+    }
+    ret.original_title = ret.title;
+    ret.original_notes = ret.notes;
+    if (titles.own) {
+        ret.title = *titles.own;
+    }
+    if (titles.own_notes) {
+        ret.notes = *titles.own_notes;
+    }
+    return ret;
+}
+
+// Gives an Activity or a Leg the names.
+void take_names(auto &into, LegNames names)
+{
+    into.title = std::move(names.title);
+    into.original_title = std::move(names.original_title);
+    into.notes = std::move(names.notes);
+    into.original_notes = std::move(names.original_notes);
+}
+
+LegTitles titles_of_leg(SidecarTitles const &names, size_t leg)
+{
+    return (leg < names.legs.size()) ? names.legs[leg] : LegTitles { };
+}
+
+}
+
+void Activity::read_leg_names(SidecarTitles const &names)
+{
+    take_names(*this, leg_names(leg->name, titles_of_leg(names, leg->index)));
+}
+
+// The legs' names, and from them the whole's: the legs' common title
+// wins over the names before it, and their descriptions over Strava's
+// from before the legs had their own.
+void Activity::read_whole_names(SidecarTitles const &names)
+{
+    std::vector<std::string>    titles;
+    std::vector<LegDescription> descriptions;
+    bool                        titled { false };
+    for (size_t ix = 0; ix < legs.size(); ++ix) {
+        auto      &the_leg = legs[ix];
+        auto const name = leg_name(*this, ix);
+        take_names(the_leg, leg_names(name, titles_of_leg(names, ix)));
+        if (the_leg.sport == FIT::sport::Transition) {
+            continue;
+        }
+        titles.push_back(the_leg.title);
+        titled = titled || the_leg.title != name;
+        descriptions.push_back(LegDescription { .name = name, .description = the_leg.notes });
+    }
+    if (auto const common = common_title(titles, titled); common) {
+        title = *common;
+    }
+    if (auto const described = legs_description(descriptions); !described.empty()) {
+        notes = described;
     }
 }
 
@@ -658,7 +744,7 @@ std::expected<void, LibCError> Activity::rename(std::string_view name)
     if (activity_sidecar.empty()) {
         return std::unexpected(LibCError { "`{}` can't be renamed: it wasn't loaded from the store", id.name });
     }
-    TRY(save_sidecar_title(activity_sidecar, trimmed));
+    TRY(save_sidecar_title(activity_sidecar, trimmed, leg.transform([](LegShown const &shown) { return shown.index; })));
     title = new_title;
     return { };
 }
@@ -676,7 +762,7 @@ std::expected<void, LibCError> Activity::set_notes(std::string_view text)
     if (activity_sidecar.empty()) {
         return std::unexpected(LibCError { "`{}`'s description can't be saved: it wasn't loaded from the store", id.name });
     }
-    TRY(save_sidecar_notes(activity_sidecar, stravas ? std::string_view { } : std::string_view { trimmed }));
+    TRY(save_sidecar_notes(activity_sidecar, stravas ? std::string_view { } : std::string_view { trimmed }, leg.transform([](LegShown const &shown) { return shown.index; })));
     notes = new_notes;
     return { };
 }

@@ -223,6 +223,11 @@ struct Leg {
     std::optional<u16> num_laps { };
     // The device's laps in it, with their records in Activity::records.
     std::vector<Lap> laps { };
+    // As Activity has them: see specs/58-multisport-leg-titles.md.
+    std::string title { };
+    std::string original_title { }; // Without the name the user gave it
+    std::string notes { };
+    std::string original_notes { }; // Without the user's description: Strava's
 };
 
 // Which leg an activity shown on a leg's tab is: its name, and its
@@ -231,6 +236,7 @@ struct LegShown {
     std::string name { };
     size_t      number { 0 };
     size_t      count { 0 };
+    size_t      index { 0 }; // Among all the legs, transitions too
 };
 
 // The folder of a main recording's others, `<start>.recordings/` next to
@@ -339,11 +345,14 @@ struct Activity {
     std::expected<void, LibCError> set_lap_starts(std::optional<std::vector<i64>> starts);
 
     // Reads the names and the notes from the sidecar again, as when the
-    // activity was loaded, after something else changed them.
+    // activity was loaded, after something else changed them. A
+    // multisport activity's legs get theirs, and a leg on its own tab its
+    // own.
     void read_names();
 
     // Gives the activity the user's name, trimmed, and saves it in the
-    // sidecar. An empty name goes back to the original title.
+    // sidecar, as a leg's on a leg's tab. An empty name goes back to the
+    // original title.
     std::expected<void, LibCError> rename(std::string_view name);
     // Gives the activity the user's description, trimmed, and saves it in
     // the sidecar. An empty one goes back to Strava's, and an unchanged
@@ -356,6 +365,8 @@ private:
     bool                load_fit_file_filter(FITDataRecord const &rec);
     StorageResult<bool> load_fit_file(FITFile &fit_file);
     StorageResult<bool> load_fit_file_by_name(fs::path const &file);
+    void                read_leg_names(SidecarTitles const &names);
+    void                read_whole_names(SidecarTitles const &names);
 };
 
 // The activity's FIT file, from the store, and where its original is kept

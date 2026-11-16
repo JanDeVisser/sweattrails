@@ -310,14 +310,17 @@ void test_tab_of_leg()
 void test_leg_activity()
 {
     Loaded t { triathlon() };
+    CHECK_EQ(leg_activity(t.activity, 2).title, "Bike");
     t.activity.title = "IM Test";
-    t.activity.notes = "Hot";
+    t.activity.legs[2].title = "IM Test | Bike";
+    t.activity.legs[2].notes = "Hot";
     auto const bike = leg_activity(t.activity, 2);
     CHECK(bike.sport == FIT::sport::Cycling);
     CHECK(!bike.is_multisport());
     CHECK(bike.legs.empty());
-    CHECK_EQ(bike.title, "IM Test");
+    CHECK_EQ(bike.title, "IM Test | Bike");
     CHECK_EQ(bike.notes, "Hot");
+    CHECK(bike.leg.has_value() && bike.leg->index == 2);
     CHECK_EQ(bike.segment.distance, 10000.0f);
     CHECK_EQ(bike.segment.elapsed.elapsed, 1140u);
     CHECK_EQ(static_cast<i64>(bike.segment.start_time.timestamp), unix_start(660));
@@ -396,6 +399,147 @@ void test_user_laps_replace_the_legs_and_go_back()
     }
 }
 
+// The triathlon in a directory of its own, with `sidecar`, loaded as the
+// store loads it.
+struct TriathlonInDir {
+    TempDir  dir { "leg-titles" };
+    Storage  storage { };
+    Activity activity { storage, ActivityID::dummy(ActivityFile::Fit) };
+
+    explicit TriathlonInDir(std::string_view sidecar)
+    {
+        MUST(write_file_by_name((dir.path / "dummy.fit").string(), std::string_view { triathlon() }));
+        if (!sidecar.empty()) {
+            MUST(write_file_by_name((dir.path / "dummy.json").string(), sidecar));
+        }
+        activity.depth = LoadingDepth::Deep;
+        CHECK(activity.load_from_dir(dir.path).value_or(false));
+    }
+};
+
+void test_common_title()
+{
+    std::vector<std::string> const du { "Welland Sprint Du | Run 1", "Welland Sprint Du | Ride", "Welland Sprint Du | Run 2" };
+    CHECK_EQ(common_title(du, true).value_or(""), "Welland Sprint Du");
+    std::vector<std::string> const im { "IM Ottawa Swim", "IM Ottawa Ride", "IM Ottawa Run" };
+    CHECK_EQ(common_title(im, true).value_or(""), "IM Ottawa");
+    std::vector<std::string> const separators { "Race - Swim", "Race - Bike", "Race · Run" };
+    CHECK_EQ(common_title(separators, true).value_or(""), "Race");
+    std::vector<std::string> const colon { "Tri: swim", "Tri: bike" };
+    CHECK_EQ(common_title(colon, true).value_or(""), "Tri");
+    // Whole words: not "Morning R".
+    std::vector<std::string> const morning { "Morning Run", "Morning Ride" };
+    CHECK_EQ(common_title(morning, true).value_or(""), "Morning");
+    std::vector<std::string> const one_word { "Swimbikerun", "Swimming" };
+    CHECK_EQ(common_title(one_word, true).value_or(""), "Swimbikerun");
+    std::vector<std::string> const apart { "Swim in the bay", "Bike", "Run" };
+    CHECK_EQ(common_title(apart, true).value_or(""), "Swim in the bay");
+    // Not halfway through "é" or "è", which start with the same byte.
+    std::vector<std::string> const accents { "Café du lac", "Cafè du lac" };
+    CHECK_EQ(common_title(accents, true).value_or(""), "Café du lac");
+    CHECK(!common_title(apart, false).has_value());
+    CHECK(!common_title({ }, true).has_value());
+}
+
+void test_legs_description()
+{
+    std::vector<LegDescription> const legs {
+        { .name = "Swim", .description = "Super choppy\n" },
+        { .name = "Bike", .description = "" },
+        { .name = "Run", .description = "Hot" },
+    };
+    CHECK_EQ(legs_description(legs), "Swim: Super choppy\n\nRun: Hot");
+    std::vector<LegDescription> const none { { .name = "Swim" }, { .name = "Run", .description = " " } };
+    CHECK_EQ(legs_description(none), "");
+}
+
+// Each leg's title is its name, then Strava's, then the user's; its
+// description Strava's, then the user's. Transitions aren't in Whole's.
+void test_leg_names_from_the_sidecar()
+{
+    TriathlonInDir t { R"({"legs": [
+        {"strava": {"id": 1, "name": "IM Test Swim", "description": "Choppy"}},
+        {"strava": {"id": 2, "name": "Morning Workout", "description": "In T1"}},
+        {"strava": {"id": 3, "name": "IM Test Ride"}, "title": "IM Test Bike", "notes": "Windy"},
+        {},
+        {"notes": "Hot"}
+    ]})" };
+    auto const    &legs = t.activity.legs;
+    CHECK_EQ(legs[0].title, "IM Test Swim");
+    CHECK_EQ(legs[0].notes, "Choppy");
+    CHECK_EQ(legs[1].title, "Morning Workout");
+    CHECK_EQ(legs[2].title, "IM Test Bike");
+    CHECK_EQ(legs[2].original_title, "IM Test Ride");
+    CHECK_EQ(legs[2].notes, "Windy");
+    CHECK_EQ(legs[2].original_notes, "");
+    CHECK_EQ(legs[3].title, "T2");
+    CHECK_EQ(legs[4].title, "Run");
+    CHECK_EQ(legs[4].notes, "Hot");
+    // "IM Test Swim", "IM Test Bike" and "Run" have nothing in common.
+    CHECK_EQ(t.activity.title, "IM Test Swim");
+    CHECK_EQ(t.activity.notes, "Swim: Choppy\n\nBike: Windy\n\nRun: Hot");
+    CHECK_EQ(t.activity.original_notes, t.activity.notes);
+    auto const bike = tab_activity(t.activity, 2);
+    CHECK_EQ(bike.title, "IM Test Bike");
+    CHECK_EQ(bike.notes, "Windy");
+}
+
+// Whole's title: the service's, then the old "strava", then the legs'
+// common title, then the user's. Its description: the legs', then the
+// user's.
+void test_whole_names()
+{
+    TriathlonInDir service { R"({"activityName": "Toronto Multisport"})" };
+    CHECK_EQ(service.activity.title, "Toronto Multisport");
+    CHECK_EQ(service.activity.legs[2].title, "Bike");
+    TriathlonInDir old { R"({"activityName": "Toronto Multisport", "strava": {"id": 7, "name": "IM Test Swim", "description": "Choppy"}})" };
+    CHECK_EQ(old.activity.title, "IM Test Swim");
+    CHECK_EQ(old.activity.notes, "Choppy");
+    auto const     legs = R"("legs": [{"strava": {"id": 1, "name": "IM Test Swim"}}, {}, {"strava": {"id": 3, "name": "IM Test Ride"}}, {}, {"strava": {"id": 5, "name": "IM Test Run", "description": "Hot"}}])";
+    TriathlonInDir common { std::format(R"({{"activityName": "Toronto Multisport", {}}})", legs) };
+    CHECK_EQ(common.activity.title, "IM Test");
+    CHECK_EQ(common.activity.original_title, "IM Test");
+    CHECK_EQ(common.activity.notes, "Run: Hot");
+    TriathlonInDir own { std::format(R"({{"title": "Ironman", "notes": "Mine", {}}})", legs) };
+    CHECK_EQ(own.activity.title, "Ironman");
+    CHECK_EQ(own.activity.original_title, "IM Test");
+    CHECK_EQ(own.activity.notes, "Mine");
+    CHECK_EQ(own.activity.original_notes, "Run: Hot");
+}
+
+// On a leg's tab, a rename and a description are the leg's own, and
+// saving one empty brings back Strava's.
+void test_rename_a_leg()
+{
+    TriathlonInDir t { R"({"legs": [{}, {}, {"strava": {"id": 3, "name": "IM Test Ride", "description": "Flat"}}]})" };
+    auto           bike = tab_activity(t.activity, 2);
+    CHECK(bike.rename("Bike leg").has_value());
+    CHECK(bike.set_notes("Windy").has_value());
+    CHECK_EQ(bike.title, "Bike leg");
+    auto names = sidecar_titles(t.dir.path / "dummy.json");
+    CHECK(!names.own.has_value() && !names.own_notes.has_value());
+    CHECK_EQ(names.legs.size(), 3uz);
+    CHECK(names.legs.size() == 3 && names.legs[2].own == "Bike leg" && names.legs[2].own_notes == "Windy");
+    t.activity.read_names();
+    CHECK_EQ(t.activity.legs[2].title, "Bike leg");
+    bike.read_names();
+    CHECK_EQ(bike.title, "Bike leg");
+    CHECK_EQ(bike.notes, "Windy");
+    CHECK(bike.rename("").has_value());
+    CHECK(bike.set_notes("").has_value());
+    CHECK_EQ(bike.title, "IM Test Ride");
+    CHECK_EQ(bike.notes, "Flat");
+    names = sidecar_titles(t.dir.path / "dummy.json");
+    CHECK(names.legs.size() == 3 && !names.legs[2].own && !names.legs[2].own_notes);
+}
+
+void test_best_leg_title()
+{
+    TriathlonInDir t { R"({"title": "IM Test", "legs": [{"strava": {"id": 1, "name": "IM Test Swim"}}]})" };
+    CHECK_EQ(best_leg_title(t.activity, 0), "IM Test Swim");
+    CHECK_EQ(best_leg_title(t.activity, 2), "IM Test · Bike");
+}
+
 // The reviewer's: a workout message doesn't turn a multisport activity
 // into the workout's sport.
 void test_workout_sport_doesnt_override_multisport()
@@ -440,6 +584,12 @@ void test_whole_ascent()
 
 int main()
 {
+    test_common_title();
+    test_legs_description();
+    test_leg_names_from_the_sidecar();
+    test_whole_names();
+    test_rename_a_leg();
+    test_best_leg_title();
     test_triathlon_is_one_multisport_activity();
     test_shallow_load_is_multisport();
     test_legs_have_their_records();

@@ -41,7 +41,7 @@ std::vector<size_t> leg_tabs(Activity const &activity);
 size_t tab_of_leg(Activity const &activity, size_t leg);
 
 // Leg `leg` of `whole` as an activity of its own: its sport, numbers,
-// records and laps, with the whole's names.
+// records and laps, and the leg's names.
 Activity leg_activity(Activity const &whole, size_t leg);
 
 // The labels of a multisport activity's tabs: "Whole", then the tabs'
@@ -56,5 +56,29 @@ Activity tab_activity(Activity const &whole, size_t tab);
 // last leg's, as before multisport activities were (and as their names
 // in the store are), or else its start.
 DateTime filing_start(Activity const &activity);
+
+// The legs' common title, for the whole activity: the longest common
+// start of `titles`, the titles of the legs that aren't transitions,
+// without the spaces and separators ("|", "-", "·", ":") it ends with,
+// or the first title if they have none in common. `titled` says whether
+// any of them has a title of its own, Strava's or the user's: if none
+// has, there's no common title. See specs/58-multisport-leg-titles.md.
+std::optional<std::string> common_title(std::span<std::string const> titles, bool titled);
+
+// A leg's name, "Swim", and its description.
+struct LegDescription {
+    std::string name { };
+    std::string description { };
+};
+
+// The legs' descriptions, as the whole activity's: a paragraph each,
+// starting with its leg's name, "Swim: Choppy", leaving out the legs
+// without one.
+std::string legs_description(std::span<LegDescription const> legs);
+
+// What the curves' table calls a best of leg `leg`: the leg's own title,
+// Strava's or the user's, or else the whole's title and the leg's name,
+// "IM Ottawa · Bike".
+std::string best_leg_title(Activity const &whole, size_t leg);
 
 }
