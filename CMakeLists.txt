@@ -172,6 +172,8 @@ add_library(
         src/Lib/Widget/Emoji.cpp
         src/Lib/Widget/FontCache.h
         src/Lib/Widget/FontCache.cpp
+        src/Lib/Widget/InfoBox.h
+        src/Lib/Widget/InfoBox.cpp
         src/Lib/Widget/Layout.cpp
         src/Lib/Widget/Modal.h
         src/Lib/Widget/Scroll.h

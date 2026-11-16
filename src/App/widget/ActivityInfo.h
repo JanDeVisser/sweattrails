@@ -15,21 +15,14 @@
 #include <string_view>
 #include <vector>
 
+#include <InfoBox.h>
+
 #include <storage/Activity.h>
 #include <storage/Devices.h>
 
 namespace ST {
 
 constexpr std::string_view NoSensors = "No sensors listed in this file";
-
-// A line of the popup: `text` in the normal font, then `small` in the
-// smaller one, either of which can be empty.
-struct InfoLine {
-    std::string text { };
-    std::string small { };
-
-    bool operator==(InfoLine const &) const = default;
-};
 
 struct SensorInfo {
     InfoLine    name { };    // "Garmin heart rate monitor (product 3865)"
