@@ -11,6 +11,7 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -98,9 +99,32 @@ StorageResult<SummaryFile> summary_file(Storage const &storage, fs::path const &
 // read gets one without a sport.
 [[nodiscard]] ActivitySummaries read_file_summaries(Storage &storage, SummaryFile const &file);
 
-// The activity a summary is of, from its file, "2025/03/1741000000.fit":
-// none if the file isn't in a month's directory.
+// The activity in `file`, relative to the activity directory,
+// "2025/03/1741000000.fit": none if the file isn't in a month's directory.
+[[nodiscard]] std::optional<ActivityID> file_activity(std::string_view file);
+// The activity a summary is of, from its file.
 [[nodiscard]] std::optional<ActivityID> summary_activity(ActivitySummary const &summary);
+
+// The number of activities each month lists, for the year and month lists
+// (specs/60-year-month-navigation.md). Only months with any.
+using MonthCounts = std::map<Month, size_t>;
+
+// The activities of each month, from the summaries, leaving out files that
+// can't be read and counting a multisport file once, as the activity list
+// does. And from `files`, the store's FIT files as summary_files() names
+// them, those without a summary yet: they most likely load. Listing the
+// months to count would read every FIT file in the store.
+[[nodiscard]] MonthCounts month_counts(ActivitySummaries const &summaries, std::vector<std::string> const &files);
+// The same, with the store's FIT files from its directories: none is read.
+StorageResult<MonthCounts> month_counts(Storage const &storage, ActivitySummaries const &summaries);
+
+// The year before (`step` -1) or after (+1) `year` with activities. None
+// at either end.
+[[nodiscard]] std::optional<size_t> year_next_to(MonthCounts const &counts, size_t year, int step);
+// The month to select in the month list of `year`: `shown`'s, if it's in
+// that year and has activities, else the year's latest. None for a year
+// without activities.
+[[nodiscard]] std::optional<Month> month_to_select(MonthCounts const &counts, size_t year, std::optional<Month> const &shown);
 
 // The status bar's summary of the store: "1,234 activities, the newest on
 // Thu 12 Nov 2026", or "No activities yet". It counts files, not legs.
