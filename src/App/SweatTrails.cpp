@@ -1847,6 +1847,87 @@ void cmd_overlay_render(pSweatTrails const &sweattrails, JSONValue const &)
     input_box(sweattrails, "Range", picked, format_range(initial));
 }
 
+void show_year(pSweatTrails const &sweattrails, size_t year, std::optional<Month> const &select);
+
+// The activities of `month` (Ctrl+M's list), with `select` selected if
+// it's there. Also from the month list, so with a modal open.
+void show_month(pSweatTrails const &sweattrails, Month const &month, ActivityID const &select)
+{
+    auto activity_selected = [sweattrails](std::shared_ptr<ActivitySelector> const &selector, ActivityID const &id) -> void {
+        selector->status = ModalStatus::Dismissed;
+        if (auto const activity = load_to_show(selector->storage, id); activity) {
+            sweattrails->show_activity(*activity);
+        } else {
+            message_box(activity.error());
+        }
+    };
+    auto const &selector = Widget::make<ActivitySelector>(activity_selected, month, sweattrails->storage);
+    selector->up_fnc = [sweattrails](std::shared_ptr<ActivitySelector> const &list) {
+        list->hide();
+        show_year(sweattrails, list->month.year, list->month);
+    };
+    selector->show();
+    // A recording isn't listed: its activity is.
+    selector->select(select.main());
+}
+
+// The activities each month lists, for the year and month lists, or none
+// after saying why.
+std::optional<MonthCounts> counts_or_message(pSweatTrails const &sweattrails)
+{
+    auto counts = month_counts(sweattrails->storage, sweattrails->summaries);
+    if (!counts) {
+        message_box(std::format("The activities can't be listed: {}", counts.error().to_string()));
+        return { };
+    }
+    if (counts->empty()) {
+        message_box("There are no activities yet");
+        return { };
+    }
+    return std::move(*counts);
+}
+
+// The year list, with `year` selected if it has activities, else the
+// latest.
+void show_years(pSweatTrails const &sweattrails, size_t year)
+{
+    auto const counts = counts_or_message(sweattrails);
+    if (!counts) {
+        return;
+    }
+    auto const year_selected = [sweattrails](std::shared_ptr<YearSelector> const &, size_t selected) {
+        show_year(sweattrails, selected, std::nullopt);
+    };
+    auto const &years = Widget::make<YearSelector>(year_selected, *counts);
+    years->show();
+    // The second does nothing for a year that isn't listed.
+    years->select(counts->rbegin()->first.year);
+    years->select(year);
+}
+
+// The month list of `year`, with `select` selected, or else the month of
+// the activity on display, or the year's latest.
+void show_year(pSweatTrails const &sweattrails, size_t year, std::optional<Month> const &select)
+{
+    auto const counts = counts_or_message(sweattrails);
+    if (!counts) {
+        return;
+    }
+    auto const month_selected = [sweattrails](std::shared_ptr<MonthSelector> const &, Month const &month) {
+        show_month(sweattrails, month, sweattrails->last_activity);
+    };
+    auto const up = [sweattrails](std::shared_ptr<MonthSelector> const &list) {
+        list->hide();
+        show_years(sweattrails, list->year);
+    };
+    auto const  shown = sweattrails->last_activity.month;
+    auto const &months = Widget::make<MonthSelector>(month_selected, up, *counts, year, shown);
+    months->show();
+    if (auto const month = select ? select : month_to_select(*counts, year, shown); month) {
+        months->select(*month);
+    }
+}
+
 // Lists the month of `shown`, with it selected, or the latest month that
 // lists any activities if it isn't in the store.
 void list_month(pSweatTrails const &sweattrails, ActivityID const &shown)
@@ -1865,14 +1946,6 @@ void list_month(pSweatTrails const &sweattrails, ActivityID const &shown)
         message_box("There are no activities yet");
         return;
     }
-    auto activity_selected = [sweattrails](std::shared_ptr<ActivitySelector> const &selector, ActivityID const &id) -> void {
-        selector->status = ModalStatus::Dismissed;
-        if (auto const activity = load_to_show(selector->storage, id); activity) {
-            sweattrails->show_activity(*activity);
-        } else {
-            message_box(activity.error());
-        }
-    };
     auto month = shown.month;
     if (!std::ranges::binary_search(*months, shown.month)) {
         auto const latest = sweattrails->storage.listed_month(months->back(), -1, true);
@@ -1882,10 +1955,7 @@ void list_month(pSweatTrails const &sweattrails, ActivityID const &shown)
         }
         month = (*latest)->id;
     }
-    auto const &selector = Widget::make<ActivitySelector>(activity_selected, month, sweattrails->storage);
-    selector->show();
-    // A recording isn't listed: its activity is.
-    selector->select(shown.main());
+    show_month(sweattrails, month, shown);
 }
 
 // Loads the activity on display again, after its FIT file changed, and
@@ -2280,6 +2350,14 @@ void show_main_again(pSweatTrails const &the, std::vector<Grouped> const &groups
 void cmd_list_month(pSweatTrails const &sweattrails, JSONValue const &)
 {
     list_month(sweattrails, sweattrails->last_activity);
+}
+
+// Ctrl+Y. Not while a modal is open, as Ctrl+M.
+void cmd_list_years(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (sweattrails->modals.empty()) {
+        show_years(sweattrails, sweattrails->last_activity.month.year);
+    }
 }
 
 void cmd_message(pSweatTrails const &, JSONValue const &msg)
@@ -2835,6 +2913,9 @@ void SweatTrails::initialize()
     bus.add_task<SweatTrails>("st-list-month", self(), cmd_list_month)
         .titled("List the month's activities")
         .bind(KeyCombo { KEY_M, KModControl });
+    bus.add_task<SweatTrails>("st-list-years", self(), cmd_list_years)
+        .titled("List the years with activities")
+        .bind(KeyCombo { KEY_Y, KModControl });
     bus.add_task<SweatTrails>("st-download", self(), cmd_download)
         .titled("Download new activities")
         .bind(KeyCombo { KEY_G, KModControl });
