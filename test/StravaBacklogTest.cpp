@@ -318,10 +318,39 @@ void test_fetch_keeps_another_id()
     CHECK_EQ(chunk.changed, (std::vector<i64> { Ride }));
 }
 
+// A multisport activity's legs wait for their descriptions as activities
+// do, and get them in their own place in the sidecar. A transition's,
+// saved empty by the titles run, isn't asked for.
+void test_backlog_of_legs()
+{
+    Backlog    t;
+    auto const sidecar = t.store.storage.sidecar_of(Walk);
+    MUST(save_sidecar_strava(sidecar, StravaTitle { .id = 11, .name = "Du | Run 1" }, 0));
+    MUST(save_sidecar_strava(sidecar, StravaTitle { .id = 12, .name = "Morning Workout", .description = "" }, 1));
+    MUST(save_sidecar_strava(sidecar, StravaTitle { .id = 13, .name = "Du | Ride" }, 2));
+    auto waiting = t.waiting();
+    CHECK_EQ(ids_of(waiting), (std::vector<u64> { 3, 1, 11, 13 }));
+    CHECK(waiting.size() == 4 && waiting[3].stored.front().leg == std::optional<size_t> { 2 });
+    // The walk's legs only.
+    waiting.erase(waiting.begin(), waiting.begin() + 2);
+    t.fake.answer(path_of(11), activity(11, "Fast"));
+    t.fake.answer(path_of(13), activity(13, "Windy"));
+    auto const chunk = fetch_backlog(t.strava, waiting, 2);
+    CHECK_EQ(chunk.fetched, 2uz);
+    auto const legs = sidecar_titles(sidecar).legs;
+    CHECK_EQ(legs.size(), 3uz);
+    if (legs.size() == 3) {
+        CHECK((legs[0].strava == StravaTitle { .id = 11, .name = "Du | Run 1", .description = "Fast" }));
+        CHECK((legs[2].strava == StravaTitle { .id = 13, .name = "Du | Ride", .description = "Windy" }));
+    }
+    CHECK(!sidecar_titles(sidecar).strava.has_value());
+}
+
 }
 
 int main()
 {
+    test_backlog_of_legs();
     // The store's months are in local time.
     setenv("TZ", "UTC", 1);
     tzset();

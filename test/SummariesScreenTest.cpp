@@ -1222,6 +1222,33 @@ void test_ride_names_are_kept()
     CHECK_EQ(calls, 1);
 }
 
+// Two legs of one file, a bike-run-bike, each set bests: each is named
+// by its own.
+void test_ride_names_by_leg()
+{
+    Test::ScopedTestApp app;
+    auto                screen = Widget::make<SummariesScreen>(nullptr);
+    screen->viewport = Rect<float> { 0, 0, 1000, 800 };
+    auto first = power_ride(2026, 5, 1, 400, 60);
+    first.leg = 0;
+    auto second = power_ride(2026, 5, 1, 200, 7200);
+    second.leg = 2;
+    second.source = first.source;
+    screen->set_summaries({ first, second });
+    screen->thresholds = ThresholdList { Thresholds { .from = std::chrono::year { 2020 } / 1 / 1, .ftp = 275 } };
+    auto calls = 0;
+    screen->ride_name = [&calls](ActivitySummary const &summary) {
+        ++calls;
+        return std::format("Leg {}", summary.leg.value_or(99));
+    };
+    screen->open(VolumeSport::Cycling, Today);
+    screen->toggle_curve();
+    CHECK_EQ(calls, 2);
+    auto const &rows = screen->table->rows;
+    CHECK(std::ranges::any_of(rows, [](TableRow const &row) { return row.size() > 3 && row[3] == "Leg 0"; }));
+    CHECK(std::ranges::any_of(rows, [](TableRow const &row) { return row.size() > 3 && row[3] == "Leg 2"; }));
+}
+
 void test_curve_line()
 {
     std::vector<PowerBest> bests;
@@ -1653,8 +1680,8 @@ void test_pace_steps_forward_after_r()
     CHECK(screen->view.curve_end == Today);
 }
 
-// A leg's best is named by its activity and the leg; with no name for
-// the activity, by the leg.
+// A leg's best is named as `ride_name` names it; with no name, by the
+// leg.
 void test_rows_of_a_leg()
 {
     auto bike = ride(2026, 5, 1);
@@ -1665,11 +1692,13 @@ void test_rows_of_a_leg()
         PowerRow { .seconds = 5, .best = PowerBest { .watts = 800, .summary = 0 } },
         PowerRow { .seconds = 60, .best = PowerBest { .watts = 400, .summary = 1 } },
     };
-    auto const table = power_rows(rows, summaries, [](ActivitySummary const &) { return "IM Ottawa"; });
+    auto const table = power_rows(rows, summaries, [](ActivitySummary const &summary) {
+        return summary.leg ? "IM Ottawa Ride" : "IM Ottawa";
+    });
     CHECK_EQ(table.size(), 2uz);
     if (table.size() == 2) {
         CHECK_EQ(table[0][3], "IM Ottawa");
-        CHECK_EQ(table[1][3], "IM Ottawa · Bike");
+        CHECK_EQ(table[1][3], "IM Ottawa Ride");
     }
     auto run_leg = run(2026, 5, 1);
     run_leg.leg = 4;
@@ -1784,6 +1813,7 @@ int main()
     test_leaving_the_power();
     test_enter_opens_the_ride();
     test_ride_names_are_kept();
+    test_ride_names_by_leg();
     test_curve_line();
     test_curve_ticks();
     test_power_window_days();

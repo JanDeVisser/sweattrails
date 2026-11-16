@@ -89,6 +89,14 @@ struct StravaTitle {
     bool                        operator==(StravaTitle const &) const = default;
 };
 
+// The names of a leg of a multisport activity, under `"legs"` in its
+// sidecar, by the leg's index: see specs/58-multisport-leg-titles.md.
+struct LegTitles {
+    std::optional<StravaTitle> strava { };
+    std::optional<std::string> own { };       // The user's, "title"
+    std::optional<std::string> own_notes { }; // The user's, "notes"
+};
+
 // The names in a sidecar, from one read of it.
 struct SidecarTitles {
     std::optional<std::string> service { };   // sidecar_title()
@@ -97,10 +105,20 @@ struct SidecarTitles {
     std::optional<StravaTitle> strava { };
     // Strava activities that aren't this one, though the titles run
     // matched them: see reject_sidecar_strava().
-    std::vector<u64> strava_rejected { };
+    std::vector<u64>       strava_rejected { };
+    std::vector<LegTitles> legs { };
 };
 
 SidecarTitles sidecar_titles(fs::path const &sidecar);
+
+// A Strava title in a sidecar: the activity's, or leg `leg`'s.
+struct SidecarStrava {
+    std::optional<size_t> leg { };
+    StravaTitle           title { };
+};
+
+// All the Strava titles in `titles`: the activity's, and its legs'.
+std::vector<SidecarStrava> sidecar_stravas(SidecarTitles const &titles);
 
 // The name and description in a `.strava` file, which the old Zig app
 // wrote next to some activities: Strava's activity, as JSON. Nothing for a
@@ -119,10 +137,11 @@ StravaFileNames read_strava_file(fs::path const &file);
 std::expected<void, LibCError> update_sidecar(fs::path const &sidecar, std::function<void(JSONValue &)> const &change);
 
 // Saves what Strava has for the activity in its sidecar, with
-// update_sidecar().
-std::expected<void, LibCError> save_sidecar_strava(fs::path const &sidecar, StravaTitle const &strava);
+// update_sidecar(), or for its leg `leg`. A leg's takes the place of the
+// activity's: one leg's title, from before the legs had their own.
+std::expected<void, LibCError> save_sidecar_strava(fs::path const &sidecar, StravaTitle const &strava, std::optional<size_t> leg = { });
 
-// Removes Strava's activity `id` from the sidecar, where the titles run
+// Removes Strava's activity `id` from the sidecar, and its legs, where the titles run
 // put it on the wrong activity, and remembers it as rejected under
 // `"strava_rejected"`, so that the titles run doesn't put it back. See
 // specs/52-strava-export-other-recordings.md.
@@ -137,14 +156,14 @@ std::optional<std::vector<i64>> sidecar_laps(fs::path const &sidecar);
 // them for nothing.
 std::expected<void, LibCError> save_sidecar_laps(fs::path const &sidecar, std::optional<std::vector<i64>> const &starts);
 
-// Saves the user's name for the activity in its sidecar, with
-// update_sidecar(), or removes it for an empty `title`.
-std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::string_view title);
+// Saves the user's name for the activity in its sidecar, or for its leg
+// `leg`, with update_sidecar(), or removes it for an empty `title`.
+std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::string_view title, std::optional<size_t> leg = { });
 
-// Saves the user's description of the activity in its sidecar, as
-// `"notes"`, with update_sidecar(), or removes it for empty `notes`. See
-// specs/41-edit-description.md.
-std::expected<void, LibCError> save_sidecar_notes(fs::path const &sidecar, std::string_view notes);
+// Saves the user's description of the activity in its sidecar, or of its
+// leg `leg`, as `"notes"`, with update_sidecar(), or removes it for empty
+// `notes`. See specs/41-edit-description.md.
+std::expected<void, LibCError> save_sidecar_notes(fs::path const &sidecar, std::string_view notes, std::optional<size_t> leg = { });
 
 struct Segment {
     DateTime                    start_time { };
@@ -204,6 +223,11 @@ struct Leg {
     std::optional<u16> num_laps { };
     // The device's laps in it, with their records in Activity::records.
     std::vector<Lap> laps { };
+    // As Activity has them: see specs/58-multisport-leg-titles.md.
+    std::string title { };
+    std::string original_title { }; // Without the name the user gave it
+    std::string notes { };
+    std::string original_notes { }; // Without the user's description: Strava's
 };
 
 // Which leg an activity shown on a leg's tab is: its name, and its
@@ -212,6 +236,7 @@ struct LegShown {
     std::string name { };
     size_t      number { 0 };
     size_t      count { 0 };
+    size_t      index { 0 }; // Among all the legs, transitions too
 };
 
 // The folder of a main recording's others, `<start>.recordings/` next to
@@ -320,11 +345,14 @@ struct Activity {
     std::expected<void, LibCError> set_lap_starts(std::optional<std::vector<i64>> starts);
 
     // Reads the names and the notes from the sidecar again, as when the
-    // activity was loaded, after something else changed them.
+    // activity was loaded, after something else changed them. A
+    // multisport activity's legs get theirs, and a leg on its own tab its
+    // own.
     void read_names();
 
     // Gives the activity the user's name, trimmed, and saves it in the
-    // sidecar. An empty name goes back to the original title.
+    // sidecar, as a leg's on a leg's tab. An empty name goes back to the
+    // original title.
     std::expected<void, LibCError> rename(std::string_view name);
     // Gives the activity the user's description, trimmed, and saves it in
     // the sidecar. An empty one goes back to Strava's, and an unchanged
@@ -337,6 +365,8 @@ private:
     bool                load_fit_file_filter(FITDataRecord const &rec);
     StorageResult<bool> load_fit_file(FITFile &fit_file);
     StorageResult<bool> load_fit_file_by_name(fs::path const &file);
+    void                read_leg_names(SidecarTitles const &names);
+    void                read_whole_names(SidecarTitles const &names);
 };
 
 // The activity's FIT file, from the store, and where its original is kept

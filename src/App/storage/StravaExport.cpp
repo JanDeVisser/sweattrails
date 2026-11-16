@@ -145,8 +145,9 @@ std::string ExportImport::message() const
 namespace {
 
 struct Missing {
-    StoredStart stored { };
-    StravaTitle title { }; // With the export's description
+    StoredStart           stored { };
+    std::optional<size_t> leg { };
+    StravaTitle           title { }; // With the export's description
 };
 
 }
@@ -157,26 +158,28 @@ StorageResult<ExportImport> import_descriptions(Storage const &storage, ExportAc
     std::vector<Missing> missing;
     for (auto const &month : TRY_EVAL(storage.months_with_activities())) {
         for (auto const &stored : TRY_EVAL(storage.month_starts(month))) {
-            auto title = sidecar_titles(stored.sidecar).strava;
-            if (!title) {
+            auto const stravas = sidecar_stravas(sidecar_titles(stored.sidecar));
+            if (stravas.empty()) {
                 ++ret.untitled;
                 continue;
             }
-            auto const found = activities.find(title->id);
-            if (title->description || found == activities.end()) {
-                continue;
+            for (auto [leg, title] : stravas) {
+                auto const found = activities.find(title.id);
+                if (title.description || found == activities.end()) {
+                    continue;
+                }
+                title.description = found->second.description;
+                missing.push_back(Missing { .stored = stored, .leg = leg, .title = title });
             }
-            title->description = found->second.description;
-            missing.push_back(Missing { .stored = stored, .title = *title });
         }
     }
 
     for (size_t ix = 0; ix < missing.size(); ++ix) {
-        auto const &[stored, title] = missing[ix];
+        auto const &[stored, leg, title] = missing[ix];
         if (progress) {
             progress(ix, missing.size());
         }
-        if (auto const saved = save_sidecar_strava(stored.sidecar, title); !saved) {
+        if (auto const saved = save_sidecar_strava(stored.sidecar, title, leg); !saved) {
             warning(StravaExport, "Could not save Strava's description in `{}`: {}", stored.sidecar.string(), saved.error().to_string());
             continue;
         }
@@ -390,9 +393,11 @@ constexpr std::string_view Source = "strava";
 StorageResult<std::map<u64, std::vector<fs::path>>> strava_fits(Storage const &storage)
 {
     std::map<u64, std::vector<fs::path>> ret;
-    auto const                           add = [&ret](fs::path const &fit) {
-        if (auto const title = sidecar_titles(fs::path { fit }.replace_extension(".json")).strava; title) {
-            ret[title->id].push_back(fit);
+    // A multisport file's legs' IDs too: Strava's file of each is the
+    // whole file.
+    auto const add = [&ret](fs::path const &fit) {
+        for (auto const &strava : sidecar_stravas(sidecar_titles(fs::path { fit }.replace_extension(".json")))) {
+            ret[strava.title.id].push_back(fit);
         }
     };
     for (auto const &month : TRY_EVAL(storage.months_with_activities())) {
@@ -618,6 +623,11 @@ StorageResult<MissingImport> queue_missing(Storage &storage, ExportActivities co
         // would set it aside. A stub there it would replace.
         if (auto const here = storage.fit_at(info->start); here && !is_stub_file(*here).value_or(false)) {
             if (kind == ExportFile::OtherRecording || !reject(ret, id, with_id)) {
+                continue;
+            }
+            // A multisport file's legs get their titles from the titles
+            // run, each its own (specs/58-multisport-leg-titles.md).
+            if (info->sport == FIT::sport::Multisport) {
                 continue;
             }
             if (give_title(ret, id, *activity, *here)) {

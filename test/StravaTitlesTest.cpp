@@ -8,6 +8,7 @@
  */
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <ctime>
 #include <string>
@@ -18,10 +19,12 @@
 
 #include <storage/Activity.h>
 #include <storage/StravaTitles.h>
+#include <storage/Summaries.h>
 
 #include <TempDir.h>
 #include <TempStore.h>
 #include <TestApp.h>
+#include <TestFit.h>
 
 using namespace ST;
 using namespace ST::Test;
@@ -36,6 +39,13 @@ constexpr i64 After = Now - 30 * 86400;
 StravaActivity strava_at(u64 id, i64 start_time)
 {
     return StravaActivity { .id = id, .start_time = start_time, .name = std::format("Activity {}", id) };
+}
+
+StravaActivity strava_lasting(u64 id, i64 start_time, i64 elapsed)
+{
+    auto ret = strava_at(id, start_time);
+    ret.elapsed = elapsed;
+    return ret;
 }
 
 // Activities in the store, as activity_starts() finds them, by their start
@@ -370,6 +380,181 @@ void test_rejected_isnt_given_again()
     CHECK((t.saved(Ride) == StravaTitle { .id = 104, .name = "Ride to Hamilton" }));
 }
 
+std::vector<LegSpan> spans(std::vector<std::pair<i64, bool>> const &starts, i64 end)
+{
+    std::vector<LegSpan> ret;
+    for (size_t ix = 0; ix < starts.size(); ++ix) {
+        ret.push_back(LegSpan { .start = starts[ix].first, .end = (ix + 1 < starts.size()) ? starts[ix + 1].first : end, .transition = starts[ix].second });
+    }
+    return ret;
+}
+
+std::vector<std::optional<size_t>> legs_of(std::vector<StravaMatch> const &matches)
+{
+    std::vector<std::optional<size_t>> ret;
+    for (auto const &match : matches) {
+        ret.push_back(match.leg);
+    }
+    return ret;
+}
+
+// The duathlon's times from the spec, in seconds after 12:00:00 UTC. On
+// Strava, run 2 starts 109 s after the FIT file's leg, and T2 35 s before
+// it: T2 is T2's, and run 2 still gets "| Run 2". A run after the race
+// isn't run 2's.
+void test_match_the_duathlons_legs()
+{
+    StoredLegs const du {
+        .stored = { .start = 3591 },
+        .legs = spans({ { 0, false }, { 1470, true }, { 1508, false }, { 3555, true }, { 3591, false } }, 3591 + 800),
+    };
+    // With their elapsed times, which don't make them start at their ends.
+    std::vector const strava { strava_lasting(1, 2, 1468), strava_lasting(2, 1470, 38), strava_lasting(3, 1510, 2045), strava_lasting(4, 3556, 35),
+        strava_lasting(5, 3700, 692), strava_lasting(6, 3591 + 1200, 1800) };
+    auto const        matches = match_legs(strava, du);
+    CHECK((matched_ids(matches) == std::vector<u64> { 1, 2, 3, 4, 5 }));
+    CHECK((legs_of(matches) == std::vector<std::optional<size_t>> { 0, 1, 2, 3, 4 }));
+    CHECK(matches.size() == 5 && matches[1].transition && matches[3].transition && !matches[4].transition);
+    CHECK(matches.size() == 5 && matches[0].stored.start == 3591);
+}
+
+// Muskoka 70.3, 2019, from 11:35:00 UTC, as Strava has it: each leg
+// starts at its end, with its own elapsed time. By their starts, Swim
+// would go to T1, T1 to the bike and so on, and the run to nothing; less
+// their elapsed times, each goes to its own.
+void test_match_legs_that_start_at_their_end()
+{
+    StoredLegs const muskoka {
+        .stored = { .start = 11885 },
+        .legs = spans({ { 0, false }, { 2711, true }, { 2894, false }, { 11806, true }, { 11885, false } }, 11885 + 6973),
+    };
+    std::vector const strava { strava_lasting(1, 2711, 2710), strava_lasting(2, 2894, 182), strava_lasting(3, 11806, 8911), strava_lasting(4, 11885, 78),
+        strava_lasting(5, 19010, 6972) };
+    auto const        matches = match_legs(strava, muskoka);
+    CHECK((matched_ids(matches) == std::vector<u64> { 1, 2, 3, 4, 5 }));
+    CHECK((legs_of(matches) == std::vector<std::optional<size_t>> { 0, 1, 2, 3, 4 }));
+}
+
+// IM Ottawa's, from 10:34:00: each Strava activity starts some seconds
+// after its leg. A leg without one on Strava is left out.
+void test_match_im_ottawas_legs()
+{
+    StoredLegs const im {
+        .stored = { .start = 25560 },
+        .legs = spans({ { 0, false }, { 5880, true }, { 6360, false }, { 25200, true }, { 25560, false } }, 25560 + 5 * 3600),
+    };
+    std::vector const strava { strava_at(1, 11), strava_at(2, 5907), strava_at(3, 6376), strava_at(4, 25221), strava_at(5, 25572) };
+    CHECK((matched_ids(match_legs(strava, im)) == std::vector<u64> { 1, 2, 3, 4, 5 }));
+    std::vector const no_t2 { strava_at(1, 11), strava_at(2, 5907), strava_at(3, 6376), strava_at(5, 25572) };
+    CHECK((legs_of(match_legs(no_t2, im)) == std::vector<std::optional<size_t>> { 0, 1, 2, 4 }));
+    CHECK(match_legs({ }, im).empty());
+}
+
+std::string iso_time(i64 time)
+{
+    return std::format("{:%FT%TZ}", std::chrono::sys_seconds { std::chrono::seconds { time } });
+}
+
+// A duathlon made with FITBuilder: run 0-1470 s, T1 to 1508, bike to
+// 3555, T2 to 3591, run to 4391. Filed by its last leg's start.
+std::string duathlon()
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    add_records(fit, 4391, 150, 200);
+    add_leg(fit, TestLeg { .sport = 1, .start = 0, .count = 1470, .distance = 5000 });
+    add_leg(fit, TestLeg { .sport = 3, .start = 1470, .count = 38 });
+    add_leg(fit, TestLeg { .sport = 2, .start = 1508, .count = 2047, .distance = 20000 });
+    add_leg(fit, TestLeg { .sport = 3, .start = 3555, .count = 36 });
+    add_leg(fit, TestLeg { .sport = 1, .start = 3591, .count = 800, .distance = 2500 });
+    return fit.file();
+}
+
+i64 race(u32 offset = 0)
+{
+    return static_cast<i64>(Start) + DateTime::FIT_TIMESTAMP_OFFSET + offset;
+}
+
+// The titles run gives each leg of a multisport file in the store its own
+// Strava title, the transitions an empty description, and takes the old
+// "strava", T2's, off the activity. The file isn't in the summary file
+// yet: its legs come from the file.
+void test_titles_of_legs()
+{
+    StravaStore t;
+    auto const  filed = race(3591);
+    t.store.add_activity(filed);
+    auto const sidecar = t.store.storage.sidecar_of(filed);
+    MUST(write_file_by_name(fs::path { sidecar }.replace_extension(".fit").string(), std::string_view { duathlon() }));
+    MUST(write_file_by_name(sidecar.string(), std::string_view { R"({"activityName": "Welland", "strava": {"id": 4, "name": "Morning Workout"}})" }));
+    t.list({ strava_activity(1, iso_time(race(2)), "Welland Sprint Du | Run 1"), strava_activity(2, iso_time(race(1470)), "Morning Workout"),
+        strava_activity(3, iso_time(race(1510)), "Welland Sprint Du | Ride"), strava_activity(4, iso_time(race(3556)), "Morning Workout"),
+        strava_activity(5, iso_time(race(3700)), "Welland Sprint Du | Run 2") });
+    auto const update = MUST_EVAL(update_strava_titles(t.strava, t.store.storage, race(0) - 3600, race(5000)));
+    CHECK_EQ(update.titles, 5u);
+    CHECK((update.changed == std::vector<i64> { filed }));
+    auto const names = sidecar_titles(sidecar);
+    CHECK(!names.strava.has_value());
+    CHECK_EQ(names.service.value_or(""), "Welland");
+    CHECK_EQ(names.legs.size(), 5uz);
+    if (names.legs.size() == 5) {
+        CHECK((names.legs[0].strava == StravaTitle { .id = 1, .name = "Welland Sprint Du | Run 1" }));
+        CHECK((names.legs[1].strava == StravaTitle { .id = 2, .name = "Morning Workout", .description = "" }));
+        CHECK((names.legs[3].strava == StravaTitle { .id = 4, .name = "Morning Workout", .description = "" }));
+        CHECK((names.legs[4].strava == StravaTitle { .id = 5, .name = "Welland Sprint Du | Run 2" }));
+    }
+    // Nothing new the next time.
+    CHECK_EQ(MUST_EVAL(update_strava_titles(t.strava, t.store.storage, race(0) - 3600, race(5000))).titles, 0u);
+}
+
+// A leg renamed on Strava gets the new name and drops its description,
+// for the background to fetch again; a leg whose name is the same keeps
+// its description.
+void test_renamed_leg_drops_its_description()
+{
+    StravaStore t;
+    auto const  filed = race(3591);
+    t.store.add_activity(filed);
+    auto const sidecar = t.store.storage.sidecar_of(filed);
+    MUST(write_file_by_name(fs::path { sidecar }.replace_extension(".fit").string(), std::string_view { duathlon() }));
+    MUST(save_sidecar_strava(sidecar, StravaTitle { .id = 1, .name = "Morning Run", .description = "Fast" }, 0));
+    MUST(save_sidecar_strava(sidecar, StravaTitle { .id = 3, .name = "Welland Sprint Du | Ride", .description = "Windy" }, 2));
+    t.list({ strava_activity(1, iso_time(race(2)), "Welland Sprint Du | Run 1"), strava_activity(3, iso_time(race(1510)), "Welland Sprint Du | Ride") });
+    auto const update = MUST_EVAL(update_strava_titles(t.strava, t.store.storage, race(0) - 3600, race(5000)));
+    CHECK_EQ(update.titles, 1u);
+    auto const legs = sidecar_titles(sidecar).legs;
+    CHECK_EQ(legs.size(), 3uz);
+    if (legs.size() == 3) {
+        CHECK((legs[0].strava == StravaTitle { .id = 1, .name = "Welland Sprint Du | Run 1" }));
+        CHECK((legs[2].strava == StravaTitle { .id = 3, .name = "Welland Sprint Du | Ride", .description = "Windy" }));
+    }
+}
+
+// A multisport file in the summary file has its legs from there, without
+// reading the file, which here isn't a FIT file at all.
+void test_legs_from_the_summary_file()
+{
+    TempStore  store;
+    auto const filed = race(600);
+    store.add_activity(filed);
+    auto const fit = fs::path { store.storage.sidecar_of(filed) }.replace_extension(".fit");
+    auto const file = MUST_EVAL(summary_file(store.storage, fit));
+    MUST(write_summaries(summaries_path(store.storage),
+        ActivitySummaries {
+            ActivitySummary { .source = file, .start = race(0), .sport = FIT::sport::Cycling, .moving = 590, .leg = 0, .leg_name = "Bike" },
+            ActivitySummary { .source = file, .start = race(600), .sport = FIT::sport::Running, .moving = 300, .leg = 1, .leg_name = "Run" },
+        }));
+    std::vector const starts { StoredStart { .start = filed, .sidecar = store.storage.sidecar_of(filed) }, StoredStart { .start = 17, .sidecar = "17.json" } };
+    auto const        legs = stored_legs(store.storage, starts);
+    CHECK_EQ(legs.size(), 2uz);
+    if (legs.size() == 2) {
+        CHECK_EQ(legs[0].legs.size(), 2uz);
+        CHECK(legs[0].legs.size() == 2 && legs[0].legs[0].start == race(0) && legs[0].legs[0].end == race(600));
+        // The last ends after its moving time.
+        CHECK(legs[0].legs.size() == 2 && legs[0].legs[1].end == race(900));
+        CHECK(legs[1].legs.empty());
+    }
+}
 }
 
 int main()
@@ -392,5 +577,11 @@ int main()
     test_activity_filed_in_another_time_zone();
     test_sync_keeps_the_users_notes();
     test_rejected_isnt_given_again();
+    test_match_the_duathlons_legs();
+    test_match_im_ottawas_legs();
+    test_match_legs_that_start_at_their_end();
+    test_titles_of_legs();
+    test_renamed_leg_drops_its_description();
+    test_legs_from_the_summary_file();
     return ST::Test::test_result();
 }

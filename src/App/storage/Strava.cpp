@@ -181,6 +181,7 @@ Decoded<std::vector<StravaActivity>> parse_activities(JSONValue const &page)
             .id = *id,
             .start_time = static_cast<i64>(start->timestamp),
             .name = entry.try_get<std::string>("name").value_or(""),
+            .elapsed = entry.try_get<i64>("elapsed_time").value_or(0),
         });
     }
     return activities;

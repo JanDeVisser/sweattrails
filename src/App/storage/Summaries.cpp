@@ -196,24 +196,27 @@ StorageResult<std::vector<SummaryFile>> summary_files(Storage const &storage)
 {
     std::vector<SummaryFile> ret;
     for (auto const &stored : TRY_EVAL(storage.activity_starts(0, std::numeric_limits<i32>::max()))) {
-        auto fit = stored.sidecar;
-        fit.replace_extension(".fit");
-        std::error_code ec { };
-        auto const      size = fs::file_size(fit, ec);
-        if (ec) {
-            return std::unexpected(LibCError { ec });
-        }
-        auto const modified = fs::last_write_time(fit, ec);
-        if (ec) {
-            return std::unexpected(LibCError { ec });
-        }
-        ret.push_back(SummaryFile {
-            .file = fs::relative(fit, storage.activity_dir).generic_string(),
-            .size = size,
-            .modified = std::chrono::duration_cast<std::chrono::seconds>(modified.time_since_epoch()).count(),
-        });
+        ret.push_back(TRY_EVAL(summary_file(storage, fs::path { stored.sidecar }.replace_extension(".fit"))));
     }
     return ret;
+}
+
+StorageResult<SummaryFile> summary_file(Storage const &storage, fs::path const &fit)
+{
+    std::error_code ec { };
+    auto const      size = fs::file_size(fit, ec);
+    if (ec) {
+        return std::unexpected(LibCError { ec });
+    }
+    auto const modified = fs::last_write_time(fit, ec);
+    if (ec) {
+        return std::unexpected(LibCError { ec });
+    }
+    return SummaryFile {
+        .file = fs::relative(fit, storage.activity_dir).generic_string(),
+        .size = size,
+        .modified = std::chrono::duration_cast<std::chrono::seconds>(modified.time_since_epoch()).count(),
+    };
 }
 
 namespace {

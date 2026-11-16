@@ -22,15 +22,22 @@ namespace ST {
 // what the user asks for, such as Ctrl+G.
 constexpr i64 StravaSpareRequests = 20;
 
-// A description to fetch: Strava's ID, and the activities in the store
-// with it. The same ride recorded on two devices takes one request.
-struct Undescribed {
-    u64                      id { 0 };
-    std::vector<StoredStart> stored { };
+// An activity in the store, or its leg `leg`: where a Strava title is.
+struct StravaPlace : public StoredStart {
+    std::optional<size_t> leg { };
 };
 
-// The store's activities with a Strava title and no description, newest
-// first.
+// A description to fetch: Strava's ID, and the activities in the store,
+// or legs, with it. The same ride recorded on two devices takes one
+// request.
+struct Undescribed {
+    u64                      id { 0 };
+    std::vector<StravaPlace> stored { };
+};
+
+// The store's activities, and legs, with a Strava title and no
+// description, newest first. A transition's is saved empty by the titles
+// run, so it's never here.
 StorageResult<std::vector<Undescribed>> strava_backlog(Storage const &storage);
 
 // When the background may ask Strava again, by what `usage` says is left:

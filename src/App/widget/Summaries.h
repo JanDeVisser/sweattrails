@@ -191,8 +191,8 @@ struct SummariesScreen : public Layout {
     std::function<void(ActivitySummary const &)> on_week { };
     // Enter on a row of the power table: its ride, to show.
     std::function<void(ActivitySummary const &)> on_ride { };
-    // A ride's name, for the power table, kept by file while the screen
-    // is open.
+    // A ride's name, for the power table, or a leg's, kept by file and
+    // leg while the screen is open.
     std::function<std::string(ActivitySummary const &)> ride_name { };
     std::map<std::string, std::string>                  ride_names { };
     // The summary of each of the curve table's rows, for Enter.

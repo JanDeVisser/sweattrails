@@ -86,9 +86,9 @@ inline std::string token_response(std::string_view access, std::string_view refr
         Now + 21600, refresh, access);
 }
 
-inline std::string strava_activity(u64 id, std::string_view start_date, std::string_view name)
+inline std::string strava_activity(u64 id, std::string_view start_date, std::string_view name, i64 elapsed = 3600)
 {
-    return std::format(R"({{"id":{},"name":"{}","start_date":"{}","elapsed_time":3600,"sport_type":"Ride"}})", id, name, start_date);
+    return std::format(R"({{"id":{},"name":"{}","start_date":"{}","elapsed_time":{},"sport_type":"Ride"}})", id, name, start_date, elapsed);
 }
 
 inline std::string list_of(std::vector<std::string> const &activities)

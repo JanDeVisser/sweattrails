@@ -171,6 +171,7 @@ void test_list_activities()
     CHECK_EQ(last.name, "Morning ride");
     // 2026-10-01T06:30:15Z.
     CHECK_EQ(last.start_time, 1790836215);
+    CHECK_EQ(last.elapsed, 3600);
 }
 
 // A Unix time as Strava writes it: 2026-10-01T00:00:00Z.

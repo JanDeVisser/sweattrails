@@ -413,15 +413,13 @@ std::string format_duration(u32 seconds)
 
 namespace {
 
-// A best's activity, by `name_of`, and a leg's name after it: "IM Ottawa
-// · Bike".
+// A best's activity, or leg, by `name_of`, which names a leg's best
+// itself: "IM Ottawa · Bike". Without a name, a leg goes by its own,
+// "Bike".
 std::string best_name(std::function<std::string(ActivitySummary const &)> const &name_of, ActivitySummary const &summary)
 {
     auto ret = name_of ? name_of(summary) : std::string { };
-    if (summary.leg) {
-        ret = ret.empty() ? summary.leg_name : std::format("{} · {}", ret, summary.leg_name);
-    }
-    return ret;
+    return (ret.empty() && summary.leg) ? summary.leg_name : ret;
 }
 
 }
@@ -1043,7 +1041,8 @@ void SummariesScreen::refresh_power()
 
 std::string const &SummariesScreen::name_of(ActivitySummary const &summary)
 {
-    auto [name, added] = ride_names.try_emplace(summary.source.file);
+    auto const key = summary.leg ? std::format("{}#{}", summary.source.file, *summary.leg) : summary.source.file;
+    auto [name, added] = ride_names.try_emplace(key);
     if (added && ride_name) {
         name->second = ride_name(summary);
     }
