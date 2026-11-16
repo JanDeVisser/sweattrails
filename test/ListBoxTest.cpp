@@ -206,6 +206,24 @@ void test_scrolling_after_search(TestList &list)
     CHECK(list.selection_ok());
 }
 
+// The hand over an entry, which a click selects, not below the last one
+// or on the scrollbar. The app goes back to its default each frame.
+void test_the_hand_over_an_entry(TestList &list)
+{
+    list.setup(numbered(5));
+    place_rows(list);
+    auto const hand_at = [&list](Vector2 mouse) {
+        App::the()->m_requested_cursor = MOUSE_CURSOR_DEFAULT;
+        list.handle_mouse(ScrollInput { .mouse = mouse });
+        return App::the()->m_requested_cursor == MOUSE_CURSOR_POINTING_HAND;
+    };
+    CHECK(hand_at({ .x = 50, .y = 5 }));
+    CHECK(hand_at({ .x = 50, .y = 45 }));
+    CHECK(!hand_at({ .x = 50, .y = 150 })); // Below the last entry
+    CHECK(!hand_at({ .x = 195, .y = 5 }));  // The scrollbar
+    CHECK(!hand_at({ .x = 300, .y = 5 }));  // Outside
+}
+
 // Page Down after the wheel scrolled away from the selection brings it
 // back on screen.
 void test_page_down_after_wheel(TestList &list)
@@ -554,6 +572,7 @@ int main()
     test_scrollbar_pages(*list);
     test_scrolling_after_search(*list);
     test_page_down_after_wheel(*list);
+    test_the_hand_over_an_entry(*list);
     test_empty_list(*list);
     test_double_click();
     test_click_selects(*list);

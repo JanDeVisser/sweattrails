@@ -456,16 +456,16 @@ struct ListBox : public Modal {
     }
 
     // The scrollbar and the mouse wheel scroll, and leave the selection
-    // where it is. A click on an entry selects it, and a double click
-    // chooses it, as Enter does.
+    // where it is. Over an entry, the pointing hand: a click selects it,
+    // and a double click chooses it, as Enter does.
     void handle_mouse(ScrollInput const &input)
     {
         scroll.count = shown_count();
-        if (scrollbar.handle(scroll, track, rows_area, input) || !input.pressed) {
-            return;
-        }
         auto const entry = entry_at(input.mouse);
-        if (!entry) {
+        if (entry) {
+            App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);
+        }
+        if (scrollbar.handle(scroll, track, rows_area, input) || !input.pressed || !entry) {
             return;
         }
         selection = *entry;
