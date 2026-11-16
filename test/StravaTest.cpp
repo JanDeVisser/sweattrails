@@ -590,8 +590,12 @@ void test_tokens_file()
     TempDir dir { "strava-tokens" };
     CHECK_EQ(strava_tokens_file(dir.path).filename().string(), "strava-tokens.json");
     CHECK(write_tokens(strava_tokens_file(dir.path), fresh_tokens()).has_value());
+    // Windows has no permissions for group and others: %APPDATA%, where
+    // the tokens are, is the user's alone.
+#ifndef _WIN32
     auto const perms = fs::status(strava_tokens_file(dir.path)).permissions();
     CHECK((perms & (fs::perms::group_all | fs::perms::others_all)) == fs::perms::none);
+#endif
 }
 
 }

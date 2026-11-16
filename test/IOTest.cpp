@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <string>
 
+#include <Environment.h>
 #include <FileIO.h>
 
 #include <TempDir.h>
@@ -38,7 +39,10 @@ void test_write_file_atomically_with_permissions()
     auto const file = dir.path / "secret.json";
     auto const owner_only = fs::perms::owner_read | fs::perms::owner_write;
     CHECK(write_file_atomically(file, "secret", owner_only).has_value());
+#ifndef _WIN32
+    // Windows has no permissions for group and others.
     CHECK(fs::status(file).permissions() == owner_only);
+#endif
     CHECK_EQ(read_file_by_name(file.string()).value_or(""), "secret");
 }
 
@@ -51,6 +55,48 @@ void test_write_file_atomically_fails_cleanly()
     CHECK(!fs::exists(dir.path / "missing"));
 }
 
+// A name that isn't ASCII: on Windows that takes the UTF-8 code page.
+void test_file_name_not_ascii()
+{
+    TempDir    dir { "io" };
+    auto const file = dir.path / fs::path { u8"Café ☕.json" };
+    CHECK(write_file_atomically(file, "{}").has_value());
+    CHECK(fs::exists(file));
+    CHECK_EQ(read_file_by_name(file.string()).value_or(""), "{}");
+    CHECK(file.string().ends_with("Café ☕.json"));
+}
+
+void test_home_dir()
+{
+    CHECK(fs::is_directory(home_dir()));
+}
+
+void test_user_dirs()
+{
+    auto const config = user_config_dir("SweatTrails");
+    auto const data = user_data_dir("SweatTrails");
+    auto const state = user_state_dir("SweatTrails");
+    CHECK_EQ(config.filename().string(), "SweatTrails");
+#if defined(_WIN32)
+    // Settings roam with the user's profile; the store and the state don't.
+    CHECK_EQ(config.parent_path().filename().string(), "Roaming");
+    CHECK_EQ(data.parent_path().filename().string(), "Local");
+    CHECK(data == state);
+#elif defined(__APPLE__)
+    auto const support = home_dir() / "Library" / "Application Support" / "SweatTrails";
+    CHECK(config == support);
+    CHECK(data == support);
+    CHECK(state == support);
+#else
+    set_environment("XDG_CONFIG_HOME", "/xdg/config");
+    set_environment("XDG_DATA_HOME", "relative/is/ignored");
+    unset_environment("XDG_STATE_HOME");
+    CHECK(user_config_dir("SweatTrails") == fs::path { "/xdg/config/SweatTrails" });
+    CHECK(user_data_dir("SweatTrails") == home_dir() / ".local" / "share" / "SweatTrails");
+    CHECK(user_state_dir("SweatTrails") == home_dir() / ".local" / "state" / "SweatTrails");
+#endif
+}
+
 }
 
 int main()
@@ -58,5 +104,8 @@ int main()
     test_write_file_atomically();
     test_write_file_atomically_with_permissions();
     test_write_file_atomically_fails_cleanly();
+    test_file_name_not_ascii();
+    test_home_dir();
+    test_user_dirs();
     return ST::Test::test_result();
 }

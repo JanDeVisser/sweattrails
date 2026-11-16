@@ -3,8 +3,10 @@
  *
  * SPDX-License-Identifier: MIT
  *
- * For the Win32 code, and only there: windows.h with all of its API, and
- * converting to and from the UTF-16 that its W functions take.
+ * For the Win32 code, and only there: windows.h with all of its API, the
+ * shell's and Winsock's too, and converting to and from the UTF-16 that its W functions
+ * take. Those headers are included here, after the #undefs below,
+ * because clang-format would sort them before this header.
  *
  * The build defines NOGDI and NOUSER, so that the windows.h that curl.h
  * and GL/gl.h include leaves out the names that clash with raylib's
@@ -24,7 +26,11 @@
 #include <string>
 #include <string_view>
 
+// Winsock 2 before windows.h, which would bring the old winsock.h.
+#include <shellapi.h>
+#include <shlobj.h>
 #include <windows.h>
+#include <winsock2.h>
 
 #include <Error.h>
 

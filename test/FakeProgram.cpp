@@ -57,6 +57,7 @@ int main(int argc, char **argv)
 #ifdef _WIN32
     // Bytes in, bytes out: no CRLF translation.
     _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
 #endif
     std::vector<std::string_view> args { argv + 1, argv + argc };
     for (size_t ix = 0; ix < args.size(); ++ix) {

@@ -37,7 +37,7 @@ std::string settings_of(std::string_view json)
     if (!settings) {
         return settings.error();
     }
-    return std::format("{}x{} {} {}", settings->resolution.width, settings->resolution.height, settings->fps.to_string(), settings->folder.string());
+    return std::format("{}x{} {} {}", settings->resolution.width, settings->resolution.height, settings->fps.to_string(), settings->folder.generic_string());
 }
 
 void test_settings()

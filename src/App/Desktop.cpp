@@ -8,9 +8,6 @@
 
 #include <Child.h>
 #ifdef _WIN32
-#include <shellapi.h>
-#include <shlobj.h>
-
 #include <Win32.h>
 #endif
 

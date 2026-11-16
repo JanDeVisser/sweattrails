@@ -20,8 +20,6 @@
 #include <Expected.h>
 #include <FileIO.h>
 #ifdef _WIN32
-#include <shlobj.h>
-
 #include <Win32.h>
 #endif
 

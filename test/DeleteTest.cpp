@@ -190,7 +190,7 @@ void test_delete_an_activity()
     if (!deleted) {
         return;
     }
-    CHECK_EQ(deleted->to.string(), in_deleted(store, 0).string());
+    CHECK_EQ(deleted->to.generic_string(), in_deleted(store, 0).generic_string());
     CHECK(!deleted->main.has_value());
     for (auto const *ext : { ".fit", ".json", ".fit.original", ".fit.stub", ".strava" }) {
         CHECK(fs::exists(fs::path { in_deleted(store, 0) }.replace_extension(ext)));
@@ -217,7 +217,7 @@ void test_delete_twice()
     auto const again = delete_recording(store.storage, filed(store, 0));
     CHECK(again.has_value());
     auto const second = in_deleted(store, 0).parent_path() / std::format("{}-1.fit", unix_start(0));
-    CHECK_EQ(again.value_or(Deleted { }).to.string(), second.string());
+    CHECK_EQ(again.value_or(Deleted { }).to.generic_string(), second.generic_string());
     CHECK(fs::exists(in_deleted(store, 0)));
     CHECK(fs::exists(second));
     CHECK(!fs::exists(filed(store, 0)));
@@ -232,7 +232,7 @@ void test_delete_another_recording()
     auto const main = filed(store, 0);
     auto const deleted = delete_recording(store.storage, in_folder(main, 60));
     CHECK(deleted.has_value());
-    CHECK_EQ(deleted.value_or(Deleted { }).to.string(), in_deleted(store, 60).string());
+    CHECK_EQ(deleted.value_or(Deleted { }).to.generic_string(), in_deleted(store, 60).generic_string());
     CHECK(deleted.value_or(Deleted { }).main == main);
     CHECK(!fs::exists(in_folder(main, 60)));
     CHECK(fs::exists(in_folder(main, 120)));
@@ -256,7 +256,7 @@ void test_delete_the_main_one()
     three_recordings(store);
     auto const deleted = delete_recording(store.storage, filed(store, 0));
     CHECK(deleted.has_value());
-    CHECK_EQ(deleted.value_or(Deleted { }).to.string(), in_deleted(store, 0).string());
+    CHECK_EQ(deleted.value_or(Deleted { }).to.generic_string(), in_deleted(store, 0).generic_string());
     auto const main = filed(store, 60);
     CHECK(deleted.value_or(Deleted { }).main == main);
     CHECK(fs::exists(main));

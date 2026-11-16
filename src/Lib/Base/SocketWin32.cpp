@@ -7,9 +7,6 @@
 #include <cerrno>
 #include <mutex>
 
-// winsock2.h before windows.h, which would bring the old winsock.h.
-#include <winsock2.h>
-
 #include <Socket.h>
 #include <Win32.h>
 

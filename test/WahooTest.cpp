@@ -167,7 +167,11 @@ void test_tokens_file()
     CHECK(!read_tokens(file).has_value());
 
     CHECK(write_tokens(file, fresh_tokens()).has_value());
+    // Windows has no permissions for group and others: %APPDATA%, where
+    // the tokens are, is the user's alone.
+#ifndef _WIN32
     CHECK(fs::status(file).permissions() == (fs::perms::owner_read | fs::perms::owner_write));
+#endif
     auto const tokens = read_tokens(file);
     CHECK(tokens.has_value());
     if (tokens) {
