@@ -871,10 +871,73 @@ void test_message()
         "Strava's export has none of the descriptions missing here. 4 activities have a GPX or TCX file, which SweatTrails can't read.");
 }
 
+// A brick, bike then run, from `start` after Test::Start: a multisport
+// file, filed by its run's start, 600 s later.
+std::string brick(u32 start)
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    add_records(fit, 1200, 140, 200, start);
+    add_leg(fit, TestLeg { .sport = 2, .start = start, .count = 600, .distance = 5000 });
+    add_leg(fit, TestLeg { .sport = 1, .start = start + 600, .count = 600, .distance = 2000 });
+    return fit.file();
+}
+
+// The legs' descriptions are filled in from the export too.
+void test_import_leg_descriptions()
+{
+    TempStore store { };
+    store.add_activity(Ride);
+    MUST(save_sidecar_strava(store.storage.sidecar_of(Ride), StravaTitle { .id = LineBreaks, .name = "Du | Ride" }, 2));
+    auto const descriptions = read_export(fixture(), "activities.csv").value_or(ExportActivities { });
+    auto const imported = import_descriptions(store.storage, descriptions);
+    CHECK(imported.has_value());
+    CHECK_EQ(imported.value_or(ExportImport { }).descriptions, 1uz);
+    CHECK_EQ(imported.value_or(ExportImport { .untitled = 9 }).untitled, 0uz);
+    auto const legs = sidecar_titles(store.storage.sidecar_of(Ride)).legs;
+    CHECK(legs.size() == 3 && legs[2].strava == (StravaTitle { .id = LineBreaks, .name = "Du | Ride", .description = descriptions.at(LineBreaks).description }));
+}
+
+// Strava's file of 91, which is on another activity, is a multisport file
+// in the store: the ID comes off the other one, but the multisport file
+// isn't given it, as its legs get theirs from the titles run. Its legs'
+// own IDs, 92 and 93, are the stored file, which isn't queued again.
+void test_multisport_file_gets_no_title()
+{
+    TempStore  store { };
+    TempDir    export_dir { "strava-export" };
+    auto const files = export_dir.path / "activities";
+    fs::create_directories(files);
+    put(store, 100, recording_fit({ .manufacturer = 1, .serial = 77, .start = 100 }), 91);
+    auto const race = brick(5000);
+    auto const sidecar = store.storage.sidecar_of(fit_start(5600));
+    store.add_activity(fit_start(5600));
+    MUST(write_file_by_name(fs::path { sidecar }.replace_extension(".fit").string(), std::string_view { race }));
+    MUST(save_sidecar_strava(sidecar, StravaTitle { .id = 92, .name = "Brick | Ride" }, 0));
+    MUST(save_sidecar_strava(sidecar, StravaTitle { .id = 93, .name = "Brick | Run" }, 1));
+    for (auto const *name : { "191.fit", "192.fit", "193.fit" }) {
+        MUST(write_file_by_name((files / name).string(), std::string_view { race }));
+    }
+    auto const activities = read_export("Activity ID,Activity Name,Activity Description,Filename\n"
+                                        "91,Brick,,activities/191.fit\n"
+                                        "92,Brick | Ride,,activities/192.fit\n"
+                                        "93,Brick | Run,,activities/193.fit\n",
+        "activities.csv")
+                                .value_or(ExportActivities { });
+    auto const missing = queue_missing(store.storage, activities, export_dir.path).value_or(MissingImport { .queued = 99 });
+    CHECK_EQ(missing.queued, 0uz);
+    CHECK(store.inbox().empty());
+    CHECK(!strava_of(store, fit_start(100)).has_value());
+    auto const names = sidecar_titles(sidecar);
+    CHECK(!names.strava.has_value());
+    CHECK(names.legs.size() == 2 && names.legs[0].strava && names.legs[0].strava->id == 92);
+}
 }
 
 int main()
 {
+    test_import_leg_descriptions();
+    test_multisport_file_gets_no_title();
     test_fixture();
     test_not_strava();
     test_bad_lines_are_skipped();

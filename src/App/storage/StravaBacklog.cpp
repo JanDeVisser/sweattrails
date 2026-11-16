@@ -16,18 +16,28 @@ namespace {
 
 constexpr long NotFound = 404;
 
+// What Strava has for `place`, from its sidecar.
+std::optional<StravaTitle> strava_at(StravaPlace const &place)
+{
+    auto const titles = sidecar_titles(place.sidecar);
+    if (!place.leg) {
+        return titles.strava;
+    }
+    return (*place.leg < titles.legs.size()) ? titles.legs[*place.leg].strava : std::nullopt;
+}
+
 // Saves `description` in the sidecars of `undescribed`. The sidecar is
 // read again first: a run of Strava's titles may have given it another
 // name since the backlog was read, or another ID, and those stay.
 void save_description(Undescribed const &undescribed, std::string const &description, BacklogChunk &chunk)
 {
     for (auto const &stored : undescribed.stored) {
-        auto title = sidecar_titles(stored.sidecar).strava;
+        auto title = strava_at(stored);
         if (!title || title->id != undescribed.id || title->description) {
             continue;
         }
         title->description = description;
-        if (auto const saved = save_sidecar_strava(stored.sidecar, *title); !saved) {
+        if (auto const saved = save_sidecar_strava(stored.sidecar, *title, stored.leg); !saved) {
             warning(Strava, "Could not save Strava's description in `{}`: {}", stored.sidecar.string(), saved.error().to_string());
             continue;
         }
@@ -42,13 +52,14 @@ StorageResult<std::vector<Undescribed>> strava_backlog(Storage const &storage)
     std::map<u64, Undescribed> by_id;
     for (auto const &month : TRY_EVAL(storage.months_with_activities())) {
         for (auto const &stored : TRY_EVAL(storage.month_starts(month))) {
-            auto const title = sidecar_titles(stored.sidecar).strava;
-            if (!title || title->description) {
-                continue;
+            for (auto const &[leg, title] : sidecar_stravas(sidecar_titles(stored.sidecar))) {
+                if (title.description) {
+                    continue;
+                }
+                auto &undescribed = by_id[title.id];
+                undescribed.id = title.id;
+                undescribed.stored.push_back(StravaPlace { stored, leg });
             }
-            auto &undescribed = by_id[title->id];
-            undescribed.id = title->id;
-            undescribed.stored.push_back(stored);
         }
     }
     std::vector<Undescribed> ret;
