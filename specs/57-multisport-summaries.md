@@ -182,16 +182,25 @@ items are all there.
    and the activity counts once in the first period only. Probably what
    Jan wants (a race is one run), but the spec doesn't say; real
    overnight multisport files are rare enough to leave.
+
+   *Resolved*: left as it is. A race counts once, in the period it
+   starts in.
 2. Suggestion: `without_stress()` (`Fitness.cpp`) keys a file's legs per
    year, so a file with legs on both sides of New Year counts as rest in
    each year in which its legs have no stress. Same rarity as 1.
+
+   *Resolved*: left as it is.
 3. Suggestion: in `test/VolumeTest.cpp`, `test_duathlon()` was put between
    the comment of `test_year_to_date_until_today()` and its function, so
    that comment now describes the wrong test. Move it above that comment.
+
+   *Resolved*: the comment is back on its test.
 4. Suggestion: `filing_start()` is no longer used by the summaries, only
    by the store, recordings and Strava export, as the spec intends; the
    comment on `ActivitySummary::start` (if any) should not claim the
    filing start.
+
+   *Resolved*: no change needed. The comment only says "A Unix time".
 
 No bugs found in the counting, `plan_update()`, `store_summary()`,
 `tab_of_leg()` or `on_ride`: the leg index is checked against `legs.size()`

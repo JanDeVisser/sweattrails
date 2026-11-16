@@ -280,8 +280,6 @@ void test_year_to_date()
     CHECK_EQ(count.back(), 3.0);
 }
 
-// This year's stop at today, a year to come has none, and a leap year
-// has 366 days.
 // A duathlon is one run and one ride, with both runs' distance. Another
 // run that day is another.
 void test_duathlon()
@@ -303,6 +301,8 @@ void test_duathlon()
     CHECK_EQ(distance[68], 30000.0);
 }
 
+// This year's stop at today, a year to come has none, and a leap year
+// has 366 days.
 void test_year_to_date_until_today()
 {
     ActivitySummaries const summaries { ride(2026, 1, 1), ride(2026, 3, 10) };
