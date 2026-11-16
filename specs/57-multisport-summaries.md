@@ -1,6 +1,6 @@
 # Multisport activities in the summaries
 
-Status: In progress, on branch feature/57-multisport-summaries
+Status: In review
 
 <!--
 Status is one of:
