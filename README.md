@@ -18,16 +18,16 @@ later, Ninja, and these libraries:
 | libcurl | map tiles, Garmin Connect, Wahoo, Strava | the system's | your distribution |
 | zlib | unzipping Garmin Connect downloads | the system's | your distribution |
 | OpenSSL 3 or later | the Wahoo and Strava logins | Homebrew | your distribution |
-| iconv | text encodings | the system's | glibc's |
 | OpenGL | reading back the overlay's frames | the system's | your distribution |
 
 Rendering the overlay to video runs [ffmpeg](https://ffmpeg.org), which
 the app looks for on the `PATH`, and in `/opt/homebrew/bin` and
-`/usr/local/bin`. It's not needed to build.
+`/usr/local/bin` (on Windows, in winget's `Links` folder). It's not needed
+to build.
 
 ### macOS
 
-The Xcode Command Line Tools, for Clang, libc++, libcurl, zlib and iconv,
+The Xcode Command Line Tools, for Clang, libc++, libcurl and zlib,
 and from [Homebrew](https://brew.sh):
 
 ```sh
@@ -55,8 +55,20 @@ Distributions that don't package raylib need it built from
 
 ### Windows
 
-Not supported: running processes and sockets use POSIX APIs (`fork`,
-`waitpid`, BSD sockets).
+Built on a Mac, with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw)
+(the x86_64 UCRT release for macOS), and tested under
+[Wine](https://github.com/Gcenx/macOS_Wine_builds) (Homebrew's Wine casks
+are disabled; they installed these same builds). The build expects them
+in `~/opt`:
+
+- llvm-mingw unpacked in `~/opt/llvm-mingw`, or set `LLVM_MINGW_ROOT`
+  when configuring.
+- Wine's `wine` linked as `~/opt/wine-bin`, or set `WINE`, or have `wine`
+  on the `PATH`.
+
+The libraries are built from source by `scripts/windows-deps.sh`, see
+below. Windows itself needs no extra libraries. For rendering the overlay
+to video, `winget install ffmpeg`.
 
 ## Building
 
@@ -76,6 +88,46 @@ The app starts in a maximized window on the monitor it was last on.
 That has been tried on macOS, not yet on Linux. Under Wayland, an app
 can't place its own window, so it may not start on the last monitor, and
 glfw warns about that when it starts; X11 doesn't have this problem.
+
+### For Windows
+
+From the repository root on a Mac:
+
+```sh
+scripts/windows-deps.sh
+cmake -B build-windows -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/llvm-mingw.cmake
+ninja -C build-windows
+ctest --test-dir build-windows -j4 --timeout 120
+ninja -C build-windows install
+```
+
+`scripts/windows-deps.sh` downloads raylib, zlib, FreeType, OpenSSL and
+curl at pinned, checksummed versions, and builds them as static libraries
+in `build-windows/deps`. It skips a library that's already built, and,
+like configuring, only needs to run once. After that, `ninja -C
+build-windows` is enough.
+
+`ctest` runs the tests under Wine. One test on its own:
+
+```sh
+scripts/wine-run.sh build-windows/child_test.exe
+```
+
+The app is `build-windows/sweattrails.exe`, a single program that only
+needs Windows's own DLLs. To run it under Wine:
+
+```sh
+cd build-windows && ../scripts/wine-run.sh ./sweattrails.exe
+```
+
+Wine keeps its own `C:` drive in `build-windows/wineprefix`, away from
+`~/.wine`; the app's activities are in
+`drive_c/users/<you>/AppData/Local/sweattrails`.
+
+The app finds its icons, fonts and themes in `build-windows/share`,
+whose Mac path is compiled in. Wine shows the Mac's files as drive `Z:`,
+so that works under Wine, but not yet on a real Windows machine: finding
+`share` next to the program is part of packaging (spec 63).
 
 ## Finding a command
 
