@@ -1,6 +1,6 @@
 # Windows port
 
-Status: In progress, on branch feature/62-windows-port
+Status: In review, on branch feature/62-windows-port
 
 <!--
 Status is one of:
@@ -136,104 +136,177 @@ More dead code, which isn't compiled and isn't included anywhere:
 `JSON.cpp` includes `Lexer.h`. These go in the same first commit as the
 spec's dead code.
 
+### Found while building
+
+- **`IO.h` clashed with `<io.h>`.** mingw's `sys/stat.h` includes
+  `<io.h>`, which on a file system that ignores case, as macOS's and
+  Windows's do, finds `src/Lib/Base/IO.h`. It's `FileIO.h` (and
+  `FileIO.cpp`) now. No other header of ours has the name of one that
+  mingw's headers include.
+- **`windows.h` clashes with raylib** (`Rectangle`, `CloseWindow`,
+  `ShowCursor`, `DrawText`, ...), and `curl.h` and `GL/gl.h` include it.
+  The Windows build defines `NOGDI` and `NOUSER`, which leave those
+  names out. `src/Lib/Base/Win32.h` undefines them again and includes
+  `winsock2.h`, `windows.h`, `shellapi.h` and `shlobj.h`, in that order,
+  for the Win32 code only, which never includes raylib. clang-format sorts
+  includes, so the order is fixed inside `Win32.h`, with clang-format
+  turned off around it. `Win32.h` also has `to_wide()`, `from_wide()` and
+  `win32_error()`.
+- **Text-mode files.** `read_file_by_name()` and `write_file_by_name()`
+  opened their streams in text mode, which on Windows stops reading at a
+  ^Z byte and writes `\r\n` for `\n`, and corrupts FIT files. All the
+  app's streams are binary now.
+- **`localtime_r()`, `gmtime_r()`, `timegm()` and `tm_gmtoff`** aren't on
+  Windows. `Date.h` has `utc_tm()`, `local_tm()`, `utc_offset()` and
+  `utc_time()` instead, which the app and tests use.
+- **`path.c_str()` is `wchar_t` on Windows.** Where a path goes to a C
+  API (OpenSSL's file functions, raylib's `LoadImage()`, `ExportImage()`)
+  it goes as `path.string().c_str()`, which the manifest's code page
+  makes UTF-8.
+- **Time zones in tests.** The tests set `TZ` to IANA names. Windows's C
+  runtime only knows values like `EST5EDT`, with US summer time rules.
+  `test/Environment.h` has `set_time_zone()`, which maps UTC and
+  America/Toronto, and returns false for other zones on Windows, and
+  `set_environment()`/`unset_environment()` for `setenv()`/`unsetenv()`.
+  The two checks that need Europe/Amsterdam (`FitnessTest`) and
+  Pacific/Auckland (`DownloadTest`) don't run on Windows.
+  `StravaTitlesTest` moved its second zone from Amsterdam to UTC, which
+  crosses the month just the same.
+- The app's ID is `sweattrails`, so the folders are
+  `%APPDATA%\sweattrails` and `%LOCALAPPDATA%\sweattrails`, as on macOS
+  (`~/Library/Application Support/sweattrails`). Windows ignores case.
+
 ### Toolchain and dependencies
 
-- **llvm-mingw** (a release tarball from GitHub, x86_64 UCRT), installed
-  outside the repo. `cmake/llvm-mingw.cmake` is the CMake toolchain file.
-  It finds the toolchain through `LLVM_MINGW_ROOT` (default
-  `~/opt/llvm-mingw`, which doesn't need sudo), and sets `CMAKE_CROSSCOMPILING_EMULATOR` to `wine`,
-  so `ctest` runs the tests under Wine.
+- **llvm-mingw** 20261104 (x86_64 UCRT, clang 23), from its GitHub
+  release, in `~/opt/llvm-mingw` (no sudo needed). `cmake/llvm-mingw.cmake`
+  is the CMake toolchain file. It finds the toolchain through
+  `LLVM_MINGW_ROOT` and the libraries through `SWEATTRAILS_WINDOWS_DEPS`
+  (default `build-windows/deps`), keeps CMake and pkg-config away from
+  Homebrew's libraries, and runs programs through `scripts/wine-run.sh`.
 - **Wine**: Homebrew disabled its Wine casks on 2026-09-01 because the
   builds aren't signed. The casks installed Gcenx's builds
-  (github.com/Gcenx/macOS_Wine_builds), so that's what's used, unpacked in
-  `~/opt/wine-devel-<version>`, with `~/opt/wine-bin` linked to its
-  `wine`. It runs x86_64 Windows programs under Rosetta. The emulator is
-  `scripts/wine-run.sh`, which finds Wine (`WINE`, then `~/opt/wine-bin`,
-  then `PATH`), keeps a Wine prefix in the build directory so tests don't
-  touch `~/.wine`, and silences Wine's own debug output.
-- **The dependencies** are built from pinned source releases, as static
-  libraries, by `scripts/windows-deps.sh` into `build-windows/deps`. They
-  are raylib, zlib, freetype, curl (with Schannel: Windows's own TLS and
-  certificate store, so there's no CA bundle to ship) and OpenSSL (only for
-  the login's loopback server). The script is plain and readable, it runs
-  once, and it leaves the main `CMakeLists.txt` with `find_package` as now.
-  Static libraries mean no DLLs, which `63-packaging.md` benefits from.
-- The build: `scripts/windows-deps.sh`, then
-  `cmake -B build-windows -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/llvm-mingw.cmake`,
-  `ninja -C build-windows`, `ctest --test-dir build-windows`.
-- `CMakeLists.txt` stops hard-coding macOS things where Windows trips over
-  them: `-lc++abi` and `m` only off Windows, `MACOSX_BUNDLE` only on Apple,
-  and `ws2_32`, `shell32` and the like on Windows. A `sweattrails.rc`
-  embeds the manifest (`activeCodePage` UTF-8, and Windows 10 as the
-  supported OS).
+  (github.com/Gcenx/macOS_Wine_builds), so that's what's used: Wine Devel
+  11.21, unpacked in `~/opt/wine-devel-11.21`, with `~/opt/wine-bin`
+  linked to its `wine`. It runs x86_64 Windows programs under Rosetta.
+  `scripts/wine-run.sh` finds Wine (`WINE`, then `~/opt/wine-bin`, then
+  `PATH`), keeps its prefix in `build-windows/wineprefix` so tests don't
+  touch `~/.wine`, and silences Wine's own messages. Wine honours the
+  manifest: a program without it gets code page 1252, with it 65001.
+- **The dependencies** are built by `scripts/windows-deps.sh`, from
+  pinned source releases checked by SHA-256, as static libraries, into
+  `build-windows/deps`: zlib 1.3.1, freetype 2.15.0 (zlib only), raylib
+  6.2, OpenSSL 4.1.0 (for the login's loopback server only) and curl
+  8.23.0 with Schannel (Windows's own TLS and certificate store, so no CA
+  bundle). The versions are macOS's, except zlib, where 1.4 was too new.
+  The hashes were checked against OpenSSL's published one, and against a
+  second download site for curl and freetype. A library that's built is
+  skipped the next time.
+- The build:
+
+  ```sh
+  scripts/windows-deps.sh
+  cmake -B build-windows -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/llvm-mingw.cmake
+  ninja -C build-windows
+  ctest --test-dir build-windows
+  ninja -C build-windows install   # share/, for running the app
+  ```
+
+- `CMakeLists.txt` on Windows: `-static` instead of `-lc++abi`, the
+  defines above and `_WIN32_WINNT` for Windows 10, `CURL_STATICLIB`, the
+  Win32 sources instead of the POSIX ones, Windows's libraries, and the
+  app as a GUI program (`WIN32_EXECUTABLE`), without a console.
+  `src/App/windows/sweattrails.rc` embeds `sweattrails.manifest`
+  (`activeCodePage` UTF-8, Windows 10 and 11) in every program, tests
+  too, since they need UTF-8 paths and arguments as much as the app.
+  `sweattrails.exe` only needs Windows's own DLLs (the UCRT is part of
+  Windows 10).
 
 ### Platform code
 
 Where a whole implementation differs, it gets its own file, chosen in
-CMake: `Foo.cpp` keeps what's shared, and `FooPosix.cpp` and
-`FooWin32.cpp` hold the rest. Small differences, such as a path, stay as
+CMake: `FooPosix.cpp` and `FooWin32.cpp`. Small differences stay as
 `#ifdef _WIN32` in place.
 
-- **`src/Lib/Base/Child.h`** (new): a child process: start a program with
-  arguments, optionally with a pipe to its stdin and its stderr to a file,
-  without inheriting the app's other handles; write to its stdin, close it,
-  wait for its exit code, kill it. POSIX: `posix_spawnp` (the code that's
-  in `Encoder.cpp` now). Win32: `CreateProcessW` with
-  `STARTUPINFOEX`/`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`, so only the pipe and
-  the log are inherited, and the command line quoted by Windows's rules.
-  `Encoder` keeps its queue and threads and uses a `Child` instead of
-  `pid_t`/`m_stdin`. `Desktop`'s `run_and_wait()` uses it too. It replaces
-  the deleted `Process.h`.
+- **`src/Lib/Base/Child.h`** (new): a program the app runs. `start()`
+  takes the command and `Options` (a pipe to its stdin, stdout thrown
+  away, stderr to a file); `write()`, `close_stdin()`, `wait()` for the
+  exit code, and `kill()`, which another thread may call while one waits.
+  Also `process_id()`. `ChildPosix.cpp` is the `posix_spawnp()` code that
+  was in `Encoder.cpp`, with its care not to kill a reaped pid.
+  `ChildWin32.cpp` uses `CreateProcessW` with
+  `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`, so only the program's own three
+  handles are inherited, quotes the command line by the C runtime's
+  rules, and gives console programs such as ffmpeg no console window.
+  A killed program ends with exit code 1 there. `Encoder` and `Desktop`'s
+  `run_and_wait()` use it. It replaces the deleted `Process.h`.
 - **`Desktop`**: on Windows `open_browser()` is `ShellExecuteW`, and
-  `reveal_command()` is `explorer.exe /select,<file>`, which does select
-  the file.
-- **`src/Lib/Base/Socket.h`** (new, small): `socket_t` (`int` / `SOCKET`),
-  `InvalidSocket`, `close_socket()`, `make_nonblocking()`,
-  `poll_sockets()` (`poll` / `WSAPoll`), `socket_error()` (`errno` /
-  `WSAGetLastError()`), and a `SocketsInit` that calls `WSAStartup` once.
-  `OAuth.cpp` and `OAuthTest.cpp` use it instead of the BSD calls.
-  `ignore_sigpipe()` does nothing on Windows, which has no SIGPIPE. OpenSSL
-  takes a `SOCKET` through `SSL_set_fd`, as it does there.
-- **`IO.cpp`**: `home_dir()` is `USERPROFILE` (via `SHGetKnownFolderPath`)
-  on Windows. `user_config_dir()` is `FOLDERID_RoamingAppData`, and
-  `user_data_dir()` and `user_state_dir()` are `FOLDERID_LocalAppData`.
-  `write_file_atomically()`'s rename and permissions go through
-  `std::filesystem`.
-- **`find_program()`** (`Render.cpp`): `;` between the `PATH` entries on
-  Windows, and the program is `ffmpeg.exe`. "Executable" means it exists,
-  because Windows has no `X_OK`. `find_ffmpeg()` adds the winget `Links`
-  folder instead of the Homebrew ones, and the error says
+  `reveal_file()` is `SHOpenFolderAndSelectItems()`, which selects the
+  file in Explorer. `explorer /select,` would do that too, but it quotes
+  by rules of its own and always exits with 1. `reveal_command()` is
+  POSIX only.
+- **`src/Lib/Base/Socket.h`** (new): `socket_t` (`int` / `SOCKET`),
+  `InvalidSocket`, `start_sockets()` (`WSAStartup()` once),
+  `socket_error()` (Winsock's errors that have an errno value get it),
+  `close_socket()`, `make_nonblocking()` (also not inherited),
+  `ignore_sigpipe()` (nothing on Windows) and `poll_sockets()` (`poll` /
+  `WSAPoll`). It includes no system headers, because of `windows.h`; the
+  `.cpp` files that make socket calls include them. `OAuth.cpp` and
+  `OAuthTest.cpp` use it. `SO_REUSEADDR` is only set off Windows, where it
+  would let another program take the login's port.
+- **`FileIO.cpp`**: on Windows `home_dir()` is `FOLDERID_Profile`,
+  `user_config_dir()` `FOLDERID_RoamingAppData`, and `user_data_dir()`
+  and `user_state_dir()` `FOLDERID_LocalAppData`, from
+  `SHGetKnownFolderPath()`.
+- **`find_program()`** (`Render.cpp`): on Windows, `name.exe`, in a
+  `PATH` separated by `;`, and any such file counts, as Windows has no
+  `X_OK`. `find_ffmpeg()` adds `%LOCALAPPDATA%\Microsoft\WinGet\Links`
+  instead of the Homebrew folders, and the error says
   `winget install ffmpeg`.
 - **`Garmin.cpp`**: `home_dir()` instead of `getenv("HOME")`.
-- **`Error.cpp`**: an errno table for Windows (mingw's errno values, which
-  are the MSVC CRT's).
-- `Logging.h` uses `<csignal>`, and the stray `unistd.h` includes go.
+- **`Error.cpp`**: an errno table for Windows: the UCRT's values, and the
+  POSIX ones mingw adds from 100 up.
+- `Logging.h` includes `<cstdlib>` instead of `sys/signal.h`, and the
+  stray `unistd.h` includes are gone.
 
 ## Test plan
 
-- The macOS build and all its tests pass at every step, as now.
-- The Windows build's tests, other than the ones that need a window, pass
-  under Wine with `ctest --test-dir build-windows`. Tests that need a
-  window or a GPU (anything that opens one) are left out of the Windows
-  test list. The list is in the Windows section of `CMakeLists.txt`.
-- Tests that use POSIX now become portable:
-  - `EncoderTest` and `DesktopTest` use `/bin/sh` scripts as stand-ins for
-    ffmpeg. They get a small test program of our own instead,
-    `test/FakeProgram.cpp`: copy stdin to a file, write lines to stderr,
-    exit with a code, sleep. It's built for both platforms.
-  - `OverlayRenderStartTest`'s `fork()` and `TempDir.h`'s and
-    `ActivitySelectorTest`'s `getpid()` go through portable code
-    (`Child`, and a unique name from `<random>`).
-  - `OAuthTest` uses `Socket.h`.
-- New tests: `Utf8Test` gets surrogate-range, 4-byte (emoji) and invalid
-  sequences for the new codec. `ChildTest` covers exit codes, stdin to
-  file, stderr to log, kill, a missing program, arguments with spaces and
-  quotes (the Win32 quoting), and that other open files aren't inherited.
-  `IOTest` covers `user_*_dir()` with the environment variables set by
-  hand where the platform reads them.
-- Not tested automatically: opening a browser or Explorer (the tests check
-  the command, as now), and the app's window under Wine. That's tried by
-  hand: the app starts under Wine and shows activities.
+- The macOS build and all its tests pass at every step, as before.
+- All 84 tests are built for Windows and run under Wine with
+  `ctest --test-dir build-windows`; none needed leaving out. They pass,
+  on macOS and under Wine, except `test_many_connections` in
+  `oauth_test`, which fails now and then on both, as it did before this
+  spec.
+- Tests that used POSIX are portable now:
+  - `EncoderTest`, `DesktopTest` and `OverlayRenderStartTest` used
+    `/bin/sh` as a stand-in for ffmpeg. `test/FakeProgram.cpp` does the
+    same few things on both platforms: copy stdin to a file, write to
+    stderr, write a file, write its arguments, sleep, check a handle isn't
+    inherited, exit with a code. Tests get its path as `FAKE_PROGRAM`.
+  - `EncoderTest`'s check for leaked file descriptors counts handles on
+    Windows, and its check that the program doesn't inherit the app's
+    files opens an inheritable handle there.
+  - `OverlayRenderStartTest` only forks off Windows; there a crash fails
+    the test anyway, and ctest's timeout catches a hang.
+  - `TempDir.h` and `ActivitySelectorTest` get the process ID from
+    `Child.h`.
+  - `OAuthTest` uses `Socket.h`, and `send()` instead of `write()`.
+  - Tests compare paths in their generic form, or expect the platform's
+    separators where the app shows a path to the user. The checks of
+    POSIX permissions are POSIX only.
+- New tests: `Utf8Test` covers each UTF-8 length, invalid UTF-8 (cut
+  off, overlong, surrogates, past U+10FFFF), invalid UTF-32, and
+  `is_space()` and `is_control()`. `ChildTest` covers exit codes, a
+  missing program, arguments with spaces, quotes, backslashes and UTF-8
+  (the Win32 quoting), stdin and stderr with bytes that text mode would
+  change, writing to a program that has gone, and `kill()`. `IOTest`
+  covers the user directories on each platform, the home directory, and
+  a file name that isn't ASCII.
+- Not tested automatically: opening a browser or Explorer, and the app's
+  window. By hand, on 2026-11-16, under Wine: the app opens its window,
+  and with ten FIT files in its inbox it files them, downloads map tiles
+  (curl with Schannel), and shows the activities, their maps, graphs and
+  summaries as on macOS.
 
 ## Review notes
 
