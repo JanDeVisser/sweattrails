@@ -501,9 +501,6 @@ void test_best_leg_title()
     CHECK_EQ(best_leg_title(t.activity, 2), "IM Test · Bike");
 }
 
-// The month's list and the curves' table load shallow, and name a
-// multisport activity there: Whole's title is the legs' common title, and a
-// leg's best has the leg's own.
 // The spec's separators include the middle dot, with or without spaces.
 void test_common_title_cuts_a_dot_without_spaces()
 {
@@ -511,6 +508,9 @@ void test_common_title_cuts_a_dot_without_spaces()
     CHECK_EQ(common_title(dots, true).value_or(""), "Race");
 }
 
+// The month's list and the curves' table load shallow, and name a
+// multisport activity there: Whole's title is the legs' common title, and a
+// leg's best has the leg's own.
 void test_shallow_load_has_the_whole_title()
 {
     TempDir dir { "leg-titles-shallow" };

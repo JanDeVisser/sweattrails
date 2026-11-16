@@ -5,6 +5,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <ranges>
 
 #include <storage/Legs.h>
@@ -204,6 +205,13 @@ DateTime filing_start(Activity const &activity)
     return activity.is_multisport() ? activity.legs.back().segment.start_time : activity.segment.start_time;
 }
 
+namespace {
+
+// What a common title doesn't end with: "Welland Sprint Du | Run 1".
+constexpr std::array<std::string_view, 5> TitleSeparators { " ", "|", "-", "·", ":" };
+
+}
+
 std::optional<std::string> common_title(std::span<std::string const> titles, bool titled)
 {
     if (!titled || titles.empty()) {
@@ -215,26 +223,27 @@ std::optional<std::string> common_title(std::span<std::string const> titles, boo
         common = common.substr(0, static_cast<size_t>(here - common.begin()));
     }
     // Whole words only: "Run 1" and "Ride" have "R" in common, which isn't
-    // a title. Cutting at a space or a separator, which are ASCII, is
-    // never halfway through a UTF-8 character either.
-    auto const boundary = [](char c) { return std::string_view { " |-:" }.contains(c); };
-    auto const mid_word = std::ranges::any_of(titles, [&common, &boundary](std::string const &title) {
-        return title.size() > common.size() && !boundary(title[common.size()]);
-    });
-    if (mid_word && !common.empty() && !boundary(common.back())) {
-        auto const last = std::ranges::find_if(common | std::views::reverse, boundary);
-        common = common.substr(0, static_cast<size_t>(common.rend() - last));
-    }
-    auto const trim_end = [&common]() {
-        for (std::string_view const separator : { " ", "|", "-", "·", ":" }) {
-            if (common.ends_with(separator)) {
-                common.remove_suffix(separator.size());
-                return true;
-            }
-        }
-        return false;
+    // a title. Cutting back to a whole separator is never halfway through
+    // a UTF-8 character either, "·" being two bytes.
+    auto const ends_with_separator = [](std::string_view text) {
+        return std::ranges::any_of(TitleSeparators, [text](std::string_view separator) { return text.ends_with(separator); });
     };
-    while (trim_end()) { }
+    auto const starts_with_separator = [](std::string_view text) {
+        return std::ranges::any_of(TitleSeparators, [text](std::string_view separator) { return text.starts_with(separator); });
+    };
+    auto const mid_word = std::ranges::any_of(titles, [&common, &starts_with_separator](std::string const &title) {
+        auto const rest = std::string_view { title }.substr(common.size());
+        return !rest.empty() && !starts_with_separator(rest);
+    });
+    if (mid_word) {
+        while (!common.empty() && !ends_with_separator(common)) {
+            common.remove_suffix(1);
+        }
+    }
+    while (ends_with_separator(common)) {
+        auto const separator = std::ranges::find_if(TitleSeparators, [&common](std::string_view separator) { return common.ends_with(separator); });
+        common.remove_suffix(separator->size());
+    }
     return common.empty() ? titles.front() : std::string { common };
 }
 
