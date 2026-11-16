@@ -325,3 +325,14 @@ No bugs found. ActivityInfoBox behaves as before (keys F, C, Tab, Esc, clicks,
 cursor), and its tests pass. `same_as()` for the saved points, the
 nearest-hour arithmetic and the error paths (`TRY_EVAL`) look right. The
 forecast fallback is only covered by canned tests, as the Developer said.
+
+### Resolution
+
+1. Fixed (c909b8a): `next_weather_request()` drops the waiting request
+   when it's the one just answered; `weather_test` checks it.
+2. Left as it is: the login's thread has the same gap, and the window is
+   a quit between two statements, after `on_terminate()` asked the thread
+   to stop. Worth fixing for both threads together if it ever shows.
+3. Left as it is: harmless, and the hint always had it.
+4. The tests added stay. The leg test the test plan asked for was
+   missing too, and is added (719c614).
