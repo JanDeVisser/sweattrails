@@ -57,7 +57,10 @@ struct StoredLegs {
 // that starts within it. One that starts within two legs, as it can in the
 // minute before a leg's start, is the one's with the nearest start; then
 // each leg takes the nearest of its own. Strava's start isn't always the
-// leg's: see specs/58-multisport-leg-titles.md.
+// leg's: some races have each leg starting at its end, with the leg's own
+// elapsed time. So the legs are matched by Strava's starts, and by its
+// starts less its elapsed times, and the one that matches more legs wins;
+// Strava's starts on a tie. See specs/58-multisport-leg-titles.md.
 std::vector<StravaMatch> match_legs(std::span<StravaActivity const> strava, StoredLegs const &stored);
 
 // The legs of each of `starts`, from the summary file, or from its FIT

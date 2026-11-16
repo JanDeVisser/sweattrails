@@ -41,6 +41,13 @@ StravaActivity strava_at(u64 id, i64 start_time)
     return StravaActivity { .id = id, .start_time = start_time, .name = std::format("Activity {}", id) };
 }
 
+StravaActivity strava_lasting(u64 id, i64 start_time, i64 elapsed)
+{
+    auto ret = strava_at(id, start_time);
+    ret.elapsed = elapsed;
+    return ret;
+}
+
 // Activities in the store, as activity_starts() finds them, by their start
 // times.
 std::vector<StoredStart> stored(std::vector<i64> const &starts)
@@ -401,12 +408,31 @@ void test_match_the_duathlons_legs()
         .stored = { .start = 3591 },
         .legs = spans({ { 0, false }, { 1470, true }, { 1508, false }, { 3555, true }, { 3591, false } }, 3591 + 800),
     };
-    std::vector const strava { strava_at(1, 2), strava_at(2, 1470), strava_at(3, 1510), strava_at(4, 3556), strava_at(5, 3700), strava_at(6, 3591 + 1200) };
+    // With their elapsed times, which don't make them start at their ends.
+    std::vector const strava { strava_lasting(1, 2, 1468), strava_lasting(2, 1470, 38), strava_lasting(3, 1510, 2045), strava_lasting(4, 3556, 35),
+        strava_lasting(5, 3700, 692), strava_lasting(6, 3591 + 1200, 1800) };
     auto const        matches = match_legs(strava, du);
     CHECK((matched_ids(matches) == std::vector<u64> { 1, 2, 3, 4, 5 }));
     CHECK((legs_of(matches) == std::vector<std::optional<size_t>> { 0, 1, 2, 3, 4 }));
     CHECK(matches.size() == 5 && matches[1].transition && matches[3].transition && !matches[4].transition);
     CHECK(matches.size() == 5 && matches[0].stored.start == 3591);
+}
+
+// Muskoka 70.3, 2019, from 11:35:00 UTC, as Strava has it: each leg
+// starts at its end, with its own elapsed time. By their starts, Swim
+// would go to T1, T1 to the bike and so on, and the run to nothing; less
+// their elapsed times, each goes to its own.
+void test_match_legs_that_start_at_their_end()
+{
+    StoredLegs const muskoka {
+        .stored = { .start = 11885 },
+        .legs = spans({ { 0, false }, { 2711, true }, { 2894, false }, { 11806, true }, { 11885, false } }, 11885 + 6973),
+    };
+    std::vector const strava { strava_lasting(1, 2711, 2710), strava_lasting(2, 2894, 182), strava_lasting(3, 11806, 8911), strava_lasting(4, 11885, 78),
+        strava_lasting(5, 19010, 6972) };
+    auto const        matches = match_legs(strava, muskoka);
+    CHECK((matched_ids(matches) == std::vector<u64> { 1, 2, 3, 4, 5 }));
+    CHECK((legs_of(matches) == std::vector<std::optional<size_t>> { 0, 1, 2, 3, 4 }));
 }
 
 // IM Ottawa's, from 10:34:00: each Strava activity starts some seconds
@@ -553,6 +579,7 @@ int main()
     test_rejected_isnt_given_again();
     test_match_the_duathlons_legs();
     test_match_im_ottawas_legs();
+    test_match_legs_that_start_at_their_end();
     test_titles_of_legs();
     test_renamed_leg_drops_its_description();
     test_legs_from_the_summary_file();

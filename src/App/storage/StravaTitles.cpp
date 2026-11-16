@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <format>
+#include <functional>
 #include <map>
 
 #include <Date.h>
@@ -40,14 +41,17 @@ std::vector<StravaMatch> match_strava(std::span<StravaActivity const> strava, st
     return ret;
 }
 
-std::vector<StravaMatch> match_legs(std::span<StravaActivity const> strava, StoredLegs const &stored)
+namespace {
+
+// match_legs() with each Strava activity starting at `start_of` it.
+std::vector<StravaMatch> match_legs_by(std::span<StravaActivity const> strava, StoredLegs const &stored, std::function<i64(StravaActivity const &)> const &start_of)
 {
     auto const &legs = stored.legs;
-    auto const  from_start = [&legs](StravaActivity const &activity, size_t leg) {
-        return std::abs(activity.start_time - legs[leg].start);
+    auto const  from_start = [&legs, &start_of](StravaActivity const &activity, size_t leg) {
+        return std::abs(start_of(activity) - legs[leg].start);
     };
-    auto const within = [&legs](StravaActivity const &activity, size_t leg) {
-        return activity.start_time >= legs[leg].start - StravaMatchSeconds && activity.start_time < legs[leg].end;
+    auto const within = [&legs, &start_of](StravaActivity const &activity, size_t leg) {
+        return start_of(activity) >= legs[leg].start - StravaMatchSeconds && start_of(activity) < legs[leg].end;
     };
     std::vector<std::optional<StravaActivity>> nearest(legs.size());
     for (auto const &activity : strava) {
@@ -63,7 +67,7 @@ std::vector<StravaMatch> match_legs(std::span<StravaActivity const> strava, Stor
         // Halfway between two, the earlier one wins, as for an activity.
         auto &taken = nearest[*leg];
         if (!taken || from_start(activity, *leg) < from_start(*taken, *leg)
-            || (from_start(activity, *leg) == from_start(*taken, *leg) && activity.start_time < taken->start_time)) {
+            || (from_start(activity, *leg) == from_start(*taken, *leg) && start_of(activity) < start_of(*taken))) {
             taken = activity;
         }
     }
@@ -74,6 +78,15 @@ std::vector<StravaMatch> match_legs(std::span<StravaActivity const> strava, Stor
         }
     }
     return ret;
+}
+
+}
+
+std::vector<StravaMatch> match_legs(std::span<StravaActivity const> strava, StoredLegs const &stored)
+{
+    auto by_start = match_legs_by(strava, stored, [](StravaActivity const &activity) { return activity.start_time; });
+    auto by_end = match_legs_by(strava, stored, [](StravaActivity const &activity) { return activity.start_time - activity.elapsed; });
+    return (by_end.size() > by_start.size()) ? by_end : by_start;
 }
 
 namespace {

@@ -101,6 +101,7 @@ struct StravaActivity {
     u64         id { 0 };
     i64         start_time { 0 }; // Unix time, from start_date
     std::string name { };
+    i64         elapsed { 0 }; // Seconds, from elapsed_time: 0 if it doesn't say
 };
 
 // The activities in a page of Strava's list. One without an ID or a start
