@@ -87,6 +87,9 @@ The commands you last ran from it come first. It's also the way to the
 few commands without a key, such as logging in to Wahoo or Strava.
 Clicking "for commands" at the right of the status bar opens it too.
 
+The bar at the top of the window has a menu button at the left, with
+Quit in it for now.
+
 In the palette, and in every other list, a click selects an entry, and
 a double click chooses it, as Enter does.
 
@@ -165,6 +168,11 @@ to the year before or after. Enter on a month lists its activities, as
 Ctrl+M does. Cmd+Up (Ctrl+Up off macOS) goes back up: from a month's
 activities to its year's months, and from those to the years. Escape
 closes the list, whichever it is.
+
+The top bar shows where the activity on display is: "Activities ›
+2025 › November". Clicking a part opens its list: Activities the years,
+the year its months, and the month its activities, each with the
+activity on display selected.
 
 Cmd+I (Ctrl+I off macOS) shows the activity's file, the device that
 recorded it and its sensors. F shows the file in the Finder, and C, or
