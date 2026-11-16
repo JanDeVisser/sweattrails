@@ -17,6 +17,7 @@
 #include <JSON.h>
 
 #include <storage/Activity.h>
+#include <storage/Legs.h>
 #include <storage/Storage.h>
 #include <storage/Weather.h>
 
@@ -136,6 +137,45 @@ void test_indoors_no_weather()
     CHECK(weather_points(t.activity) == std::unexpected(NoWeather::Indoor));
     t.activity.manufacturer = FIT::manufacturer::garmin;
     CHECK(weather_points(t.activity).has_value());
+}
+
+// A leg's tab shows the leg's own records: its weather is at its own
+// start and end, not the race's.
+void test_points_of_a_leg()
+{
+    Made              t;
+    Coordinates const t1 { .lat = 45.32f, .lon = -79.21f };
+    Coordinates const t2 { .lat = 45.31f, .lon = -79.12f };
+    t.activity.records = {
+        at(T1 - 1800, Coordinates { .lat = 45.34f, .lon = -79.23f }), // Swim
+        at(T1, t1),                                                   // T1
+        at(T1 + 300, t1),                                             // Bike
+        at(T1 + 3600, std::nullopt),
+        at(T1 + 9000, t2),
+        at(T1 + 9300, std::nullopt), // Run, without a fix yet
+        at(T1 + 9360, Finish),
+    };
+    t.activity.legs = {
+        Leg { .sport = sport::Swimming, .first_record = 0, .end_record = 1 },
+        Leg { .sport = sport::Transition, .first_record = 1, .end_record = 2 },
+        Leg { .sport = sport::Cycling, .first_record = 2, .end_record = 5 },
+        Leg { .sport = sport::Running, .first_record = 5, .end_record = 7 },
+    };
+    auto const bike = weather_points(leg_activity(t.activity, 2));
+    CHECK(bike.has_value());
+    if (bike) {
+        CHECK(bike->start == (WeatherPoint { .time = T1 + 300, .position = t1 }));
+        CHECK(bike->end == (WeatherPoint { .time = T1 + 9000, .position = t2 }));
+    }
+    auto const run = weather_points(leg_activity(t.activity, 3));
+    CHECK(run.has_value());
+    if (run) {
+        CHECK(run->start == (WeatherPoint { .time = T1 + 9360, .position = Finish }));
+        CHECK(run->end == run->start);
+    }
+    // The whole race's are its first and last.
+    auto const whole = weather_points(t.activity);
+    CHECK(whole.has_value() && whole->start.time == T1 - 1800 && whole->end.time == T1 + 9360);
 }
 
 // A request asked for while the same one ran is dropped once it's
@@ -419,6 +459,7 @@ int main()
     test_points_are_the_first_and_last_with_a_position();
     test_no_position_no_weather();
     test_indoors_no_weather();
+    test_points_of_a_leg();
     test_next_request();
     test_nearest_hour();
     test_request();
