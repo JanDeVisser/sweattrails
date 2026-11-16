@@ -105,12 +105,17 @@ void TopBar::handle_input(ScrollInput const &input)
     if (!input.pressed) {
         return;
     }
-    if (button_hovered) {
+    // A click opens a modal, and the bar gets no input under it to unlight
+    // what was clicked.
+    auto const crumb = crumb_hovered;
+    button_hovered = false;
+    crumb_hovered.reset();
+    if (!crumb) {
         if (!menu.empty()) {
             popup_menu(menu_point(), menu);
         }
     } else if (on_crumb) {
-        on_crumb(*crumb_hovered);
+        on_crumb(*crumb);
     }
 }
 

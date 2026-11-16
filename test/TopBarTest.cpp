@@ -103,6 +103,18 @@ void test_hover()
     CHECK(!bar->button_hovered);
 }
 
+// A click opens a list or the menu, a modal, under which the bar gets no
+// input: what was clicked isn't lit up behind it, or after it closes.
+void test_click_clears_hover()
+{
+    auto const bar = bar_with_trail();
+    bar->on_crumb = [](size_t) { };
+    bar->handle_input(ScrollInput { .mouse = { .x = 150, .y = 10 }, .pressed = true });
+    CHECK(!bar->crumb_hovered);
+    CHECK(!bar->button_hovered);
+    bar->handle_input(ScrollInput { .mouse = { .x = 10, .y = 10 }, .pressed = true });
+    CHECK(!bar->button_hovered);
+}
 }
 
 int main()
@@ -113,5 +125,6 @@ int main()
     test_button();
     test_click_on_crumb();
     test_hover();
+    test_click_clears_hover();
     return Test::test_result();
 }
