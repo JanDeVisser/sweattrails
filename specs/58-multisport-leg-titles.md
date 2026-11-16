@@ -259,6 +259,17 @@ None.
   first goes to the leg, of those whose window it starts in, whose start
   is nearest; then each leg takes the nearest of the activities that went
   to it. T2 goes to T2, and run 2 gets "| Run 2".
+- **Legs that start at their end on Strava**: in every race from 2017
+  to 2019 in Jan's store (14 of them, Muskoka 70.3 2019 among them),
+  each of Strava's legs starts at the FIT leg's end, with the leg's own
+  elapsed time. Matched by Strava's starts, each goes to the leg after
+  its own. So `StravaActivity` gets `elapsed`, from the list's
+  `elapsed_time`, and `match_legs()` matches by Strava's starts and by
+  its starts less its elapsed times, and keeps whichever matches more
+  legs, Strava's starts on a tie. Run over Jan's summary file and
+  export, the 14 races match all their legs, and the other 65 as
+  before. A Ctrl+Shift+G puts the 14 right: a leg's title with another
+  Strava ID is replaced.
 - **The legs' starts come from the summary file**: a summary per leg,
   with its start and sport. The last leg's end is its start plus its
   moving time, as the summary has no elapsed time: a slightly short
@@ -303,6 +314,8 @@ None.
 ## Test plan
 
 - `StravaTitlesTest.cpp`:
+  - `match_legs()` with Muskoka 70.3 2019's times, whose Strava legs
+    start at their ends: each leg gets its own.
   - `match_legs()` with the duathlon's and IM Ottawa's times from the
     spec: each leg, transitions included, gets its own Strava activity;
     run 2 gets "| Run 2", not T2; an activity starting after the last
