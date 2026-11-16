@@ -233,4 +233,32 @@ The up key is `GoUpKey`, `KeyCombo { KEY_UP, KModSuper }` on macOS and
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. Suggestion: going up can open an empty month list. `show_year()`
+   (src/App/SweatTrails.cpp:1904, called from the activity list's `up_fnc`
+   at :1861) takes the year from `list->month`, which the activity list
+   shows even when `month_counts()` doesn't have it, e.g. a month whose
+   only files aren't named by start time (the case the Architecture
+   accepts for the month list). Cmd+Up then shows a year with no rows,
+   against "Enter never leads to an empty list", and `months->select()`
+   does nothing. Falling back to the nearest year with activities (or
+   doing nothing, with a message) would fix it.
+2. Suggestion: `month_counts()` (src/App/storage/Summaries.cpp:326) counts
+   every readable summary, whether or not its FIT file is still in the
+   store. A deleted file keeps its month in the lists until the summaries
+   drop it; the activity list would be empty or smaller then. Intersecting
+   the summaries with `files` when `files` is the full store listing
+   would avoid it, but the function's contract says `files` is only
+   those without a summary, so this is a spec decision.
+3. Suggestion: the lists keep the `counts` from when they opened
+   (Left and Right in `MonthSelector` use them), so a download that
+   finishes while a list is open isn't shown until it's reopened. The
+   Architecture accepts this for Enter and up; Left and Right are the
+   same.
+4. Missing test (not added, needs a font): `MonthSelector::process_key`
+   Left and Right call `refresh()`, so the reselecting after a year
+   change is only covered through `destination()` and `populate()`.
+
+Build and the full test run pass (82 of 82). Correctness against the
+spec otherwise checks out: Version 1 scope is all there, the README is
+updated, the test plan is covered, and I found no signed/unsigned or
+lifetime problems. No tests added.
