@@ -268,6 +268,7 @@ add_executable(
         src/App/storage/StravaTitles.cpp
         src/App/storage/Wahoo.cpp
         src/App/storage/Weather.cpp
+        src/App/widget/Weather.cpp
         share/icons/sweattrails.icns
 )
 
@@ -1212,6 +1213,27 @@ sweattrails_test(
 )
 target_include_directories(weather_test PRIVATE src/App)
 target_link_libraries(weather_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        weather_box_test
+        test/WeatherBoxTest.cpp
+        src/App/widget/Weather.cpp
+        src/App/storage/Weather.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
+        src/App/storage/Devices.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Stubs.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Http.cpp
+        src/App/Map.cpp
+)
+target_include_directories(weather_box_test PRIVATE src/App)
+target_link_libraries(weather_box_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         strava_titles_test
