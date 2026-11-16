@@ -117,7 +117,7 @@ None.
   the activity's `legs`, and `leg_name` ("Bike", "Run", "T1"), both
   empty for a file with one session. The name is kept so that the
   curves' table can say "IM Ottawa · Bike" without loading the file.
-- `read_summary()` becomes `read_summaries(Storage &, SummaryFile)`,
+- `read_summary()` becomes `read_file_summaries(Storage &, SummaryFile)`,
   which gives a summary per leg, each made from `leg_activity()` of
   its leg as a single activity's is made: the leg's sport, its own
   start, distance, moving time, ascent, NP, heart rate load and curves.
