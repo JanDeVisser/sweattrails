@@ -32,8 +32,10 @@
 #include <storage/Summaries.h>
 #include <storage/Types.h>
 #include <storage/Wahoo.h>
+#include <storage/Weather.h>
 #include <widget/Activity.h>
 #include <widget/Summaries.h>
+#include <widget/Weather.h>
 
 namespace ST {
 
@@ -291,6 +293,22 @@ struct StubsReplaced {
     std::vector<std::pair<i64, i64>> moved { };
 };
 
+// The weather box's request to Open-Meteo: the points, and where the
+// answer is saved. An empty sidecar is an activity not from the store.
+struct WeatherRequest {
+    WeatherPoints         points { };
+    std::filesystem::path sidecar { };
+    std::optional<size_t> leg { };
+};
+
+// Sent by the weather's thread when Open-Meteo has answered: the weather,
+// or why there's none.
+struct WeatherArrived {
+    WeatherRequest                 request { };
+    std::optional<ActivityWeather> weather { };
+    std::string                    error { };
+};
+
 // What the FindNewestActivity job at startup found.
 struct StoreChecked {
     bool empty { false };
@@ -316,7 +334,8 @@ struct StoreChecked {
     S(Describing, Describing)                       \
     S(DescribingPaused, DescribingPaused)           \
     S(StubsReplaced, StubsReplaced)                 \
-    S(ActivityDeleted, ActivityDeleted)
+    S(ActivityDeleted, ActivityDeleted)             \
+    S(WeatherArrived, WeatherArrived)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -403,6 +422,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_describing_paused(Notification::Payload const &data);
     static void notif_stubs_replaced(Notification::Payload const &data);
     static void notif_activity_deleted(Notification::Payload const &data);
+    static void notif_weather_arrived(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -430,6 +450,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_describing_paused,
                 notif_stubs_replaced,
                 notif_activity_deleted,
+                notif_weather_arrived,
             });
     }
 
@@ -458,6 +479,15 @@ struct SweatTrails : public Main<Job, Notification> {
     std::string logging_in { };
     // Waits for the browser to come back from the login.
     std::jthread login { };
+    // Gets the weather from Open-Meteo for the weather box, on a thread of
+    // its own rather than as a job, which could wait behind a download for
+    // an hour (specs/59-weather.md). One request at a time: whether one
+    // runs, and the one to start when it's done. Only used on the UI
+    // thread.
+    std::jthread                  weather_thread { };
+    bool                          getting_weather { false };
+    std::optional<WeatherRequest> weather_next { };
+    std::weak_ptr<WeatherBox>     weather_box { };
     // The overlay's render to video, while it runs. Only used on the UI
     // thread, where it draws.
     std::unique_ptr<OverlayRender> overlay_render { nullptr };
