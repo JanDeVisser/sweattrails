@@ -17,7 +17,7 @@ namespace {
 
 std::string read_log(fs::path const &log)
 {
-    std::ifstream     in { log };
+    std::ifstream     in { log, std::ios::binary };
     std::stringstream text;
     text << in.rdbuf();
     return text.str();

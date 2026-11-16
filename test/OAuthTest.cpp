@@ -62,10 +62,10 @@ struct TestCertificate {
         X509_NAME_free(name);
         X509_sign(x509, pkey, EVP_sha256());
 
-        auto *certificate_file = BIO_new_file(certificate.c_str(), "w");
+        auto *certificate_file = BIO_new_file(certificate.string().c_str(), "w");
         PEM_write_bio_X509(certificate_file, x509);
         BIO_free(certificate_file);
-        auto *key_file = BIO_new_file(key.c_str(), "w");
+        auto *key_file = BIO_new_file(key.string().c_str(), "w");
         PEM_write_bio_PrivateKey(key_file, pkey, nullptr, nullptr, 0, nullptr, nullptr);
         BIO_free(key_file);
         X509_free(x509);

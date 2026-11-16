@@ -117,7 +117,8 @@ fs::path output_path(fs::path const &folder, ActivityClock const &clock, RenderR
 std::vector<std::string> ffmpeg_arguments(RenderSettings const &settings, ActivityClock const &clock, RenderRange const &range, fs::path const &output);
 
 // The program in one of the `PATH`'s directories, or else in one of
-// `extra`, if it's there and can be run.
+// `extra`, if it's there and can be run. On Windows `name` gets .exe, and
+// the `PATH`'s directories are separated by semicolons.
 std::optional<fs::path> find_program(std::string_view name, std::string_view path, std::vector<fs::path> const &extra);
 
 // About how big the file will be, in GB: ProRes 4444 is some 2.5 GB a

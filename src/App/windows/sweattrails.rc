@@ -1,0 +1,3 @@
+// The application manifest: 1 is CREATEPROCESS_MANIFEST_RESOURCE_ID, and
+// 24 RT_MANIFEST.
+1 24 "sweattrails.manifest"

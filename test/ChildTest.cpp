@@ -13,7 +13,7 @@
 #include <vector>
 
 #include <Child.h>
-#include <IO.h>
+#include <FileIO.h>
 
 #include <TempDir.h>
 #include <TestApp.h>

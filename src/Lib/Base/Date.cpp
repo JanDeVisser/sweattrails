@@ -53,6 +53,50 @@ i64 now()
     return static_cast<i64>(time(nullptr));
 }
 
+std::tm utc_tm(i64 time)
+{
+    auto const t = static_cast<std::time_t>(time);
+    std::tm    ret { };
+#ifdef _WIN32
+    gmtime_s(&ret, &t);
+#else
+    gmtime_r(&t, &ret);
+#endif
+    return ret;
+}
+
+std::tm local_tm(i64 time)
+{
+    auto const t = static_cast<std::time_t>(time);
+    std::tm    ret { };
+#ifdef _WIN32
+    localtime_s(&ret, &t);
+#else
+    localtime_r(&t, &ret);
+#endif
+    return ret;
+}
+
+i32 utc_offset(i64 time)
+{
+#ifdef _WIN32
+    // Windows's tm has no tm_gmtoff: the local time, read as UTC, is that
+    // much later.
+    return static_cast<i32>(utc_time(local_tm(time)) - time);
+#else
+    return static_cast<i32>(local_tm(time).tm_gmtoff);
+#endif
+}
+
+i64 utc_time(std::tm tm)
+{
+#ifdef _WIN32
+    return static_cast<i64>(_mkgmtime(&tm));
+#else
+    return static_cast<i64>(timegm(&tm));
+#endif
+}
+
 std::expected<DateTime, LibCError> DateTime::parse_iso8601(std::string_view const &s)
 {
     //           1
@@ -105,9 +149,9 @@ std::expected<DateTime, LibCError> DateTime::parse_iso8601(std::string_view cons
     tm.tm_hour = hour;
     tm.tm_min = minute;
     tm.tm_sec = second;
-    tm.tm_gmtoff = 0;
     tm.tm_isdst = 0;
-    auto const timestamp = timegm(&tm);
+    auto const timestamp = utc_time(tm);
+    tm = utc_tm(timestamp); // For the day of the week and of the year
     return DateTime {
         .timestamp = static_cast<u32>(timestamp),
         .year = year,
@@ -123,11 +167,9 @@ std::expected<DateTime, LibCError> DateTime::parse_iso8601(std::string_view cons
 
 DateTime DateTime::from_timestamp(i32 timestamp)
 {
-    time_t    ts { timestamp };
-    struct tm tm { };
-    localtime_r(&ts, &tm);
+    auto const tm = local_tm(timestamp);
     return DateTime {
-        .timestamp = static_cast<u32>(ts),
+        .timestamp = static_cast<u32>(timestamp),
         .year = static_cast<i16>(tm.tm_year + 1900),
         .month = static_cast<Month>(tm.tm_mon),
         .day_of_month = static_cast<u8>(tm.tm_mday),

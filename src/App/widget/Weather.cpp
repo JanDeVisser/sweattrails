@@ -38,14 +38,7 @@ int whole(float value)
 // doesn't say.
 std::string local_time(i64 time, std::optional<i32> utc_offset)
 {
-    std::tm tm { };
-    if (utc_offset) {
-        auto const local = static_cast<time_t>(time + *utc_offset);
-        gmtime_r(&local, &tm);
-    } else {
-        auto const t = static_cast<time_t>(time);
-        localtime_r(&t, &tm);
-    }
+    auto const tm = utc_offset ? utc_tm(time + *utc_offset) : local_tm(time);
     return std::format("{}:{:02}", tm.tm_hour, tm.tm_min);
 }
 

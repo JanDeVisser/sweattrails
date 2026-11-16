@@ -11,15 +11,44 @@
 #include <format>
 
 #include <config.h>
+#ifndef _WIN32
 #include <pwd.h>
 #include <unistd.h>
+#endif
 
 #include <Error.h>
 #include <Expected.h>
-#include <IO.h>
+#include <FileIO.h>
+#ifdef _WIN32
+#include <shlobj.h>
+
+#include <Win32.h>
+#endif
 
 namespace ST {
 
+#ifdef _WIN32
+namespace {
+
+// A folder Windows knows, such as FOLDERID_Profile, the user's home.
+std::filesystem::path known_folder(KNOWNFOLDERID const &id)
+{
+    wchar_t              *path { nullptr };
+    std::filesystem::path ret { "." };
+    if (SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, nullptr, &path) == S_OK) {
+        ret = path;
+    }
+    CoTaskMemFree(path);
+    return ret;
+}
+
+}
+
+std::filesystem::path home_dir()
+{
+    return known_folder(FOLDERID_Profile);
+}
+#else
 std::filesystem::path home_dir()
 {
     if (char const *home = getenv("HOME"); home != nullptr && *home != 0) {
@@ -30,6 +59,7 @@ std::filesystem::path home_dir()
     }
     return ".";
 }
+#endif
 
 std::expected<bool, LibCError> path_exists(std::filesystem::path const &path)
 {
@@ -55,7 +85,7 @@ std::expected<std::filesystem::path, LibCError> ensure_directory(std::filesystem
 
 namespace {
 
-#ifndef IS_APPLE
+#ifdef IS_LINUX
 std::filesystem::path xdg_dir(char const *env_var, std::filesystem::path const &fallback)
 {
     // The XDG spec says relative paths in these variables are to be ignored.
@@ -101,7 +131,9 @@ std::expected<void, LibCError> write_file_atomically(std::filesystem::path const
 
 std::filesystem::path user_config_dir(std::string_view const &app)
 {
-#ifdef IS_APPLE
+#if defined(IS_WINDOWS)
+    return known_folder(FOLDERID_RoamingAppData) / app;
+#elif defined(IS_APPLE)
     return home_dir() / "Library" / "Application Support" / app;
 #else
     return xdg_dir("XDG_CONFIG_HOME", ".config") / app;
@@ -110,7 +142,9 @@ std::filesystem::path user_config_dir(std::string_view const &app)
 
 std::filesystem::path user_data_dir(std::string_view const &app)
 {
-#ifdef IS_APPLE
+#if defined(IS_WINDOWS)
+    return known_folder(FOLDERID_LocalAppData) / app;
+#elif defined(IS_APPLE)
     return home_dir() / "Library" / "Application Support" / app;
 #else
     return xdg_dir("XDG_DATA_HOME", std::filesystem::path { ".local" } / "share") / app;
@@ -119,7 +153,9 @@ std::filesystem::path user_data_dir(std::string_view const &app)
 
 std::filesystem::path user_state_dir(std::string_view const &app)
 {
-#ifdef IS_APPLE
+#if defined(IS_WINDOWS)
+    return known_folder(FOLDERID_LocalAppData) / app;
+#elif defined(IS_APPLE)
     return home_dir() / "Library" / "Application Support" / app;
 #else
     return xdg_dir("XDG_STATE_HOME", std::filesystem::path { ".local" } / "state") / app;

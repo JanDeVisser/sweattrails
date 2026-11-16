@@ -17,10 +17,12 @@
 
 namespace ST {
 
+// Files are read and written as they are, in binary: in text mode, Windows
+// turns \n into \r\n, and stops reading at a ^Z.
 template<typename T = char>
 std::expected<std::basic_string<T>, LibCError> read_file_by_name(std::string_view const &file_name)
 {
-    std::ifstream is(std::string { file_name });
+    std::ifstream is(std::string { file_name }, std::ios::binary);
     if (!is) {
         return std::unexpected(LibCError());
     }
@@ -34,7 +36,7 @@ std::expected<std::basic_string<T>, LibCError> read_file_by_name(std::string_vie
 template<typename T = char>
 std::expected<ssize_t, LibCError> write_file_by_name(std::string_view const &file_name, std::basic_string_view<T> const &contents)
 {
-    std::basic_ofstream<T> os(std::string { file_name });
+    std::basic_ofstream<T> os(std::string { file_name }, std::ios::binary);
     if (!os) {
         return std::unexpected(LibCError());
     }
@@ -59,7 +61,7 @@ std::expected<ssize_t, LibCError> write_file_by_name(std::string_view const &fil
 std::expected<void, LibCError> write_file_atomically(std::filesystem::path const &path, std::string_view contents, std::optional<std::filesystem::perms> permissions = { });
 
 // The user's home directory: $HOME, or the password database entry if HOME
-// isn't set.
+// isn't set. On Windows, the user's profile folder.
 std::filesystem::path home_dir();
 
 // std::filesystem::exists(), returning errors instead of throwing them.
@@ -70,7 +72,10 @@ std::expected<std::filesystem::path, LibCError> ensure_directory(std::filesystem
 
 // Per-user directories for application `app`, following the platform's
 // conventions. On macOS all three are ~/Library/Application Support/<app>.
-// Elsewhere they are the XDG base directories: $XDG_CONFIG_HOME (default
+// On Windows the config directory is %APPDATA%\<app>, which roams with the
+// user's profile, and the other two %LOCALAPPDATA%\<app>, which doesn't:
+// the activity store is too big for that. Elsewhere they are the XDG base
+// directories: $XDG_CONFIG_HOME (default
 // ~/.config), $XDG_DATA_HOME (~/.local/share) and $XDG_STATE_HOME
 // (~/.local/state), each followed by <app>. The directories are not created.
 std::filesystem::path user_config_dir(std::string_view const &app);

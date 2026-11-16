@@ -26,7 +26,7 @@
 #include <sys/socket.h>
 #endif
 
-#include <IO.h>
+#include <FileIO.h>
 #include <JSON.h>
 #include <Logging.h>
 #include <Socket.h>
@@ -385,10 +385,10 @@ std::expected<TlsContext, LibCError> TlsContext::load(fs::path const &certificat
         return std::unexpected(openssl_error("Could not set up TLS"));
     }
     SSL_CTX_set_min_proto_version(context.get(), TLS1_2_VERSION);
-    if (SSL_CTX_use_certificate_chain_file(context.get(), certificate.c_str()) != 1) {
+    if (SSL_CTX_use_certificate_chain_file(context.get(), certificate.string().c_str()) != 1) {
         return std::unexpected(openssl_error(std::format("Could not read the certificate `{}`", certificate.string())));
     }
-    if (SSL_CTX_use_PrivateKey_file(context.get(), key.c_str(), SSL_FILETYPE_PEM) != 1) {
+    if (SSL_CTX_use_PrivateKey_file(context.get(), key.string().c_str(), SSL_FILETYPE_PEM) != 1) {
         return std::unexpected(openssl_error(std::format("Could not read the key `{}`", key.string())));
     }
     if (SSL_CTX_check_private_key(context.get()) != 1) {

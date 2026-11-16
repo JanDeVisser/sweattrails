@@ -8,10 +8,12 @@
 #include <ctime>
 
 #include <Date.h>
+#include <Environment.h>
 
 #include <TestApp.h>
 
 using namespace ST;
+using namespace ST::Test;
 
 namespace {
 
@@ -34,8 +36,7 @@ void test_parse_iso8601_drops_fractions()
 // In local time, as the user's clock says it.
 void test_clock_time()
 {
-    setenv("TZ", "America/Toronto", 1);
-    tzset();
+    set_time_zone("America/Toronto");
     // 2026-10-29T12:05:00Z, 08:05 in Toronto in summer time.
     CHECK_EQ(clock_time(1793275500), "08:05");
     // 2026-11-11T14:00:00Z, 09:00 in winter time.

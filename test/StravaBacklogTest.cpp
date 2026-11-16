@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include <Environment.h>
 #include <FakeStrava.h>
 
 #include <storage/Activity.h>
@@ -352,8 +353,7 @@ int main()
 {
     test_backlog_of_legs();
     // The store's months are in local time.
-    setenv("TZ", "UTC", 1);
-    tzset();
+    set_time_zone("UTC");
     test_backlog_newest_first();
     test_backlog_one_request_per_id();
     test_resume_at();

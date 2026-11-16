@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  *
  * Handing things to the desktop: a URL to the browser, a file to Finder
- * (or the file manager off macOS).
+ * (or Explorer, or the file manager elsewhere).
  */
 
 #pragma once
@@ -25,11 +25,14 @@ std::expected<int, LibCError> run_and_wait(std::vector<std::string> const &comma
 // Opens `url` in the user's browser.
 std::expected<void, LibCError> open_browser(std::string const &url);
 
+#ifndef _WIN32
 // What shows `file` in the file manager: Finder, with the file selected,
 // on macOS; elsewhere, xdg-open on its folder, which can't select it.
 std::vector<std::string> reveal_command(std::filesystem::path const &file);
+#endif
 
-// Shows `file` in the file manager, with reveal_command().
+// Shows `file` in the file manager: with reveal_command(), or in Explorer,
+// with the file selected, on Windows.
 std::expected<void, LibCError> reveal_file(std::filesystem::path const &file);
 
 }

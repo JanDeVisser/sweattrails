@@ -16,7 +16,8 @@
 #include <string>
 #include <vector>
 
-#include <IO.h>
+#include <Environment.h>
+#include <FileIO.h>
 #include <JSON.h>
 
 #include <Http.h>
@@ -983,8 +984,7 @@ void test_a_complete_time_in_the_future_counts_as_now()
 int main()
 {
     // The messages say when Wahoo's limit resets in local time.
-    setenv("TZ", "UTC", 1);
-    tzset();
+    set_time_zone("UTC");
     test_login_code();
     test_tokens_file();
     test_tokens_folder_is_made();

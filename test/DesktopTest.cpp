@@ -29,6 +29,7 @@ void test_run_and_wait()
     CHECK(!missing.has_value() || *missing != 0);
 }
 
+#ifndef _WIN32
 void test_reveal_command()
 {
     auto const command = reveal_command("/store/activity/2026/11/1794572226.fit");
@@ -38,12 +39,15 @@ void test_reveal_command()
     CHECK(command == (std::vector<std::string> { "xdg-open", "/store/activity/2026/11" }));
 #endif
 }
+#endif
 
 }
 
 int main()
 {
     test_run_and_wait();
+#ifndef _WIN32
     test_reveal_command();
+#endif
     return test_result();
 }

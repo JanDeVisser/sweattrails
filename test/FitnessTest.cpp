@@ -13,12 +13,15 @@
 #include <ctime>
 #include <string>
 
+#include <Environment.h>
+
 #include <storage/Fitness.h>
 #include <storage/Thresholds.h>
 
 #include <TestApp.h>
 
 using namespace ST;
+using namespace ST::Test;
 
 namespace chrono = std::chrono;
 
@@ -336,10 +339,11 @@ void test_more_thresholds()
 // just after midnight, is on its own day.
 void test_days_across_summer_time()
 {
-    auto const       *old = std::getenv("TZ");
-    std::string const saved = old ? old : "";
-    setenv("TZ", "Europe/Amsterdam", 1);
-    tzset();
+    auto const saved = saved_time_zone();
+    // Not on Windows, which only has the US's summer time rules.
+    if (!set_time_zone("Europe/Amsterdam")) {
+        return;
+    }
     auto at = [](chrono::year_month_day day, int hour, int minute) {
         std::tm tm {
             .tm_sec = 0,
@@ -369,12 +373,7 @@ void test_days_across_summer_time()
         CHECK(days[211].day == date(2025, 10, 26));
         CHECK(near(days[211].tss, 100));
     }
-    if (old) {
-        setenv("TZ", saved.c_str(), 1);
-    } else {
-        unsetenv("TZ");
-    }
-    tzset();
+    restore_time_zone(saved);
 }
 
 // The year's last week runs into the next: 2025's of Monday the 29th of

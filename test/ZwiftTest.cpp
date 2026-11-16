@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-#include <IO.h>
+#include <FileIO.h>
 
 #include <Zwift.h>
 #include <storage/Activity.h>
@@ -275,7 +275,7 @@ struct SmallWorld {
     {
         auto image = GenImageColor(64, 48, RED);
         ImageDrawPixel(&image, 0, 0, BLUE);
-        CHECK(ExportImage(image, (dir.path / "Small.png").c_str()));
+        CHECK(ExportImage(image, (dir.path / "Small.png").string().c_str()));
         UnloadImage(image);
     }
 };
@@ -350,7 +350,7 @@ void test_cut_a_turned_world()
     auto image = GenImageColor(64, 48, RED);
     ImageDrawPixel(&image, 0, 0, BLUE);
     ImageDrawRectangle(&image, 56, 0, 8, 8, GREEN);
-    CHECK(ExportImage(image, (small.dir.path / "Small.png").c_str()));
+    CHECK(ExportImage(image, (small.dir.path / "Small.png").string().c_str()));
     UnloadImage(image);
 
     auto const map = prepare_zwift_world(small.dir.path, small.world);
@@ -423,7 +423,7 @@ void test_no_column_is_lost_at_a_seam()
     for (auto column = 0; column < area.width; ++column) {
         ImageDrawRectangle(&image, column, 0, 1, area.height, column_color(column));
     }
-    CHECK(ExportImage(image, (dir.path / "Seams.png").c_str()));
+    CHECK(ExportImage(image, (dir.path / "Seams.png").string().c_str()));
     UnloadImage(image);
 
     auto const map = prepare_zwift_world(dir.path, world);

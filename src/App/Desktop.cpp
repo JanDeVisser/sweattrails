@@ -7,11 +7,18 @@
 #include <format>
 
 #include <Child.h>
+#ifdef _WIN32
+#include <shellapi.h>
+#include <shlobj.h>
+
+#include <Win32.h>
+#endif
 
 #include <Desktop.h>
 
 namespace ST {
 
+#ifndef _WIN32
 namespace {
 
 // Runs `command`, and an exit code other than 0 is an error.
@@ -28,6 +35,7 @@ std::expected<void, LibCError> run_to_success(std::vector<std::string> const &co
 }
 
 }
+#endif
 
 std::expected<int, LibCError> run_and_wait(std::vector<std::string> const &command)
 {
@@ -41,6 +49,39 @@ std::expected<int, LibCError> run_and_wait(std::vector<std::string> const &comma
     }
     return *exit_code;
 }
+
+#ifdef _WIN32
+
+std::expected<void, LibCError> open_browser(std::string const &url)
+{
+    // ShellExecute's result is greater than 32 when it worked.
+    auto const result = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", to_wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+    if (result <= 32) {
+        return std::unexpected(win32_error(static_cast<DWORD>(result)));
+    }
+    return { };
+}
+
+// Explorer, with the file selected. `explorer /select,<file>` would do
+// that too, but it quotes by rules of its own, and always exits with 1.
+std::expected<void, LibCError> reveal_file(std::filesystem::path const &file)
+{
+    auto const initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    auto      *item = ILCreateFromPathW(file.c_str());
+    auto const result = (item != nullptr) ? SHOpenFolderAndSelectItems(item, 0, nullptr, 0) : E_FAIL;
+    if (item != nullptr) {
+        ILFree(item);
+    }
+    if (SUCCEEDED(initialized)) {
+        CoUninitialize();
+    }
+    if (FAILED(result)) {
+        return std::unexpected(win32_error(static_cast<DWORD>(result)));
+    }
+    return { };
+}
+
+#else
 
 std::expected<void, LibCError> open_browser(std::string const &url)
 {
@@ -64,5 +105,7 @@ std::expected<void, LibCError> reveal_file(std::filesystem::path const &file)
 {
     return run_to_success(reveal_command(file));
 }
+
+#endif
 
 }
