@@ -309,6 +309,12 @@ void test_year_and_month_entries()
     CHECK_EQ(month.columns, (std::vector<std::string> { "17" }));
 }
 
+void test_activity_trail()
+{
+    CHECK_EQ(activity_trail(Month { 2025, DateTime::Month::November }), (std::vector<std::string> { "Activities", "2025", "November" }));
+    CHECK_EQ(activity_trail(std::nullopt), (std::vector<std::string> { "Activities" }));
+}
+
 // The years oldest first, each with the activities of all its months, and
 // Enter submits the year selected.
 void test_year_list()
@@ -425,6 +431,7 @@ int main()
     test_opens_at_activity();
     test_destinations_skip_months_that_list_nothing();
     test_year_and_month_entries();
+    test_activity_trail();
     test_year_list();
     test_month_list();
     test_month_list_destinations();
