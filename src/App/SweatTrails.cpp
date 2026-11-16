@@ -2315,6 +2315,10 @@ void SweatTrails::notif_titles_changed(Notification::Payload const &data)
     auto &activity = displayed->activity;
     if (std::ranges::any_of(changed.starts, [&activity](i64 start) { return activity.id.name == std::to_string(start); })) {
         activity.read_names();
+        // A multisport activity's legs, shown or not.
+        if (auto &whole = SweatTrails::the()->activity_display->multisport; whole) {
+            whole->read_names();
+        }
         // A new description can change the data panel's height.
         SweatTrails::the()->activity_display->resize();
     }
@@ -2688,7 +2692,8 @@ void SweatTrails::initialize()
         }
     };
     // As the activity list names them: the FIT file's name, or the
-    // sidecar's.
+    // sidecar's. A leg's best by the leg's own title, or as "IM Ottawa ·
+    // Bike".
     summaries_screen->ride_name = [this](ActivitySummary const &summary) -> std::string {
         auto const id = summary_activity(summary);
         if (!id) {
@@ -2697,6 +2702,9 @@ void SweatTrails::initialize()
         Activity activity { storage, *id };
         if (auto const loaded = activity.load(LoadingDepth::Shallow); !loaded || !*loaded) {
             return { };
+        }
+        if (summary.leg && *summary.leg < activity.legs.size()) {
+            return best_leg_title(activity, *summary.leg);
         }
         return activity.title;
     };

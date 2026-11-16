@@ -719,16 +719,13 @@ void ActivityDisplay::show_tab(size_t tab)
     if (!multisport || !activity || tab >= data_display->tabs.labels.size()) {
         return;
     }
-    // Whole's laps the user made, and a name given on any tab, are the
-    // activity's.
-    auto const &shown = activity->activity;
+    // Whole's laps the user made, and its names, are the activity's. A
+    // leg's names are in the sidecar, and can change Whole's: its common
+    // title, its legs' descriptions (specs/58-multisport-leg-titles.md).
     if (data_display->tabs.selected == 0) {
-        *multisport = shown;
+        *multisport = activity->activity;
     } else {
-        multisport->title = shown.title;
-        multisport->original_title = shown.original_title;
-        multisport->notes = shown.notes;
-        multisport->original_notes = shown.original_notes;
+        multisport->read_names();
     }
     data_display->tabs.selected = tab;
     // The overlay is the FIT file's, so only Whole's.
