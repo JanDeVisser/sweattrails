@@ -36,7 +36,7 @@ fs::path sidecar_of(fs::path const &fit)
     return fs::path { fit }.replace_extension(".json");
 }
 
-std::optional<JSONValue> read_sidecar(fs::path const &fit)
+std::optional<JSONValue> read_fit_sidecar(fs::path const &fit)
 {
     std::error_code ec { };
     if (!fs::exists(sidecar_of(fit), ec)) {
@@ -178,7 +178,7 @@ std::optional<RecordingInfo> recording_info(Storage &storage, fs::path const &fi
     }
     auto ret = info_of(activity);
     ret.fit = fit;
-    if (auto const sidecar = read_sidecar(fit); sidecar) {
+    if (auto const sidecar = read_fit_sidecar(fit); sidecar) {
         auto const marked = sidecar->try_get<std::string>(RecordingsKey).value_or("");
         ret.separate = marked == Separate;
         ret.chosen = marked == Chosen;
@@ -335,7 +335,7 @@ StorageResult<Grouped> group_recordings(Storage &storage, std::vector<RecordingI
     std::optional<std::string> title;
     for (auto const &recording : recordings) {
         if (!in_folder(recording.fit)) {
-            if (auto const sidecar = read_sidecar(recording.fit); sidecar && sidecar->has(TitleKey)) {
+            if (auto const sidecar = read_fit_sidecar(recording.fit); sidecar && sidecar->has(TitleKey)) {
                 title = sidecar->try_get<std::string>(TitleKey).value_or("");
                 break;
             }

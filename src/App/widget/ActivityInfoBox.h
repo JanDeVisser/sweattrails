@@ -18,31 +18,13 @@
 #include <string>
 #include <vector>
 
-#include <raylib.h>
-
-#include <Modal.h>
-#include <Scroll.h>
+#include <InfoBox.h>
 
 #include <widget/ActivityInfo.h>
 
 namespace ST {
 
-// A row of the popup, from the top: a heading, such as "Sensors", an
-// entry under it, or an entry's details, in the smaller font.
-struct InfoRow {
-    enum class Kind {
-        Heading,
-        Entry,
-        Details,
-    };
-
-    Kind     kind { Kind::Entry };
-    InfoLine line { };
-    bool     file { false }; // The file's name, which a click copies
-
-    bool operator==(InfoRow const &) const = default;
-};
-
+// The rows under the title: the file, the device, and the sensors.
 [[nodiscard]] std::vector<InfoRow> info_rows(ActivityInfo const &info);
 
 // The line at the top: "Activity info", and which recording for one of
@@ -53,7 +35,7 @@ struct InfoRow {
 // and Esc.
 [[nodiscard]] std::string info_hint(ActivityInfo const &info);
 
-struct ActivityInfoBox : public Modal {
+struct ActivityInfoBox : public InfoBox {
     // What the popup shows: the activity on display, or nothing without one.
     using Describe = std::function<std::optional<ActivityInfo>()>;
     // Shows the next (+1) or previous (-1) recording.
@@ -70,8 +52,6 @@ struct ActivityInfoBox : public Modal {
     Reveal                reveal_fnc;
     Copy                  copy_fnc;
     ActivityInfo          info { };
-    Rectangle             hint_area { }; // Where draw() drew the hint, for a click
-    Rectangle             file_area { }; // Where draw() drew the file's line, likewise
     std::optional<double> copied_at { }; // When the path was copied, as GetTime()
 
     ActivityInfoBox(Describe describe, SwitchRecording switch_recording, Reveal reveal, Copy copy);
@@ -84,20 +64,19 @@ struct ActivityInfoBox : public Modal {
     void reveal();
     // Copies the file's full path, at `now`, as GetTime().
     void copy(double now);
-    // The line at the bottom at `now`: "Copied" for a while after a copy,
-    // else info_hint().
-    [[nodiscard]] std::string hint_text(double now) const;
+
+    [[nodiscard]] std::string          box_title() const override;
+    [[nodiscard]] std::vector<InfoRow> box_rows() const override;
+    // "Copied" for a while after a copy, else info_hint().
+    [[nodiscard]] std::string hint_text(double now) const override;
+
+    // A click on the file's line copies its path, and one on the hint
+    // shows the file.
+    void               click_link(double now) override;
+    void               click_hint() override;
+    [[nodiscard]] bool hint_clickable() const override;
 
     bool process_key(KeyboardModifier modifier, int key) override;
-    void process_input() override;
-    // A click on the hint shows the file, and one on the file's line
-    // copies its path.
-    void handle_input(ScrollInput const &input);
-    void resize() override;
-    void draw() override;
-
-private:
-    [[nodiscard]] static float row_height(InfoRow::Kind kind);
 };
 
 }

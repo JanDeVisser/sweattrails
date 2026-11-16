@@ -909,6 +909,7 @@ void SweatTrails::on_terminate()
 {
     // Not waiting for a browser that's not coming back.
     login.request_stop();
+    weather_thread.request_stop();
     // While there's an OpenGL context to let go of the render texture in.
     // A render that isn't done stops, and its file is removed.
     overlay_render.reset();
@@ -2087,6 +2088,68 @@ void cmd_activity_info(pSweatTrails const &sweattrails, JSONValue const &)
     box->show();
 }
 
+// Asks Open-Meteo for the weather on the weather's thread, or, while it
+// asks for another, once it's done.
+void get_weather(pSweatTrails const &sweattrails, WeatherRequest request)
+{
+    if (sweattrails->getting_weather) {
+        sweattrails->weather_next = std::move(request);
+        return;
+    }
+    sweattrails->getting_weather = true;
+    sweattrails->weather_thread = std::jthread {
+        [request = std::move(request)](std::stop_token const &stop) {
+            auto weather = fetch_weather(http_fetch, request.points);
+            // The app is quitting, and may be gone already.
+            if (stop.stop_requested()) {
+                return;
+            }
+            WeatherArrived arrived { .request = request };
+            if (weather) {
+                arrived.weather = std::move(*weather);
+            } else {
+                arrived.error = weather.error().description;
+            }
+            SweatTrails::the()->notify<NotificationType::WeatherArrived>(std::move(arrived));
+        }
+    };
+}
+
+// Cmd+Shift+I: the weather at the start and the end of the activity on
+// display, or of the leg on its tab (specs/59-weather.md).
+void cmd_weather(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (!activity_for_keys(sweattrails)) {
+        return;
+    }
+    auto const leg_index = [](Activity const &activity) {
+        return activity.leg.transform([](LegShown const &shown) { return shown.index; });
+    };
+    auto describe_shown = [sweattrails, leg_index]() -> std::optional<WeatherBox::Shown> {
+        auto const displayed = sweattrails->activity_display->activity;
+        if (!displayed) {
+            return { };
+        }
+        auto const &activity = displayed->activity;
+        return WeatherBox::Shown {
+            .points = weather_points(activity),
+            .saved = activity.sidecar.empty() ? std::nullopt : sidecar_weather(activity.sidecar, leg_index(activity)),
+            .utc_offset = activity.utc_offset,
+            .leg = activity.leg ? activity.leg->name : std::string { },
+        };
+    };
+    auto fetch = [sweattrails, leg_index](WeatherPoints const &points) {
+        auto const displayed = sweattrails->activity_display->activity;
+        if (!displayed) {
+            return;
+        }
+        get_weather(sweattrails, WeatherRequest { .points = points, .sidecar = displayed->activity.sidecar, .leg = leg_index(displayed->activity) });
+    };
+    auto const box = Widget::make<WeatherBox>(describe_shown, fetch);
+    sweattrails->weather_box = box;
+    box->show();
+}
+
 // Ctrl+Shift+R: the activity on display's recordings as activities of
 // their own. See specs/31-multiple-recordings.md.
 void cmd_split_recordings(pSweatTrails const &sweattrails, JSONValue const &)
@@ -2482,6 +2545,31 @@ void SweatTrails::notif_activity_deleted(Notification::Payload const &data)
     the->activity_display->clear_activity();
     the->set_status(deleted.done);
     the->update_summaries();
+}
+
+// Keeps the weather in the sidecar, whether the box is still open or not,
+// and shows it if it is. Nothing is kept for an error, so that the box
+// asks again next time.
+void SweatTrails::notif_weather_arrived(Notification::Payload const &data)
+{
+    auto const &arrived = std::get<WeatherArrived>(data);
+    auto const  the = SweatTrails::the();
+    the->getting_weather = false;
+    if (arrived.weather && !arrived.request.sidecar.empty()) {
+        if (auto const saved = save_sidecar_weather(arrived.request.sidecar, *arrived.weather, arrived.request.leg); !saved) {
+            warning(ST, "Couldn't keep the weather in `{}`: {}", arrived.request.sidecar.string(), saved.error().to_string());
+        }
+    }
+    if (auto const box = the->weather_box.lock(); box) {
+        std::expected<ActivityWeather, std::string> result = std::unexpected(arrived.error);
+        if (arrived.weather) {
+            result = *arrived.weather;
+        }
+        box->weather_arrived(arrived.request.points, result);
+    }
+    if (auto next = next_weather_request(std::exchange(the->weather_next, std::nullopt), arrived.request); next) {
+        get_weather(the, std::move(*next));
+    }
 }
 
 void SweatTrails::notif_describing(Notification::Payload const &data)
@@ -2920,6 +3008,10 @@ void SweatTrails::initialize()
     bus.add_task<SweatTrails>("st-activity-info", self(), cmd_activity_info)
         .titled("Activity info")
         .bind(KeyCombo { KEY_I, command })
+        .when(on_activity_screen);
+    bus.add_task<SweatTrails>("st-weather", self(), cmd_weather)
+        .titled("Weather")
+        .bind(KeyCombo { KEY_I, command | KModShift })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-overlay-preview", self(), cmd_overlay_preview)
         .titled("Preview the overlay")

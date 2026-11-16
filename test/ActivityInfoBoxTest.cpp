@@ -77,7 +77,7 @@ void test_rows()
     auto const                 rows = info_rows(recording(1));
     std::vector<InfoRow> const expected {
         { .kind = Heading, .line = { .text = "File" } },
-        { .kind = Entry, .line = { .text = "activity/2026/11/1.fit" }, .file = true },
+        { .kind = Entry, .line = { .text = "activity/2026/11/1.fit" }, .link = true },
         { .kind = Heading, .line = { .text = "Recorded with" } },
         { .kind = Entry, .line = { .text = "Garmin", .small = "(product 4315)" } },
         { .kind = Heading, .line = { .text = "Sensors" } },
@@ -217,7 +217,7 @@ void test_clicks()
 {
     auto box = std::make_shared<TestBox>();
     box->open();
-    box->file_area = Rectangle { .x = 100, .y = 100, .width = 200, .height = 20 };
+    box->link_area = Rectangle { .x = 100, .y = 100, .width = 200, .height = 20 };
     box->hint_area = Rectangle { .x = 100, .y = 300, .width = 300, .height = 15 };
     box->handle_input(ScrollInput { .mouse = { .x = 150, .y = 110 }, .time = 5.0 });
     box->handle_input(ScrollInput { .mouse = { .x = 150, .y = 200 }, .pressed = true, .time = 5.0 });

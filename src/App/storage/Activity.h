@@ -130,6 +130,18 @@ struct StravaFileNames {
 
 StravaFileNames read_strava_file(fs::path const &file);
 
+// The sidecar as JSON, if it's there and is JSON.
+std::optional<JSONValue> read_sidecar(fs::path const &sidecar);
+
+// The activity's part of the sidecar's `json`, or leg `leg`'s, its
+// object in `"legs"`; nothing for a leg that isn't there.
+std::optional<JSONValue> sidecar_part(JSONValue const &json, std::optional<size_t> leg);
+
+// Changes the activity's part of the sidecar's `json` with `change`, or
+// leg `leg`'s. Legs with nothing in them are left off the end, and
+// `"legs"` without any is left out.
+void change_sidecar_part(JSONValue &json, std::optional<size_t> leg, std::function<void(JSONValue &)> const &change);
+
 // Changes the activity's sidecar with `change`, keeping the rest of it.
 // Makes the sidecar if there isn't one, and removes it if nothing is left
 // in it. A sidecar that isn't a JSON object is left as it is, and is an
