@@ -55,9 +55,10 @@ struct ActivitySelector : public ActivityList {
     [[nodiscard]] std::optional<Month> destination(KeyboardModifier modifier, int key) const;
 };
 
-// The years and the months aren't searched: there are a dozen at most.
-using YearList = ListBox<size_t, ListBoxConfig { .search = false, .sort = false }>;
-using MonthList = ListBox<Month, ListBoxConfig { .search = false, .sort = false }>;
+// The years and the months aren't searched: there are a dozen at most. Their
+// rows are short, so the boxes are too.
+using YearList = ListBox<size_t, ListBoxConfig { .search = false, .sort = false, .narrow = true }>;
+using MonthList = ListBox<Month, ListBoxConfig { .search = false, .sort = false, .narrow = true }>;
 
 // A row of the year list, "2024", and of the month list, "January", with
 // the number of activities as a column.

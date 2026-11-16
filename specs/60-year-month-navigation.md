@@ -204,8 +204,12 @@ The up key is `GoUpKey`, `KeyCombo { KEY_UP, KModSuper }` on macOS and
   which is called while the month list is still open.
 - The functions for Enter and up compute `month_counts()` afresh,
   which is cheap: the summaries may have changed since the list opened.
-- Nothing in the widget library changes: `ListBox` already has the
-  columns and `select()`.
+- `ListBox` already has the columns and `select()`. After the review,
+  the widget library gained `ListBoxConfig::narrow`, which both lists
+  use: the box is as wide as its prompt and its rows need, at least
+  `NarrowMinChars` (24) characters, rather than half the screen. The
+  floor keeps the month list's width from year to year. `rows_width()`
+  computes it from the same layout `draw_entries()` uses.
 
 ## Test plan
 

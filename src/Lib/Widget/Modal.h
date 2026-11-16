@@ -107,7 +107,14 @@ struct ListBoxConfig {
     bool search { true };
     bool sort { true };
     bool shrink { false };
+    // As wide as its prompt and its rows need, rather than at least half
+    // the screen, but not narrower than NarrowMinChars: for short rows.
+    bool narrow { false };
 };
+
+// Wide enough for a month's name and a count, so that a list of months
+// keeps its width from one year to the next.
+constexpr size_t NarrowMinChars = 24;
 
 constexpr static ListBoxConfig DefaultListBoxConfig { };
 
@@ -292,6 +299,22 @@ struct ListBox : public Modal {
         size_t              prefix { 0 };
         std::vector<size_t> columns { }; // From the right
         bool                icon { false };
+
+        // Where the text starts, from the box's left edge.
+        [[nodiscard]] float text_x(float char_width, float row_height) const
+        {
+            return 10.0f + (icon ? row_height + char_width : 0.0f) + (prefix > 0 ? static_cast<float>(prefix + 2) * char_width : 0.0f);
+        }
+
+        // The columns', two characters apart.
+        [[nodiscard]] float columns_width(float char_width) const
+        {
+            auto ret = 0.0f;
+            for (auto const width : columns) {
+                ret += static_cast<float>(width + 2) * char_width;
+            }
+            return ret;
+        }
     };
 
     [[nodiscard]] Widths widths() const
@@ -309,6 +332,21 @@ struct ListBox : public Modal {
         return ret;
     }
 
+    // From the right end of the columns to the box's.
+    static constexpr float RowsRightMargin = 18.0f;
+
+    // How wide the box has to be to show its widest row on display without
+    // cutting its text, with a scrollbar `bar_width` wide.
+    [[nodiscard]] float rows_width(float char_width, float row_height, float bar_width) const
+    {
+        auto const w = widths();
+        auto       text = 0uz;
+        for (auto const &e : shown()) {
+            text = std::max(text, char_count(shown_text(e)));
+        }
+        return w.text_x(char_width, row_height) + static_cast<float>(text) * char_width + w.columns_width(char_width) + RowsRightMargin + bar_width;
+    }
+
     void draw_entries(size_t y_offset)
     {
         auto const &cell = App::the()->cells[static_cast<size_t>(FontSize::Medium)];
@@ -323,12 +361,9 @@ struct ListBox : public Modal {
         // The row, from the left: the icon, the prefix and the text, and the
         // columns at its right end, two characters apart.
         auto const w = widths();
-        auto const text_x = 10.0f + (w.icon ? row_height + char_width : 0.0f) + (w.prefix > 0 ? static_cast<float>(w.prefix + 2) * char_width : 0.0f);
-        auto       columns_width = 0.0f;
-        for (auto const width : w.columns) {
-            columns_width += static_cast<float>(width + 2) * char_width;
-        }
-        auto const right = viewport.width - 18 - bar_width;
+        auto const text_x = w.text_x(char_width, row_height);
+        auto const columns_width = w.columns_width(char_width);
+        auto const right = viewport.width - RowsRightMargin - bar_width;
         auto const maxlen = static_cast<size_t>(std::max(0.0f, (right - columns_width - text_x) / char_width));
         for (int ix = scroll.top_line; ix < scroll.top_line + scroll.lines && ix < shown_count(); ++ix) {
             auto const &e = entries_to_draw[static_cast<size_t>(ix)];
@@ -401,6 +436,16 @@ struct ListBox : public Modal {
             scroll.lines = clamp(scroll.lines, 0, entries.size());
         }
         viewport.height = 19 + prompt_height + scroll.lines * (cell.y + 2);
+        if constexpr (Config.narrow) {
+            // As draw_entries() lays the rows out.
+            auto const &medium = App::the()->cells[static_cast<size_t>(FontSize::Medium)];
+            auto const  char_width = medium.x * textsize;
+            auto const  bar_width = (shown_count() > scroll.lines) ? medium.x : 0.0f;
+            auto const  prompt_width = App::measure_text(prompt.c_str(), FontSize::Medium).x + PromptMargin;
+            auto const  needed = std::max({ prompt_width, rows_width(char_width, medium.y * textsize + 2, bar_width), static_cast<float>(NarrowMinChars) * char_width });
+            viewport.width = std::min(viewport.width, needed);
+            viewport.x = (screen.width - viewport.width) / 2;
+        }
         // The number of lines may have changed.
         scroll_to_selection();
     }

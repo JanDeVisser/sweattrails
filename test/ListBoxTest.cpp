@@ -522,10 +522,29 @@ void test_layout_prompt()
     CHECK_EQ(layout_prompt("", 1000, measure_chars).lines.size(), 1uz);
 }
 
+// A narrow box is as wide as its widest row needs, as draw_entries() lays
+// it out: 10 pixels, the prefix and two spaces, the text, each column and
+// two spaces, 18 pixels, and the scrollbar. Of the rows on display only.
+void test_rows_width()
+{
+    auto list = std::make_shared<RowList>();
+    list->setup();
+    // "Tue 14  09:32", "Morning ride", "42.3 km" and "1:32:10", in 10
+    // pixel characters.
+    CHECK_EQ(list->rows_width(10, 20, 0), 10.0f + 150 + 120 + 90 + 90 + 18);
+    CHECK_EQ(list->rows_width(10, 20, 10), 10.0f + 150 + 120 + 90 + 90 + 18 + 10);
+    // Only "Sat 4  10:00", "Zwift", "" and "1:00:00".
+    for (auto ch : std::string_view { "zwift" }) {
+        list->character(ch);
+    }
+    CHECK_EQ(list->rows_width(10, 20, 0), 10.0f + 140 + 50 + 20 + 90 + 18);
+}
+
 int main()
 {
     Test::ScopedTestApp app;
-    auto                list = std::make_shared<TestList>();
+    test_rows_width();
+    auto list = std::make_shared<TestList>();
     test_submit_search_match(*list);
     test_page_down_short_list(*list);
     test_no_matches(*list);
