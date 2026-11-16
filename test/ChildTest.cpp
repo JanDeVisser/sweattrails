@@ -10,6 +10,7 @@
 #include <chrono>
 #include <filesystem>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <Child.h>
@@ -130,6 +131,25 @@ void test_kill()
     child->kill();
 }
 
+// kill() from another thread, while this one waits.
+void test_kill_while_waiting()
+{
+    auto child = Child::start({ FAKE_PROGRAM, "sleep", "30000" }, Child::Options { });
+    CHECK(child.has_value());
+    if (!child) {
+        return;
+    }
+    auto const  started = std::chrono::steady_clock::now();
+    std::thread killer { [&child]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds { 300 });
+        child->kill();
+    } };
+    auto const ended = child->wait();
+    killer.join();
+    CHECK(!ended.has_value() || *ended != 0);
+    CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds { 10 });
+}
+
 }
 
 int main()
@@ -140,5 +160,6 @@ int main()
     test_stdin_and_stderr();
     test_write_after_exit();
     test_kill();
+    test_kill_while_waiting();
     return test_result();
 }

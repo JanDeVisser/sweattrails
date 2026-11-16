@@ -310,4 +310,57 @@ CMake: `FooPosix.cpp` and `FooWin32.cpp`. Small differences stay as
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+No correctness bug against the spec's Version 1 scope found. Both builds
+pass (macOS, and Windows under Wine) with the added tests, apart from the
+known flaky `test_many_connections`. Findings, most severe first:
+
+1. **Suggestion** (`src/Lib/Base/ChildWin32.cpp`, `start()`): the results of
+   `InitializeProcThreadAttributeList()` and `UpdateProcThreadAttribute()`
+   aren't checked. If `Update` fails, `CreateProcessW` still runs with
+   `bInheritHandles = TRUE` and without the handle list, so the program
+   silently inherits every inheritable handle in the app, which is what the
+   list is there to prevent. If `Initialize` fails, `DeleteProcThreadAttributeList()`
+   runs on a list that was never initialised. Return the `win32_error()`
+   instead (and delete the list only after a successful initialise).
+2. **Suggestion** (`ChildWin32.cpp`): the pipe's app end and the stderr file
+   are inheritable for a moment (`CreatePipe` with `inheritable`, then
+   `SetHandleInformation`; `open_inheritable()` for the file). Another thread
+   that starts a program with `bInheritHandles` (`ShellExecuteW` from
+   `open_browser()` does) in that window gets them. Creating the handles
+   non-inheritable and making only the program's copies inheritable
+   (`DuplicateHandle(..., TRUE, ...)`), or the handle list alone, closes it.
+   Rare, hence only a suggestion.
+3. **Suggestion** (`ChildWin32.cpp`): `Child::State::waited` and the mutex do
+   nothing on Windows. The process handle stays open until the destructor,
+   so `TerminateProcess()` on a finished process is harmless. They can go,
+   or `kill()` can say so. A killed program and one that exits with 1 are
+   indistinguishable (the spec says so).
+4. **Suggestion** (`src/Lib/Base/Date.cpp`): `localtime_s()`/`gmtime_s()`
+   fail for times before 1970 on Windows and leave `tm` zeroed (year 1900),
+   where POSIX gives the right date; `_mkgmtime()` returns -1 there. The
+   app's times are `u32` and after 1990, so nothing reaches it now.
+   `utc_offset()` would give nonsense for such a time.
+5. **Suggestion** (`src/Lib/Widget/TextArea.cpp` `put()`, `TextLine.cpp`
+   `insert()`): `ch >= 0` is always true for `char32_t` now (it guarded
+   against a negative `wchar_t`). Harmless, but the check can go and may
+   warn with `-Wtype-limits`.
+6. **Missing test**, added: `utc_tm()`, `utc_time()` (leap day, week and
+   year day, carrying overflowing fields) and `utc_offset()` (summer, winter,
+   UTC) had no direct tests, only through other features; `DateTest` has them
+   now (`test_utc_tm_and_utc_time`, `test_utc_offset`,
+   `test_parse_iso8601_calendar`). They pass on macOS and under Wine.
+7. **Missing test**, added: `ChildTest::test_kill_while_waiting`, the
+   spec's "another thread may call `kill()` while one waits". Passes on both.
+
+Checked and fine: handle inheritance (the three handles are distinct, so the
+list has no duplicates; error paths close the pipe end, and `StdHandles`
+closes the program's ends); command-line quoting (backslashes before a quote
+and at the end, empty argument); the kill/wait race (POSIX reaps under the
+lock; on Windows the handle can't be reused); the UTF-8 codec (overlong,
+surrogates, past U+10FFFF, cut-off, 0xF5 and up, 0xC0/0xC1 all rejected);
+`char32_t` replacements, with no `wchar_t`, `isw*` or `L'` left in `src/`;
+Winsock use (`WSAStartup` before the first socket, `WSAPoll` never called
+with an empty list, `EINTR` mapped, accepted sockets made non-blocking and
+not inheritable, no `SO_REUSEADDR`); no text-mode stream or `fopen` left (all
+streams are `std::ios::binary`); `.c_str()` of a path only goes to C APIs as
+`.string()`; `mktime()` in `Download.cpp` only sees years since 1990.
