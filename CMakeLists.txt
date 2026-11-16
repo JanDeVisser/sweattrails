@@ -1195,6 +1195,10 @@ sweattrails_test(
         test/StravaTitlesTest.cpp
         src/App/storage/Strava.cpp
         src/App/storage/StravaTitles.cpp
+        src/App/storage/Summaries.cpp
+        src/App/storage/PowerCurve.cpp
+        src/App/storage/PaceCurve.cpp
+        src/App/storage/Volume.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp

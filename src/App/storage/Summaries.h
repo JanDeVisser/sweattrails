@@ -90,6 +90,8 @@ struct SummaryWork {
 
 // The store's FIT files, by start time, with their sizes and times.
 StorageResult<std::vector<SummaryFile>> summary_files(Storage const &storage);
+// One of them.
+StorageResult<SummaryFile> summary_file(Storage const &storage, fs::path const &fit);
 
 // Reads a FIT file's summary, with its records, for the NP and the heart
 // rate: one, or one per leg of a multisport file. A file that can't be

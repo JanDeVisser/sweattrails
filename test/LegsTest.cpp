@@ -43,45 +43,6 @@ i64 unix_start(u32 offset = 0)
     return static_cast<i64>(Start) + DateTime::FIT_TIMESTAMP_OFFSET + offset;
 }
 
-// A leg's session: its sport, when it starts after Start, how long, how
-// far, its ascent, and, if given, which of the file's laps are its.
-struct TestLeg {
-    u8                 sport { Running };
-    u32                start { 0 };
-    u32                count { 600 };
-    u32                distance { 0 }; // m
-    u16                ascent { 0 };
-    std::optional<u16> first_lap { };
-    std::optional<u16> laps { };
-};
-
-void add_leg(FITBuilder &fit, TestLeg const &leg)
-{
-    fit.definition(0, 18,
-        {
-            { .num = 253, .size = 4, .base_type = Uint32 },
-            { .num = 2, .size = 4, .base_type = Uint32 },
-            { .num = 5, .size = 1, .base_type = Enum },
-            { .num = 7, .size = 4, .base_type = Uint32 },
-            { .num = 8, .size = 4, .base_type = Uint32 },
-            { .num = 9, .size = 4, .base_type = Uint32 },
-            { .num = 22, .size = 2, .base_type = Uint16 },
-            { .num = 25, .size = 2, .base_type = Uint16 },
-            { .num = 26, .size = 2, .base_type = Uint16 },
-        });
-    fit.message(0);
-    fit.u32_le(Start + leg.start + leg.count);
-    fit.u32_le(Start + leg.start);
-    fit.byte(leg.sport);
-    fit.u32_le(leg.count * 1000);
-    fit.u32_le(leg.count * 1000);
-    fit.u32_le(leg.distance * 100);
-    fit.u16_le(leg.ascent);
-    // 0xFFFF: FIT's invalid value, as a device that doesn't say writes it.
-    fit.u16_le(leg.first_lap.value_or(0xFFFF));
-    fit.u16_le(leg.laps.value_or(0xFFFF));
-}
-
 void add_lap(FITBuilder &fit, u32 start, u32 count)
 {
     fit.definition(1, 19,

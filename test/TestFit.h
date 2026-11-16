@@ -10,6 +10,7 @@
 #pragma once
 
 #include <cmath>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -183,6 +184,45 @@ inline void add_session(FITBuilder &fit, u32 count, u16 total_ascent, u8 sub_spo
     fit.u32_le(count * 1000);
     fit.u32_le(count * 1000);
     fit.u16_le(total_ascent);
+}
+
+// A leg's session: its sport, when it starts after Start, how long, how
+// far, its ascent, and, if given, which of the file's laps are its.
+struct TestLeg {
+    u8                 sport { 1 }; // Running
+    u32                start { 0 };
+    u32                count { 600 };
+    u32                distance { 0 }; // m
+    u16                ascent { 0 };
+    std::optional<u16> first_lap { };
+    std::optional<u16> laps { };
+};
+
+inline void add_leg(FITBuilder &fit, TestLeg const &leg)
+{
+    fit.definition(0, 18,
+        {
+            { .num = 253, .size = 4, .base_type = Uint32 },
+            { .num = 2, .size = 4, .base_type = Uint32 },
+            { .num = 5, .size = 1, .base_type = Enum },
+            { .num = 7, .size = 4, .base_type = Uint32 },
+            { .num = 8, .size = 4, .base_type = Uint32 },
+            { .num = 9, .size = 4, .base_type = Uint32 },
+            { .num = 22, .size = 2, .base_type = Uint16 },
+            { .num = 25, .size = 2, .base_type = Uint16 },
+            { .num = 26, .size = 2, .base_type = Uint16 },
+        });
+    fit.message(0);
+    fit.u32_le(Start + leg.start + leg.count);
+    fit.u32_le(Start + leg.start);
+    fit.byte(leg.sport);
+    fit.u32_le(leg.count * 1000);
+    fit.u32_le(leg.count * 1000);
+    fit.u32_le(leg.distance * 100);
+    fit.u16_le(leg.ascent);
+    // 0xFFFF: FIT's invalid value, as a device that doesn't say writes it.
+    fit.u16_le(leg.first_lap.value_or(0xFFFF));
+    fit.u16_le(leg.laps.value_or(0xFFFF));
 }
 
 // A record a second for `count` seconds from `start` after Start, at a
