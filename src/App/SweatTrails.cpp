@@ -1943,7 +1943,10 @@ void show_year(pSweatTrails const &sweattrails, size_t year, std::optional<Month
         list->hide();
         show_years(sweattrails, list->year);
     };
-    auto const  shown = sweattrails->last_activity.month;
+    // The activity on display, as the top bar's trail names it, so that
+    // the year crumb selects the month the trail shows.
+    auto const  on_display = activity_on_display(sweattrails);
+    auto const  shown = on_display ? std::optional { on_display->month } : std::nullopt;
     auto const &months = Widget::make<MonthSelector>(month_selected, up, *counts, year, shown);
     months->show();
     if (auto const month = select ? select : month_to_select(*counts, year, shown); month) {
