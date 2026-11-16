@@ -879,6 +879,33 @@ void test_lap_summary()
     CHECK_EQ(lap_summary(t.activity, 1), "Lap 2 of 2 · 1.50 km · 07:30 · Recording 2 of 2: Wahoo");
 }
 
+// On a multisport activity's Whole tab, the laps are the legs, by name.
+void test_titled_lap()
+{
+    TestActivity t { sport::Multisport, std::vector<record>(20), { { 0, 10, 1000, 300 }, { 10, 20, 1500, 450 } } };
+    t.activity.laps[0].title = "Swim";
+    t.activity.laps[1].title = "T1";
+    t.activity.segment.distance = 2500;
+    CHECK_EQ(lap_summary(t.activity, 1), "T1 · 1.50 km · 07:30");
+    auto const table = lap_table(t.activity);
+    CHECK_EQ(table.rows.size(), 2uz);
+    if (table.rows.size() == 2) {
+        CHECK_EQ(table.rows[0][0], "Swim");
+        CHECK_EQ(table.rows[1][0], "T1");
+    }
+}
+
+// On a leg's tab, the line says which leg, whatever is selected.
+void test_leg_summary()
+{
+    TestActivity t { sport::Cycling, std::vector<record>(20), { { 0, 10, 1000, 300 }, { 10, 20, 1500, 450 } } };
+    t.activity.segment.distance = 2500;
+    t.activity.segment.moving = Duration { 750u };
+    t.activity.leg = LegShown { .name = "Bike", .number = 2, .count = 3 };
+    CHECK_EQ(activity_summary(t.activity), "2.50 km · 12:30 · Bike, leg 2 of 3");
+    CHECK_EQ(lap_summary(t.activity, 1), "Lap 2 of 2 · 1.50 km · 07:30 · Bike, leg 2 of 3");
+}
+
 std::vector<std::string> headers(LapTable const &table)
 {
     std::vector<std::string> ret;
@@ -1403,6 +1430,8 @@ int main()
     test_pace_of_more_than_a_day();
     test_lap_fields();
     test_lap_summary();
+    test_titled_lap();
+    test_leg_summary();
     test_lap_table_columns_for_a_run();
     test_lap_table_columns_for_a_ride();
     test_lap_table_empty_cells();
