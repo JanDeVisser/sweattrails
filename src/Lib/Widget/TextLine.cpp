@@ -40,8 +40,7 @@ std::string TextLine::utf8() const
 
 bool TextLine::insert(rune ch)
 {
-    auto const is_codepoint = ch >= 0 && ch <= 0x10FFFF && (ch < 0xD800 || ch > 0xDFFF);
-    if (!is_codepoint || is_control(ch)) {
+    if (!is_code_point(ch) || is_control(ch)) {
         return false;
     }
     text.insert(cursor, 1, ch);

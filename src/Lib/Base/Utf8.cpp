@@ -12,13 +12,6 @@ namespace ST {
 
 namespace {
 
-constexpr char32_t MaxCodePoint = 0x10FFFF;
-
-bool is_surrogate(char32_t ch)
-{
-    return ch >= 0xD800 && ch <= 0xDFFF;
-}
-
 bool is_continuation(unsigned char byte)
 {
     return (byte & 0xC0) == 0x80;
@@ -26,12 +19,18 @@ bool is_continuation(unsigned char byte)
 
 }
 
+bool is_code_point(char32_t ch)
+{
+    auto const is_surrogate = ch >= 0xD800 && ch <= 0xDFFF;
+    return ch <= 0x10FFFF && !is_surrogate;
+}
+
 std::expected<std::string, LibCError> to_utf8(std::u32string_view const &s)
 {
     std::string ret;
     ret.reserve(s.length());
     for (auto const ch : s) {
-        if (is_surrogate(ch) || ch > MaxCodePoint) {
+        if (!is_code_point(ch)) {
             return std::unexpected(LibCError(EILSEQ));
         }
         if (ch < 0x80) {
@@ -90,7 +89,7 @@ std::expected<std::u32string, LibCError> to_utf32(std::string_view const &s)
             }
             ch = (ch << 6) | (byte & 0x3F);
         }
-        if (ch < smallest || is_surrogate(ch) || ch > MaxCodePoint) {
+        if (ch < smallest || !is_code_point(ch)) {
             return std::unexpected(LibCError(EILSEQ));
         }
         ret += ch;

@@ -64,11 +64,10 @@ bool TextArea::insert(rune ch)
 // again: a paste wraps once, after its last.
 bool TextArea::put(rune ch)
 {
-    auto const is_codepoint = ch >= 0 && ch <= 0x10FFFF && (ch < 0xD800 || ch > 0xDFFF);
     if (ch == U'\t') {
         ch = U' ';
     }
-    if (!is_codepoint || (ch != U'\n' && is_control(ch))) {
+    if (!is_code_point(ch) || (ch != U'\n' && is_control(ch))) {
         return false;
     }
     text.insert(cursor, 1, ch);

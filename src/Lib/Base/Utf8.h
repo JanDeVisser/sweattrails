@@ -22,6 +22,10 @@ namespace ST {
 std::expected<std::string, LibCError>    to_utf8(std::u32string_view const &s);
 std::expected<std::u32string, LibCError> to_utf32(std::string_view const &s);
 
+// Whether `ch` is a Unicode code point that text can hold: up to U+10FFFF,
+// and not a surrogate.
+bool is_code_point(char32_t ch);
+
 // Whether `ch` is white space a line may break at: the Unicode White_Space
 // characters, except the no-break spaces.
 bool is_space(char32_t ch);

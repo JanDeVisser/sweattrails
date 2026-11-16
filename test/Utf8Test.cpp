@@ -63,6 +63,16 @@ void test_invalid_utf32()
     CHECK(!to_utf8(std::u32string { char32_t { 0x110000 } }).has_value());
 }
 
+void test_is_code_point()
+{
+    for (auto const ch : std::u32string { 0x0, 0x41, 0xD7FF, 0xE000, 0xFFFF, 0x1F44D, 0x10FFFF }) {
+        CHECK(is_code_point(ch));
+    }
+    for (auto const ch : std::u32string { 0xD800, 0xDBFF, 0xDC00, 0xDFFF, 0x110000, 0xFFFFFFFF }) {
+        CHECK(!is_code_point(ch));
+    }
+}
+
 void test_classes()
 {
     for (auto const ch : std::u32string_view { U" \t\n\r\u2003\u3000" }) {
@@ -106,6 +116,7 @@ int main()
     test_lengths();
     test_invalid_utf8();
     test_invalid_utf32();
+    test_is_code_point();
     test_classes();
     test_two_threads();
     return test_result();
