@@ -958,6 +958,52 @@ void test_save_sidecar_strava()
     CHECK_EQ(read_json(array.dir / "dummy.json"), "[1, 2]");
 }
 
+// A leg's names go in its object in "legs", by its index; a leg's Strava
+// title takes the place of the activity's, and legs left without names
+// drop off the end.
+void test_save_leg_names()
+{
+    ActivityInDir     t { R"({"activityName": "Morning Multisport", "strava": {"id": 5, "name": "Morning Workout"}})" };
+    auto const        sidecar = t.dir / "dummy.json";
+    StravaTitle const run { .id = 17, .name = "Welland Sprint Du | Run 2" };
+    CHECK(save_sidecar_strava(sidecar, run, 4).has_value());
+    CHECK(save_sidecar_title(sidecar, "Run 1", 0).has_value());
+    CHECK(save_sidecar_notes(sidecar, "Fast start", 0).has_value());
+    auto names = sidecar_titles(sidecar);
+    CHECK(!names.strava.has_value());
+    CHECK_EQ(names.service.value_or(""), "Morning Multisport");
+    CHECK_EQ(names.legs.size(), 5uz);
+    CHECK(names.legs[4].strava == run);
+    CHECK_EQ(names.legs[0].own.value_or(""), "Run 1");
+    CHECK_EQ(names.legs[0].own_notes.value_or(""), "Fast start");
+    CHECK(!names.legs[2].strava.has_value() && !names.legs[2].own.has_value());
+    auto const stravas = sidecar_stravas(names);
+    CHECK_EQ(stravas.size(), 1uz);
+    CHECK(!stravas.empty() && stravas[0].leg == std::optional<size_t> { 4 } && stravas[0].title == run);
+
+    CHECK(reject_sidecar_strava(sidecar, 17).has_value());
+    names = sidecar_titles(sidecar);
+    CHECK_EQ(names.legs.size(), 1uz);
+    CHECK(names.strava_rejected == std::vector<u64> { 17 });
+    CHECK(save_sidecar_title(sidecar, "", 0).has_value());
+    CHECK(save_sidecar_notes(sidecar, "", 0).has_value());
+    auto const json = JSONValue::deserialize(read_json(sidecar));
+    CHECK(json.has_value() && !json->has("legs"));
+}
+
+// A "legs" that isn't a list, or a leg that isn't an object, has no names.
+void test_leg_names_that_arent_valid()
+{
+    ActivityInDir t { R"({"legs": 12})" };
+    CHECK(sidecar_titles(t.dir / "dummy.json").legs.empty());
+    ActivityInDir u { R"({"legs": [12, {"title": "Swim in the bay"}]})" };
+    auto const    legs = sidecar_titles(u.dir / "dummy.json").legs;
+    CHECK_EQ(legs.size(), 2uz);
+    CHECK(legs.size() == 2 && !legs[0].own && legs[1].own == "Swim in the bay");
+    CHECK(save_sidecar_title(u.dir / "dummy.json", "Bike", 0).has_value());
+    CHECK_EQ(sidecar_titles(u.dir / "dummy.json").legs[0].own.value_or(""), "Bike");
+}
+
 // The time of record `ix` of the two-lap activity, as the sidecar has it.
 i64 two_laps_time(u32 ix)
 {
@@ -1187,6 +1233,8 @@ int main()
     test_laps_out_of_order_in_the_sidecar();
     test_device_laps_keep_strava();
     test_save_sidecar_strava();
+    test_save_leg_names();
+    test_leg_names_that_arent_valid();
     test_rename_over_stravas_title();
     test_save_keeps_the_rest_of_the_sidecar();
     test_save_without_a_sidecar();

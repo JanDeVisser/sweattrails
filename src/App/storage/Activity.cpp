@@ -334,6 +334,9 @@ constexpr char const StravaRejectedKey[] = "strava_rejected";
 // And for the laps the user made.
 constexpr char const LapsKey[] = "laps";
 
+// And for the names of a multisport activity's legs.
+constexpr char const LegsKey[] = "legs";
+
 std::optional<JSONValue> read_sidecar(fs::path const &sidecar)
 {
     std::error_code ec { };
@@ -371,6 +374,69 @@ std::optional<std::string> service_title(JSONValue const &json)
         }
     }
     return { };
+}
+
+std::optional<StravaTitle> strava_title(JSONValue const &json, fs::path const &sidecar)
+{
+    auto const strava = json.get(StravaKey);
+    if (!strava) {
+        return { };
+    }
+    auto decoded = StravaTitle::decode(*strava);
+    if (!decoded) {
+        trace(Storage, "Ignoring `{}`'s \"strava\": {}", sidecar.string(), decoded.error().to_string());
+        return { };
+    }
+    return std::move(*decoded);
+}
+
+std::vector<LegTitles> leg_titles(JSONValue const &json, fs::path const &sidecar)
+{
+    std::vector<LegTitles> ret;
+    auto const             legs = json.get(LegsKey).and_then([](JSONValue const &legs) { return legs.to_array(); });
+    for (auto const &leg : legs.value_or(JSONValue::Array { })) {
+        if (!leg.is_object()) {
+            ret.emplace_back();
+            continue;
+        }
+        ret.push_back(LegTitles {
+            .strava = strava_title(leg, sidecar),
+            .own = non_empty_string(leg, OwnTitleKey),
+            .own_notes = non_empty_string(leg, OwnNotesKey),
+        });
+    }
+    return ret;
+}
+
+// Changes the activity's names in the sidecar's `json` with `change`, or
+// leg `leg`'s, in its object in `"legs"`. Legs without names are left
+// off the end, and `"legs"` without any is left out.
+void change_names(JSONValue &json, std::optional<size_t> leg, std::function<void(JSONValue &)> const &change)
+{
+    if (!leg) {
+        change(json);
+        return;
+    }
+    auto legs = json.get(LegsKey).and_then([](JSONValue const &legs) { return legs.to_array(); }).value_or(JSONValue::Array { });
+    if (legs.size() <= *leg) {
+        legs.resize(*leg + 1, JSONValue::object());
+    }
+    if (!legs[*leg].is_object()) {
+        legs[*leg] = JSONValue::object();
+    }
+    change(legs[*leg]);
+    while (!legs.empty() && legs.back().is_object() && legs.back().empty()) {
+        legs.pop_back();
+    }
+    if (legs.empty()) {
+        json.erase(LegsKey);
+        return;
+    }
+    auto list = JSONValue::array();
+    for (auto const &names : legs) {
+        list.append(names);
+    }
+    json.set(LegsKey, list);
 }
 
 }
@@ -411,19 +477,28 @@ SidecarTitles sidecar_titles(fs::path const &sidecar)
         .service = service_title(*json),
         .own = non_empty_string(*json, OwnTitleKey),
         .own_notes = non_empty_string(*json, OwnNotesKey),
+        .strava = strava_title(*json, sidecar),
+        .legs = leg_titles(*json, sidecar),
     };
-    if (auto const strava = json->get(StravaKey); strava) {
-        if (auto decoded = StravaTitle::decode(*strava); decoded) {
-            ret.strava = std::move(*decoded);
-        } else {
-            trace(Storage, "Ignoring `{}`'s \"strava\": {}", sidecar.string(), decoded.error().to_string());
-        }
-    }
     if (json->get(StravaRejectedKey)) {
         if (auto rejected = json->try_get_array<u64>(StravaRejectedKey); rejected) {
             ret.strava_rejected = std::move(*rejected);
         } else {
             warning(Storage, "Ignoring `{}`'s rejected Strava activities: {}", sidecar.string(), rejected.error().to_string());
+        }
+    }
+    return ret;
+}
+
+std::vector<SidecarStrava> sidecar_stravas(SidecarTitles const &titles)
+{
+    std::vector<SidecarStrava> ret;
+    if (titles.strava) {
+        ret.push_back(SidecarStrava { .title = *titles.strava });
+    }
+    for (size_t ix = 0; ix < titles.legs.size(); ++ix) {
+        if (titles.legs[ix].strava) {
+            ret.push_back(SidecarStrava { .leg = ix, .title = *titles.legs[ix].strava });
         }
     }
     return ret;
@@ -481,32 +556,41 @@ std::optional<std::string> sidecar_own_title(fs::path const &sidecar)
     return sidecar_titles(sidecar).own;
 }
 
-std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::string_view title)
+std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::string_view title, std::optional<size_t> leg)
 {
-    return update_sidecar(sidecar, [title](JSONValue &json) {
-        if (title.empty()) {
-            json.erase(OwnTitleKey);
-        } else {
-            json.set(OwnTitleKey, JSONValue { std::string { title } });
-        }
+    return update_sidecar(sidecar, [title, leg](JSONValue &json) {
+        change_names(json, leg, [title](JSONValue &names) {
+            if (title.empty()) {
+                names.erase(OwnTitleKey);
+            } else {
+                names.set(OwnTitleKey, JSONValue { std::string { title } });
+            }
+        });
     });
 }
 
-std::expected<void, LibCError> save_sidecar_notes(fs::path const &sidecar, std::string_view notes)
+std::expected<void, LibCError> save_sidecar_notes(fs::path const &sidecar, std::string_view notes, std::optional<size_t> leg)
 {
-    return update_sidecar(sidecar, [notes](JSONValue &json) {
-        if (notes.empty()) {
-            json.erase(OwnNotesKey);
-        } else {
-            json.set(OwnNotesKey, JSONValue { std::string { notes } });
-        }
+    return update_sidecar(sidecar, [notes, leg](JSONValue &json) {
+        change_names(json, leg, [notes](JSONValue &names) {
+            if (notes.empty()) {
+                names.erase(OwnNotesKey);
+            } else {
+                names.set(OwnNotesKey, JSONValue { std::string { notes } });
+            }
+        });
     });
 }
 
-std::expected<void, LibCError> save_sidecar_strava(fs::path const &sidecar, StravaTitle const &strava)
+std::expected<void, LibCError> save_sidecar_strava(fs::path const &sidecar, StravaTitle const &strava, std::optional<size_t> leg)
 {
-    return update_sidecar(sidecar, [&strava](JSONValue &json) {
-        json.set(StravaKey, strava.encode());
+    return update_sidecar(sidecar, [&strava, leg](JSONValue &json) {
+        if (leg) {
+            json.erase(StravaKey);
+        }
+        change_names(json, leg, [&strava](JSONValue &names) {
+            names.set(StravaKey, strava.encode());
+        });
     });
 }
 
@@ -516,11 +600,18 @@ std::expected<void, LibCError> reject_sidecar_strava(fs::path const &sidecar, u6
     if (!std::ranges::contains(rejected, id)) {
         rejected.push_back(id);
     }
-    return update_sidecar(sidecar, [id, &rejected](JSONValue &json) {
-        if (auto const strava = json.get(StravaKey); strava) {
-            if (auto const title = StravaTitle::decode(*strava); title && title->id == id) {
-                json.erase(StravaKey);
+    auto const legs = sidecar_titles(sidecar).legs.size();
+    return update_sidecar(sidecar, [id, &rejected, legs](JSONValue &json) {
+        auto const take_off = [id](JSONValue &names) {
+            if (auto const strava = names.get(StravaKey); strava) {
+                if (auto const title = StravaTitle::decode(*strava); title && title->id == id) {
+                    names.erase(StravaKey);
+                }
             }
+        };
+        take_off(json);
+        for (size_t leg = 0; leg < legs; ++leg) {
+            change_names(json, leg, take_off);
         }
         auto list = JSONValue::array();
         for (auto const rejected_id : rejected) {
