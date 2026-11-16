@@ -1,6 +1,6 @@
 # Getting around by year and month
 
-Status: In review
+Status: Done
 
 ## Goal
 
