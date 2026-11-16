@@ -341,4 +341,31 @@ it has more than one label, and on a click calls back to the
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Suggestion**: the whole activity's elapsed and moving time are sums of
+   sessions' times already truncated to whole seconds (`Activity.cpp`,
+   `load_fit_file_filter()` makes a `Duration` per session, and
+   `whole_segment()` in `Legs.cpp` adds them as `u32`). IM Ottawa gives
+   13:28:57 where the spec's legs add up to 13:28:59: up to a second lost
+   per leg. Summing the sessions' unrounded seconds, then truncating, would
+   give the spec's figure. Not wrong per se, but the spec's example says
+   13:28:59.
+2. **Suggestion**: `show_tab()` and `set_activity()` aren't covered by any
+   test (they need a window), so the tab switching, the names carried
+   between tabs and the reset to Whole were only checked by reading. I found
+   no bug in them: leaving Whole keeps its user laps, leaving a leg copies
+   only the names, `set_activity()` resets both the whole and the strip. The
+   by-hand run in a window (tab clicks, Tab, blocked keys) is still to do.
+3. **Missing test, added**: `test/LegsTest.cpp` now checks that the user's
+   laps (from the sidecar) replace the legs on Whole while the device laps
+   stay the titled legs and `set_lap_starts(nullopt)` brings them back
+   (Ctrl+Alt+L), and that a leg's tab keeps the device's laps; that a workout
+   message doesn't turn a multisport file into the workout's sport; and
+   `whole_segment()`'s ascent rule. All pass.
+
+No bugs found in: the loading and splitting into legs, the lap and record
+ranges (empty leg gives an empty slice, which shows as a stub), `same_activity()`
+in both directions, `filing_start()` in the inbox, the Strava export and the
+summary, the key checks (every lap, fill, overlay key goes through
+`whole_for_keys()` or its own check), Ctrl+J, Ctrl+Shift+R (unchanged, so it
+still splits recordings grouped before this change, as the spec says) and
+Tab/Shift+Tab.

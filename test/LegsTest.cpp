@@ -19,6 +19,7 @@
 #include <storage/Legs.h>
 #include <storage/Storage.h>
 
+#include <TempDir.h>
 #include <TempStore.h>
 #include <TestApp.h>
 #include <TestFit.h>
@@ -357,6 +358,59 @@ void test_inbox_files_by_the_last_legs_start()
     CHECK(fs::exists(dir / std::format("{}.fit", unix_start(1830))));
 }
 
+// The reviewer's: laps the user made on Whole replace the legs there, the
+// device's laps, which are the legs, come back when they're removed, and a
+// leg's tab keeps the device's laps either way.
+void test_user_laps_replace_the_legs_and_go_back()
+{
+    TempDir dir { "legs" };
+    MUST(write_file_by_name((dir.path / "dummy.fit").string(), std::string_view { triathlon() }));
+    MUST(write_file_by_name((dir.path / "dummy.json").string(), std::format(R"({{"laps": [{}]}})", unix_start(1200))));
+    Storage  storage { };
+    Activity a { storage, ActivityID::dummy(ActivityFile::Fit) };
+    a.depth = LoadingDepth::Deep;
+    CHECK(a.load_from_dir(dir.path).value_or(false));
+    CHECK_EQ(a.laps.size(), 2uz);
+    CHECK(a.laps[0].title.empty());
+    CHECK_EQ(a.device_laps.size(), 5uz);
+    CHECK_EQ(a.device_laps[2].title, "Bike");
+    auto const bike = leg_activity(a, 2);
+    CHECK_EQ(bike.laps.size(), 2uz);
+    CHECK(!bike.user_lap_starts);
+    CHECK(a.set_lap_starts(std::nullopt).has_value());
+    CHECK_EQ(a.laps.size(), 5uz);
+    if (a.laps.size() == 5) {
+        CHECK_EQ(a.laps[4].title, "Run");
+        CHECK_EQ(a.laps[4].first_record, 1830uz);
+    }
+}
+
+// The reviewer's: a workout message doesn't turn a multisport activity
+// into the workout's sport.
+void test_workout_sport_doesnt_override_multisport()
+{
+    FITBuilder fit;
+    add_file_id(fit, 1);
+    add_workout(fit, "Race");
+    add_records(fit, 1200, 120, 200);
+    add_leg(fit, TestLeg { .sport = Cycling, .start = 0, .count = 600, .distance = 5000 });
+    add_leg(fit, TestLeg { .sport = Running, .start = 600, .count = 600, .distance = 2000 });
+    Loaded t { fit.file() };
+    CHECK(t.activity.sport == FIT::sport::Multisport);
+    CHECK_EQ(t.activity.title, "Race");
+}
+
+// The reviewer's: no leg has an ascent, so the whole has none; one has, and
+// it's the sum of those that do.
+void test_whole_ascent()
+{
+    std::vector<Leg> legs(2);
+    CHECK(!whole_segment(legs).total_ascent);
+    legs[1].segment.total_ascent = 7;
+    CHECK(whole_segment(legs).total_ascent == std::optional<u16> { 7 });
+    CHECK(!whole_segment({ }).total_ascent);
+}
+
 }
 
 int main()
@@ -375,5 +429,8 @@ int main()
     test_leg_activity();
     test_leg_laps_stay_within_the_leg();
     test_inbox_files_by_the_last_legs_start();
+    test_user_laps_replace_the_legs_and_go_back();
+    test_workout_sport_doesnt_override_multisport();
+    test_whole_ascent();
     return test_result();
 }
