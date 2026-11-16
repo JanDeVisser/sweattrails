@@ -163,6 +163,24 @@ Activity leg_activity(Activity const &whole, size_t leg)
     return ret;
 }
 
+std::vector<std::string> tab_labels(Activity const &whole)
+{
+    std::vector<std::string> ret { "Whole" };
+    for (auto const leg : leg_tabs(whole)) {
+        ret.push_back(leg_name(whole, leg));
+    }
+    return ret;
+}
+
+Activity tab_activity(Activity const &whole, size_t tab)
+{
+    auto const tabs = leg_tabs(whole);
+    if (tab == 0 || tab > tabs.size()) {
+        return whole;
+    }
+    return leg_activity(whole, tabs[tab - 1]);
+}
+
 DateTime filing_start(Activity const &activity)
 {
     return activity.is_multisport() ? activity.legs.back().segment.start_time : activity.segment.start_time;

@@ -40,6 +40,14 @@ std::vector<size_t> leg_tabs(Activity const &activity);
 // records and laps, with the whole's names.
 Activity leg_activity(Activity const &whole, size_t leg);
 
+// The labels of a multisport activity's tabs: "Whole", then the tabs'
+// legs' names.
+std::vector<std::string> tab_labels(Activity const &whole);
+
+// What tab `tab` of a multisport activity shows: the whole activity for
+// 0, else leg_activity() of the tab's leg.
+Activity tab_activity(Activity const &whole, size_t tab);
+
 // The start the inbox files the activity by: a multisport activity's
 // last leg's, as before multisport activities were (and as their names
 // in the store are), or else its start.

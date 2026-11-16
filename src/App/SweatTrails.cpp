@@ -1374,6 +1374,19 @@ bool set_laps(pSweatTrails const &sweattrails, DisplayedActivity &displayed, std
     return true;
 }
 
+// The activity on display, for the keys that work on its FIT file: its
+// laps, its fills and the overlay. Not a leg of a multisport activity,
+// which says so (specs/56-multisport.md).
+std::shared_ptr<DisplayedActivity> whole_for_keys(pSweatTrails const &sweattrails)
+{
+    auto displayed = activity_for_keys(sweattrails);
+    if (displayed && displayed->activity.leg) {
+        message_box("Not on a single leg: press Tab to go to Whole.");
+        return nullptr;
+    }
+    return displayed;
+}
+
 // The activity whose laps the lap keys change, if there is one. Not while
 // rendering: the render reads the laps from the same activity, and the
 // video's lap lines would change halfway through.
@@ -1383,7 +1396,7 @@ std::shared_ptr<DisplayedActivity> activity_for_lap_keys(pSweatTrails const &swe
         sweattrails->set_status("The laps can't change while a video is rendering");
         return nullptr;
     }
-    return activity_for_keys(sweattrails);
+    return whole_for_keys(sweattrails);
 }
 
 // Makes the range dragged in the graph a lap, and selects it.
@@ -1664,7 +1677,7 @@ std::optional<LayoutEntry> chosen_overlay_layout(pSweatTrails const &sweattrails
 
 void cmd_overlay_preview(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    if (!activity_for_keys(sweattrails)) {
+    if (!whole_for_keys(sweattrails)) {
         return;
     }
     auto const &display = sweattrails->activity_display;
@@ -1683,7 +1696,7 @@ void cmd_overlay_preview(pSweatTrails const &sweattrails, JSONValue const &)
 // Picking a layout shows it, and it's the one shown after a restart.
 void cmd_overlay_layout(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    if (!activity_for_keys(sweattrails)) {
+    if (!whole_for_keys(sweattrails)) {
         return;
     }
     std::vector<std::pair<std::string, std::string>> entries;
@@ -1774,7 +1787,7 @@ void cmd_overlay_render(pSweatTrails const &sweattrails, JSONValue const &)
         query_box(sweattrails, prompt, stop, QueryOptionYesNo);
         return;
     }
-    auto activity = activity_for_keys(sweattrails);
+    auto activity = whole_for_keys(sweattrails);
     if (!activity) {
         return;
     }
@@ -1898,6 +1911,10 @@ void cmd_fill_gaps(pSweatTrails const &sweattrails, JSONValue const &arguments)
         message_box(*problem);
         return;
     }
+    if (displayed->activity.leg) {
+        message_box("Not on a single leg: press Tab to go to Whole.");
+        return;
+    }
     Activity other { sweattrails->storage, ActivityID::dummy(ActivityFile::Fit) };
     other.depth = LoadingDepth::Deep;
     auto const loaded = other.load_from_file(paths.front());
@@ -1943,7 +1960,7 @@ void cmd_fill_gaps(pSweatTrails const &sweattrails, JSONValue const &arguments)
 // Ctrl+Shift+F: the activity as the watch recorded it, without the fills.
 void cmd_remove_fills(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    auto const displayed = activity_for_keys(sweattrails);
+    auto const displayed = whole_for_keys(sweattrails);
     if (!displayed) {
         return;
     }
@@ -1970,7 +1987,9 @@ void cmd_remove_fills(pSweatTrails const &sweattrails, JSONValue const &)
 // Right do. The activity info popup runs it too, under its modal.
 void show_recording_next_to(pSweatTrails const &sweattrails, std::shared_ptr<DisplayedActivity> const &displayed, int step)
 {
-    if (!displayed) {
+    // A multisport activity's recordings grouped before it loaded as one
+    // aren't stepped through: Tab steps through its legs.
+    if (!displayed || sweattrails->activity_display->multisport) {
         return;
     }
     auto const &id = displayed->activity.id;
@@ -2009,7 +2028,7 @@ void cmd_compare_recordings(pSweatTrails const &sweattrails, JSONValue const &)
         sweattrails->activity_display->compare_with(std::nullopt);
         return;
     }
-    if (displayed->activity.recordings < 2) {
+    if (displayed->activity.recordings < 2 || sweattrails->activity_display->multisport) {
         message_box("This activity has one recording.");
         return;
     }
@@ -2017,14 +2036,26 @@ void cmd_compare_recordings(pSweatTrails const &sweattrails, JSONValue const &)
     sweattrails->compare_if_on();
 }
 
+// Tab and Shift+Tab: a multisport activity's next or previous tab, or
+// else its next or previous recording.
+void step_tab_or_recording(pSweatTrails const &sweattrails, int step)
+{
+    auto const displayed = activity_for_keys(sweattrails);
+    if (displayed && sweattrails->activity_display->multisport) {
+        sweattrails->activity_display->step_tab(step);
+        return;
+    }
+    show_recording_next_to(sweattrails, displayed, step);
+}
+
 void cmd_next_recording(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    show_recording_next_to(sweattrails, activity_for_keys(sweattrails), 1);
+    step_tab_or_recording(sweattrails, 1);
 }
 
 void cmd_previous_recording(pSweatTrails const &sweattrails, JSONValue const &)
 {
-    show_recording_next_to(sweattrails, activity_for_keys(sweattrails), -1);
+    step_tab_or_recording(sweattrails, -1);
 }
 
 // Cmd+I: the activity on display's file, device and sensors, in a popup
@@ -2103,6 +2134,12 @@ void cmd_group_recordings(pSweatTrails const &sweattrails, JSONValue const &)
 {
     auto const displayed = activity_for_keys(sweattrails);
     if (!displayed) {
+        return;
+    }
+    // It's never grouped (specs/56-multisport.md): not even with a
+    // recording of one of its legs.
+    if (sweattrails->activity_display->multisport) {
+        message_box("This activity has one recording.");
         return;
     }
     auto const &activity = displayed->activity;
@@ -2859,11 +2896,11 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_K, KModControl })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-next-recording", self(), cmd_next_recording)
-        .titled("Next recording")
+        .titled("Next recording, or leg")
         .bind(KeyCombo { KEY_TAB, KModNone })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-previous-recording", self(), cmd_previous_recording)
-        .titled("Previous recording")
+        .titled("Previous recording, or leg")
         .bind(KeyCombo { KEY_TAB, KModShift })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-activity-info", self(), cmd_activity_info)

@@ -284,6 +284,17 @@ void test_tabs_leave_out_transitions()
     CHECK(leg_tabs(t.activity) == (std::vector<size_t> { 0, 2, 4 }));
 }
 
+void test_tabs()
+{
+    Loaded t { triathlon() };
+    CHECK(tab_labels(t.activity) == (std::vector<std::string> { "Whole", "Swim", "Bike", "Run" }));
+    CHECK(tab_activity(t.activity, 0).is_multisport());
+    CHECK(!tab_activity(t.activity, 0).leg);
+    auto const run = tab_activity(t.activity, 3);
+    CHECK(run.sport == FIT::sport::Running);
+    CHECK(run.leg.has_value() && run.leg->number == 3);
+}
+
 void test_leg_activity()
 {
     Loaded t { triathlon() };
@@ -360,6 +371,7 @@ int main()
     test_one_session_is_no_multisport();
     test_leg_names();
     test_tabs_leave_out_transitions();
+    test_tabs();
     test_leg_activity();
     test_leg_laps_stay_within_the_leg();
     test_inbox_files_by_the_last_legs_start();
