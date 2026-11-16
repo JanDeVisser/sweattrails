@@ -915,8 +915,25 @@ void SweatTrails::on_terminate()
     overlay_render.reset();
 }
 
+// The activity the activity screen shows, if it shows one, also behind
+// the totals.
+std::optional<ActivityID> activity_on_display(pSweatTrails const &sweattrails)
+{
+    if (auto const &displayed = sweattrails->activity_display->activity; displayed) {
+        return displayed->activity.id;
+    }
+    return { };
+}
+
 void SweatTrails::process_input()
 {
+    // Each frame, as the activity on display changes in many places.
+    if (showing_summaries()) {
+        top_bar->trail.clear();
+    } else {
+        auto const shown = activity_on_display(self<SweatTrails>());
+        top_bar->trail = activity_trail(shown ? std::optional { shown->month } : std::nullopt);
+    }
     Main<Job, Notification>::process_input();
     step_render();
     // Strava's limit has reset: the descriptions go on.
@@ -1926,7 +1943,10 @@ void show_year(pSweatTrails const &sweattrails, size_t year, std::optional<Month
         list->hide();
         show_years(sweattrails, list->year);
     };
-    auto const  shown = sweattrails->last_activity.month;
+    // The activity on display, as the top bar's trail names it, so that
+    // the year crumb selects the month the trail shows.
+    auto const  on_display = activity_on_display(sweattrails);
+    auto const  shown = on_display ? std::optional { on_display->month } : std::nullopt;
     auto const &months = Widget::make<MonthSelector>(month_selected, up, *counts, year, shown);
     months->show();
     if (auto const month = select ? select : month_to_select(*counts, year, shown); month) {
@@ -2363,6 +2383,36 @@ void cmd_list_years(pSweatTrails const &sweattrails, JSONValue const &)
 {
     if (sweattrails->modals.empty()) {
         show_years(sweattrails, sweattrails->last_activity.month.year);
+    }
+}
+
+// A click on the top bar's crumb `ix`, "Activities", the year or the month
+// of the activity on display, lists what's in it. Not while a modal is
+// open, as Ctrl+Y, although the bar can't be clicked then.
+void open_crumb(pSweatTrails const &sweattrails, size_t ix)
+{
+    if (!sweattrails->modals.empty()) {
+        return;
+    }
+    auto const shown = activity_on_display(sweattrails);
+    switch (ix) {
+    case 0:
+        // Without an activity, year 0 isn't listed: the latest is selected.
+        show_years(sweattrails, shown ? shown->month.year : 0);
+        break;
+    case 1:
+        // With the month on display selected, as Enter on the year does.
+        if (shown) {
+            show_year(sweattrails, shown->month.year, std::nullopt);
+        }
+        break;
+    case 2:
+        if (shown) {
+            list_month(sweattrails, *shown);
+        }
+        break;
+    default:
+        break;
     }
 }
 
@@ -2838,6 +2888,12 @@ void SweatTrails::initialize()
         warning(ST, "No Zwift maps: {}", worlds.error().to_string());
     }
 
+    // The top bar, the screens, and the status bar, top to bottom.
+    top_bar = add_widget<TopBar>();
+    top_bar->menu = {
+        MenuItem { .title = "Quit", .action = [this]() { bus.submit("st-quit", JSONValue { }); } },
+    };
+    top_bar->on_crumb = [this](size_t ix) { open_crumb(the(), ix); };
     widget_stack = add_widget<WidgetStack>();
     activity_display = widget_stack->add_widget<ActivityDisplay>();
     summaries_screen = widget_stack->add_widget<SummariesScreen>();

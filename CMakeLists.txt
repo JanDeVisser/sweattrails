@@ -166,6 +166,8 @@ add_library(
         src/Lib/Widget/CommandPalette.cpp
         src/Lib/Widget/PopupMenu.h
         src/Lib/Widget/PopupMenu.cpp
+        src/Lib/Widget/TopBar.h
+        src/Lib/Widget/TopBar.cpp
         src/Lib/Widget/Colors.h
         src/Lib/Widget/Colors.cpp
         src/Lib/Widget/Emoji.h
@@ -362,6 +364,7 @@ sweattrails_test(bar_chart_test test/BarChartTest.cpp)
 sweattrails_test(line_chart_test test/LineChartTest.cpp)
 sweattrails_test(text_line_test test/TextLineTest.cpp)
 sweattrails_test(status_bar_test test/StatusBarTest.cpp)
+sweattrails_test(top_bar_test test/TopBarTest.cpp)
 sweattrails_test(text_area_test test/TextAreaTest.cpp)
 sweattrails_test(emoji_test test/EmojiTest.cpp)
 sweattrails_test(emoji_pack_test test/EmojiPackTest.cpp)

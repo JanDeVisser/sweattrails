@@ -107,6 +107,9 @@ void PopupMenu::process_input()
 void PopupMenu::handle_mouse(Vector2 mouse, bool moved, bool pressed)
 {
     auto const item = item_at(mouse);
+    if (item) {
+        App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);
+    }
     // Only when it moves: a mouse resting on the menu doesn't undo Up
     // and Down.
     if (item && moved) {

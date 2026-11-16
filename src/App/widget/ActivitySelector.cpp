@@ -107,6 +107,14 @@ MonthList::ListBoxEntry month_entry(Month const &month, size_t count)
     return ret;
 }
 
+std::vector<std::string> activity_trail(std::optional<Month> const &shown)
+{
+    if (!shown) {
+        return { "Activities" };
+    }
+    return { "Activities", std::format("{}", shown->year), std::string { month_name(shown->month) } };
+}
+
 YearSelector::YearSelector(Submit const &submit, MonthCounts const &counts)
     : ListBox("Years")
     , submit_fnc(submit)

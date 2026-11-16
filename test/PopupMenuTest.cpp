@@ -144,6 +144,24 @@ void test_the_mouse()
     CHECK(t.menu->status == ModalStatus::Submitted);
 }
 
+// The hand over an item a click chooses, not over a greyed-out one or
+// the padding. The app goes back to its default each frame.
+void test_the_hand_over_an_item()
+{
+    TestMenu t;
+    t.menu->viewport = Rect<float> { 100.0f, 100.0f, 100.0f, 92.0f };
+    t.menu->row_height = 20;
+    auto const hand_at = [&t](Vector2 mouse) {
+        App::the()->m_requested_cursor = MOUSE_CURSOR_DEFAULT;
+        t.menu->handle_mouse(mouse, false, false);
+        return App::the()->m_requested_cursor == MOUSE_CURSOR_POINTING_HAND;
+    };
+    CHECK(hand_at({ 150, 110 }));
+    CHECK(!hand_at({ 150, 130 })); // Greyed out
+    CHECK(!hand_at({ 150, 103 })); // The padding
+    CHECK(!hand_at({ 250, 110 })); // Outside
+}
+
 void test_a_click_outside_closes_the_menu()
 {
     TestMenu t;
@@ -274,6 +292,7 @@ int main()
     test_item_at();
     test_menu_position();
     test_the_mouse();
+    test_the_hand_over_an_item();
     test_a_click_outside_closes_the_menu();
     test_the_action_runs_after_the_menu_closed();
     test_keys_with_a_modifier();

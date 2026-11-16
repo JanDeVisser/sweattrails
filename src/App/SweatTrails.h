@@ -19,6 +19,7 @@
 
 #include <App.h>
 #include <CommandPalette.h>
+#include <TopBar.h>
 
 #include <Zwift.h>
 #include <overlay/OverlayRender.h>
@@ -517,6 +518,7 @@ struct SweatTrails : public Main<Job, Notification> {
     std::string                      settings_error { };   // Why a settings file can't be read
     std::string                      font_error { };       // Why the font in the settings isn't used
     std::shared_ptr<StatusBar>       status { nullptr };
+    std::shared_ptr<TopBar>          top_bar { nullptr };
     // Strava's descriptions in the background: whether its job is queued or
     // running, when to start it again, and whether a titles run that ended
     // while it ran wants it to look at the store again. Only used on the

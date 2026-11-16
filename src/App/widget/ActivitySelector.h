@@ -9,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include <Modal.h>
@@ -64,6 +65,11 @@ using MonthList = ListBox<Month, ListBoxConfig { .search = false, .sort = false,
 // the number of activities as a column.
 YearList::ListBoxEntry  year_entry(size_t year, size_t count);
 MonthList::ListBoxEntry month_entry(Month const &month, size_t count);
+
+// The top bar's trail to `shown`, naming the year and month as the lists
+// do: "Activities", "2025", "November", or just "Activities" without an
+// activity on display.
+[[nodiscard]] std::vector<std::string> activity_trail(std::optional<Month> const &shown);
 
 // Ctrl+Y's list: the years with activities, oldest first. Enter goes down
 // to a year's months.
