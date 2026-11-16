@@ -16,6 +16,21 @@ struct Child::State {
     HANDLE     stdin_pipe { nullptr };
     std::mutex mutex { };
     bool       waited { false };
+
+    State() = default;
+    State(State const &) = delete;
+    State &operator=(State const &) = delete;
+
+    // So that each way out of start() closes what it opened.
+    ~State()
+    {
+        if (stdin_pipe != nullptr) {
+            CloseHandle(stdin_pipe);
+        }
+        if (process != nullptr) {
+            CloseHandle(process);
+        }
+    }
 };
 
 namespace {
@@ -143,11 +158,7 @@ std::expected<Child, LibCError> Child::start(std::vector<std::string> const &com
             ? open_inheritable(options.stderr_file->wstring(), GENERIC_WRITE, CREATE_ALWAYS)
             : inheritable_copy(STD_ERROR_HANDLE, GENERIC_WRITE);
         if (!std_handles.valid()) {
-            auto const error = win32_error();
-            if (state->stdin_pipe != nullptr) {
-                CloseHandle(state->stdin_pipe);
-            }
-            return std::unexpected(error);
+            return std::unexpected(win32_error());
         }
     }
 
@@ -164,10 +175,19 @@ std::expected<Child, LibCError> Child::start(std::vector<std::string> const &com
         SIZE_T size { 0 };
         InitializeProcThreadAttributeList(nullptr, 1, 0, &size);
         attribute_buffer.resize(size);
-        startup.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_buffer.data());
-        InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &size);
-        UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-            std_handles.handles, sizeof(std_handles.handles), nullptr, nullptr);
+        auto const list = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_buffer.data());
+        if (!InitializeProcThreadAttributeList(list, 1, 0, &size)) {
+            return std::unexpected(win32_error());
+        }
+        startup.lpAttributeList = list;
+        // Without the list, the program would inherit every inheritable
+        // handle the app has: better not to start it.
+        if (!UpdateProcThreadAttribute(list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, std_handles.handles,
+                sizeof(std_handles.handles), nullptr, nullptr)) {
+            auto const error = win32_error();
+            DeleteProcThreadAttributeList(list);
+            return std::unexpected(error);
+        }
     }
 
     // The program is looked for as Windows does without a path: next to
@@ -182,9 +202,6 @@ std::expected<Child, LibCError> Child::start(std::vector<std::string> const &com
         DeleteProcThreadAttributeList(startup.lpAttributeList);
     }
     if (!created) {
-        if (state->stdin_pipe != nullptr) {
-            CloseHandle(state->stdin_pipe);
-        }
         return std::unexpected(error);
     }
     CloseHandle(process.hThread);
@@ -200,13 +217,7 @@ Child::Child(std::unique_ptr<State> state)
 Child::Child(Child &&) noexcept = default;
 Child &Child::operator=(Child &&) noexcept = default;
 
-Child::~Child()
-{
-    if (m_state) {
-        close_stdin();
-        CloseHandle(m_state->process);
-    }
-}
+Child::~Child() = default;
 
 bool Child::write(std::span<unsigned char const> bytes)
 {
