@@ -50,7 +50,8 @@ struct Child {
     bool write(std::span<unsigned char const> bytes);
     void close_stdin();
     // Waits for the program to end, and returns its exit code. A program
-    // killed by a signal is an error.
+    // killed by a signal is an error. Windows has no signals: there a
+    // killed program ends with exit code 1.
     std::expected<int, LibCError> wait();
     // Kills the program, unless wait() is done with it. Another thread may
     // be waiting for it meanwhile.

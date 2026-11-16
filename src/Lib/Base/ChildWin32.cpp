@@ -4,18 +4,14 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include <mutex>
-
 #include <Child.h>
 #include <Win32.h>
 
 namespace ST {
 
 struct Child::State {
-    HANDLE     process { nullptr };
-    HANDLE     stdin_pipe { nullptr };
-    std::mutex mutex { };
-    bool       waited { false };
+    HANDLE process { nullptr };
+    HANDLE stdin_pipe { nullptr };
 
     State() = default;
     State(State const &) = delete;
@@ -251,8 +247,6 @@ void Child::close_stdin()
     }
 }
 
-// The process handle keeps the process ID from being reused until the
-// destructor closes it, so kill() can't get another process.
 std::expected<int, LibCError> Child::wait()
 {
     close_stdin();
@@ -263,17 +257,15 @@ std::expected<int, LibCError> Child::wait()
     if (!GetExitCodeProcess(m_state->process, &exit_code)) {
         return std::unexpected(win32_error());
     }
-    std::lock_guard lock { m_state->mutex };
-    m_state->waited = true;
     return static_cast<int>(exit_code);
 }
 
 void Child::kill()
 {
-    std::lock_guard lock { m_state->mutex };
-    if (!m_state->waited) {
-        TerminateProcess(m_state->process, 1);
-    }
+    // Unlike a pid, the process handle can't come to mean another process
+    // until the destructor closes it, so this needs no lock against wait():
+    // terminating a program that has ended does nothing.
+    TerminateProcess(m_state->process, 1);
 }
 
 }
