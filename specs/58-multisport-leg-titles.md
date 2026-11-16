@@ -1,6 +1,6 @@
 # Titles and descriptions of multisport legs
 
-Status: In progress, on branch feature/58-multisport-leg-titles
+Status: In review
 
 <!--
 Status is one of:
@@ -234,9 +234,19 @@ None.
 - `leg_activity()` copies the leg's names into the activity it makes.
 - `rename()` and `set_notes()` on a leg's tab save the leg's own, with
   `leg->index`.
-- In `storage/Legs.h`, pure and testable: `common_title(titles)`,
-  `legs_description(names and descriptions)`, and `best_leg_title(whole,
-  leg)`: the leg's own title if it has one, else "Whole title · Run".
+- In `storage/Legs.h`, pure and testable: `common_title(titles,
+  titled)`, `legs_description(names and descriptions)`, and
+  `best_leg_title(whole, leg)`: the leg's own title if it has one, else
+  "Whole title · Run".
+- **The common start is in whole words**: "Run 1", "Ride" and "Run 2"
+  have "R" in common, so the common start is cut back to the last space
+  or separator when it ends mid-word. That gives "Welland Sprint Du"
+  and "IM Ottawa" as the spec says, but "Morning" for "Morning Run" and
+  "Morning Ride", where the spec says nothing is left and it's "Morning
+  Run". No rule gives both "IM Ottawa" and "Morning Run": both are
+  common words followed by a space.
+- `split_into_legs()` gives a leg without names its leg name, for an
+  activity loaded without a sidecar.
 
 ### Matching legs (`StravaTitles.{h,cpp}`)
 
@@ -266,10 +276,10 @@ None.
 
 ### Descriptions and the export
 
-- `Undescribed::stored` and the export's missing descriptions become
-  places: `StravaPlace { StoredStart stored; std::optional<size_t> leg;
-  }`. `save_description()` reads the sidecar again and saves into the
-  leg's.
+- `Undescribed::stored` becomes places: `StravaPlace`, a `StoredStart`
+  with an `std::optional<size_t> leg`. The export's `Missing` gets a
+  `leg` too. `save_description()` reads the sidecar again and saves into
+  the leg's.
 - `strava_fits()` lists the legs' IDs too, so a leg's file in the export
   is the stored file, not one to queue.
 - `queue_missing()` doesn't call `give_title()` when Strava's file is
@@ -285,7 +295,10 @@ None.
   whole.
 - The curves' `ride_name` returns `best_leg_title()` for a leg's best;
   `best_name()` (`widget/Summaries.cpp`) only falls back to the leg's
-  name when there's no name.
+  name when there's no name. `SummariesScreen::ride_names` is keyed by
+  file and leg, as two legs of a file can each set bests.
+- Tests: `TestLeg` and `add_leg()` move from `LegsTest.cpp` to
+  `TestFit.h`, to build multisport files in other tests.
 
 ## Test plan
 
