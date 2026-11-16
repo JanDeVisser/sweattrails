@@ -25,6 +25,7 @@
 #include <StringUtil.h>
 
 #include <storage/Activity.h>
+#include <storage/Legs.h>
 #include <storage/Storage.h>
 #include <storage/Stubs.h>
 
@@ -423,18 +424,19 @@ StorageResult<Storage::InboxFiling> Storage::organize_fit_file(std::string_view 
     if (!TRY_EVAL(activity.load_from_file(inbox_dir / file_name))) {
         return InboxFiling { };
     }
-    assert(activity.segment.start_time.timestamp > 0);
-    auto const dest_dir_name = month_dir_name(activity.segment.start_time);
+    auto const start = filing_start(activity);
+    assert(start.timestamp > 0);
+    auto const dest_dir_name = month_dir_name(start);
     auto const dest_dir = TRY_EVAL(ensure_directory(activity_dir / dest_dir_name));
-    auto const dest_stem = std::format("{}", activity.segment.start_time.timestamp);
-    if (auto const slot = slot_for(*this, activity.segment.start_time.timestamp); slot.kind == Slot::Kind::Stub) {
-        if (TRY_EVAL(replace_from_inbox(file_name, slot.stub, activity.segment.start_time.timestamp))) {
-            return InboxFiling { .outcome = InboxOutcome::Replaced, .start = activity.segment.start_time.timestamp, .stub_start = slot.stub.start };
+    auto const dest_stem = std::format("{}", start.timestamp);
+    if (auto const slot = slot_for(*this, start.timestamp); slot.kind == Slot::Kind::Stub) {
+        if (TRY_EVAL(replace_from_inbox(file_name, slot.stub, start.timestamp))) {
+            return InboxFiling { .outcome = InboxOutcome::Replaced, .start = start.timestamp, .stub_start = slot.stub.start };
         }
     }
     // Not has_activity(): a file put in the inbox at a deleted start is
     // filed, as the user asked for it.
-    if (fit_at(activity.segment.start_time.timestamp)) {
+    if (fit_at(start.timestamp)) {
         // renamePreserve: never clobber an existing file. Set the duplicate
         // aside so it isn't processed again on every start. The same file can
         // arrive more than once, so number the copies.
@@ -448,7 +450,7 @@ StorageResult<Storage::InboxFiling> Storage::organize_fit_file(std::string_view 
         return InboxFiling { .outcome = InboxOutcome::Duplicate };
     }
     TRY(move_with_sidecar(file_name, dest_dir, dest_stem));
-    return InboxFiling { .outcome = InboxOutcome::Organized, .start = activity.segment.start_time.timestamp };
+    return InboxFiling { .outcome = InboxOutcome::Organized, .start = start.timestamp };
 }
 
 // An inbox file that's a stub's recording replaces it, with its sidecar,

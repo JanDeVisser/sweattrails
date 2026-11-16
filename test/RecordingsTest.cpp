@@ -123,6 +123,13 @@ void test_same_activity()
     hike.sport = sport::Hiking;
     CHECK(!same_activity(swim, hike));
     CHECK(!same_activity(ride(1000, 0), ride(1000, 3600)));
+    // A multisport activity isn't grouped with a recording of its leg, nor
+    // with another multisport one.
+    auto race = ride(1000, 3600);
+    race.sport = sport::Multisport;
+    CHECK(!same_activity(race, ride(1000, 3600)));
+    CHECK(!same_activity(ride(1000, 3600), race));
+    CHECK(!same_activity(race, race));
 }
 
 void test_same_recording()

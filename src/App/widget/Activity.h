@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <ranges>
@@ -9,6 +10,7 @@
 
 #include <Logging.h>
 
+#include <TabStrip.h>
 #include <Table.h>
 #include <Widget.h>
 
@@ -42,6 +44,9 @@ struct ActivityDataDisplay : public Widget {
     Rectangle                          title_pen { };  // The pen after it, likewise
     Rectangle                          notes_area { }; // The "Add a description" line, where there's no description
     Rectangle                          notes_pen { };  // The pen after the description
+    // A multisport activity's tabs, under the title; none for another.
+    TabStrip                    tabs { };
+    std::function<void(size_t)> on_tab { }; // A tab was clicked
 
     explicit ActivityDataDisplay(pWidget const &parent);
     ~ActivityDataDisplay();
@@ -60,7 +65,8 @@ private:
     // the notes wrapped to that, the summary and the fields.
     struct Rows {
         float                    title_y;
-        std::vector<std::string> notes; // "Add a description" when there's none
+        std::optional<float>     tabs_y; // Only with tabs
+        std::vector<std::string> notes;  // "Add a description" when there's none
         bool                     placeholder;
         float                    notes_y;
         float                    summary_y;
@@ -207,6 +213,9 @@ struct ActivityDisplay : public Layout {
     std::shared_ptr<OverlayPreview>      preview; // In the place of `central` when it's on
     std::shared_ptr<Table>               laps;
     std::shared_ptr<ActivityGraph>       graph;
+    // A multisport activity, whichever of its tabs is shown
+    // (specs/56-multisport.md). The data panel's tab strip says which.
+    std::optional<Activity> multisport { };
 
     explicit ActivityDisplay(pWidget const &parent);
     // `route` is another recording of the activity, whose route the map
@@ -219,6 +228,12 @@ struct ActivityDisplay : public Layout {
     // it, or stops comparing.
     void compare_with(std::optional<Activity> const &other);
     void clear_activity();
+    // A multisport activity's tab `tab`: 0 for Whole, then its legs that
+    // aren't transitions. Nothing is kept from the tab before but the
+    // names.
+    void show_tab(size_t tab);
+    // The next tab, `by` 1, or the one before, -1, wrapping around.
+    void step_tab(int by);
     // The activity's laps changed: the table shows them again.
     void               laps_changed();
     [[nodiscard]] bool previewing() const;

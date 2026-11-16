@@ -308,9 +308,13 @@ std::string device_name(Activity const &activity)
 namespace {
 
 // Which of the activity's recordings is shown, for the line under the
-// title, whatever is selected: " · Recording 2 of 2: Wahoo".
+// title, whatever is selected: " · Recording 2 of 2: Wahoo". Or which leg
+// of a multisport activity: " · Bike, leg 2 of 3".
 std::string recording_suffix(Activity const &activity)
 {
+    if (activity.leg) {
+        return std::format(" · {}, leg {} of {}", activity.leg->name, activity.leg->number, activity.leg->count);
+    }
     if (activity.recordings < 2) {
         return "";
     }
@@ -364,7 +368,10 @@ std::string deleted_status(Activity const &activity)
 
 std::string lap_summary(Activity const &activity, size_t lap)
 {
-    return std::format("Lap {} of {} · {}{}", lap + 1, activity.laps.size(), segment_summary(activity, activity.laps[lap].segment), recording_suffix(activity));
+    // A lap with a name, a multisport activity's leg, goes by it.
+    auto const &title = activity.laps[lap].title;
+    auto const  name = title.empty() ? std::format("Lap {} of {}", lap + 1, activity.laps.size()) : title;
+    return std::format("{} · {}{}", name, segment_summary(activity, activity.laps[lap].segment), recording_suffix(activity));
 }
 
 std::string range_summary(Activity const &activity, size_t first, size_t last, Segment const &segment)
@@ -572,7 +579,8 @@ LapTable lap_table(Activity const &activity, std::vector<std::optional<Compariso
         table.columns.push_back(column.column);
     }
     for (auto ix = 0uz; ix < activity.laps.size(); ++ix) {
-        TableRow row { std::format("{}", ix + 1) };
+        auto const &title = activity.laps[ix].title;
+        TableRow    row { title.empty() ? std::format("{}", ix + 1) : title };
         for (auto const &column : columns) {
             row.push_back(column.cell(activity.laps[ix].segment));
         }

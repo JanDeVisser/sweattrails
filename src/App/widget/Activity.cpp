@@ -14,6 +14,7 @@
 
 #include <SweatTrails.h>
 #include <storage/Activity.h>
+#include <storage/Legs.h>
 #include <widget/Activity.h>
 #include <widget/GraphData.h>
 #include <widget/SportIcon.h>
@@ -60,6 +61,10 @@ ActivityDataDisplay::Rows ActivityDataDisplay::rows(float width) const
     };
     Rows ret { .title_y = top + App::measure_text("Mg", FontSize::Small).y + 20 };
     ret.notes_y = ret.title_y + line_height(FontSize::Large);
+    if (!tabs.labels.empty()) {
+        ret.tabs_y = ret.notes_y;
+        ret.notes_y += TabStrip::height(FontSize::Small) + 10;
+    }
     ret.notes = clamp_lines(wrap_words(activity->activity.notes, notes_width, measure), NotesLines, notes_width, measure);
     ret.placeholder = ret.notes.empty();
     if (ret.placeholder) {
@@ -106,6 +111,11 @@ void ActivityDataDisplay::draw()
     auto const title_size = render_text(116, at.title_y, activity->activity.title, FontSize::Large, RAYWHITE);
     title_area = Rectangle { .x = viewport.x + 116, .y = viewport.y + at.title_y, .width = title_size.x, .height = title_size.y };
     title_pen = draw_pen(title_area, title_area);
+    if (at.tabs_y) {
+        tabs.draw(*this, 116, *at.tabs_y, FontSize::Small);
+    } else {
+        tabs.areas.clear();
+    }
     draw_notes(at);
     auto const summary = [this] {
         auto const &a = activity->activity;
@@ -243,6 +253,13 @@ void ActivityDataDisplay::process_input()
         return true;
     };
     if (clicked(title_area, title_pen, "st-rename-activity") || clicked(notes_area, notes_pen, "st-edit-description")) {
+        return;
+    }
+    if (auto const tab = tabs.tab_at(mouse); tab && on_tab) {
+        App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && *tab != tabs.selected) {
+            on_tab(*tab);
+        }
         return;
     }
     for (auto const &[area, mark_at] : clickable) {
@@ -687,7 +704,45 @@ ActivityDisplay::ActivityDisplay(pWidget const &parent)
 // size when the layout resizes it.
 void ActivityDisplay::set_activity(Activity const &activity, std::optional<Activity> const &route)
 {
+    // A multisport activity opens on Whole, also coming back to it.
+    multisport.reset();
+    data_display->tabs = TabStrip { };
+    if (activity.is_multisport()) {
+        multisport = activity;
+        data_display->tabs.labels = tab_labels(activity);
+    }
     show(activity, route, false);
+}
+
+void ActivityDisplay::show_tab(size_t tab)
+{
+    if (!multisport || !activity || tab >= data_display->tabs.labels.size()) {
+        return;
+    }
+    // Whole's laps the user made, and a name given on any tab, are the
+    // activity's.
+    auto const &shown = activity->activity;
+    if (data_display->tabs.selected == 0) {
+        *multisport = shown;
+    } else {
+        multisport->title = shown.title;
+        multisport->original_title = shown.original_title;
+        multisport->notes = shown.notes;
+        multisport->original_notes = shown.original_notes;
+    }
+    data_display->tabs.selected = tab;
+    // The overlay is the FIT file's, so only Whole's.
+    if (tab != 0 && previewing()) {
+        show_preview(false);
+    }
+    show(tab_activity(*multisport, tab), std::nullopt, false);
+}
+
+void ActivityDisplay::step_tab(int by)
+{
+    auto tabs = data_display->tabs;
+    tabs.step(by);
+    show_tab(tabs.selected);
 }
 
 void ActivityDisplay::compare_with(std::optional<Activity> const &other)
@@ -748,6 +803,8 @@ void ActivityDisplay::show_laps()
 void ActivityDisplay::clear_activity()
 {
     this->activity = nullptr;
+    multisport.reset();
+    data_display->tabs = TabStrip { };
     laps->set_rows({ }, { });
     laps->policy = SizePolicy::Hide;
     data_display->set_activity(nullptr);
@@ -823,6 +880,7 @@ void ActivityDisplay::initialize()
     preview = add_widget<OverlayPreview>();
     data_display = column->data_display;
     laps = column->laps;
+    data_display->on_tab = [this](size_t tab) { show_tab(tab); };
     laps->on_click = [this](size_t row) {
         if (activity) {
             activity->toggle_lap(row);

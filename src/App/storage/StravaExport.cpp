@@ -18,6 +18,7 @@
 #include <Zip.h>
 
 #include <storage/Activity.h>
+#include <storage/Legs.h>
 #include <storage/Recordings.h>
 #include <storage/StravaExport.h>
 #include <storage/Stubs.h>
@@ -255,7 +256,7 @@ std::optional<std::pair<std::string, i64>> read_original(Storage &storage, fs::p
     if (auto const loaded = activity.load_from_slice(*contents); !loaded || !*loaded) {
         return skip("it's no activity");
     }
-    return std::pair { std::move(*contents), static_cast<i64>(activity.segment.start_time.timestamp) };
+    return std::pair { std::move(*contents), static_cast<i64>(filing_start(activity).timestamp) };
 }
 
 }
