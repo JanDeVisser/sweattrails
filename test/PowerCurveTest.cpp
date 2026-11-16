@@ -175,6 +175,23 @@ void test_best_curve()
     CHECK_EQ(with_indoor.size(), 1uz);
 }
 
+// A duathlon's bike leg is a ride; its run legs, with a Stryd's power,
+// aren't.
+void test_best_curve_of_legs()
+{
+    ActivitySummaries summaries {
+        ride(date(2026, 3, 1), { 400, 380 }, FIT::sport::Running),
+        ride(date(2026, 3, 1), { 350, 340, 330 }),
+        ride(date(2026, 3, 1), { 450 }, FIT::sport::Running),
+    };
+    for (auto ix = 0u; ix < summaries.size(); ++ix) {
+        summaries[ix].source.file = "duathlon.fit";
+        summaries[ix].leg = ix;
+    }
+    auto const bests = best_curve(summaries, date(2026, 3, 1), date(2026, 3, 31));
+    CHECK(bests == (std::vector<PowerBest> { { .watts = 350, .summary = 1 }, { .watts = 340, .summary = 1 }, { .watts = 330, .summary = 1 } }));
+}
+
 // The bests of a rider with a CP of 280 W and a W' of 20 kJ, up to `to`.
 std::vector<PowerBest> modelled(u32 to)
 {
@@ -353,6 +370,7 @@ int main()
     test_without_power();
     test_out_of_order_records();
     test_best_curve();
+    test_best_curve_of_legs();
     test_critical_power();
     test_no_critical_power_from_an_unsound_fit();
     test_the_gap_limit();

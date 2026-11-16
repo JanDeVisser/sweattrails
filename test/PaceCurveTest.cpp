@@ -160,6 +160,21 @@ ActivitySummary run(chrono::year_month_day day, std::vector<u32> times, std::opt
     return ActivitySummary { .start = local_noon(day), .sport = FIT::sport::Running, .sub_sport = sub_sport, .best_times = std::move(times) };
 }
 
+// A duathlon's run legs are two runs, each with its own bests; its bike
+// leg isn't one.
+void test_best_pace_curve_of_legs()
+{
+    auto bike = run(date(2026, 3, 1), { 50, 100, 130 });
+    bike.sport = FIT::sport::Cycling;
+    ActivitySummaries summaries { run(date(2026, 3, 1), { 90, 190 }), bike, run(date(2026, 3, 1), { 95, 200, 250 }) };
+    for (auto ix = 0u; ix < summaries.size(); ++ix) {
+        summaries[ix].source.file = "duathlon.fit";
+        summaries[ix].leg = ix;
+    }
+    auto const bests = best_pace_curve(summaries, date(2026, 3, 1), date(2026, 3, 31));
+    CHECK(bests == (std::vector<PaceBest> { { .seconds = 90, .summary = 0 }, { .seconds = 190, .summary = 0 }, { .seconds = 250, .summary = 2 } }));
+}
+
 void test_best_pace_curve()
 {
     auto ride = run(date(2026, 3, 5), { 10, 10, 10 });
@@ -339,6 +354,7 @@ int main()
     test_without_distance();
     test_shorter_than_a_distance();
     test_best_pace_curve();
+    test_best_pace_curve_of_legs();
     test_critical_speed();
     test_no_critical_speed_from_an_unsound_fit();
     test_out_of_order_and_repeated_seconds();
