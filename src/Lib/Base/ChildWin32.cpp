@@ -75,25 +75,28 @@ std::string command_line(std::vector<std::string> const &command)
     return ret;
 }
 
-SECURITY_ATTRIBUTES inheritable { .nLength = sizeof(SECURITY_ATTRIBUTES), .lpSecurityDescriptor = nullptr, .bInheritHandle = TRUE };
+// The handles are made without inheritance, and only the program's are
+// made inheritable, just before it starts. Another thread that starts a
+// program meanwhile, such as with ShellExecuteW, never gets the app's end
+// of the pipe, which would keep the program from seeing its stdin close.
 
-HANDLE open_inheritable(std::wstring const &path, DWORD access, DWORD disposition)
+HANDLE open_file(std::wstring const &path, DWORD access, DWORD disposition)
 {
-    return CreateFileW(path.c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, &inheritable,
+    return CreateFileW(path.c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
         disposition, FILE_ATTRIBUTE_NORMAL, nullptr);
 }
 
-// One of the app's standard handles, for the program: a copy it can
-// inherit, or the null device if the app has none, as a GUI app may not.
-HANDLE inheritable_copy(DWORD which, DWORD access)
+// One of the app's standard handles, for the program: a copy of it, or the
+// null device if the app has none, as a GUI app may not.
+HANDLE std_copy(DWORD which, DWORD access)
 {
     auto const handle = GetStdHandle(which);
     HANDLE     copy { nullptr };
     if (handle != nullptr && handle != INVALID_HANDLE_VALUE
-        && DuplicateHandle(GetCurrentProcess(), handle, GetCurrentProcess(), &copy, 0, TRUE, DUPLICATE_SAME_ACCESS)) {
+        && DuplicateHandle(GetCurrentProcess(), handle, GetCurrentProcess(), &copy, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
         return copy;
     }
-    return open_inheritable(L"NUL", access, OPEN_EXISTING);
+    return open_file(L"NUL", access, OPEN_EXISTING);
 }
 
 // The program's ends of its stdin, stdout and stderr, which the app closes
@@ -123,6 +126,16 @@ struct StdHandles {
         }
         return true;
     }
+
+    [[nodiscard]] bool make_inheritable() const
+    {
+        for (auto const handle : handles) {
+            if (!SetHandleInformation(handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)) {
+                return false;
+            }
+        }
+        return true;
+    }
 };
 
 }
@@ -143,21 +156,19 @@ std::expected<Child, LibCError> Child::start(std::vector<std::string> const &com
     if (redirect) {
         auto &[in, out, err] = std_handles.handles;
         if (options.pipe_stdin) {
-            if (!CreatePipe(&in, &state->stdin_pipe, &inheritable, 0)) {
+            if (!CreatePipe(&in, &state->stdin_pipe, nullptr, 0)) {
                 return std::unexpected(win32_error());
             }
-            // The app's end stays the app's.
-            SetHandleInformation(state->stdin_pipe, HANDLE_FLAG_INHERIT, 0);
         } else {
-            in = inheritable_copy(STD_INPUT_HANDLE, GENERIC_READ);
+            in = std_copy(STD_INPUT_HANDLE, GENERIC_READ);
         }
         out = options.discard_stdout
-            ? open_inheritable(L"NUL", GENERIC_WRITE, OPEN_EXISTING)
-            : inheritable_copy(STD_OUTPUT_HANDLE, GENERIC_WRITE);
+            ? open_file(L"NUL", GENERIC_WRITE, OPEN_EXISTING)
+            : std_copy(STD_OUTPUT_HANDLE, GENERIC_WRITE);
         err = options.stderr_file
-            ? open_inheritable(options.stderr_file->wstring(), GENERIC_WRITE, CREATE_ALWAYS)
-            : inheritable_copy(STD_ERROR_HANDLE, GENERIC_WRITE);
-        if (!std_handles.valid()) {
+            ? open_file(options.stderr_file->wstring(), GENERIC_WRITE, CREATE_ALWAYS)
+            : std_copy(STD_ERROR_HANDLE, GENERIC_WRITE);
+        if (!std_handles.valid() || !std_handles.make_inheritable()) {
             return std::unexpected(win32_error());
         }
     }
