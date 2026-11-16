@@ -402,6 +402,9 @@ sweattrails_test(
         src/App/storage/Thresholds.cpp
         src/App/storage/Volume.cpp
         src/App/widget/ActivitySelector.cpp
+        src/App/storage/Summaries.cpp
+        src/App/storage/PowerCurve.cpp
+        src/App/storage/PaceCurve.cpp
         src/App/widget/DataFields.cpp
         src/App/storage/Comparison.cpp
         src/App/widget/SportIcon.cpp

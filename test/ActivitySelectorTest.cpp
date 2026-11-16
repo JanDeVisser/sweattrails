@@ -5,10 +5,11 @@
  *
  * Tests that ActivitySelector, the month's activity list (Ctrl-M), submits
  * the activity that is selected, also while searching, what its rows show,
- * and where Left and Right go. The selector reads the month from storage
- * when it's made; the storage here mostly points at a directory that
- * doesn't exist, unique to this run, so the month is empty, and the test
- * adds the entries itself.
+ * and where Left and Right go. Also the year and month lists above it
+ * (Ctrl+Y), and going up from one list to the one above. The selector
+ * reads the month from storage when it's made; the storage here mostly
+ * points at a directory that doesn't exist, unique to this run, so the
+ * month is empty, and the test adds the entries itself.
  */
 
 #include <filesystem>
@@ -284,6 +285,130 @@ void test_destinations_skip_months_that_list_nothing()
     CHECK_EQ(december->destination(KModNone, KEY_LEFT).value_or(Month { }).dir_name(), "2021/09");
 }
 
+MonthCounts some_counts()
+{
+    using enum DateTime::Month;
+    return MonthCounts {
+        { Month { 2021, May }, 3 },
+        { Month { 2023, June }, 2 },
+        { Month { 2023, January }, 1 },
+        { Month { 2023, November }, 4 },
+        { Month { 2024, February }, 5 },
+    };
+}
+
+void test_year_and_month_entries()
+{
+    auto const year = year_entry(2024, 187);
+    CHECK_EQ(year.text, "2024");
+    CHECK_EQ(year.payload, 2024uz);
+    CHECK_EQ(year.columns, (std::vector<std::string> { "187" }));
+    auto const month = month_entry(Month { 2025, DateTime::Month::March }, 17);
+    CHECK_EQ(month.text, "March");
+    CHECK(month.payload == (Month { 2025, DateTime::Month::March }));
+    CHECK_EQ(month.columns, (std::vector<std::string> { "17" }));
+}
+
+// The years oldest first, each with the activities of all its months, and
+// Enter submits the year selected.
+void test_year_list()
+{
+    std::optional<size_t> submitted;
+    auto const            years = std::make_shared<YearSelector>(
+        [&submitted](std::shared_ptr<YearSelector> const &, size_t year) { submitted = year; }, some_counts());
+    std::vector<std::string> rows;
+    for (auto const &e : years->entries) {
+        rows.push_back(std::format("{} {}", e.text, e.columns.front()));
+    }
+    CHECK_EQ(rows, (std::vector<std::string> { "2021 3", "2023 7", "2024 5" }));
+    years->scroll.lines = 20;
+    years->status = ModalStatus::Active;
+    years->select(2023uz);
+    years->process_key(KModNone, KEY_ENTER);
+    CHECK(submitted == std::optional<size_t> { 2023 });
+}
+
+struct MonthFixture {
+    std::optional<Month>           submitted { };
+    int                            ups { 0 };
+    std::shared_ptr<MonthSelector> months { };
+
+    explicit MonthFixture(size_t year, std::optional<Month> shown = { })
+    {
+        months = std::make_shared<MonthSelector>(
+            [this](std::shared_ptr<MonthSelector> const &, Month const &m) { submitted = m; },
+            [this](std::shared_ptr<MonthSelector> const &) { ++ups; },
+            some_counts(), year, shown);
+        months->scroll.lines = 20;
+        months->status = ModalStatus::Active;
+    }
+
+    [[nodiscard]] std::vector<std::string> rows() const
+    {
+        std::vector<std::string> ret;
+        for (auto const &e : months->entries) {
+            ret.push_back(std::format("{} {}", e.text, e.columns.front()));
+        }
+        return ret;
+    }
+};
+
+// A year's months in calendar order, opening at the month on display, and
+// Enter submits the month selected.
+void test_month_list()
+{
+    using enum DateTime::Month;
+    MonthFixture f { 2023, Month { 2023, June } };
+    CHECK_EQ(f.rows(), (std::vector<std::string> { "January 1", "June 2", "November 4" }));
+    CHECK_EQ(f.months->prompt, "2023");
+    CHECK((f.months->populate() == std::optional { Month { 2023, June } }));
+    f.months->select(Month { 2023, June });
+    f.months->process_key(KModNone, KEY_ENTER);
+    CHECK((f.submitted == std::optional { Month { 2023, June } }));
+}
+
+// Left and Right go to the year before or after with activities, skipping
+// 2022, and do nothing at the ends or with Shift.
+void test_month_list_destinations()
+{
+    MonthFixture f { 2023 };
+    CHECK(f.months->destination(KModNone, KEY_LEFT) == std::optional<size_t> { 2021 });
+    CHECK(f.months->destination(KModNone, KEY_RIGHT) == std::optional<size_t> { 2024 });
+    CHECK(!f.months->destination(KModShift, KEY_RIGHT));
+    CHECK(!f.months->destination(KModNone, KEY_UP));
+    MonthFixture first { 2021 };
+    CHECK(!first.months->destination(KModNone, KEY_LEFT));
+    MonthFixture last { 2024 };
+    CHECK(!last.months->destination(KModNone, KEY_RIGHT));
+    // In another year, the month on display isn't there: the latest is.
+    MonthFixture other { 2023, Month { 2024, DateTime::Month::February } };
+    CHECK((other.months->populate() == std::optional { Month { 2023, DateTime::Month::November } }));
+}
+
+// GoUpKey goes up from the month list and the activity list, and does
+// nothing in the year list, without closing it.
+void test_go_up()
+{
+    MonthFixture f { 2023 };
+    f.months->process_key(GoUpKey.modifier, GoUpKey.key);
+    CHECK_EQ(f.ups, 1);
+#ifdef __APPLE__
+    // Mission Control's, and not ours.
+    f.months->process_key(KModControl, KEY_UP);
+    CHECK_EQ(f.ups, 1);
+#endif
+
+    Fixture activities { { "a run" } };
+    auto    up = 0;
+    activities.selector->up_fnc = [&up](std::shared_ptr<ActivitySelector> const &) { ++up; };
+    activities.selector->process_key(GoUpKey.modifier, GoUpKey.key);
+    CHECK_EQ(up, 1);
+
+    auto const years = std::make_shared<YearSelector>([](std::shared_ptr<YearSelector> const &, size_t) { }, some_counts());
+    years->status = ModalStatus::Active;
+    CHECK(years->process_key(GoUpKey.modifier, GoUpKey.key));
+    CHECK(years->status == ModalStatus::Active);
+}
 }
 
 int main()
@@ -299,5 +424,10 @@ int main()
     test_destinations();
     test_opens_at_activity();
     test_destinations_skip_months_that_list_nothing();
+    test_year_and_month_entries();
+    test_year_list();
+    test_month_list();
+    test_month_list_destinations();
+    test_go_up();
     return Test::test_result();
 }
