@@ -20,7 +20,7 @@
 #include <thread>
 #include <vector>
 
-#include <sys/types.h>
+#include <Child.h>
 
 namespace ST {
 
@@ -71,15 +71,14 @@ struct Encoder {
     [[nodiscard]] fs::path const &output() const { return m_output; }
 
 private:
-    Encoder(fs::path output, fs::path log, size_t frame_bytes);
+    Encoder(Child child, fs::path output, fs::path log, size_t frame_bytes);
     void                             write_frames();
     std::expected<void, std::string> wait();
 
     fs::path    m_output;
     fs::path    m_log;
     size_t      m_frame_bytes;
-    pid_t       m_pid { -1 };
-    int         m_stdin { -1 };
+    Child       m_child;
     std::thread m_writer;
 
     mutable std::mutex                              m_mutex;
@@ -89,7 +88,6 @@ private:
     bool                                            m_closing { false };  // No more frames come
     bool                                            m_stopping { false }; // Drop the frames left
     bool                                            m_failed { false };
-    bool                                            m_exited { false }; // The program has, and may be reaped
     std::optional<std::expected<void, std::string>> m_result { };
 
     bool m_joined { false }; // The writer has finished. Only used by the encoder's owner

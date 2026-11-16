@@ -129,6 +129,8 @@ add_library(
         src/Lib/Base/JSON.h
         src/Lib/Base/JSON.cpp
         src/Lib/Base/Logging.cpp
+        src/Lib/Base/Child.h
+        src/Lib/Base/ChildPosix.cpp
         src/Lib/Base/Options.cpp
         src/Lib/Base/StringUtil.cpp
         src/Lib/Base/Token.cpp
@@ -323,9 +325,14 @@ target_link_libraries(
 
 enable_testing()
 
+# What tests start in place of ffmpeg and other programs.
+add_executable(fake_program test/FakeProgram.cpp)
+
 # A test program in test/, run by CTest. See test/README.md.
 function(sweattrails_test name)
     add_executable(${name} ${ARGN})
+    add_dependencies(${name} fake_program)
+    target_compile_definitions(${name} PRIVATE FAKE_PROGRAM="$<TARGET_FILE:fake_program>")
     target_include_directories(
             ${name}
             PRIVATE
@@ -378,6 +385,7 @@ sweattrails_test(cursor_test test/CursorTest.cpp)
 sweattrails_test(string_util_test test/StringUtilTest.cpp)
 sweattrails_test(utf8_test test/Utf8Test.cpp)
 sweattrails_test(io_test test/IOTest.cpp)
+sweattrails_test(child_test test/ChildTest.cpp)
 sweattrails_test(date_test test/DateTest.cpp)
 
 sweattrails_test(http_test test/HttpTest.cpp src/App/Http.cpp)

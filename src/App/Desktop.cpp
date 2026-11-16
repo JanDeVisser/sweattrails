@@ -4,17 +4,11 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include <cerrno>
 #include <format>
 
-#include <spawn.h>
-#include <sys/wait.h>
+#include <Child.h>
 
 #include <Desktop.h>
-
-// The environment, for the programs run_and_wait() runs: POSIX has no
-// header that declares it.
-extern char **environ;
 
 namespace ST {
 
@@ -37,26 +31,15 @@ std::expected<void, LibCError> run_to_success(std::vector<std::string> const &co
 
 std::expected<int, LibCError> run_and_wait(std::vector<std::string> const &command)
 {
-    // Not Process: its pipes' reader threads outlive it.
-    std::vector<char *> argv;
-    for (auto const &argument : command) {
-        argv.push_back(const_cast<char *>(argument.c_str()));
+    auto child = Child::start(command, Child::Options { });
+    if (!child) {
+        return std::unexpected(child.error());
     }
-    argv.push_back(nullptr);
-    pid_t pid { 0 };
-    if (auto const error = ::posix_spawnp(&pid, argv[0], nullptr, nullptr, argv.data(), environ); error != 0) {
-        return std::unexpected(LibCError { error });
+    auto const exit_code = child->wait();
+    if (!exit_code) {
+        return std::unexpected(LibCError { std::format("`{}` {}", command.front(), exit_code.error().description) });
     }
-    int status { 0 };
-    while (::waitpid(pid, &status, 0) == -1) {
-        if (errno != EINTR) {
-            return std::unexpected(LibCError { });
-        }
-    }
-    if (!WIFEXITED(status)) {
-        return std::unexpected(LibCError { std::format("`{}` ended with signal {}", command.front(), WTERMSIG(status)) });
-    }
-    return WEXITSTATUS(status);
+    return *exit_code;
 }
 
 std::expected<void, LibCError> open_browser(std::string const &url)
