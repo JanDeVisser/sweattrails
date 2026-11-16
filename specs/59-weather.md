@@ -1,6 +1,6 @@
 # Weather
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
