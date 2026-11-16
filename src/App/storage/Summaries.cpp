@@ -284,7 +284,12 @@ ActivitySummaries read_file_summaries(Storage &storage, SummaryFile const &file)
 
 std::optional<ActivityID> summary_activity(ActivitySummary const &summary)
 {
-    auto const file = fs::path { summary.source.file };
+    return file_activity(summary.source.file);
+}
+
+std::optional<ActivityID> file_activity(std::string_view file_name)
+{
+    auto const file = fs::path { file_name };
     auto const month_dir = file.parent_path();
     auto const year = string_to_integer<size_t>(month_dir.parent_path().string(), 10);
     auto const month = string_to_integer<int>(month_dir.filename().string(), 10);
@@ -316,6 +321,62 @@ std::string store_summary(ActivitySummaries const &summaries)
     return std::format("{} {}, the newest on {} {} {} {}",
         integer_to_string(count, 10, ','), (count == 1) ? "activity" : "activities",
         weekday_name(date.day_of_week).substr(0, 3), date.day_of_month, month_name(date.month).substr(0, 3), date.year);
+}
+
+MonthCounts month_counts(ActivitySummaries const &summaries, std::vector<std::string> const &files)
+{
+    // A multisport file's legs are one activity. A file that can't be read
+    // is in `seen` too, so that it isn't counted from `files`.
+    std::set<std::string_view> seen;
+    MonthCounts                ret;
+    auto const                 count = [&ret, &seen](std::string_view file, bool readable) {
+        if (!seen.insert(file).second) {
+            return;
+        }
+        if (auto const id = file_activity(file); id && readable) {
+            ++ret[id->month];
+        }
+    };
+    for (auto const &summary : summaries) {
+        count(summary.source.file, summary.sport.has_value());
+    }
+    for (auto const &file : files) {
+        count(file, true);
+    }
+    return ret;
+}
+
+StorageResult<MonthCounts> month_counts(Storage const &storage, ActivitySummaries const &summaries)
+{
+    std::vector<std::string> files;
+    for (auto const &stored : TRY_EVAL(storage.activity_starts(0, std::numeric_limits<i32>::max()))) {
+        auto const fit = fs::path { stored.sidecar }.replace_extension(".fit");
+        files.push_back(fs::relative(fit, storage.activity_dir).generic_string());
+    }
+    return month_counts(summaries, files);
+}
+
+std::optional<size_t> year_next_to(MonthCounts const &counts, size_t year, int step)
+{
+    if (step > 0) {
+        // The first month of a year after `year`.
+        auto const it = counts.lower_bound(Month { year + 1, DateTime::Month::January });
+        return (it != counts.end()) ? std::optional { it->first.year } : std::nullopt;
+    }
+    auto const it = counts.lower_bound(Month { year, DateTime::Month::January });
+    return (it != counts.begin()) ? std::optional { std::prev(it)->first.year } : std::nullopt;
+}
+
+std::optional<Month> month_to_select(MonthCounts const &counts, size_t year, std::optional<Month> const &shown)
+{
+    if (shown && shown->year == year && counts.contains(*shown)) {
+        return shown;
+    }
+    auto const after = counts.lower_bound(Month { year + 1, DateTime::Month::January });
+    if (after == counts.begin() || std::prev(after)->first.year != year) {
+        return { };
+    }
+    return std::prev(after)->first;
 }
 
 void merge_summaries(ActivitySummaries &into, ActivitySummaries const &summaries)

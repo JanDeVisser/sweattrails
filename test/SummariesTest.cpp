@@ -599,6 +599,92 @@ void test_store_summary_out_of_order()
     CHECK_EQ(store_summary(summaries), "2 activities, the newest on Thu 12 Nov 2026");
 }
 
+Month month(size_t year, DateTime::Month m)
+{
+    return Month { year, m };
+}
+
+// Readable files count, one that can't be read doesn't, nor does it count
+// again from the files. A multisport file is one activity, and a file
+// without a summary yet counts.
+void test_month_counts()
+{
+    using enum DateTime::Month;
+    auto broken = summary("2025/03/3.fit", 3);
+    broken.sport.reset();
+    ActivitySummaries summaries { summary("2024/11/1.fit", 1), summary("2025/03/2.fit", 2), broken };
+    for (auto ix = 0u; ix < 3; ++ix) {
+        auto leg = summary("2025/03/4.fit", 4 + ix);
+        leg.leg = ix;
+        summaries.push_back(leg);
+    }
+    std::vector<std::string> const files { "2024/11/1.fit", "2025/03/2.fit", "2025/03/3.fit", "2025/03/4.fit", "2025/05/5.fit" };
+    auto const                     counts = month_counts(summaries, files);
+    CHECK_EQ(counts.size(), 3uz);
+    CHECK_EQ(counts.contains(month(2024, November)) ? counts.at(month(2024, November)) : 0uz, 1uz);
+    CHECK_EQ(counts.contains(month(2025, March)) ? counts.at(month(2025, March)) : 0uz, 2uz);
+    CHECK_EQ(counts.contains(month(2025, May)) ? counts.at(month(2025, May)) : 0uz, 1uz);
+}
+
+// A month with only a file that can't be read isn't there at all.
+void test_month_counts_leaves_out_empty_months()
+{
+    auto broken = summary("2025/03/3.fit", 3);
+    broken.sport.reset();
+    auto const counts = month_counts({ broken }, { "2025/03/3.fit" });
+    CHECK(counts.empty());
+}
+
+// From the store: a FIT file counts, a .strava file alone doesn't, as the
+// activity list doesn't list it.
+void test_month_counts_from_the_store()
+{
+    Test::TempStore store;
+    store.add_activity(Nov12Noon);
+    auto const dir = store.storage.activity_dir / "2026/09";
+    fs::create_directories(dir);
+    MUST(write_file_by_name((dir / "1789000000.strava").string(), std::string_view { "{}" }));
+    auto const counts = month_counts(store.storage, { });
+    CHECK(counts.has_value());
+    if (counts) {
+        CHECK_EQ(counts->size(), 1uz);
+        CHECK(counts->contains(month(2026, DateTime::Month::November)));
+    }
+}
+
+MonthCounts some_counts()
+{
+    using enum DateTime::Month;
+    return MonthCounts { { month(2021, May), 3 }, { month(2023, January), 1 }, { month(2023, June), 2 }, { month(2024, February), 5 } };
+}
+
+// Skipping 2022, which has nothing, and nothing past the ends.
+void test_year_next_to()
+{
+    auto const counts = some_counts();
+    CHECK(year_next_to(counts, 2021, 1) == std::optional<size_t> { 2023 });
+    CHECK(year_next_to(counts, 2023, -1) == std::optional<size_t> { 2021 });
+    CHECK(year_next_to(counts, 2023, 1) == std::optional<size_t> { 2024 });
+    CHECK(!year_next_to(counts, 2024, 1));
+    CHECK(!year_next_to(counts, 2021, -1));
+    CHECK(!year_next_to({ }, 2021, 1));
+}
+
+void test_month_to_select()
+{
+    using enum DateTime::Month;
+    auto const counts = some_counts();
+    // The month on display, in that year.
+    CHECK(month_to_select(counts, 2023, month(2023, January)) == std::optional { month(2023, January) });
+    // Else the year's latest: on display in another year, in a month
+    // without activities, or nothing on display.
+    CHECK(month_to_select(counts, 2023, month(2021, May)) == std::optional { month(2023, June) });
+    CHECK(month_to_select(counts, 2023, month(2023, March)) == std::optional { month(2023, June) });
+    CHECK(month_to_select(counts, 2023, { }) == std::optional { month(2023, June) });
+    CHECK(month_to_select(counts, 2021, { }) == std::optional { month(2021, May) });
+    CHECK(!month_to_select(counts, 2022, { }));
+}
+
 // A file with longer curves than there are durations and distances, as
 // one edited by hand: they're cut to them.
 void test_curves_no_longer_than_their_lists()
@@ -646,6 +732,11 @@ int main()
     test_update_reads_what_came_in_between();
     test_update_that_cant_write();
     test_summary_activity();
+    test_month_counts();
+    test_month_counts_leaves_out_empty_months();
+    test_month_counts_from_the_store();
+    test_year_next_to();
+    test_month_to_select();
     test_curves_no_longer_than_their_lists();
     test_store_summary_empty();
     test_store_summary_one();

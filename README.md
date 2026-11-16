@@ -157,6 +157,15 @@ the one selected, and Escape closes the list. Left and Right go to the
 month before or after that has activities, and Shift+Left and
 Shift+Right a year back or on.
 
+To go further back, Ctrl+Y lists the years with activities, and how
+many each has, with the year of the activity on display selected.
+Enter on a year lists its months with activities, at the month of the
+activity on display or the year's latest, and Left and Right there go
+to the year before or after. Enter on a month lists its activities, as
+Ctrl+M does. Cmd+Up (Ctrl+Up off macOS) goes back up: from a month's
+activities to its year's months, and from those to the years. Escape
+closes the list, whichever it is.
+
 Cmd+I (Ctrl+I off macOS) shows the activity's file, the device that
 recorded it and its sensors. F shows the file in the Finder, and C, or
 a click on the file's name, copies its full path to the clipboard.
