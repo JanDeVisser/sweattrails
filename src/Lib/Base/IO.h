@@ -12,41 +12,11 @@
 #include <optional>
 #include <string>
 
-#include <netinet/in.h>
-
 #include <Error.h>
 #include <Expected.h>
 #include <Utf8.h>
 
 namespace ST {
-
-using socket_t = std::shared_ptr<struct Socket>;
-
-struct Socket {
-    int         fd { 0 };
-    std::string buffer { };
-
-    std::expected<socket_t, LibCError>    accept();
-    std::expected<void, LibCError>        make_nonblocking();
-    std::expected<std::string, LibCError> read(size_t count);
-    std::expected<std::string, LibCError> readln();
-    std::expected<size_t, LibCError>      write(std::string_view const &buf, size_t num);
-    std::expected<size_t, LibCError>      writeln(std::string_view const &buf);
-    CError                                close();
-
-    Socket(int fd);
-    static std::expected<socket_t, LibCError> listen(std::string_view const &unix_socket_name);
-    static std::expected<socket_t, LibCError> listen(std::string_view const &ip_address, int port);
-    static std::expected<socket_t, LibCError> connect(std::string_view const &unix_socket_name);
-    static std::expected<socket_t, LibCError> connect(std::string_view const &ip_address, int port);
-
-private:
-    std::expected<size_t, LibCError> read_available_bytes();
-    std::expected<size_t, LibCError> fill_buffer();
-};
-
-std::expected<struct sockaddr_in, LibCError> tcpip_address_resolve(std::string_view const &ip_address);
-CError                                       fd_make_nonblocking(int fd);
 
 template<typename T = char>
 std::expected<std::basic_string<T>, LibCError> read_file_by_name(std::string_view const &file_name)

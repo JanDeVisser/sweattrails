@@ -132,8 +132,6 @@ add_library(
         src/Lib/Base/JSON.cpp
         src/Lib/Base/Logging.cpp
         src/Lib/Base/Options.cpp
-        src/Lib/Base/Pipe.h
-        src/Lib/Base/Process.cpp
         src/Lib/Base/StringUtil.cpp
         src/Lib/Base/Token.cpp
         src/Lib/Base/Utf8.cpp
