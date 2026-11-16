@@ -501,6 +501,33 @@ void test_best_leg_title()
     CHECK_EQ(best_leg_title(t.activity, 2), "IM Test · Bike");
 }
 
+// The month's list and the curves' table load shallow, and name a
+// multisport activity there: Whole's title is the legs' common title, and a
+// leg's best has the leg's own.
+// The spec's separators include the middle dot, with or without spaces.
+void test_common_title_cuts_a_dot_without_spaces()
+{
+    std::vector<std::string> const dots { "Race·Swim", "Race·Ride" };
+    CHECK_EQ(common_title(dots, true).value_or(""), "Race");
+}
+
+void test_shallow_load_has_the_whole_title()
+{
+    TempDir dir { "leg-titles-shallow" };
+    MUST(write_file_by_name((dir.path / "dummy.fit").string(), std::string_view { triathlon() }));
+    auto const sidecar = R"({"legs": [{"strava": {"id": 1, "name": "IM Test Swim"}}, {}, {"strava": {"id": 3, "name": "IM Test Ride"}}, {}, {"strava": {"id": 5, "name": "IM Test Run"}}]})";
+    MUST(write_file_by_name((dir.path / "dummy.json").string(), std::string_view { sidecar }));
+    Storage  storage { };
+    Activity activity { storage, ActivityID::dummy(ActivityFile::Fit) };
+    activity.depth = LoadingDepth::Shallow;
+    CHECK(activity.load_from_dir(dir.path).value_or(false));
+    CHECK_EQ(activity.title, "IM Test");
+    CHECK(activity.legs.size() == 5);
+    if (activity.legs.size() == 5) {
+        CHECK_EQ(best_leg_title(activity, 2), "IM Test Ride");
+    }
+}
+
 // The reviewer's: a workout message doesn't turn a multisport activity
 // into the workout's sport.
 void test_workout_sport_doesnt_override_multisport()
@@ -551,6 +578,8 @@ int main()
     test_whole_names();
     test_rename_a_leg();
     test_best_leg_title();
+    test_shallow_load_has_the_whole_title();
+    test_common_title_cuts_a_dot_without_spaces();
     test_triathlon_is_one_multisport_activity();
     test_shallow_load_is_multisport();
     test_legs_have_their_records();

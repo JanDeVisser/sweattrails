@@ -338,4 +338,41 @@ None.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+Read against the spec and the two deliberate deviations (the two-step
+leg matching, "Morning" for "Morning Run"/"Morning Ride"), which I
+checked and agree with: with the duathlon's times, T2 goes to T2 and run 2
+to "| Run 2". The full test run passes except the one new test below.
+
+1. **Bug (minor)**: `common_title()` (`Legs.cpp`) doesn't treat `·` as a
+   word boundary when cutting back from mid-word: `boundary` is a one-byte
+   set (`" |-:"`), so "Race·Swim" and "Race·Ride" (no spaces) have
+   "Race·" in common, `common.back()` is the last byte of `·`, the cut
+   finds no boundary, and the result is the first title "Race·Swim", not
+   "Race". With spaces ("Race · Swim") it works. Test:
+   `test_common_title_cuts_a_dot_without_spaces` in `LegsTest.cpp`, which
+   fails now.
+2. **Suggestion**: `best_leg_title()` ignores a leg title equal to the
+   leg's name (`title != name`), so a user who titles a leg "Bike" gets
+   "Whole · Bike" in the curves' table. Harmless, but the check can't
+   tell the default from a title.
+3. **Suggestion**: the last leg's window ends at its start plus its
+   moving time (`leg_spans()`), so a long-stopped last leg can lose a
+   Strava activity that starts late in it. The Architecture notes it as
+   being on the safe side; the other direction is a missed title, not a
+   wrong one.
+4. **Suggestion**: a multisport file none of whose legs match keeps its
+   old `"strava"` (it's removed only when a leg is saved). That is as
+   specified ("the next run that matches its legs"), but the old title
+   then still shows for those files.
+5. **Missing test (small)**: `update_strava_titles()` isn't tested for a
+   leg whose Strava name changes (the description is dropped for the
+   background to fetch again), nor for a second run being a no-op. The
+   code looks right.
+6. **Test added (passes)**: `test_shallow_load_has_the_whole_title`: a
+   shallow load, as the month's list and curves' table use, has the
+   legs' names, Whole's common title and `best_leg_title()`. I suspected
+   shallow loads had no legs, since `split_into_legs()` is only called
+   deep; they do.
+
+No other bugs found in the matching, the sidecar functions, the backlog,
+the export, or the tab switching.
