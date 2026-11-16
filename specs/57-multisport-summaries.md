@@ -171,4 +171,28 @@ TSS adds up the legs', transitions too, and `best_curve()` and
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+Build and the full test run pass (80/80). No tests added: the Test plan's
+items are all there.
+
+1. Suggestion: a multisport activity that crosses midnight at a period
+   boundary (a leg ending after midnight on the last day of a month, week
+   or year, in `volume_totals()`/`year_to_date()`, `Volume.cpp`) has its
+   second run leg in the next period, where `another_leg()` is true and so
+   the count is skipped: the next period gets the distance but no count,
+   and the activity counts once in the first period only. Probably what
+   Jan wants (a race is one run), but the spec doesn't say; real
+   overnight multisport files are rare enough to leave.
+2. Suggestion: `without_stress()` (`Fitness.cpp`) keys a file's legs per
+   year, so a file with legs on both sides of New Year counts as rest in
+   each year in which its legs have no stress. Same rarity as 1.
+3. Suggestion: in `test/VolumeTest.cpp`, `test_duathlon()` was put between
+   the comment of `test_year_to_date_until_today()` and its function, so
+   that comment now describes the wrong test. Move it above that comment.
+4. Suggestion: `filing_start()` is no longer used by the summaries, only
+   by the store, recordings and Strava export, as the spec intends; the
+   comment on `ActivitySummary::start` (if any) should not claim the
+   filing start.
+
+No bugs found in the counting, `plan_update()`, `store_summary()`,
+`tab_of_leg()` or `on_ride`: the leg index is checked against `legs.size()`
+before `show_tab`, and a transition leg's best opens Whole.
