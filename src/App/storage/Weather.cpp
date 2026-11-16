@@ -368,6 +368,14 @@ std::expected<ActivityWeather, LibCError> fetch_weather(HttpFetch const &fetch, 
     return ActivityWeather { .start = std::move(*weather[0]), .end = std::move(*weather[1]) };
 }
 
+std::optional<WeatherRequest> next_weather_request(std::optional<WeatherRequest> waiting, WeatherRequest const &answered)
+{
+    if (waiting == answered) {
+        return { };
+    }
+    return waiting;
+}
+
 std::optional<ActivityWeather> sidecar_weather(fs::path const &sidecar, std::optional<size_t> leg)
 {
     auto const json = read_sidecar(sidecar).and_then([leg](JSONValue const &json) { return sidecar_part(json, leg); });

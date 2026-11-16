@@ -293,14 +293,6 @@ struct StubsReplaced {
     std::vector<std::pair<i64, i64>> moved { };
 };
 
-// The weather box's request to Open-Meteo: the points, and where the
-// answer is saved. An empty sidecar is an activity not from the store.
-struct WeatherRequest {
-    WeatherPoints         points { };
-    std::filesystem::path sidecar { };
-    std::optional<size_t> leg { };
-};
-
 // Sent by the weather's thread when Open-Meteo has answered: the weather,
 // or why there's none.
 struct WeatherArrived {

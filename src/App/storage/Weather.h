@@ -120,6 +120,21 @@ std::expected<std::vector<std::optional<Weather>>, LibCError> parse_open_meteo(s
 // after "Couldn't get the weather: ".
 std::expected<ActivityWeather, LibCError> fetch_weather(HttpFetch const &fetch, WeatherPoints const &points);
 
+// The weather box's request to Open-Meteo: the points, and where the
+// answer is saved. An empty sidecar is an activity not from the store.
+struct WeatherRequest {
+    WeatherPoints         points { };
+    fs::path              sidecar { };
+    std::optional<size_t> leg { };
+
+    bool operator==(WeatherRequest const &) const = default;
+};
+
+// The request to start once `answered` is done: the one asked for while it
+// ran, unless that's the same request, whose answer is saved now. The box
+// closed and opened again on the activity before the answer came.
+std::optional<WeatherRequest> next_weather_request(std::optional<WeatherRequest> waiting, WeatherRequest const &answered);
+
 // The weather in the sidecar, under `"weather"`, or leg `leg`'s.
 std::optional<ActivityWeather> sidecar_weather(fs::path const &sidecar, std::optional<size_t> leg = { });
 

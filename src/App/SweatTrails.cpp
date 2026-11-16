@@ -2567,7 +2567,7 @@ void SweatTrails::notif_weather_arrived(Notification::Payload const &data)
         }
         box->weather_arrived(arrived.request.points, result);
     }
-    if (auto next = std::exchange(the->weather_next, std::nullopt); next) {
+    if (auto next = next_weather_request(std::exchange(the->weather_next, std::nullopt), arrived.request); next) {
         get_weather(the, std::move(*next));
     }
 }

@@ -138,6 +138,21 @@ void test_indoors_no_weather()
     CHECK(weather_points(t.activity).has_value());
 }
 
+// A request asked for while the same one ran is dropped once it's
+// answered; another one is started.
+void test_next_request()
+{
+    WeatherRequest const answered { .points = muskoka(), .sidecar = "/store/1566130980.json" };
+    CHECK(!next_weather_request(answered, answered).has_value());
+    CHECK(!next_weather_request(std::nullopt, answered).has_value());
+    auto leg = answered;
+    leg.leg = 2;
+    CHECK(next_weather_request(leg, answered) == std::optional { leg });
+    auto later = answered;
+    later.points.end.time += 60;
+    CHECK(next_weather_request(later, answered) == std::optional { later });
+}
+
 void test_nearest_hour()
 {
     CHECK_EQ(nearest_hour(Midnight + 12 * 3600 + 29 * 60 + 59), Midnight + 12 * 3600);
@@ -404,6 +419,7 @@ int main()
     test_points_are_the_first_and_last_with_a_position();
     test_no_position_no_weather();
     test_indoors_no_weather();
+    test_next_request();
     test_nearest_hour();
     test_request();
     test_request_over_midnight();
