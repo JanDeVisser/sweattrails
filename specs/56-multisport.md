@@ -1,6 +1,6 @@
 # Multisport activities
 
-Status: In progress, on branch feature/56-multisport
+Status: In review, on branch feature/56-multisport
 
 <!--
 Status is one of:
@@ -249,8 +249,11 @@ Free functions on a loaded `Activity`, all testable without a window:
   last leg's for a multisport activity, else the start. The inbox
   (`Storage.cpp`) and the Strava export's `read_original()` use it, so
   that where a file is filed doesn't change.
-- `summary_leg(Activity const &)`: the leg the summary file counts a
-  multisport activity as: the last, as before this spec.
+- `tab_labels()` and `tab_activity()`: a multisport activity's tabs'
+  labels, "Whole" first, and what each shows: the whole, or
+  `leg_activity()` of its leg.
+- `whole_segment()` and `split_into_legs()`: the loading's part, which
+  `Activity.cpp` calls.
 
 ### The summary file
 
@@ -284,14 +287,15 @@ it has more than one label, and on a click calls back to the
 ### Activity screen
 
 - `ActivityDisplay` keeps the whole multisport activity
-  (`std::optional<Activity> multisport`) and the tab shown (`size_t tab`,
-  0 for Whole). `set_activity()` resets it: a multisport activity opens
-  on Whole, and coming back to it does too.
+  (`std::optional<Activity> multisport`); the data panel's `TabStrip`
+  says which tab is shown. `set_activity()` resets both: a multisport
+  activity opens on Whole, and coming back to it does too.
 - `show_tab(size_t)` shows Whole or `leg_activity()` of the tab's leg
   through the existing `show()`, without keeping the view, so the map
-  fits the leg and no lap or range is kept. Before switching it copies
-  the names (title, notes) from the activity on display into the whole,
-  so a rename on a leg's tab shows on the others.
+  fits the leg and no lap or range is kept. Leaving Whole, it keeps
+  Whole as shown, with the user's laps; leaving a leg, it copies the
+  names (title, notes) into the whole, so a rename on a leg's tab shows
+  on the others. It closes the overlay preview on a leg.
 - `step_tab(int)` for Tab and Shift+Tab: `cmd_next_recording` and
   `cmd_previous_recording` step tabs on a multisport activity, and
   recordings otherwise.
