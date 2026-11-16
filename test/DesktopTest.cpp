@@ -21,14 +21,15 @@ namespace {
 // What open_browser() and reveal_file() run their programs with.
 void test_run_and_wait()
 {
-    CHECK_EQ(run_and_wait({ "sh", "-c", "exit 0" }).value_or(-1), 0);
-    CHECK_EQ(run_and_wait({ "sh", "-c", "exit 3" }).value_or(-1), 3);
-    CHECK_EQ(run_and_wait({ "sh", "-c", "sleep 0.1; exit 4" }).value_or(-1), 4);
+    CHECK_EQ(run_and_wait({ FAKE_PROGRAM }).value_or(-1), 0);
+    CHECK_EQ(run_and_wait({ FAKE_PROGRAM, "exit", "3" }).value_or(-1), 3);
+    CHECK_EQ(run_and_wait({ FAKE_PROGRAM, "sleep", "100", "exit", "4" }).value_or(-1), 4);
     // An error on macOS, exit code 127 elsewhere.
     auto const missing = run_and_wait({ "sweattrails-no-such-program" });
     CHECK(!missing.has_value() || *missing != 0);
 }
 
+#ifndef _WIN32
 void test_reveal_command()
 {
     auto const command = reveal_command("/store/activity/2026/11/1794572226.fit");
@@ -38,12 +39,15 @@ void test_reveal_command()
     CHECK(command == (std::vector<std::string> { "xdg-open", "/store/activity/2026/11" }));
 #endif
 }
+#endif
 
 }
 
 int main()
 {
     test_run_and_wait();
+#ifndef _WIN32
     test_reveal_command();
+#endif
     return test_result();
 }

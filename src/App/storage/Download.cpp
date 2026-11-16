@@ -9,6 +9,7 @@
 #include <ctime>
 #include <format>
 
+#include <Date.h>
 #include <StringUtil.h>
 
 #include <storage/Download.h>
@@ -162,9 +163,7 @@ bool downloads_activities(JSONValue const &settings, bool has_garmin_key)
 
 std::vector<DownloadPeriod> download_periods(i64 now)
 {
-    auto const today = static_cast<time_t>(now);
-    std::tm    tm { };
-    localtime_r(&today, &tm);
+    auto const tm = local_tm(now);
     // The downloads look back whole days from now, keeping the time of
     // day, so a day more than the day of the year reaches all of January
     // 1, and Garmin's start date, a date, is December 31.

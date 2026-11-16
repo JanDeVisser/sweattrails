@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: MIT
  *
- * The encoder, with /bin/sh standing in for ffmpeg.
+ * The encoder, with test/FakeProgram.cpp standing in for ffmpeg.
  */
 
 #include <cerrno>
@@ -15,10 +15,15 @@
 #include <thread>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <unistd.h>
+#endif
 
-#include <IO.h>
+#include <FileIO.h>
 
 #include <overlay/Encoder.h>
 
@@ -43,12 +48,38 @@ Frame numbered(Encoder &encoder, unsigned char n)
     return ret;
 }
 
+// A file opened the way that lets programs the app starts have it, unless
+// the encoder stops them: without close-on-exec, or inheritable. Its file
+// descriptor or handle, as a number.
+long long open_inheritable(fs::path const &path)
+{
+#ifdef _WIN32
+    SECURITY_ATTRIBUTES inherit { .nLength = sizeof(SECURITY_ATTRIBUTES), .lpSecurityDescriptor = nullptr, .bInheritHandle = TRUE };
+    auto const          handle = CreateFileW(path.c_str(), GENERIC_WRITE, 0, &inherit, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    CHECK(handle != INVALID_HANDLE_VALUE);
+    return reinterpret_cast<long long>(handle);
+#else
+    auto const fd = ::open(path.c_str(), O_WRONLY | O_CREAT, 0644);
+    CHECK(fd >= 0);
+    return fd;
+#endif
+}
+
+void close_inheritable(long long file)
+{
+#ifdef _WIN32
+    CloseHandle(reinterpret_cast<HANDLE>(file));
+#else
+    ::close(static_cast<int>(file));
+#endif
+}
+
 // The encoder, which the test can't do without.
 std::unique_ptr<Encoder> started(std::vector<std::string> const &args, fs::path const &output, size_t frame_bytes)
 {
-    auto encoder = Encoder::start("/bin/sh", args, output, frame_bytes);
+    auto encoder = Encoder::start(FAKE_PROGRAM, args, output, frame_bytes);
     if (!encoder) {
-        fatal("Can't start /bin/sh: {}", encoder.error());
+        fatal("Can't start {}: {}", FAKE_PROGRAM, encoder.error());
     }
     return std::move(*encoder);
 }
@@ -72,7 +103,7 @@ void test_frames_arrive()
 {
     Test::TempDir dir { "encoder-frames" };
     auto const    output = dir.path / "out.raw";
-    auto          encoder = started({ "-c", "exec cat > \"$1\"", "sh", output.string() }, output, 16);
+    auto          encoder = started({ "copy", output.string() }, output, 16);
     for (unsigned char n = 0; n < 10; ++n) {
         CHECK(encoder->write(numbered(*encoder, n)));
     }
@@ -91,7 +122,7 @@ void test_straight_alpha()
 {
     Test::TempDir dir { "encoder-alpha" };
     auto const    output = dir.path / "out.raw";
-    auto          encoder = started({ "-c", "exec cat > \"$1\"", "sh", output.string() }, output, 4);
+    auto          encoder = started({ "copy", output.string() }, output, 4);
     auto          frame = encoder->buffer();
     frame = { 64, 32, 0, 128 };
     CHECK(encoder->write(std::move(frame)));
@@ -109,8 +140,7 @@ void test_failing()
     Test::TempDir dir { "encoder-failing" };
     auto const    output = dir.path / "out.mov";
     MUST(write_file_by_name(output.string(), std::string_view { "half a movie" }));
-    auto const script = "echo 'ffmpeg version 8' >&2; printf 'frame=1\\r' >&2; echo 'No space left on device' >&2; exit 3";
-    auto       encoder = started({ "-c", script }, output, 1 << 20);
+    auto encoder = started({ "stderr", "ffmpeg version 8\n", "stderr", "frame=1\r", "stderr", "No space left on device\n", "exit", "3" }, output, 1 << 20);
     // A frame larger than the pipe holds can't be written once it's gone.
     auto failed = false;
     for (auto n = 0; n < 10 && !failed; ++n) {
@@ -130,7 +160,7 @@ void test_exit_code()
 {
     Test::TempDir dir { "encoder-exit" };
     auto const    output = dir.path / "out.mov";
-    auto          encoder = started({ "-c", "cat > /dev/null; exit 3" }, output, 4);
+    auto          encoder = started({ "drain", "exit", "3" }, output, 4);
     CHECK(encoder->write(encoder->buffer()));
     auto const finished = encoder->finish();
     CHECK(!finished.has_value());
@@ -143,7 +173,7 @@ void test_stop()
 {
     Test::TempDir dir { "encoder-stop" };
     auto const    output = dir.path / "out.raw";
-    auto          encoder = started({ "-c", "exec cat > \"$1\"", "sh", output.string() }, output, 1 << 16);
+    auto          encoder = started({ "copy", output.string() }, output, 1 << 16);
     CHECK(encoder->write(numbered(*encoder, 1)));
     CHECK(encoder->write(numbered(*encoder, 2)));
     encoder->stop();
@@ -162,7 +192,7 @@ void test_stop_by_destructor()
     Test::TempDir dir { "encoder-destructor" };
     auto const    output = dir.path / "out.raw";
     {
-        auto encoder = started({ "-c", "exec cat > \"$1\"", "sh", output.string() }, output, 16);
+        auto encoder = started({ "copy", output.string() }, output, 16);
         CHECK(encoder->write(numbered(*encoder, 1)));
     }
     CHECK(!fs::exists(output));
@@ -173,17 +203,15 @@ void test_no_files_inherited()
 {
     Test::TempDir dir { "encoder-inherit" };
     auto const    output = dir.path / "out.raw";
-    auto const    fd = ::open((dir.path / "open").c_str(), O_WRONLY | O_CREAT, 0644);
-    CHECK(fd >= 0);
-    auto const script = std::format("if [ -e /dev/fd/{} ]; then echo inherited >&2; exit 1; fi; exec cat > \"$1\"", fd);
-    auto       encoder = started({ "-c", script, "sh", output.string() }, output, 4);
+    auto const    file = open_inheritable(dir.path / "open");
+    auto          encoder = started({ "inherited", std::to_string(file), "copy", output.string() }, output, 4);
     CHECK(encoder->write(encoder->buffer()));
     auto const finished = encoder->finish();
     CHECK(finished.has_value());
     if (!finished) {
         CHECK_EQ(finished.error(), "<none>");
     }
-    ::close(fd);
+    close_inheritable(file);
 }
 
 // The program finishes on the encoder's thread: close() doesn't wait.
@@ -191,7 +219,7 @@ void test_close_doesnt_wait()
 {
     Test::TempDir dir { "encoder-close" };
     auto const    output = dir.path / "out.raw";
-    auto          encoder = started({ "-c", "cat > /dev/null; sleep 1; exec echo done > \"$1\"", "sh", output.string() }, output, 4);
+    auto          encoder = started({ "drain", "sleep", "1000", "write", output.string(), "done" }, output, 4);
     CHECK(encoder->write(encoder->buffer()));
     auto const before = std::chrono::steady_clock::now();
     encoder->close();
@@ -214,9 +242,14 @@ void test_no_program()
     }
 }
 
-// The file descriptors the test has open.
+// The file descriptors, or handles on Windows, the test has open.
 int open_fds()
 {
+#ifdef _WIN32
+    DWORD count { 0 };
+    GetProcessHandleCount(GetCurrentProcess(), &count);
+    return static_cast<int>(count);
+#else
     auto ret { 0 };
     for (auto fd = 0; fd < 1024; ++fd) {
         if (::fcntl(fd, F_GETFD) != -1) {
@@ -224,12 +257,18 @@ int open_fds()
         }
     }
     return ret;
+#endif
 }
 
 // Whether the encoder left a child behind, as a zombie or still running.
+// Windows has no zombies, and a handle to a child is in open_fds().
 bool has_children()
 {
+#ifdef _WIN32
+    return false;
+#else
     return !(::waitpid(-1, nullptr, WNOHANG) == -1 && errno == ECHILD);
+#endif
 }
 
 // Finishing, failing and stopping close the pipe, and wait for the
@@ -239,21 +278,21 @@ void test_no_leaks()
     Test::TempDir dir { "encoder-leaks" };
     auto const    fds = open_fds();
     {
-        auto encoder = started({ "-c", "exec cat > \"$1\"", "sh", (dir.path / "a.raw").string() }, dir.path / "a.raw", 16);
+        auto encoder = started({ "copy", (dir.path / "a.raw").string() }, dir.path / "a.raw", 16);
         CHECK(encoder->write(numbered(*encoder, 1)));
         CHECK(encoder->finish().has_value());
     }
     CHECK_EQ(open_fds(), fds);
     CHECK(!has_children());
     {
-        auto encoder = started({ "-c", "exit 3" }, dir.path / "b.mov", 1 << 20);
+        auto encoder = started({ "exit", "3" }, dir.path / "b.mov", 1 << 20);
         for (auto n = 0; n < 10 && encoder->write(encoder->buffer()); ++n) { }
         CHECK(!encoder->finish().has_value());
     }
     CHECK_EQ(open_fds(), fds);
     CHECK(!has_children());
     {
-        auto encoder = started({ "-c", "exec cat > \"$1\"", "sh", (dir.path / "c.raw").string() }, dir.path / "c.raw", 16);
+        auto encoder = started({ "copy", (dir.path / "c.raw").string() }, dir.path / "c.raw", 16);
         CHECK(encoder->write(numbered(*encoder, 1)));
         encoder->stop();
     }
@@ -267,7 +306,7 @@ void test_stop_while_stuck()
 {
     Test::TempDir dir { "encoder-stuck" };
     auto const    output = dir.path / "out.mov";
-    auto          encoder = started({ "-c", "exec sleep 30" }, output, 1 << 20);
+    auto          encoder = started({ "sleep", "30000" }, output, 1 << 20);
     CHECK(encoder->write(encoder->buffer()));
     CHECK(encoder->write(encoder->buffer()));
     CHECK(!encoder->can_write());
@@ -284,7 +323,7 @@ void test_early_exit_without_an_error()
     Test::TempDir dir { "encoder-early" };
     auto const    output = dir.path / "out.mov";
     MUST(write_file_by_name(output.string(), std::string_view { "half a movie" }));
-    auto encoder = started({ "-c", "exit 0" }, output, 1 << 20);
+    auto encoder = started({ "exit", "0" }, output, 1 << 20);
     auto failed = false;
     for (auto n = 0; n < 10 && !failed; ++n) {
         failed = !encoder->write(encoder->buffer());

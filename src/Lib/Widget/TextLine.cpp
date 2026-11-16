@@ -5,7 +5,6 @@
  */
 
 #include <algorithm>
-#include <cwctype>
 
 #include <raylib.h>
 
@@ -29,7 +28,7 @@ constexpr KeyboardModifier PasteModifier = KModControl;
 
 void TextLine::set(std::string_view const &utf8)
 {
-    text = to_wstring(utf8).value_or(rune_string { });
+    text = to_utf32(utf8).value_or(rune_string { });
     cursor = text.length();
     scroll_x = 0;
 }
@@ -41,8 +40,7 @@ std::string TextLine::utf8() const
 
 bool TextLine::insert(rune ch)
 {
-    auto const is_codepoint = ch >= 0 && ch <= 0x10FFFF && (ch < 0xD800 || ch > 0xDFFF);
-    if (!is_codepoint || std::iswcntrl(static_cast<wint_t>(ch))) {
+    if (!is_code_point(ch) || is_control(ch)) {
         return false;
     }
     text.insert(cursor, 1, ch);
@@ -52,18 +50,18 @@ bool TextLine::insert(rune ch)
 
 void TextLine::paste(std::string_view const &utf8)
 {
-    auto const pasted = to_wstring(utf8);
+    auto const pasted = to_utf32(utf8);
     if (!pasted) {
         return;
     }
     for (auto ix = 0uz; ix < pasted->length(); ++ix) {
         auto ch = (*pasted)[ix];
         // A line break of \r\n is one space.
-        if (ch == L'\r' && ix + 1 < pasted->length() && (*pasted)[ix + 1] == L'\n') {
+        if (ch == U'\r' && ix + 1 < pasted->length() && (*pasted)[ix + 1] == U'\n') {
             continue;
         }
-        if (ch == L'\n' || ch == L'\r' || ch == L'\t') {
-            ch = L' ';
+        if (ch == U'\n' || ch == U'\r' || ch == U'\t') {
+            ch = U' ';
         }
         insert(ch);
     }

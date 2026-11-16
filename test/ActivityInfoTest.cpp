@@ -54,7 +54,8 @@ void test_the_file_is_relative_to_the_store()
 {
     Made       t;
     auto const info = describe(t.activity, Store);
-    CHECK_EQ(info.file, "activity/2026/11/1794572226.fit");
+    // With the platform's separators, as the user knows them.
+    CHECK_EQ(info.file, fs::path { "activity/2026/11/1794572226.fit" }.make_preferred().string());
     CHECK_EQ(info.path.string(), (Store / "activity/2026/11/1794572226.fit").string());
 }
 
@@ -62,7 +63,7 @@ void test_a_recordings_file_is_in_its_folder()
 {
     Made t;
     t.activity.sidecar = Store / "activity/2026/11/1794572226.recordings/1794572230.json";
-    CHECK_EQ(describe(t.activity, Store).file, "activity/2026/11/1794572226.recordings/1794572230.fit");
+    CHECK_EQ(describe(t.activity, Store).file, fs::path { "activity/2026/11/1794572226.recordings/1794572230.fit" }.make_preferred().string());
 }
 
 void test_which_recording()

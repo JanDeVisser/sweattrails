@@ -17,9 +17,8 @@
 #include <optional>
 #include <string>
 
-#include <unistd.h>
-
-#include <IO.h>
+#include <Child.h>
+#include <FileIO.h>
 
 #include <Modal.h>
 
@@ -45,7 +44,7 @@ struct Fixture {
 
     explicit Fixture(std::vector<std::string> const &names)
     {
-        storage.activity_dir = std::filesystem::temp_directory_path() / std::format("sweattrails-test-{}-no-such-dir", getpid());
+        storage.activity_dir = std::filesystem::temp_directory_path() / std::format("sweattrails-test-{}-no-such-dir", process_id());
         CHECK(!std::filesystem::exists(storage.activity_dir));
         selector = std::make_shared<ActivitySelector>(
             [this](std::shared_ptr<ActivitySelector> const &, ActivityID const &id) {

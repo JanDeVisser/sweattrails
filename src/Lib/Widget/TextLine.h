@@ -18,8 +18,7 @@
 namespace ST {
 
 // A rune is a character: the cursor moves, and Backspace deletes, one rune
-// at a time. That takes 32 bits, as wchar_t is on macOS and Linux.
-static_assert(sizeof(rune) == 4, "TextLine needs a rune to be a whole character");
+// at a time.
 
 struct TextLine {
     // What a paste pastes, as UTF-8: GetClipboardText() in the app.

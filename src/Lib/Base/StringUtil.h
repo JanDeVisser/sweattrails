@@ -20,17 +20,14 @@
 namespace ST {
 
 using StringList = std::vector<std::string>;
-using WStringList = std::vector<std::wstring>;
 using StringViewList = std::vector<std::string_view>;
-using WStringViewList = std::vector<std::wstring_view>;
 
 int isbdigit(int ch);
 
 // int stricmp(const char*, const char*);
-std::string  to_upper(std::string_view const &);
-std::string  to_lower(std::string_view const &);
-std::string  capitalize(std::string_view const &s);
-std::wstring capitalize(std::wstring_view const &s);
+std::string to_upper(std::string_view const &);
+std::string to_lower(std::string_view const &);
+std::string capitalize(std::string_view const &s);
 
 std::size_t replace_all(std::string &, std::string_view, std::string_view);
 StringList  split(std::string_view const &s, std::string_view const &sep);

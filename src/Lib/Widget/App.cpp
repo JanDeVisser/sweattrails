@@ -9,7 +9,7 @@
 
 #include <raylib.h>
 
-#include <IO.h>
+#include <FileIO.h>
 #include <JSON.h>
 #include <Logging.h>
 #include <Options.h>
@@ -118,7 +118,7 @@ Vector2 App::measure_text(char const *text, FontSize size)
     if (set == nullptr || ascii) {
         return MeasureTextEx(font, text, font_size, 2);
     }
-    auto const runes = to_wstring(text).value_or(rune_string { });
+    auto const runes = to_utf32(text).value_or(rune_string { });
     auto const runs = split_emoji(runes, *set, font_has);
     if (runs.size() == 1 && runs.front().kind == RunKind::Text) {
         return MeasureTextEx(font, text, font_size, 2);

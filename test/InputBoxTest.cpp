@@ -55,8 +55,8 @@ void test_enter_submits_the_text()
         return;
     }
     // The cursor is at the end of the text it was given.
-    box->character(L' ');
-    for (auto ch : std::wstring_view { L"Rückweg" }) {
+    box->character(U' ');
+    for (auto ch : std::u32string_view { U"Rückweg" }) {
         box->character(static_cast<int>(ch));
     }
     // A tab isn't typed.

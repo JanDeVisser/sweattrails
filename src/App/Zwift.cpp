@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-#include <IO.h>
+#include <FileIO.h>
 #include <JSON.h>
 #include <Logging.h>
 
@@ -189,7 +189,7 @@ std::expected<void, LibCError> write_tile(fs::path const &dir, WorldTile const &
     ImageDrawImageRec(&out, image, source, Vector2 { .x = place.x, .y = place.y }, WHITE);
     auto const tile_dir = ensure_directory(dir / std::format("{}/{}", tile.zoom, tile.x));
     auto const file = tile_dir ? (*tile_dir / std::format("{}.png", tile.y)) : fs::path { };
-    auto const written = tile_dir && ExportImage(out, file.c_str());
+    auto const written = tile_dir && ExportImage(out, file.string().c_str());
     UnloadImage(out);
     if (!written) {
         return std::unexpected(LibCError { "Could not write tile {} of `{}`", tile.to_string(), dir.string() });
@@ -267,7 +267,7 @@ std::expected<WorldMap, LibCError> prepare_zwift_world(fs::path const &cache, Zw
         TRY(download_file(world.image, image_file, DownloadLimit::Stall));
         info(ST, "Downloaded {}'s map, {}", world.name, world.image);
     }
-    auto image = LoadImage(image_file.c_str());
+    auto image = LoadImage(image_file.string().c_str());
     if (image.data == nullptr) {
         // Not kept: it may be an error page, or cut short.
         fs::remove(image_file, ec);

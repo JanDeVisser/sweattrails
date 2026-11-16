@@ -7,6 +7,7 @@
 #pragma once
 
 #include <concepts>
+#include <cstdlib>
 #include <cstring>
 #include <format>
 #include <iostream>
@@ -15,7 +16,6 @@
 #include <string>
 
 #include <config.h>
-#include <sys/signal.h>
 
 #define ENUMVALUE(V) V,
 #define ENUMVALUE2(V, Dummy) V,
@@ -90,13 +90,6 @@ inline void print_message(std::string const &msg)
 {
     std::cerr << msg << std::endl;
     std::cerr.flush();
-}
-
-template<>
-inline void print_message(std::wstring const &msg)
-{
-    std::wcerr << msg << std::endl;
-    std::wcerr.flush();
 }
 
 class Logger {

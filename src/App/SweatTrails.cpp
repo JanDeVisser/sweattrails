@@ -14,10 +14,9 @@
 
 #include <config.h>
 #include <raylib.h>
-#include <unistd.h>
 
 #include <Expected.h>
-#include <IO.h>
+#include <FileIO.h>
 #include <JSON.h>
 #include <Logging.h>
 #include <Options.h>
@@ -1761,12 +1760,28 @@ std::expected<LayoutFile, std::string> overlay_to_render(pSweatTrails const &swe
 }
 
 // Where ffmpeg is: an app opened from the Finder gets a PATH without
-// Homebrew's directories.
+// Homebrew's directories. On Windows, winget puts a link to ffmpeg in a
+// folder of its own, which is on the PATH of programs started after the
+// install, but not before.
 std::optional<fs::path> find_ffmpeg()
 {
-    auto const *path = std::getenv("PATH");
-    return find_program("ffmpeg", (path != nullptr) ? path : "", { "/opt/homebrew/bin", "/usr/local/bin" });
+    auto const           *path = std::getenv("PATH");
+    std::vector<fs::path> extra;
+#ifdef _WIN32
+    if (auto const *local = std::getenv("LOCALAPPDATA"); local != nullptr) {
+        extra.push_back(fs::path { local } / "Microsoft" / "WinGet" / "Links");
+    }
+#else
+    extra = { "/opt/homebrew/bin", "/usr/local/bin" };
+#endif
+    return find_program("ffmpeg", (path != nullptr) ? path : "", extra);
 }
+
+#ifdef _WIN32
+constexpr char const *InstallFfmpeg = "winget install ffmpeg";
+#else
+constexpr char const *InstallFfmpeg = "brew install ffmpeg";
+#endif
 
 void start_render(pSweatTrails const &sweattrails, RenderJob job)
 {
@@ -1826,7 +1841,7 @@ void cmd_overlay_render(pSweatTrails const &sweattrails, JSONValue const &)
     }
     auto const ffmpeg = find_ffmpeg();
     if (!ffmpeg) {
-        sweattrails->set_status("Rendering the overlay needs ffmpeg, which isn't installed: brew install ffmpeg");
+        sweattrails->set_status(std::format("Rendering the overlay needs ffmpeg, which isn't installed: {}", InstallFfmpeg));
         return;
     }
     auto const clock = activity_clock(activity->activity);

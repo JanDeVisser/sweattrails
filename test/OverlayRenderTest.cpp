@@ -14,7 +14,8 @@
 #include <format>
 #include <string>
 
-#include <IO.h>
+#include <Environment.h>
+#include <FileIO.h>
 #include <JSON.h>
 
 #include <overlay/Render.h>
@@ -24,6 +25,7 @@
 #include <TestApp.h>
 
 using namespace ST;
+using namespace ST::Test;
 namespace fs = std::filesystem;
 
 namespace {
@@ -35,7 +37,7 @@ std::string settings_of(std::string_view json)
     if (!settings) {
         return settings.error();
     }
-    return std::format("{}x{} {} {}", settings->resolution.width, settings->resolution.height, settings->fps.to_string(), settings->folder.string());
+    return std::format("{}x{} {} {}", settings->resolution.width, settings->resolution.height, settings->fps.to_string(), settings->folder.generic_string());
 }
 
 void test_settings()
@@ -260,10 +262,8 @@ void test_ranges_at_midnight()
 // The time zone the system has, where an activity has no utc_offset.
 void test_activity_clock_without_offset()
 {
-    auto const *old = std::getenv("TZ");
-    std::string saved { (old != nullptr) ? old : "" };
-    ::setenv("TZ", "America/Toronto", 1);
-    ::tzset();
+    auto const saved = saved_time_zone();
+    set_time_zone("America/Toronto");
     Storage  storage { };
     Activity activity { storage, ActivityID { } };
     activity.segment.start_time.timestamp = 1'750'000'000; // 2025-06-15 15:06:40 UTC
@@ -271,12 +271,7 @@ void test_activity_clock_without_offset()
     auto const clock = activity_clock(activity);
     CHECK_EQ(clock.start_time_of_day, 11 * 3600 + 6 * 60 + 40);
     CHECK_EQ(clock.date, "2025-06-15");
-    if (old != nullptr) {
-        ::setenv("TZ", saved.c_str(), 1);
-    } else {
-        ::unsetenv("TZ");
-    }
-    ::tzset();
+    restore_time_zone(saved);
 }
 
 // Every drop-frame label for two hours, counted label by label: ;00 and
@@ -326,6 +321,25 @@ void test_output_path()
     CHECK(output_path("/m", clock, range, taken) == fs::path { "/m/2025-06-15-1108-3.overlay.mov" });
 }
 
+#ifdef _WIN32
+// A program is a file that ends in .exe, and PATH is separated by
+// semicolons.
+void test_find_program()
+{
+    Test::TempDir first { "programs-first" };
+    Test::TempDir second { "programs-second" };
+    Test::TempDir extra { "programs-extra" };
+    fs::create_directory(first.path / "ffmpeg.exe");
+    MUST(write_file_by_name((first.path / "ffmpeg").string(), std::string_view { "not a program" }));
+    MUST(write_file_by_name((second.path / "ffmpeg.exe").string(), std::string_view { "MZ" }));
+    MUST(write_file_by_name((extra.path / "ffprobe.exe").string(), std::string_view { "MZ" }));
+    auto const path = std::format("{};;{}", first.path.string(), second.path.string());
+    CHECK(find_program("ffmpeg", path, { }) == second.path / "ffmpeg.exe");
+    CHECK(find_program("ffprobe", path, { extra.path }) == extra.path / "ffprobe.exe");
+    CHECK(!find_program("ffprobe", path, { }).has_value());
+    CHECK(!find_program("ffmpeg", "", { first.path }).has_value());
+}
+#else
 void test_find_program()
 {
     Test::TempDir first { "programs-first" };
@@ -343,6 +357,7 @@ void test_find_program()
     CHECK(!find_program("ffprobe", path, { }).has_value());
     CHECK(!find_program("ffmpeg", "", { first.path }).has_value());
 }
+#endif
 
 void test_estimated_size()
 {

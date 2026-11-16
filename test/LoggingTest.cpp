@@ -9,11 +9,13 @@
 
 #include <cstdlib>
 
+#include <Environment.h>
 #include <Logging.h>
 
 #include <TestApp.h>
 
 using namespace ST;
+using namespace ST::Test;
 
 namespace {
 
@@ -21,7 +23,7 @@ namespace {
 // separator works, and empty names in between are skipped.
 void test_categories()
 {
-    setenv("TRACE", ";Garmin,Wahoo:ST;", 1);
+    set_environment("TRACE", ";Garmin,Wahoo:ST;");
     auto const &logger = Logger::get_logger();
     CHECK(logger.enabled("Garmin"));
     CHECK(logger.enabled("Wahoo"));

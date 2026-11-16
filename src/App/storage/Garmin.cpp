@@ -11,7 +11,7 @@
 #include <set>
 #include <system_error>
 
-#include <IO.h>
+#include <FileIO.h>
 #include <StringUtil.h>
 #include <Zip.h>
 
@@ -77,7 +77,7 @@ bool unavailable_for_good(GarminError const &error)
 
 void remember_unavailable(Storage const &storage, u64 id, std::string_view why)
 {
-    std::ofstream file { garmin_unavailable_file(storage), std::ios::app };
+    std::ofstream file { garmin_unavailable_file(storage), std::ios::app | std::ios::binary };
     file << id << ' ' << why << '\n';
     if (!file) {
         warning(Garmin, "Couldn't remember activity {} as unavailable in `{}`", id, garmin_unavailable_file(storage).string());
@@ -120,8 +120,7 @@ std::set<u64> read_unavailable(fs::path const &file)
 
 fs::path garmin_key_file()
 {
-    auto const *home = std::getenv("HOME");
-    return fs::path { (home != nullptr) ? home : "" } / ".config" / "garmin" / "connect-personal-api-key";
+    return home_dir() / ".config" / "garmin" / "connect-personal-api-key";
 }
 
 std::optional<std::string> read_api_key(std::optional<std::string_view> variable, fs::path const &file)
@@ -175,9 +174,7 @@ Decoded<std::vector<GarminActivity>> parse_activity_list(JSONValue const &list)
 
 std::string garmin_start_date(int days, i64 now)
 {
-    auto const start = static_cast<time_t>(now - static_cast<i64>(days) * 24 * 60 * 60);
-    std::tm    tm { };
-    localtime_r(&start, &tm);
+    auto const tm = local_tm(now - static_cast<i64>(days) * 24 * 60 * 60);
     return std::format("{:04}-{:02}-{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
 }
 

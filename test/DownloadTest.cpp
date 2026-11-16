@@ -11,6 +11,8 @@
 #include <ctime>
 #include <format>
 
+#include <Date.h>
+#include <Environment.h>
 #include <JSON.h>
 
 #include <storage/Download.h>
@@ -22,6 +24,7 @@
 #include <TestApp.h>
 
 using namespace ST;
+using namespace ST::Test;
 
 namespace {
 
@@ -287,9 +290,7 @@ void test_downloads_activities()
 // worked out (start_date(), which this test doesn't link).
 std::string start_date(int days, i64 now)
 {
-    auto const start = static_cast<time_t>(now - static_cast<i64>(days) * 24 * 60 * 60);
-    std::tm    tm { };
-    localtime_r(&start, &tm);
+    auto const tm = local_tm(now - static_cast<i64>(days) * 24 * 60 * 60);
     return std::format("{:04}-{:02}-{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
 }
 
@@ -309,8 +310,7 @@ int this_year(i64 now)
 
 void test_download_periods()
 {
-    setenv("TZ", "America/Toronto", 1);
-    tzset();
+    set_time_zone("America/Toronto");
     // November 11, 2026, 08:00 in Toronto.
     i64 const  now = 1794402000;
     auto const periods = download_periods(now);
@@ -351,8 +351,7 @@ void test_login_arguments()
 // counts once: "This year" and "Everything" are the same all day.
 void test_download_periods_at_daylight_saving_changes()
 {
-    setenv("TZ", "America/Toronto", 1);
-    tzset();
+    set_time_zone("America/Toronto");
     // March 8, 2026: 00:30 before the change, 03:30 after it.
     for (i64 const now : { 1772947800L, 1772955000L }) {
         CHECK_EQ(this_year(now), 67);
@@ -370,10 +369,11 @@ void test_download_periods_at_daylight_saving_changes()
 
     // East of Greenwich, where it is still yesterday in UTC: November 11,
     // 2026, 00:30 in Auckland, is the same day as in Toronto.
-    setenv("TZ", "Pacific/Auckland", 1);
-    tzset();
-    CHECK_EQ(everything(1794310200), 13464);
-    CHECK_EQ(this_year(1794310200), 315);
+    // Not on Windows, which can only be in US time zones, and UTC.
+    if (set_time_zone("Pacific/Auckland")) {
+        CHECK_EQ(everything(1794310200), 13464);
+        CHECK_EQ(this_year(1794310200), 315);
+    }
 }
 
 // The login's days make it back into a download request.

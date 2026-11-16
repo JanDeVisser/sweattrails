@@ -18,7 +18,8 @@
 #include <string>
 #include <vector>
 
-#include <IO.h>
+#include <Environment.h>
+#include <FileIO.h>
 #include <JSON.h>
 
 #include <Http.h>
@@ -179,8 +180,7 @@ void test_odd_entries_are_skipped()
 
 void test_start_date()
 {
-    setenv("TZ", "America/Toronto", 1);
-    tzset();
+    set_time_zone("America/Toronto");
     // October 23, 2026, 07:18 in Toronto: 30 days earlier is September 23.
     CHECK_EQ(garmin_start_date(30, 1792754314), "2026-09-23");
     // 23:30 on October 22 in Toronto is already the 23rd in UTC.

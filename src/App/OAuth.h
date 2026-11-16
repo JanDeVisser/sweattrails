@@ -24,6 +24,7 @@
 
 #include <Error.h>
 #include <JSON.h>
+#include <Socket.h>
 
 struct ssl_ctx_st;
 
@@ -119,8 +120,8 @@ private:
     LoopbackServer() = default;
 
     TlsContext m_tls { };
-    int        m_ipv4 { -1 };
-    int        m_ipv6 { -1 };
+    socket_t   m_ipv4 { InvalidSocket };
+    socket_t   m_ipv6 { InvalidSocket };
     int        m_port { 0 };
 };
 

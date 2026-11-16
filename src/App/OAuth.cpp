@@ -6,27 +6,30 @@
 
 #include <algorithm>
 #include <cctype>
-#include <csignal>
 #include <format>
 #include <list>
 #include <memory>
 #include <utility>
 #include <vector>
 
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netinet/in.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
-#include <unistd.h>
+#endif
 
-#include <IO.h>
+#include <FileIO.h>
 #include <JSON.h>
 #include <Logging.h>
+#include <Socket.h>
 #include <StringUtil.h>
 
 #include <OAuth.h>
@@ -87,48 +90,32 @@ std::string url_decode(std::string_view text)
     return decoded;
 }
 
-void close_socket(int fd)
-{
-    if (fd >= 0) {
-        ::close(fd);
-    }
-}
-
 // A socket listening on `address`, of `size` bytes, non-blocking so that
 // accepting a connection that's gone again doesn't block the wait.
-std::expected<int, LibCError> listen_on(sockaddr const *address, socklen_t size)
+std::expected<socket_t, LibCError> listen_on(sockaddr const *address, socklen_t size)
 {
-    int const fd = ::socket(address->sa_family, SOCK_STREAM, 0);
-    if (fd < 0) {
-        return std::unexpected(LibCError { });
+    socket_t const fd = ::socket(address->sa_family, SOCK_STREAM, 0);
+    if (fd == InvalidSocket) {
+        return std::unexpected(socket_error());
     }
-    int on = 1;
-    // A login right after the last one finds the port in TIME_WAIT.
+    int const on = 1;
+#ifndef _WIN32
+    // A login right after the last one finds the port in TIME_WAIT. On
+    // Windows that doesn't stop a bind, and SO_REUSEADDR would let another
+    // program take the port from under the login.
     ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+#endif
     if (address->sa_family == AF_INET6) {
-        ::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on));
+        ::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<char const *>(&on), sizeof(on));
     }
     if (::bind(fd, address, size) < 0 || ::listen(fd, 4) < 0) {
-        LibCError const error { };
-        ::close(fd);
+        auto const error = socket_error();
+        close_socket(fd);
         return std::unexpected(error);
     }
-    ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL) | O_NONBLOCK);
     // Not for the browser that open_browser() starts to inherit.
-    ::fcntl(fd, F_SETFD, FD_CLOEXEC);
+    make_nonblocking(fd);
     return fd;
-}
-
-// The browser hangs up whenever it likes. Writing to a connection it closed
-// would raise SIGPIPE, which ends the program.
-void ignore_sigpipe([[maybe_unused]] int fd)
-{
-#ifdef SO_NOSIGPIPE
-    int on = 1;
-    ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof(on));
-#else
-    std::signal(SIGPIPE, SIG_IGN);
-#endif
 }
 
 std::string page(int status, std::string_view reason, std::string_view text)
@@ -153,25 +140,26 @@ using Ssl = std::unique_ptr<SSL, decltype(&SSL_free)>;
 // handshake and request arrive bit by bit, while the wait looks after the
 // other connections, the deadline and the stop token.
 struct Connection {
-    int               fd { -1 };
+    socket_t          fd { InvalidSocket };
     Ssl               ssl { nullptr, SSL_free };
     Clock::time_point expires { };
     bool              handshaken { false };
     std::string       request { };
     short             events { POLLIN }; // What OpenSSL waits for
 
-    Connection(int fd, SSL_CTX *context)
+    Connection(socket_t fd, SSL_CTX *context)
         : fd(fd)
         , ssl(SSL_new(context), SSL_free)
         , expires(Clock::now() + ConnectionLifetime)
     {
         // Accepted from a non-blocking socket, which on macOS makes this one
         // non-blocking too, but not on Linux.
-        ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL) | O_NONBLOCK);
-        ::fcntl(fd, F_SETFD, FD_CLOEXEC);
+        make_nonblocking(fd);
+        // The browser hangs up whenever it likes.
         ignore_sigpipe(fd);
         if (ssl) {
-            SSL_set_fd(ssl.get(), fd);
+            // OpenSSL takes a SOCKET as an int on Windows too.
+            SSL_set_fd(ssl.get(), static_cast<int>(fd));
             SSL_set_accept_state(ssl.get());
         }
     }
@@ -182,7 +170,7 @@ struct Connection {
     ~Connection()
     {
         ssl.reset();
-        ::close(fd);
+        close_socket(fd);
     }
 };
 
@@ -250,7 +238,7 @@ void respond(Connection &connection, std::string_view response)
             return;
         }
         pollfd fd { .fd = connection.fd, .events = connection.events, .revents = 0 };
-        ::poll(&fd, 1, static_cast<int>(PollInterval.count()));
+        poll_sockets(&fd, 1, static_cast<int>(PollInterval.count()));
     }
 }
 
@@ -397,10 +385,10 @@ std::expected<TlsContext, LibCError> TlsContext::load(fs::path const &certificat
         return std::unexpected(openssl_error("Could not set up TLS"));
     }
     SSL_CTX_set_min_proto_version(context.get(), TLS1_2_VERSION);
-    if (SSL_CTX_use_certificate_chain_file(context.get(), certificate.c_str()) != 1) {
+    if (SSL_CTX_use_certificate_chain_file(context.get(), certificate.string().c_str()) != 1) {
         return std::unexpected(openssl_error(std::format("Could not read the certificate `{}`", certificate.string())));
     }
-    if (SSL_CTX_use_PrivateKey_file(context.get(), key.c_str(), SSL_FILETYPE_PEM) != 1) {
+    if (SSL_CTX_use_PrivateKey_file(context.get(), key.string().c_str(), SSL_FILETYPE_PEM) != 1) {
         return std::unexpected(openssl_error(std::format("Could not read the key `{}`", key.string())));
     }
     if (SSL_CTX_check_private_key(context.get()) != 1) {
@@ -411,8 +399,8 @@ std::expected<TlsContext, LibCError> TlsContext::load(fs::path const &certificat
 
 LoopbackServer::LoopbackServer(LoopbackServer &&other) noexcept
     : m_tls(std::move(other.m_tls))
-    , m_ipv4(std::exchange(other.m_ipv4, -1))
-    , m_ipv6(std::exchange(other.m_ipv6, -1))
+    , m_ipv4(std::exchange(other.m_ipv4, InvalidSocket))
+    , m_ipv6(std::exchange(other.m_ipv6, InvalidSocket))
     , m_port(other.m_port)
 {
 }
@@ -425,6 +413,7 @@ LoopbackServer::~LoopbackServer()
 
 std::expected<LoopbackServer, LibCError> LoopbackServer::listen(int port, TlsContext tls)
 {
+    start_sockets();
     LoopbackServer server;
     server.m_tls = std::move(tls);
 
@@ -454,7 +443,7 @@ std::expected<LoopbackServer, LibCError> LoopbackServer::listen(int port, TlsCon
     if (!fd6) {
         trace(OAuth, "Not listening on IPv6: {}", fd6.error().to_string());
     }
-    server.m_ipv6 = fd6.value_or(-1);
+    server.m_ipv6 = fd6.value_or(InvalidSocket);
     return server;
 }
 
@@ -478,7 +467,7 @@ std::expected<QueryParameters, RedirectError> LoopbackServer::wait_for_redirect(
         size_t              listeners { 0 };
         if (connections.size() < MaxConnections) {
             for (auto const fd : { m_ipv4, m_ipv6 }) {
-                if (fd >= 0) {
+                if (fd != InvalidSocket) {
                     fds.push_back(pollfd { .fd = fd, .events = POLLIN, .revents = 0 });
                     ++listeners;
                 }
@@ -488,8 +477,10 @@ std::expected<QueryParameters, RedirectError> LoopbackServer::wait_for_redirect(
             fds.push_back(pollfd { .fd = connection.fd, .events = connection.events, .revents = 0 });
         }
         auto const left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
-        if (::poll(fds.data(), fds.size(), static_cast<int>(std::min(left, PollInterval).count())) < 0 && errno != EINTR) {
-            return std::unexpected(RedirectError { .message = std::format("The login failed: {}", LibCError { }.to_string()) });
+        if (poll_sockets(fds.data(), fds.size(), static_cast<int>(std::min(left, PollInterval).count())) < 0) {
+            if (auto const error = socket_error(); error.err_no != EINTR) {
+                return std::unexpected(RedirectError { .message = std::format("The login failed: {}", error.to_string()) });
+            }
         }
 
         auto connection = connections.begin();
@@ -517,7 +508,7 @@ std::expected<QueryParameters, RedirectError> LoopbackServer::wait_for_redirect(
             if ((fds[ix].revents & POLLIN) == 0) {
                 continue;
             }
-            if (int const fd = ::accept(fds[ix].fd, nullptr, nullptr); fd >= 0) {
+            if (socket_t const fd = ::accept(fds[ix].fd, nullptr, nullptr); fd != InvalidSocket) {
                 connections.emplace_back(fd, m_tls.context.get());
             }
         }

@@ -14,14 +14,20 @@
 #include <string>
 #include <thread>
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
-#include <unistd.h>
+#endif
+
+#include <Socket.h>
 
 #include <OAuth.h>
 
@@ -56,10 +62,10 @@ struct TestCertificate {
         X509_NAME_free(name);
         X509_sign(x509, pkey, EVP_sha256());
 
-        auto *certificate_file = BIO_new_file(certificate.c_str(), "w");
+        auto *certificate_file = BIO_new_file(certificate.string().c_str(), "w");
         PEM_write_bio_X509(certificate_file, x509);
         BIO_free(certificate_file);
-        auto *key_file = BIO_new_file(key.c_str(), "w");
+        auto *key_file = BIO_new_file(key.string().c_str(), "w");
         PEM_write_bio_PrivateKey(key_file, pkey, nullptr, nullptr, 0, nullptr, nullptr);
         BIO_free(key_file);
         X509_free(x509);
@@ -76,9 +82,10 @@ struct TestCertificate {
     }
 };
 
-int connect_to(int port, bool ipv6 = false)
+socket_t connect_to(int port, bool ipv6 = false)
 {
-    int const fd = ::socket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0);
+    start_sockets();
+    socket_t const fd = ::socket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0);
     if (ipv6) {
         sockaddr_in6 address { };
         address.sin6_family = AF_INET6;
@@ -101,9 +108,9 @@ std::string https_get(int port, std::string_view target, bool ipv6 = false)
 {
     auto *context = SSL_CTX_new(TLS_client_method());
     SSL_CTX_set_verify(context, SSL_VERIFY_NONE, nullptr);
-    auto     *ssl = SSL_new(context);
-    int const fd = connect_to(port, ipv6);
-    SSL_set_fd(ssl, fd);
+    auto          *ssl = SSL_new(context);
+    socket_t const fd = connect_to(port, ipv6);
+    SSL_set_fd(ssl, static_cast<int>(fd));
     std::string response;
     if (SSL_connect(ssl) == 1) {
         auto const request = std::format("GET {} HTTP/1.1\r\nHost: localhost:{}\r\n\r\n", target, port);
@@ -115,16 +122,16 @@ std::string https_get(int port, std::string_view target, bool ipv6 = false)
     }
     SSL_free(ssl);
     SSL_CTX_free(context);
-    ::close(fd);
+    close_socket(fd);
     return response;
 }
 
 // Sends `text` without TLS, as something that isn't a browser might.
 void plain_send(int port, std::string_view text)
 {
-    int const fd = connect_to(port);
-    ::write(fd, text.data(), text.size());
-    ::close(fd);
+    socket_t const fd = connect_to(port);
+    ::send(fd, text.data(), text.size(), 0);
+    close_socket(fd);
 }
 
 void test_challenge()
@@ -254,7 +261,7 @@ void test_many_connections()
 {
     TestCertificate const certificate;
     auto                  server = certificate.server();
-    std::vector<int>      idle;
+    std::vector<socket_t> idle;
     std::jthread          browser { [&] {
         // More than the server handles at a time: the last ones wait their
         // turn, until the first ones expire or close.
@@ -262,14 +269,14 @@ void test_many_connections()
             idle.push_back(connect_to(server.port()));
         }
         for (int ix = 0; ix < 10; ++ix) {
-            ::close(idle[ix]);
+            close_socket(idle[ix]);
         }
         https_get(server.port(), "/callback?code=crowded&state=s");
     } };
     auto const parameters = server.wait_for_redirect("/callback", "s", 10s, { });
     browser.join();
     for (size_t ix = 10; ix < idle.size(); ++ix) {
-        ::close(idle[ix]);
+        close_socket(idle[ix]);
     }
     CHECK(parameters.has_value() && parameters->at("code") == "crowded");
 }
@@ -278,7 +285,7 @@ void test_silent_client_does_not_block_the_login()
 {
     TestCertificate const certificate;
     auto                  server = certificate.server();
-    int                   silent { -1 };
+    socket_t              silent { InvalidSocket };
     std::jthread          browser { [&] {
         silent = connect_to(server.port());
         std::this_thread::sleep_for(100ms);
@@ -288,7 +295,7 @@ void test_silent_client_does_not_block_the_login()
     auto const parameters = server.wait_for_redirect("/callback", "s", 30s, { });
     auto const waited = std::chrono::steady_clock::now() - start;
     browser.join();
-    ::close(silent);
+    close_socket(silent);
     CHECK(parameters.has_value() && parameters->at("code") == "after");
     // Not held up by the silent one.
     CHECK(waited < 2s);
@@ -300,15 +307,15 @@ void test_silent_client_does_not_block_the_login()
 std::jthread trickle(int port, std::chrono::milliseconds duration)
 {
     return std::jthread { [port, duration] {
-        int const  fd = connect_to(port);
-        char const header[] = { 0x16, 0x03, 0x01, 0x40, 0x00 };
-        ::write(fd, header, sizeof(header));
+        socket_t const fd = connect_to(port);
+        char const     header[] = { 0x16, 0x03, 0x01, 0x40, 0x00 };
+        ::send(fd, header, sizeof(header), 0);
         auto const end = std::chrono::steady_clock::now() + duration;
         while (std::chrono::steady_clock::now() < end) {
             std::this_thread::sleep_for(100ms);
-            ::write(fd, "\x01", 1);
+            ::send(fd, "\x01", 1, 0);
         }
-        ::close(fd);
+        close_socket(fd);
     } };
 }
 
@@ -391,7 +398,9 @@ int main()
 {
     // The tests' clients write to connections the server may have closed,
     // as when a login times out: that's an error to them, not the end.
+#ifndef _WIN32
     std::signal(SIGPIPE, SIG_IGN);
+#endif
     test_challenge();
     test_verifier();
     test_parse_query();

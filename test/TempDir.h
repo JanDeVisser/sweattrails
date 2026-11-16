@@ -12,7 +12,7 @@
 #include <string_view>
 #include <system_error>
 
-#include <unistd.h>
+#include <Child.h>
 
 namespace ST::Test {
 
@@ -23,7 +23,7 @@ struct TempDir {
     std::filesystem::path path;
 
     explicit TempDir(std::string_view name)
-        : path(std::filesystem::temp_directory_path() / std::format("sweattrails-{}-{}-{}", name, ::getpid(), std::time(nullptr)))
+        : path(std::filesystem::temp_directory_path() / std::format("sweattrails-{}-{}-{}", name, process_id(), std::time(nullptr)))
     {
         std::filesystem::remove_all(path);
         std::filesystem::create_directories(path);

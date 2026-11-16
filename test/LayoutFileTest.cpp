@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-#include <IO.h>
+#include <FileIO.h>
 #include <JSON.h>
 
 #include <overlay/LayoutFile.h>
@@ -386,7 +386,7 @@ void test_find_image()
     auto const               exists = [&files](fs::path const &p) { return files.contains(p); };
     auto const               find = [&exists](std::string_view src) {
         auto const found = find_image(src, "/mine", "/builtin", exists);
-        return found ? found->string() : std::string { "none" };
+        return found ? found->generic_string() : std::string { "none" };
     };
     CHECK_EQ(find("logo.png"), "/mine/logo.png");
     CHECK_EQ(find("icons/heart.png"), "/builtin/icons/heart.png");
@@ -454,7 +454,7 @@ void test_find_image_paths()
     auto const               exists = [&files](fs::path const &p) { return files.contains(p); };
     auto const               find = [&exists](std::string_view src) {
         auto const found = find_image(src, "/mine", "/builtin", exists);
-        return found ? found->string() : std::string { "none" };
+        return found ? found->generic_string() : std::string { "none" };
     };
     CHECK_EQ(find("../shared/logo.png"), "/mine/../shared/logo.png");
     CHECK_EQ(find("/logo.png"), "none");

@@ -14,8 +14,9 @@
 #include <string>
 #include <vector>
 
+#include <Environment.h>
 #include <FakeStrava.h>
-#include <IO.h>
+#include <FileIO.h>
 
 #include <storage/Activity.h>
 #include <storage/StravaTitles.h>
@@ -308,20 +309,17 @@ void test_two_devices_get_the_title()
 // Added by the Reviewer: the store files an activity in the month of its
 // start in the time zone it was imported in. Looked for from another time
 // zone, its sidecar is still the one next to its FIT file. 1790825400 is
-// 2026-09-30 23:30 in Toronto, and 2026-10-01 05:30 in Amsterdam.
+// 2026-09-30 23:30 in Toronto, and 2026-10-01 03:30 in UTC.
 void test_activity_filed_in_another_time_zone()
 {
-    constexpr i64     MonthEnd = 1790825400;
-    auto const       *tz = std::getenv("TZ");
-    std::string const old_tz = tz ? tz : "";
-    setenv("TZ", "America/Toronto", 1);
-    tzset();
+    constexpr i64 MonthEnd = 1790825400;
+    auto const    old_tz = saved_time_zone();
+    set_time_zone("America/Toronto");
     {
         StravaStore t;
         t.store.add_activity(MonthEnd);
         auto const filed = t.store.storage.activity_dir / "2026/09" / std::format("{}.json", MonthEnd);
-        setenv("TZ", "Europe/Amsterdam", 1);
-        tzset();
+        set_time_zone("UTC");
         t.list({ strava_activity(201, "2026-10-01T03:30:00Z", "Last ride of September") });
         auto const update = MUST_EVAL(update_strava_titles(t.strava, t.store.storage, MonthEnd - 86400, MonthEnd + 86400));
         CHECK_EQ(update.titles, 1u);
@@ -329,12 +327,7 @@ void test_activity_filed_in_another_time_zone()
         // Not a sidecar of its own, in a month without its FIT file.
         CHECK(!fs::exists(t.store.storage.activity_dir / "2026/10" / std::format("{}.json", MonthEnd)));
     }
-    if (tz) {
-        setenv("TZ", old_tz.c_str(), 1);
-    } else {
-        unsetenv("TZ");
-    }
-    tzset();
+    restore_time_zone(old_tz);
 }
 
 // Added by the Reviewer: a sync writes Strava's name into a sidecar with
@@ -560,8 +553,7 @@ void test_legs_from_the_summary_file()
 int main()
 {
     // The messages say when Strava's limit resets in local time.
-    setenv("TZ", "UTC", 1);
-    tzset();
+    set_time_zone("UTC");
     test_match_nearest_within_a_minute();
     test_two_devices_match_the_same_activity();
     test_match_in_any_order();

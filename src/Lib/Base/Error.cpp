@@ -121,6 +121,90 @@ constexpr int ENOERROR = 0;
     S(EQFULL, "Interface output char_queue is full")
 #endif
 
+#ifdef IS_WINDOWS
+// The UCRT's errno values, and the POSIX ones mingw adds from 100 up.
+#define ERRORCODES(S)                                \
+    S(ENOERROR, "No error")                          \
+    S(EPERM, "Operation not permitted")              \
+    S(ENOENT, "No such file or directory")           \
+    S(ESRCH, "No such process")                      \
+    S(EINTR, "Interrupted function call")            \
+    S(EIO, "Input/output error")                     \
+    S(ENXIO, "No such device or address")            \
+    S(E2BIG, "Argument list too long")               \
+    S(ENOEXEC, "Exec format error")                  \
+    S(EBADF, "Bad file descriptor")                  \
+    S(ECHILD, "No child processes")                  \
+    S(EAGAIN, "Resource temporarily unavailable")    \
+    S(ENOMEM, "Not enough space")                    \
+    S(EACCES, "Permission denied")                   \
+    S(EFAULT, "Bad address")                         \
+    S(EBUSY, "Device or resource busy")              \
+    S(EEXIST, "File exists")                         \
+    S(EXDEV, "Improper link")                        \
+    S(ENODEV, "No such device")                      \
+    S(ENOTDIR, "Not a directory")                    \
+    S(EISDIR, "Is a directory")                      \
+    S(EINVAL, "Invalid argument")                    \
+    S(ENFILE, "Too many open files in system")       \
+    S(EMFILE, "Too many open files")                 \
+    S(ENOTTY, "Inappropriate I/O control operation") \
+    S(EFBIG, "File too large")                       \
+    S(ENOSPC, "No space left on device")             \
+    S(ESPIPE, "Invalid seek")                        \
+    S(EROFS, "Read-only file system")                \
+    S(EMLINK, "Too many links")                      \
+    S(EPIPE, "Broken pipe")                          \
+    S(EDOM, "Domain error")                          \
+    S(ERANGE, "Result too large")                    \
+    S(EDEADLK, "Resource deadlock avoided")          \
+    S(ENAMETOOLONG, "Filename too long")             \
+    S(ENOLCK, "No locks available")                  \
+    S(ENOSYS, "Function not implemented")            \
+    S(ENOTEMPTY, "Directory not empty")              \
+    S(EILSEQ, "Illegal byte sequence")               \
+    S(EADDRINUSE, "Address in use")                  \
+    S(EADDRNOTAVAIL, "Address not available")        \
+    S(EAFNOSUPPORT, "Address family not supported")  \
+    S(EALREADY, "Connection already in progress")    \
+    S(EBADMSG, "Bad message")                        \
+    S(ECANCELED, "Operation canceled")               \
+    S(ECONNABORTED, "Connection aborted")            \
+    S(ECONNREFUSED, "Connection refused")            \
+    S(ECONNRESET, "Connection reset")                \
+    S(EDESTADDRREQ, "Destination address required")  \
+    S(EHOSTUNREACH, "Host unreachable")              \
+    S(EIDRM, "Identifier removed")                   \
+    S(EINPROGRESS, "Operation in progress")          \
+    S(EISCONN, "Already connected")                  \
+    S(ELOOP, "Too many symbolic link levels")        \
+    S(EMSGSIZE, "Message size")                      \
+    S(ENETDOWN, "Network down")                      \
+    S(ENETRESET, "Network reset")                    \
+    S(ENETUNREACH, "Network unreachable")            \
+    S(ENOBUFS, "No buffer space")                    \
+    S(ENODATA, "No message available")               \
+    S(ENOLINK, "No link")                            \
+    S(ENOMSG, "No message")                          \
+    S(ENOPROTOOPT, "No protocol option")             \
+    S(ENOSR, "No stream resources")                  \
+    S(ENOSTR, "Not a stream")                        \
+    S(ENOTCONN, "Not connected")                     \
+    S(ENOTRECOVERABLE, "State not recoverable")      \
+    S(ENOTSOCK, "Not a socket")                      \
+    S(ENOTSUP, "Not supported")                      \
+    S(EOPNOTSUPP, "Operation not supported")         \
+    S(EOVERFLOW, "Value too large")                  \
+    S(EOWNERDEAD, "Owner dead")                      \
+    S(EPROTO, "Protocol error")                      \
+    S(EPROTONOSUPPORT, "Protocol not supported")     \
+    S(EPROTOTYPE, "Wrong protocol type")             \
+    S(ETIME, "Stream timeout")                       \
+    S(ETIMEDOUT, "Timed out")                        \
+    S(ETXTBSY, "Text file busy")                     \
+    S(EWOULDBLOCK, "Operation would block")
+#endif
+
 #ifdef IS_LINUX
 
 #define ERRORCODES(S)                                              \

@@ -15,6 +15,8 @@
 #include <string>
 #include <vector>
 
+#include <Environment.h>
+
 #include <overlay/Fields.h>
 #include <overlay/Template.h>
 #include <storage/Storage.h>
@@ -22,6 +24,7 @@
 #include <TestApp.h>
 
 using namespace ST;
+using namespace ST::Test;
 
 namespace {
 
@@ -437,19 +440,12 @@ void test_date_and_time_of_day()
 // Without a utc_offset, the system's time zone has it.
 void test_time_of_day_without_offset()
 {
-    auto const *old = std::getenv("TZ");
-    std::string saved { (old != nullptr) ? old : "" };
-    ::setenv("TZ", "America/Toronto", 1);
-    ::tzset();
+    auto const saved = saved_time_zone();
+    set_time_zone("America/Toronto");
     NewFieldsActivity t;
     t.activity.utc_offset.reset();
     CHECK_EQ(t.field(OverlayField::time_of_day), "12:11");
-    if (old != nullptr) {
-        ::setenv("TZ", saved.c_str(), 1);
-    } else {
-        ::unsetenv("TZ");
-    }
-    ::tzset();
+    restore_time_zone(saved);
 }
 
 // Between records: the clock runs, the lap doesn't glide.

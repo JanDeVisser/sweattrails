@@ -143,7 +143,7 @@ void test_text()
     CHECK(text.at.y.percent);
     CHECK(text.at.anchor == Anchor::BottomRight);
     CHECK(text.at.size.has_value());
-    CHECK_EQ(layout_codepoints(*layout).contains(L'·'), true);
+    CHECK_EQ(layout_codepoints(*layout).contains(U'·'), true);
 }
 
 void test_value()

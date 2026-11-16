@@ -337,10 +337,7 @@ i32 local_utc_offset(Activity const &activity)
     if (activity.utc_offset) {
         return *activity.utc_offset;
     }
-    auto const start = static_cast<std::time_t>(activity.segment.start_time.timestamp);
-    std::tm    local { };
-    localtime_r(&start, &local);
-    return static_cast<i32>(local.tm_gmtoff);
+    return utc_offset(activity.segment.start_time.timestamp);
 }
 
 OverlaySource::OverlaySource(Activity const &activity)

@@ -13,20 +13,49 @@ set(CMAKE_CXX_STANDARD 26)
 if (APPLE)
   set(IS_APPLE TRUE)
   set(OS macos)
-  set(ICONV -liconv)
 elseif (WIN32)
   set(IS_WINDOWS TRUE)
   set(OS windows)
 else ()
   set(IS_LINUX TRUE)
   set(OS linux)
-  set(ICONV)
 endif ()
 
 # libc++ for compiling as well as linking: Apple's Clang uses it anyway,
-# but Linux's defaults to GCC's libstdc++.
+# but Linux's defaults to GCC's libstdc++. llvm-mingw only has libc++.
 add_compile_options(-stdlib=libc++)
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
+if (WIN32)
+  # Everything linked in, so that the program needs no DLLs next to it.
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+else ()
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -lc++abi")
+endif ()
+
+if (WIN32)
+  enable_language(RC)
+  # windows.h, which curl.h and GL/gl.h include, defines names that clash
+  # with raylib's: Rectangle, CloseWindow, DrawText. NOGDI and NOUSER leave
+  # them out; the Win32 code gets them back with src/Lib/Base/Win32.h.
+  # Windows 10 is the oldest Windows the app runs on: the manifest's UTF-8
+  # code page needs it.
+  add_compile_definitions(WIN32_LEAN_AND_MEAN NOMINMAX NOGDI NOUSER _WIN32_WINNT=0x0A00 CURL_STATICLIB)
+  set(PLATFORM_SOURCES
+          src/Lib/Base/ChildWin32.cpp
+          src/Lib/Base/SocketWin32.cpp
+          src/Lib/Base/Win32.h
+          src/Lib/Base/Win32.cpp
+  )
+  set(PLATFORM_LIBRARIES ws2_32 shell32 ole32 bcrypt crypt32 secur32 iphlpapi winmm gdi32)
+  # The manifest, with the UTF-8 code page, goes into every program: the
+  # tests need UTF-8 paths and arguments as much as the app.
+  set(WINDOWS_MANIFEST src/App/windows/sweattrails.rc)
+else ()
+  set(PLATFORM_SOURCES
+          src/Lib/Base/ChildPosix.cpp
+          src/Lib/Base/SocketPosix.cpp
+  )
+  set(PLATFORM_LIBRARIES)
+endif ()
 set(CMAKE_INSTALL_PREFIX ${PROJECT_BINARY_DIR} CACHE PATH "..." FORCE)
 
 set(sweattrails_NAME SweatTrails)
@@ -127,13 +156,14 @@ add_library(
         src/Lib/Base/Error.cpp
         src/Lib/Base/Expected.h
         src/Lib/Base/Format.h
-        src/Lib/Base/IO.cpp
+        src/Lib/Base/FileIO.cpp
         src/Lib/Base/JSON.h
         src/Lib/Base/JSON.cpp
         src/Lib/Base/Logging.cpp
+        src/Lib/Base/Child.h
+        src/Lib/Base/Socket.h
+        ${PLATFORM_SOURCES}
         src/Lib/Base/Options.cpp
-        src/Lib/Base/Pipe.h
-        src/Lib/Base/Process.cpp
         src/Lib/Base/StringUtil.cpp
         src/Lib/Base/Token.cpp
         src/Lib/Base/Utf8.cpp
@@ -147,7 +177,10 @@ target_include_directories(
 )
 # Only the library: on macOS, ZLIB::ZLIB adds the SDK's usr/include in front
 # of libc++'s headers, which breaks them. The compiler finds zlib.h anyway.
-target_link_libraries(Base PUBLIC ${ZLIB_LIBRARIES})
+target_link_libraries(Base PUBLIC ${ZLIB_LIBRARIES} ${PLATFORM_LIBRARIES})
+if (WIN32)
+  target_include_directories(Base PRIVATE ${ZLIB_INCLUDE_DIRS})
+endif ()
 
 add_library(
         Widget
@@ -272,7 +305,11 @@ add_executable(
         src/App/storage/Weather.cpp
         src/App/widget/Weather.cpp
         share/icons/sweattrails.icns
+        ${WINDOWS_MANIFEST}
 )
+
+# A window and no console on Windows.
+set_target_properties(sweattrails PROPERTIES WIN32_EXECUTABLE TRUE)
 
 # The bundle's icon, which the Dock and Finder show.
 set_source_files_properties(share/icons/sweattrails.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
@@ -298,13 +335,13 @@ target_link_libraries(
         ${FREETYPE_LIBRARIES}
         ${CURL_LIBRARIES}
         OpenSSL::SSL
-        ${ICONV}
         m
 )
 
 add_executable(
         fitexplore
         src/App/fit/Explore.cpp
+        ${WINDOWS_MANIFEST}
         src/App/fit/FIT.cpp
         src/App/fit/Profile.cpp
         src/App/Coordinates.cpp
@@ -323,15 +360,19 @@ target_link_libraries(
         fitexplore
         PRIVATE
         Base
-        ${ICONV}
         m
 )
 
 enable_testing()
 
+# What tests start in place of ffmpeg and other programs.
+add_executable(fake_program test/FakeProgram.cpp ${WINDOWS_MANIFEST})
+
 # A test program in test/, run by CTest. See test/README.md.
 function(sweattrails_test name)
-    add_executable(${name} ${ARGN})
+    add_executable(${name} ${ARGN} ${WINDOWS_MANIFEST})
+    add_dependencies(${name} fake_program)
+    target_compile_definitions(${name} PRIVATE FAKE_PROGRAM="$<TARGET_FILE:fake_program>")
     target_include_directories(
             ${name}
             PRIVATE
@@ -348,8 +389,7 @@ function(sweattrails_test name)
             Base
             ${raylib_LIBRARIES}
             ${FREETYPE_LIBRARIES}
-            ${ICONV}
-            m
+                m
     )
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
@@ -385,6 +425,7 @@ sweattrails_test(cursor_test test/CursorTest.cpp)
 sweattrails_test(string_util_test test/StringUtilTest.cpp)
 sweattrails_test(utf8_test test/Utf8Test.cpp)
 sweattrails_test(io_test test/IOTest.cpp)
+sweattrails_test(child_test test/ChildTest.cpp)
 sweattrails_test(date_test test/DateTest.cpp)
 
 sweattrails_test(http_test test/HttpTest.cpp src/App/Http.cpp)

@@ -68,7 +68,7 @@ void FontCache::set_codepoints(std::set<int> extra)
 bool FontCache::add_codepoints(std::string_view text)
 {
     auto extra = m_extra;
-    for (auto const ch : to_wstring(text).value_or(std::wstring { })) {
+    for (auto const ch : to_utf32(text).value_or(std::u32string { })) {
         if (ch > 126) {
             extra.insert(static_cast<int>(ch));
         }

@@ -11,7 +11,9 @@
 #include <map>
 #include <system_error>
 
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 #include <StringUtil.h>
 
@@ -235,9 +237,7 @@ ActivityClock activity_clock(Activity const &activity)
     }
     auto const local = start + local_utc_offset(activity);
     ret.start_time_of_day = static_cast<int>(((local % SecondsPerDay) + SecondsPerDay) % SecondsPerDay);
-    auto const t = static_cast<std::time_t>(local);
-    std::tm    day { };
-    gmtime_r(&t, &day);
+    auto const day = utc_tm(local);
     ret.date = std::format("{:04}-{:02}-{:02}", day.tm_year + 1900, day.tm_mon + 1, day.tm_mday);
     return ret;
 }
@@ -383,19 +383,47 @@ std::vector<std::string> ffmpeg_arguments(RenderSettings const &settings, Activi
     };
 }
 
+namespace {
+
+#ifdef _WIN32
+constexpr char PathSeparator = ';';
+#else
+constexpr char PathSeparator = ':';
+#endif
+
+// Windows has no permission to run a file: a program is a file whose name
+// ends in .exe.
+bool is_program(fs::path const &file)
+{
+    std::error_code ec { };
+    if (!fs::is_regular_file(file, ec)) {
+        return false;
+    }
+#ifdef _WIN32
+    return true;
+#else
+    return ::access(file.c_str(), X_OK) == 0;
+#endif
+}
+
+}
+
 std::optional<fs::path> find_program(std::string_view name, std::string_view path, std::vector<fs::path> const &extra)
 {
+#ifdef _WIN32
+    auto const file_name = std::format("{}.exe", name);
+#else
+    auto const file_name = std::string { name };
+#endif
     std::vector<fs::path> dirs;
-    for (auto const &dir : split(path, ':')) {
+    for (auto const &dir : split(path, PathSeparator)) {
         if (!dir.empty()) {
             dirs.emplace_back(dir);
         }
     }
     dirs.insert(dirs.end(), extra.begin(), extra.end());
     for (auto const &dir : dirs) {
-        std::error_code ec { };
-        auto const      program = dir / name;
-        if (fs::is_regular_file(program, ec) && ::access(program.c_str(), X_OK) == 0) {
+        if (auto const program = dir / file_name; is_program(program)) {
             return program;
         }
     }
