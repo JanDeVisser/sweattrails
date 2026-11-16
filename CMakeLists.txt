@@ -131,6 +131,8 @@ add_library(
         src/Lib/Base/Logging.cpp
         src/Lib/Base/Child.h
         src/Lib/Base/ChildPosix.cpp
+        src/Lib/Base/Socket.h
+        src/Lib/Base/SocketPosix.cpp
         src/Lib/Base/Options.cpp
         src/Lib/Base/StringUtil.cpp
         src/Lib/Base/Token.cpp
