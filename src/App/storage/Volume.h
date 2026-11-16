@@ -82,7 +82,10 @@ struct PeriodTotal {
     size_t                      count { 0 };
     u64                         ascent { 0 }; // m
 
-    void add(ActivitySummary const &summary);
+    // Each leg of a multisport activity adds its distance, time and
+    // ascent, but the activity counts once in a sport: a duathlon is one
+    // run. `another_leg` if a leg of it counted already.
+    void add(ActivitySummary const &summary, bool another_leg = false);
     // The metric, in metres, seconds or a count.
     [[nodiscard]] float64 value(Metric metric) const;
 };

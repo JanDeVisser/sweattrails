@@ -57,6 +57,18 @@ ActivitySummary run(int year, unsigned month, unsigned day)
     };
 }
 
+// A duathlon on a day: a run, a ride and a run, legs of one file.
+ActivitySummaries duathlon(int year, unsigned month, unsigned day)
+{
+    ActivitySummaries ret { run(year, month, day), ride(year, month, day, 20, 100), run(year, month, day) };
+    for (auto ix = 0u; ix < ret.size(); ++ix) {
+        ret[ix].source.file = "duathlon.fit";
+        ret[ix].start += ix * 3600;
+        ret[ix].leg = ix;
+    }
+    return ret;
+}
+
 chrono::year_month_day date(int year, unsigned month, unsigned day)
 {
     return chrono::year { year } / chrono::month { month } / chrono::day { day };
@@ -270,6 +282,27 @@ void test_year_to_date()
 
 // This year's stop at today, a year to come has none, and a leap year
 // has 366 days.
+// A duathlon is one run and one ride, with both runs' distance. Another
+// run that day is another.
+void test_duathlon()
+{
+    auto summaries = duathlon(2026, 3, 10);
+    summaries.push_back(run(2026, 3, 10));
+    summaries.back().start += 4 * 3600;
+    auto const runs = volume_totals(summaries, VolumeSport::Running, Period::Month, 2026);
+    CHECK_EQ(runs[2].count, 2uz);
+    CHECK_EQ(runs[2].distance, 30000.0);
+    CHECK_EQ(runs[2].moving, 9000u);
+    CHECK_EQ(runs[2].ascent, 150u);
+    auto const rides = volume_totals(summaries, VolumeSport::Cycling, Period::Month, 2026);
+    CHECK_EQ(rides[2].count, 1uz);
+    CHECK_EQ(rides[2].distance, 20000.0);
+    auto const count = year_to_date(summaries, VolumeSport::Running, Metric::Count, 2026, date(2026, 3, 31));
+    CHECK_EQ(count[68], 2.0);
+    auto const distance = year_to_date(summaries, VolumeSport::Running, Metric::Distance, 2026, date(2026, 3, 31));
+    CHECK_EQ(distance[68], 30000.0);
+}
+
 void test_year_to_date_until_today()
 {
     ActivitySummaries const summaries { ride(2026, 1, 1), ride(2026, 3, 10) };
@@ -351,6 +384,7 @@ int main()
     test_other_sports_left_out();
     test_weeks_of_a_month();
     test_year_to_date();
+    test_duathlon();
     test_year_to_date_until_today();
     test_year_to_date_months();
     test_year_to_date_month_so_far();
