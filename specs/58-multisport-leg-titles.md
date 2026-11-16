@@ -1,6 +1,6 @@
 # Titles and descriptions of multisport legs
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
