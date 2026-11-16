@@ -296,6 +296,17 @@ void test_tabs()
     CHECK(run.leg.has_value() && run.leg->number == 3);
 }
 
+// A leg's best opens on its tab; a transition's, which has none, on
+// Whole.
+void test_tab_of_leg()
+{
+    Loaded t { triathlon() };
+    CHECK_EQ(tab_of_leg(t.activity, 0), 1uz);
+    CHECK_EQ(tab_of_leg(t.activity, 1), 0uz);
+    CHECK_EQ(tab_of_leg(t.activity, 2), 2uz);
+    CHECK_EQ(tab_of_leg(t.activity, 4), 3uz);
+}
+
 void test_leg_activity()
 {
     Loaded t { triathlon() };
@@ -440,6 +451,7 @@ int main()
     test_leg_names();
     test_tabs_leave_out_transitions();
     test_tabs();
+    test_tab_of_leg();
     test_leg_activity();
     test_leg_laps_stay_within_the_leg();
     test_inbox_files_by_the_last_legs_start();

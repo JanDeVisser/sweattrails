@@ -9,6 +9,7 @@
 #include <limits>
 #include <map>
 #include <ranges>
+#include <set>
 
 #include <Date.h>
 #include <IO.h>
@@ -64,6 +65,10 @@ JSONValue encode(ActivitySummary const &summary)
         }
         json.set("best_times", best_times);
     }
+    if (summary.leg) {
+        json.set("leg", JSONValue { *summary.leg });
+        json.set("leg_name", JSONValue { summary.leg_name });
+    }
     return json;
 }
 
@@ -102,6 +107,10 @@ Decoded<ActivitySummary> decode(JSONValue const &json)
     if (json.has("best_times")) {
         ret.best_times = TRY_EVAL(json.try_get_array<u32>("best_times"));
         ret.best_times.resize(std::min(ret.best_times.size(), PaceDistances.size()));
+    }
+    if (json.has("leg")) {
+        ret.leg = TRY_EVAL(json.try_get<u32>("leg"));
+        ret.leg_name = TRY_EVAL(json.try_get<std::string>("leg_name"));
     }
     return ret;
 }
@@ -165,14 +174,17 @@ std::expected<void, LibCError> write_summaries(fs::path const &path, ActivitySum
 
 SummaryWork plan_update(ActivitySummaries const &summaries, std::vector<SummaryFile> const &files)
 {
-    std::map<std::string, ActivitySummary const *> by_file;
+    // A multisport file has a summary per leg.
+    std::map<std::string, std::vector<ActivitySummary const *>> by_file;
     for (auto const &summary : summaries) {
-        by_file[summary.source.file] = &summary;
+        by_file[summary.source.file].push_back(&summary);
     }
     SummaryWork ret;
     for (auto const &file : files) {
-        if (auto const known = by_file.find(file.file); known != by_file.end() && known->second->source == file) {
-            ret.kept.push_back(*known->second);
+        if (auto const known = by_file.find(file.file); known != by_file.end() && known->second.front()->source == file) {
+            for (auto const *summary : known->second) {
+                ret.kept.push_back(*summary);
+            }
         } else {
             ret.to_read.push_back(file);
         }
@@ -204,7 +216,36 @@ StorageResult<std::vector<SummaryFile>> summary_files(Storage const &storage)
     return ret;
 }
 
-ActivitySummary read_summary(Storage &storage, SummaryFile const &file)
+namespace {
+
+// What the summaries need of an activity, or of a leg as an activity of
+// its own: from its own records only.
+ActivitySummary summarize(Activity const &activity, SummaryFile const &file)
+{
+    ActivitySummary ret {
+        .source = file,
+        .start = activity.segment.start_time.timestamp,
+        .sport = activity.sport,
+        .sub_sport = activity.sub_sport,
+        .distance = activity.segment.distance,
+        .moving = activity.segment.moving.elapsed,
+        .ascent = activity.segment.total_ascent.value_or(0),
+        .hr_load = activity.segment.hr_load,
+        .power = power_curve(activity.recorded),
+    };
+    if (auto const &np = activity.segment.computed_normalized_range.range; np && np->normalized > 0) {
+        ret.np = np->normalized;
+    }
+    // Treadmill runs too: which runs count is the pace curve's to say.
+    if (volume_sport(ret.sport, ret.sub_sport) == VolumeSport::Running) {
+        ret.best_times = pace_curve(activity.recorded);
+    }
+    return ret;
+}
+
+}
+
+ActivitySummaries read_file_summaries(Storage &storage, SummaryFile const &file)
 {
     auto const path = storage.activity_dir / file.file;
     Activity   activity {
@@ -216,33 +257,24 @@ ActivitySummary read_summary(Storage &storage, SummaryFile const &file)
         },
     };
     activity.depth = LoadingDepth::Deep;
-    ActivitySummary ret { .source = file };
-    if (auto const start = string_to_integer<i64>(path.stem().string()); start) {
-        ret.start = *start;
-    }
     auto const loaded = activity.load_from_file(path);
     if (!loaded || !*loaded) {
         warning(Storage, "No summary of `{}`: {}", path.string(), loaded ? "it isn't an activity" : loaded.error().to_string());
-        return ret;
+        ActivitySummary unreadable { .source = file };
+        if (auto const start = string_to_integer<i64>(path.stem().string()); start) {
+            unreadable.start = *start;
+        }
+        return { unreadable };
     }
-    // A multisport activity counts as its last leg, as it did before it
-    // loaded as multisport, until the summaries count each leg: see
-    // specs/56-multisport.md.
-    auto const &counted = activity.is_multisport() ? activity.legs.back().segment : activity.segment;
-    ret.start = filing_start(activity).timestamp;
-    ret.sport = activity.is_multisport() ? activity.legs.back().sport : activity.sport;
-    ret.sub_sport = activity.is_multisport() ? activity.legs.back().sub_sport : activity.sub_sport;
-    ret.distance = counted.distance;
-    ret.moving = counted.moving.elapsed;
-    ret.ascent = counted.total_ascent.value_or(0);
-    if (auto const &np = activity.segment.computed_normalized_range.range; np && np->normalized > 0) {
-        ret.np = np->normalized;
+    if (!activity.is_multisport()) {
+        return { summarize(activity, file) };
     }
-    ret.hr_load = activity.segment.hr_load;
-    ret.power = power_curve(activity.recorded);
-    // Treadmill runs too: which runs count is the pace curve's to say.
-    if (volume_sport(ret.sport, ret.sub_sport) == VolumeSport::Running) {
-        ret.best_times = pace_curve(activity.recorded);
+    ActivitySummaries ret;
+    for (auto ix = 0uz; ix < activity.legs.size(); ++ix) {
+        auto leg = summarize(leg_activity(activity, ix), file);
+        leg.leg = static_cast<u32>(ix);
+        leg.leg_name = leg_name(activity, ix);
+        ret.push_back(std::move(leg));
     }
     return ret;
 }
@@ -266,7 +298,12 @@ std::optional<ActivityID> summary_activity(ActivitySummary const &summary)
 std::string store_summary(ActivitySummaries const &summaries)
 {
     auto const readable = [](ActivitySummary const &summary) { return summary.sport.has_value(); };
-    auto const count = std::ranges::count_if(summaries, readable);
+    // A multisport file's legs are one activity.
+    std::set<std::string_view> files;
+    for (auto const &summary : summaries | std::views::filter(readable)) {
+        files.insert(summary.source.file);
+    }
+    auto const count = files.size();
     if (count == 0) {
         return "No activities yet";
     }
@@ -296,7 +333,7 @@ SummaryChunkDone update_summaries(Storage &storage, size_t chunk)
     auto const        count = std::min(chunk, work.to_read.size());
     ActivitySummaries read;
     for (auto ix = 0uz; ix < count; ++ix) {
-        read.push_back(read_summary(storage, work.to_read[ix]));
+        read.append_range(read_file_summaries(storage, work.to_read[ix]));
     }
     merge_summaries(work.kept, read);
     SummaryChunkDone ret { .read = count, .left = work.to_read.size() - count };

@@ -262,6 +262,50 @@ void test_without_stress()
     CHECK_EQ(without_stress(summaries, { }, 2025), 4uz);
 }
 
+// A multisport activity on a day: a swim without heart rate, a
+// transition, a ride and a run, legs of one file.
+ActivitySummaries triathlon(chrono::year_month_day day)
+{
+    auto swim = run(day);
+    swim.sport = FIT::sport::Swimming;
+    swim.hr_load.reset();
+    auto transition = run(day);
+    transition.sport = FIT::sport::Transition;
+    transition.moving = 360;
+    transition.hr_load = 170.0 * 170 * 360;
+    ActivitySummaries ret { swim, transition, ride(day), run(day) };
+    for (auto ix = 0u; ix < ret.size(); ++ix) {
+        ret[ix].source.file = "triathlon.fit";
+        ret[ix].start += ix * 3600;
+        ret[ix].leg = ix;
+    }
+    return ret;
+}
+
+// The day's TSS adds up the legs': the ride's 100, the run's 100 and the
+// transition's 10, as running's.
+void test_multisport_day()
+{
+    auto const days = fitness_days(triathlon(date(2025, 6, 1)), thresholds(), date(2025, 6, 1));
+    CHECK_EQ(days.size(), 1uz);
+    if (days.size() == 1) {
+        CHECK(near(days[0].tss, 210));
+    }
+}
+
+// A multisport activity counts as rest only if none of its legs has
+// stress, and then once.
+void test_multisport_without_stress()
+{
+    CHECK_EQ(without_stress(triathlon(date(2025, 6, 1)), thresholds(), 2025), 0uz);
+    CHECK_EQ(without_stress(triathlon(date(2025, 6, 1)), { }, 2025), 1uz);
+    auto summaries = triathlon(date(2025, 6, 1));
+    auto bare = run(date(2025, 6, 2));
+    bare.hr_load.reset();
+    summaries.push_back(bare);
+    CHECK_EQ(without_stress(summaries, { }, 2025), 2uz);
+}
+
 void test_fitness_years()
 {
     auto unreadable = run(date(2019, 5, 1));
@@ -363,6 +407,8 @@ int main()
     test_without_stress();
     test_fitness_years();
     test_more_thresholds();
+    test_multisport_day();
+    test_multisport_without_stress();
     test_days_across_summer_time();
     test_last_week_into_the_new_year();
     return Test::test_result();

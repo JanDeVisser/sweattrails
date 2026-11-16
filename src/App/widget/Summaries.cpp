@@ -411,6 +411,21 @@ std::string format_duration(u32 seconds)
     return seconds % 3600 == 0 ? std::format("{} h", seconds / 3600) : std::format("{}:{:02} h", seconds / 3600, (seconds % 3600) / 60);
 }
 
+namespace {
+
+// A best's activity, by `name_of`, and a leg's name after it: "IM Ottawa
+// · Bike".
+std::string best_name(std::function<std::string(ActivitySummary const &)> const &name_of, ActivitySummary const &summary)
+{
+    auto ret = name_of ? name_of(summary) : std::string { };
+    if (summary.leg) {
+        ret = ret.empty() ? summary.leg_name : std::format("{} · {}", ret, summary.leg_name);
+    }
+    return ret;
+}
+
+}
+
 std::vector<TableColumn> power_columns()
 {
     return {
@@ -431,7 +446,7 @@ std::vector<TableRow> power_rows(std::vector<PowerRow> const &rows, ActivitySumm
             format_duration(row.seconds),
             std::format("{} W", row.best.watts),
             format_day(start_day(ride)),
-            name_of ? name_of(ride) : std::string { },
+            best_name(name_of, ride),
         });
     }
     return ret;
@@ -597,7 +612,7 @@ std::vector<TableRow> pace_rows(std::vector<PaceRow> const &rows, ActivitySummar
             format_time(row.best.seconds),
             std::format("{} /km", format_time(row.best.seconds * 1000.0 / row.metres)),
             format_day(start_day(run)),
-            name_of ? name_of(run) : std::string { },
+            best_name(name_of, run),
         });
     }
     return ret;

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <format>
 
@@ -47,6 +48,14 @@ ActivitySummary summary(std::string const &file, i64 start)
     };
 }
 
+// A FIT file with one session has one summary.
+ActivitySummary read_one(Storage &storage, SummaryFile const &file)
+{
+    auto const summaries = read_file_summaries(storage, file);
+    CHECK_EQ(summaries.size(), 1uz);
+    return summaries.empty() ? ActivitySummary { } : summaries.front();
+}
+
 void test_round_trip()
 {
     Test::TempDir dir { "summaries" };
@@ -58,7 +67,10 @@ void test_round_trip()
     unreadable.hr_load.reset();
     unreadable.power.clear();
     unreadable.best_times.clear();
-    ActivitySummaries const written { summary("2025/03/1741000000.fit", 1741000000), unreadable };
+    auto leg = summary("2025/03/1741000200.fit", 1741000200);
+    leg.leg = 2;
+    leg.leg_name = "Bike";
+    ActivitySummaries const written { summary("2025/03/1741000000.fit", 1741000000), unreadable, leg };
     CHECK(write_summaries(path, written).has_value());
     CHECK(read_summaries(path) == written);
 }
@@ -84,12 +96,15 @@ void test_no_file()
     CHECK(read_summaries(path).empty());
     MUST(write_file_by_name(path.string(), std::string_view { "{ not json" }));
     CHECK(read_summaries(path).empty());
-    MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 4, "activities": [ { "file": "a.fit" } ] })" }));
+    MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 5, "activities": [ { "file": "a.fit" } ] })" }));
     CHECK(read_summaries(path).empty());
     // Version 2 had no power curves.
     MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 2, "activities": [ { "file": "a.fit", "size": 1, "modified": 1, "start": 1, "distance": 0, "moving": 0, "ascent": 0 } ] })" }));
     CHECK(read_summaries(path).empty());
-    MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 4, "activities": [ { "file": "a.fit", "size": 1, "modified": 1, "start": 1, "distance": 0, "moving": 0, "ascent": 0, "power": [ "x" ] } ] })" }));
+    MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 5, "activities": [ { "file": "a.fit", "size": 1, "modified": 1, "start": 1, "distance": 0, "moving": 0, "ascent": 0, "power": [ "x" ] } ] })" }));
+    CHECK(read_summaries(path).empty());
+    // Version 4 counted a multisport file as its last leg.
+    MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 4, "activities": [ { "file": "a.fit", "size": 1, "modified": 1, "start": 1, "distance": 0, "moving": 0, "ascent": 0 } ] })" }));
     CHECK(read_summaries(path).empty());
     // Version 3 had no best times.
     MUST(write_file_by_name(path.string(), std::string_view { R"({ "version": 3, "activities": [ { "file": "a.fit", "size": 1, "modified": 1, "start": 1, "distance": 0, "moving": 0, "ascent": 0 } ] })" }));
@@ -119,6 +134,22 @@ void test_plan_update()
     auto touched = files;
     touched[0].modified = 2000;
     CHECK(plan_update(summaries, { touched[0] }).kept.empty());
+}
+
+// A multisport file's legs stay, all of them, or are read again.
+void test_plan_update_legs()
+{
+    auto first = summary("2025/03/1.fit", 1);
+    first.leg = 0;
+    auto second = summary("2025/03/1.fit", 2);
+    second.leg = 1;
+    ActivitySummaries const summaries { first, second };
+    CHECK(plan_update(summaries, { first.source }).kept == summaries);
+    auto touched = first.source;
+    touched.modified = 2000;
+    auto const work = plan_update(summaries, { touched });
+    CHECK(work.kept.empty());
+    CHECK(work.to_read == std::vector { touched });
 }
 
 // The first build: no summaries, every file to read.
@@ -160,7 +191,7 @@ void test_read_records()
         CHECK_EQ(files ? files->size() : 0uz, 1uz);
         return;
     }
-    auto const ride = read_summary(store.storage, (*files)[0]);
+    auto const ride = read_one(store.storage, (*files)[0]);
     // NP is worked out in floats, which can round 200 W down.
     CHECK(ride.np && (*ride.np == 199 || *ride.np == 200));
     CHECK(ride.hr_load == 150.0 * 150 * 119);
@@ -169,30 +200,103 @@ void test_read_records()
     CHECK(std::ranges::all_of(ride.power, [](u16 watts) { return watts == 200; }));
 }
 
-// A multisport file counts as its last leg, filed by its start, until the
-// summaries count each leg: a brick of a ride and a run counts as the run.
-void test_read_multisport_as_its_last_leg()
+// A record a second for `count` seconds from `start` after Start, at a
+// heart rate and a power, and at `speed` m/s from `from` metres.
+void add_leg_records(Test::FITBuilder &fit, u32 start, u32 count, u8 heart_rate, u16 power, float speed, float from)
+{
+    fit.definition(5, 20,
+        {
+            { .num = 253, .size = 4, .base_type = Test::Uint32 },
+            { .num = 3, .size = 1, .base_type = Test::Uint8 },
+            { .num = 5, .size = 4, .base_type = Test::Uint32 },
+            { .num = 7, .size = 2, .base_type = Test::Uint16 },
+        });
+    for (auto at = 0u; at < count; ++at) {
+        fit.message(5);
+        fit.u32_le(Test::Start + start + at);
+        fit.byte(heart_rate);
+        fit.u32_le(static_cast<u32>(std::lround((from + speed * static_cast<float>(at)) * 100)));
+        fit.u16_le(power);
+    }
+}
+
+// A duathlon: 5 minutes' run at 4 m/s, a transition of 30 s, 10 minutes'
+// ride at 7.5 m/s and 200 W, and 5 minutes' run. Each leg is summarized
+// from its own records: the runs' bests aren't the ride's.
+void test_read_multisport_by_leg()
 {
     Test::TempStore  store;
     Test::FITBuilder fit;
     Test::add_file_id(fit, 1);
-    Test::add_session(fit, 1800, 100, Test::NoSubSport, 0, 2);
-    Test::add_session(fit, 600, 20, Test::NoSubSport, 1800, 1);
-    auto const run_start = static_cast<i64>(Test::Start) + DateTime::FIT_TIMESTAMP_OFFSET + 1800;
-    auto const date = DateTime::from_timestamp(static_cast<i32>(run_start));
+    add_leg_records(fit, 0, 300, 150, 0, 4, 0);
+    add_leg_records(fit, 300, 30, 130, 0, 2, 1200);
+    add_leg_records(fit, 330, 600, 140, 200, 7.5, 1260);
+    add_leg_records(fit, 930, 300, 160, 0, 4, 5760);
+    Test::add_session(fit, 300, 10, Test::NoSubSport, 0, 1);
+    Test::add_session(fit, 30, 0xFFFF, Test::NoSubSport, 300, 3);
+    Test::add_session(fit, 600, 100, Test::NoSubSport, 330, 2);
+    Test::add_session(fit, 300, 20, Test::NoSubSport, 930, 1);
+    auto const start = static_cast<i64>(Test::Start) + DateTime::FIT_TIMESTAMP_OFFSET;
+    // Filed by its last leg's start.
+    auto const date = DateTime::from_timestamp(static_cast<i32>(start + 930));
     auto const dir = store.storage.activity_dir / std::format("{:04}/{:02}", static_cast<u16>(date.year), static_cast<u8>(date.month) + 1);
     fs::create_directories(dir);
-    MUST(write_file_by_name((dir / std::format("{}.fit", run_start)).string(), std::string_view { fit.file() }));
+    MUST(write_file_by_name((dir / std::format("{}.fit", start + 930)).string(), std::string_view { fit.file() }));
     auto const files = summary_files(store.storage);
     if (!files || files->size() != 1) {
         CHECK_EQ(files ? files->size() : 0uz, 1uz);
         return;
     }
-    auto const brick = read_summary(store.storage, (*files)[0]);
-    CHECK_EQ(brick.start, run_start);
-    CHECK(brick.sport == FIT::sport::Running);
-    CHECK_EQ(brick.moving, 600u);
-    CHECK_EQ(brick.ascent, 20u);
+    auto const legs = read_file_summaries(store.storage, (*files)[0]);
+    if (legs.size() != 4) {
+        CHECK_EQ(legs.size(), 4uz);
+        return;
+    }
+    std::vector<u32> const run_bests { 100, 200, 250 };
+    for (auto ix = 0u; ix < 4; ++ix) {
+        CHECK(legs[ix].source == (*files)[0]);
+        CHECK(legs[ix].leg == ix);
+    }
+
+    auto const &first_run = legs[0];
+    CHECK_EQ(first_run.leg_name, "Run");
+    CHECK_EQ(first_run.start, start);
+    CHECK(first_run.sport == FIT::sport::Running);
+    CHECK_EQ(first_run.moving, 300u);
+    CHECK_EQ(first_run.ascent, 10u);
+    CHECK(!first_run.np);
+    CHECK(first_run.power.empty());
+    CHECK(first_run.hr_load == 150.0 * 150 * 299);
+    CHECK(first_run.best_times == run_bests);
+
+    auto const &transition = legs[1];
+    CHECK_EQ(transition.leg_name, "T1");
+    CHECK_EQ(transition.start, start + 300);
+    CHECK(transition.sport == FIT::sport::Transition);
+    CHECK_EQ(transition.ascent, 0u);
+    CHECK(transition.hr_load == 130.0 * 130 * 29);
+    CHECK(transition.best_times.empty());
+
+    auto const &ride = legs[2];
+    CHECK_EQ(ride.leg_name, "Bike");
+    CHECK_EQ(ride.start, start + 330);
+    CHECK(ride.sport == FIT::sport::Cycling);
+    CHECK_EQ(ride.moving, 600u);
+    CHECK_EQ(ride.ascent, 100u);
+    CHECK(ride.np && (*ride.np == 199 || *ride.np == 200));
+    CHECK(ride.hr_load == 140.0 * 140 * 599);
+    // Ten minutes at 200 W: every duration up to 10 minutes.
+    CHECK_EQ(ride.power.size(), 18uz);
+    CHECK(ride.best_times.empty());
+
+    auto const &second_run = legs[3];
+    CHECK_EQ(second_run.leg_name, "Run");
+    CHECK_EQ(second_run.start, start + 930);
+    CHECK(second_run.sport == FIT::sport::Running);
+    CHECK_EQ(second_run.ascent, 20u);
+    CHECK(second_run.hr_load == 160.0 * 160 * 299);
+    // Not the ride's 400 m in 53 s.
+    CHECK(second_run.best_times == run_bests);
 }
 
 // A run of 5 minutes at 4 m/s: its best times, up to 1 km. A ride of
@@ -221,7 +325,7 @@ void test_read_best_times()
             CHECK_EQ(files ? files->size() : 0uz, 1uz);
             return;
         }
-        auto const summary = read_summary(store.storage, (*files)[0]);
+        auto const summary = read_one(store.storage, (*files)[0]);
         if (sport == 1) {
             CHECK(summary.best_times == (std::vector<u32> { 100, 200, 250 }));
         } else {
@@ -250,7 +354,7 @@ void test_read_records_with_a_pause()
         CHECK_EQ(files ? files->size() : 0uz, 1uz);
         return;
     }
-    auto const run = read_summary(store.storage, (*files)[0]);
+    auto const run = read_one(store.storage, (*files)[0]);
     CHECK(run.sport.has_value());
     CHECK(!run.np);
     CHECK(run.power.empty());
@@ -279,7 +383,7 @@ void test_read_from_the_store()
     CHECK_EQ((*files)[0].file, std::format("{:04}/{:02}/{}.fit", static_cast<u16>(date.year), static_cast<u8>(date.month) + 1, unix_start));
     CHECK_EQ((*files)[0].size, static_cast<u64>(fit.file().size()));
 
-    auto const ride = read_summary(store.storage, (*files)[0]);
+    auto const ride = read_one(store.storage, (*files)[0]);
     CHECK(ride.source == (*files)[0]);
     CHECK_EQ(ride.start, unix_start);
     CHECK(ride.sport == FIT::sport::Cycling);
@@ -287,7 +391,7 @@ void test_read_from_the_store()
     CHECK_EQ(ride.moving, 3600u);
     CHECK_EQ(ride.ascent, 250u);
 
-    auto const broken = read_summary(store.storage, (*files)[1]);
+    auto const broken = read_one(store.storage, (*files)[1]);
     CHECK(!broken.sport);
     CHECK_EQ(broken.start, unix_start + 86400);
 }
@@ -475,6 +579,19 @@ void test_store_summary_skips_unreadable()
     CHECK_EQ(store_summary(summaries), "2 activities, the newest on Thu 12 Nov 2026");
 }
 
+// A multisport file's legs are one activity, as the activity list has it.
+void test_store_summary_counts_files()
+{
+    auto summaries = numbered(2);
+    for (auto ix = 0u; ix < 3; ++ix) {
+        auto leg = summary("2026/11/duathlon.fit", Nov12Noon - 86400 + ix * 600);
+        leg.leg = ix;
+        summaries.push_back(leg);
+    }
+    merge_summaries(summaries, { });
+    CHECK_EQ(store_summary(summaries), "3 activities, the newest on Thu 12 Nov 2026");
+}
+
 // The newest by its start, wherever it is in the list.
 void test_store_summary_out_of_order()
 {
@@ -515,10 +632,11 @@ int main()
     test_read_sorts_by_start();
     test_no_file();
     test_plan_update();
+    test_plan_update_legs();
     test_plan_from_nothing();
     test_merge_summaries();
     test_read_records();
-    test_read_multisport_as_its_last_leg();
+    test_read_multisport_by_leg();
     test_read_records_with_a_pause();
     test_read_best_times();
     test_read_from_the_store();
@@ -534,5 +652,6 @@ int main()
     test_store_summary_thousands();
     test_store_summary_skips_unreadable();
     test_store_summary_out_of_order();
+    test_store_summary_counts_files();
     return Test::test_result();
 }

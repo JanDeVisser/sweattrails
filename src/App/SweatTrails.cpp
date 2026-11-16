@@ -39,6 +39,7 @@
 #include <storage/Gaps.h>
 #include <storage/Garmin.h>
 #include <storage/Laps.h>
+#include <storage/Legs.h>
 #include <storage/Recordings.h>
 #include <storage/Storage.h>
 #include <storage/Strava.h>
@@ -2675,10 +2676,15 @@ void SweatTrails::initialize()
         if (!id) {
             return;
         }
-        if (auto const loaded = load_to_show(storage, *id); loaded) {
-            show_activity(*loaded);
-        } else {
+        auto const loaded = load_to_show(storage, *id);
+        if (!loaded) {
             message_box(loaded.error());
+            return;
+        }
+        show_activity(*loaded);
+        // A leg's best shows on its tab: what set it.
+        if (summary.leg && *summary.leg < loaded->legs.size()) {
+            activity_display->show_tab(tab_of_leg(*loaded, *summary.leg));
         }
     };
     // As the activity list names them: the FIT file's name, or the

@@ -36,6 +36,10 @@ std::string leg_name(Activity const &activity, size_t leg);
 // transitions.
 std::vector<size_t> leg_tabs(Activity const &activity);
 
+// The tab that shows leg `leg`: 1 for the first after Whole, or 0,
+// Whole, for a transition, which has none.
+size_t tab_of_leg(Activity const &activity, size_t leg);
+
 // Leg `leg` of `whole` as an activity of its own: its sport, numbers,
 // records and laps, with the whole's names.
 Activity leg_activity(Activity const &whole, size_t leg);

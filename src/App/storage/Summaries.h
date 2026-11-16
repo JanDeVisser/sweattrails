@@ -56,13 +56,17 @@ struct ActivitySummary {
     // A run's best time for each of PaceDistances it covered: empty for
     // anything else.
     std::vector<u32> best_times { }; // s
+    // A leg of a multisport activity is summarized as an activity of its
+    // own: its index among the activity's legs, and its name, "Bike".
+    std::optional<u32> leg { };
+    std::string        leg_name { };
 
     bool operator==(ActivitySummary const &) const = default;
 };
 
 using ActivitySummaries = std::vector<ActivitySummary>;
 
-constexpr int SummariesVersion = 4;
+constexpr int SummariesVersion = 5;
 // Read at a time by the job, which other jobs can run between.
 constexpr size_t SummaryChunk = 50;
 
@@ -81,24 +85,25 @@ struct SummaryWork {
 
 // Given the summaries and the FIT files there are now, which summaries
 // stay and which files are to be read. Summaries of files that are gone
-// drop out.
+// drop out. All of a multisport file's legs' summaries stay or go.
 [[nodiscard]] SummaryWork plan_update(ActivitySummaries const &summaries, std::vector<SummaryFile> const &files);
 
 // The store's FIT files, by start time, with their sizes and times.
 StorageResult<std::vector<SummaryFile>> summary_files(Storage const &storage);
 
 // Reads a FIT file's summary, with its records, for the NP and the heart
-// rate. A file that can't be read gets
-// one without a sport.
-[[nodiscard]] ActivitySummary read_summary(Storage &storage, SummaryFile const &file);
+// rate: one, or one per leg of a multisport file. A file that can't be
+// read gets one without a sport.
+[[nodiscard]] ActivitySummaries read_file_summaries(Storage &storage, SummaryFile const &file);
 
 // The activity a summary is of, from its file, "2025/03/1741000000.fit":
 // none if the file isn't in a month's directory.
 [[nodiscard]] std::optional<ActivityID> summary_activity(ActivitySummary const &summary);
 
 // The status bar's summary of the store: "1,234 activities, the newest on
-// Thu 12 Nov 2026", or "No activities yet". Files that can't be read
-// aren't counted, as the activity list leaves them out.
+// Thu 12 Nov 2026", or "No activities yet". It counts files, not legs.
+// Files that can't be read aren't counted, as the activity list leaves
+// them out.
 [[nodiscard]] std::string store_summary(ActivitySummaries const &summaries);
 
 // Adds `summaries` to `into`, keeping it in order of start time.

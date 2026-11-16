@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <numeric>
+#include <utility>
 
 #include <Date.h>
 
@@ -120,11 +121,13 @@ chrono::year_month_day day_of(DateTime const &time)
     return chrono::year { time.year } / chrono::month { static_cast<unsigned>(time.month) + 1 } / chrono::day { time.day_of_month };
 }
 
-void PeriodTotal::add(ActivitySummary const &summary)
+void PeriodTotal::add(ActivitySummary const &summary, bool another_leg)
 {
     distance += summary.distance;
     moving += summary.moving;
-    ++count;
+    if (!another_leg) {
+        ++count;
+    }
     ascent += summary.ascent;
 }
 
@@ -144,6 +147,15 @@ float64 PeriodTotal::value(Metric metric) const
 }
 
 namespace {
+
+// Whether `summary` is a leg of the same multisport activity as
+// `before`, the summary of its sport before it. A sport's legs of one
+// activity are next to each other, as the summaries are in order of
+// their start.
+bool another_leg(ActivitySummary const *before, ActivitySummary const &summary)
+{
+    return before != nullptr && before->leg && summary.leg && before->source.file == summary.source.file;
+}
 
 // The periods, empty, and where in them a day is.
 struct Periods {
@@ -229,13 +241,15 @@ std::vector<PeriodTotal> volume_totals(ActivitySummaries const &summaries, Volum
         }
         UNREACHABLE();
     }();
+    ActivitySummary const *before = nullptr;
     for (auto const &summary : summaries) {
         if (volume_sport(summary.sport, summary.sub_sport) != sport) {
             continue;
         }
         if (auto const ix = periods.index_of(chrono::sys_days { start_day(summary) }); ix) {
-            periods.totals[*ix].add(summary);
+            periods.totals[*ix].add(summary, another_leg(before, summary));
         }
+        before = &summary;
     }
     return std::move(periods.totals);
 }
@@ -273,17 +287,19 @@ std::vector<double> year_to_date(ActivitySummaries const &summaries, VolumeSport
     } else if (until.year() == chrono::year { year }) {
         count = static_cast<size_t>((chrono::sys_days { until } - new_year).count()) + 1;
     }
-    std::vector<double> ret(count, 0.0);
+    std::vector<double>    ret(count, 0.0);
+    ActivitySummary const *before = nullptr;
     for (auto const &summary : summaries) {
         if (volume_sport(summary.sport, summary.sub_sport) != sport) {
             continue;
         }
         auto const day = (chrono::sys_days { start_day(summary) } - new_year).count();
+        auto const leg_before = std::exchange(before, &summary);
         if (day < 0 || static_cast<size_t>(day) >= count) {
             continue;
         }
         PeriodTotal one { };
-        one.add(summary);
+        one.add(summary, another_leg(leg_before, summary));
         ret[static_cast<size_t>(day)] += one.value(metric);
     }
     std::partial_sum(ret.begin(), ret.end(), ret.begin());
