@@ -1906,11 +1906,17 @@ void show_years(pSweatTrails const &sweattrails, size_t year)
 }
 
 // The month list of `year`, with `select` selected, or else the month of
-// the activity on display, or the year's latest.
+// the activity on display, or the year's latest. For a year without
+// activities, the year list: going up from a month the counts don't have,
+// whose files aren't named by their start time, would show an empty list.
 void show_year(pSweatTrails const &sweattrails, size_t year, std::optional<Month> const &select)
 {
     auto const counts = counts_or_message(sweattrails);
     if (!counts) {
+        return;
+    }
+    if (!month_to_select(*counts, year, std::nullopt)) {
+        show_years(sweattrails, year);
         return;
     }
     auto const month_selected = [sweattrails](std::shared_ptr<MonthSelector> const &, Month const &month) {

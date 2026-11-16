@@ -262,3 +262,19 @@ Build and the full test run pass (82 of 82). Correctness against the
 spec otherwise checks out: Version 1 scope is all there, the README is
 updated, the test plan is covered, and I found no signed/unsigned or
 lifetime problems. No tests added.
+
+### How the findings were resolved
+
+1. Fixed: `show_year()` shows the year list instead, for a year without
+   activities in the counts, so going up never shows an empty month
+   list. What it relies on, `month_to_select()` finding no month for
+   such a year, is tested in `SummariesTest`; the fallback itself is in
+   the app, which no test reaches.
+2. No change: deleting an activity calls `update_summaries()`, through
+   `show_again()` or `notif_activity_deleted()`, which drops the
+   summaries of files that are gone. The stale count lasts until that
+   job's first chunk.
+3. No change: as the Architecture accepts for Enter and up. The lists
+   are open for seconds; reopening shows the download.
+4. No change: as for `ActivitySelector`'s Left and Right, which are
+   tested the same way, through `destination()` and the month selected.
