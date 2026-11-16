@@ -22,11 +22,16 @@ Segment whole_segment(std::span<Leg const> legs)
         .start_time = legs.front().segment.start_time,
         .end_time = legs.back().segment.end_time,
     };
-    u32 elapsed { 0 };
-    u32 moving { 0 };
+    // With their fractions of a second: whole seconds would lose up to one
+    // a leg.
+    auto const seconds = [](Duration const &duration) {
+        return static_cast<float64>(duration.elapsed) + static_cast<float64>(duration.fraction);
+    };
+    float64 elapsed { 0 };
+    float64 moving { 0 };
     for (auto const &leg : legs) {
-        elapsed += leg.segment.elapsed.elapsed;
-        moving += leg.segment.moving.elapsed;
+        elapsed += seconds(leg.segment.elapsed);
+        moving += seconds(leg.segment.moving);
         ret.distance += leg.segment.distance;
         if (leg.segment.total_ascent) {
             ret.total_ascent = static_cast<u16>(ret.total_ascent.value_or(0) + *leg.segment.total_ascent);

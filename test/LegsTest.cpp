@@ -402,6 +402,20 @@ void test_workout_sport_doesnt_override_multisport()
 
 // The reviewer's: no leg has an ascent, so the whole has none; one has, and
 // it's the sum of those that do.
+// IM Ottawa's legs add up to 13:28:59 with their fractions of a second,
+// and to 13:28:57 in whole seconds.
+void test_whole_time_adds_up_fractions()
+{
+    std::vector<Leg> legs(3);
+    for (auto &leg : legs) {
+        leg.segment.elapsed = Duration { 10.7 };
+        leg.segment.moving = Duration { 9.4 };
+    }
+    auto const whole = whole_segment(legs);
+    CHECK_EQ(whole.elapsed.elapsed, 32u);
+    CHECK_EQ(whole.moving.elapsed, 28u);
+}
+
 void test_whole_ascent()
 {
     std::vector<Leg> legs(2);
@@ -431,6 +445,7 @@ int main()
     test_inbox_files_by_the_last_legs_start();
     test_user_laps_replace_the_legs_and_go_back();
     test_workout_sport_doesnt_override_multisport();
+    test_whole_time_adds_up_fractions();
     test_whole_ascent();
     return test_result();
 }

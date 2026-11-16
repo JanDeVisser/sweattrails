@@ -349,6 +349,12 @@ it has more than one label, and on a click calls back to the
    per leg. Summing the sessions' unrounded seconds, then truncating, would
    give the spec's figure. Not wrong per se, but the spec's example says
    13:28:59.
+
+   *Resolved*: `whole_segment()` adds the legs' times with their fractions
+   of a second, and truncates once. IM Ottawa is now 13:28:58: the exact
+   sum is 13:28:58 and a fraction. The spec's 13:28:59 is the sum of
+   `fitexplore`'s leg times, which it rounds (5:20:05 for a bike leg of
+   5:20:04.6).
 2. **Suggestion**: `show_tab()` and `set_activity()` aren't covered by any
    test (they need a window), so the tab switching, the names carried
    between tabs and the reset to Whole were only checked by reading. I found
