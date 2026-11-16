@@ -228,6 +228,27 @@ grouped again. Ctrl+J groups the activity on display with its other
 recordings, those split before too, with it as the main one. It stays
 the main one when a recording from a preferred device comes in later.
 
+## Triathlons and other multisport activities
+
+A triathlon or a duathlon recorded in a watch's multisport mode is one
+FIT file with a session per leg: swim, transition, bike, transition,
+run. SweatTrails shows it as one activity, with the triathlon icon, its
+distance and time the legs' added up. A strip of tabs under the title
+has a Whole tab and one per leg: "Whole Swim Bike Run". Tab shows the
+next tab and Shift+Tab the one before, or click one. The activity
+opens on Whole.
+
+On Whole, the laps are the legs, the transitions too, as in a race's
+results: "Swim · T1 · Bike · T2 · Run". A leg's tab shows that leg as an
+activity of its own: its map, its data (speed on the bike, pace on the
+run), its laps and its graph. The summary line says which leg it is:
+"Bike, leg 2 of 3".
+
+Laps, fills and the overlay work on the FIT file, so only on Whole. The
+name (F2) and the description are the activity's, on any tab. A
+multisport activity isn't grouped with other recordings, not even a
+head unit's of the bike leg.
+
 ## Deleting an activity
 
 "Delete activity" in the command palette deletes the activity on
