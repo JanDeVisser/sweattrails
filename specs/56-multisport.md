@@ -1,6 +1,6 @@
 # Multisport activities
 
-Status: In review, on branch feature/56-multisport
+Status: Done
 
 <!--
 Status is one of:
