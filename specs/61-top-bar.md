@@ -211,4 +211,24 @@ year and month as the lists do:
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. Suggestion: `open_crumb()` (`src/App/SweatTrails.cpp`, case 1) passes
+   `std::nullopt` to `show_year()`, which then selects the month of
+   `sweattrails->last_activity`, not of `activity_display->activity`, which
+   the trail names. When the two differ (for instance a recording is
+   `last_activity` while another activity is on display), the year crumb
+   opens the list with a month other than the one in the trail. Passing
+   `shown->month` as `select` makes the crumb match the spec ("the month on
+   display selected") in every case.
+2. Suggestion: `TopBar::button_hovered` and `crumb_hovered` are only updated
+   in `process_input()`, which doesn't run under a modal. After a click that
+   opens the menu or a list, the button or crumb stays lit behind the modal,
+   and until the mouse moves once the modal is closed. Clearing both when
+   the click is handled (or in `draw()` when a modal is open) avoids it.
+3. Suggestion: the test plan's "not on the button or outside" is covered, but
+   a click on the button with an empty `menu` and the `on_crumb` unset paths
+   aren't. They are trivial branches; fine to leave.
+
+The rest matches the spec: the bar is one line at the top on both screens,
+the trail is empty on the totals screen, `activity_trail()` is tested, the
+README is updated, and `crumb_at()` ignores stale areas. No bugs found. I
+added no tests. The full test run passes (83/83).
