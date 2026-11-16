@@ -267,6 +267,22 @@ void test_an_error_is_shown()
     box->hide();
 }
 
+// A failed request and then a good one: the error goes, and the forecast's
+// is replaced by the archive's.
+void test_an_answer_after_an_error_replaces_it()
+{
+    auto box = std::make_shared<TestBox>();
+    box->on_display.saved = muskoka_weather(WeatherSource::forecast);
+    box->open();
+    CHECK(box->weather_arrived(muskoka(), std::unexpected(std::string { "Couldn't reach Open-Meteo" })));
+    CHECK(!box->state.error.empty());
+    CHECK(box->weather_arrived(muskoka(), muskoka_weather()));
+    CHECK(box->state.error.empty());
+    CHECK(!box->state.getting);
+    CHECK(box->state.weather == std::optional { muskoka_weather() });
+    box->hide();
+}
+
 void test_title_and_esc()
 {
     auto box = std::make_shared<TestBox>();
@@ -295,6 +311,7 @@ int main()
     test_saved_for_other_points_asks();
     test_an_answer_for_other_points_is_ignored();
     test_an_error_is_shown();
+    test_an_answer_after_an_error_replaces_it();
     test_title_and_esc();
     return test_result();
 }

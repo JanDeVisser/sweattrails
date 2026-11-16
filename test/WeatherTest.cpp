@@ -282,6 +282,29 @@ void test_fetch_from_the_forecast()
     }
 }
 
+// The archive doesn't have the start's hour (an odd gap, but it can be
+// empty for one place only): the forecast is asked for the start alone,
+// and the end stays the archive's.
+void test_fetch_forecast_for_the_start_only()
+{
+    FakeOpenMeteo fake;
+    fake.answers.push_back(HttpResponse { .status = 200, .body = std::format("[{},{}]", location(Midnight, 24, 10.0f, 5), location(Midnight, 24, 20.0f)) });
+    fake.answers.push_back(HttpResponse { .status = 200, .body = location(Midnight, 24, 30.0f) });
+    auto const weather = fetch_weather(fake.fetch(), muskoka());
+    CHECK(weather.has_value());
+    CHECK_EQ(fake.requests.size(), 2uz);
+    if (fake.requests.size() == 2) {
+        // One place: no list of latitudes.
+        CHECK(fake.requests[1].url.contains("latitude=45.33"));
+        CHECK(fake.requests[1].url.contains("longitude=-79.22"));
+    }
+    if (weather) {
+        CHECK(weather->start.source == WeatherSource::forecast);
+        CHECK(weather->end.source == WeatherSource::archive);
+        CHECK(weather->points() == muskoka());
+    }
+}
+
 void test_fetch_errors()
 {
     {
@@ -390,6 +413,7 @@ int main()
     test_parse_errors();
     test_fetch_from_the_archive();
     test_fetch_from_the_forecast();
+    test_fetch_forecast_for_the_start_only();
     test_fetch_errors();
     test_sidecar();
     test_sidecar_of_a_leg();

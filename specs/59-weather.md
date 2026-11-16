@@ -296,4 +296,32 @@ The two boxes share a widget, as the spec guessed:
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Suggestion**, `src/App/SweatTrails.cpp` `get_weather()`: a request
+   made while another runs is queued without checking whether the one
+   running is for the same points. Open the box, Esc, reopen it on the same
+   activity before the answer comes: the second request is started when the
+   first is done, though its answer is already saved, and costs an API
+   call. `weather_next` could be dropped when it equals the request that
+   just arrived (same sidecar, leg and points).
+2. **Suggestion**, `src/App/SweatTrails.cpp` `get_weather()`: the thread's
+   `stop_requested()` check and `notify()` aren't atomic, so a quit
+   between them can send a notification while `SweatTrails` is being
+   destroyed. The window is tiny and `on_terminate()` runs first, so I
+   don't see it hit in practice. Threading otherwise checks out: the
+   jthread move-assignment only joins a thread that has already sent its
+   notification, and `getting_weather` and `weather_next` are only used on
+   the UI thread.
+3. **Suggestion**, `src/Lib/Widget/InfoBox.cpp` `handle_input()`: `on_link`
+   isn't gated by anything, where `ActivityInfoBox` used to return early for
+   an empty `info.path`. The box's `link_area` is zero-sized until drawn
+   and `CheckCollisionPointRec` is inclusive, so a mouse at exactly (0, 0)
+   would show the hand cursor. Harmless; `hint_area` always had it.
+4. **Missing test, added**: `fetch_weather()` with the archive empty for
+   the start only (forecast asked for one place, end stays the
+   archive's), and `WeatherBox` answering a failed request and then a
+   good one (error cleared, forecast replaced). Both pass.
+
+No bugs found. ActivityInfoBox behaves as before (keys F, C, Tab, Esc, clicks,
+cursor), and its tests pass. `same_as()` for the saved points, the
+nearest-hour arithmetic and the error paths (`TRY_EVAL`) look right. The
+forecast fallback is only covered by canned tests, as the Developer said.
