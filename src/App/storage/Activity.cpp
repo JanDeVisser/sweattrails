@@ -423,6 +423,8 @@ constexpr char const LapsKey[] = "laps";
 // And for the names of a multisport activity's legs.
 constexpr char const LegsKey[] = "legs";
 
+}
+
 std::optional<JSONValue> read_sidecar(fs::path const &sidecar)
 {
     std::error_code ec { };
@@ -442,6 +444,8 @@ std::optional<JSONValue> read_sidecar(fs::path const &sidecar)
     }
     return std::move(*json);
 }
+
+namespace {
 
 std::optional<std::string> non_empty_string(JSONValue const &json, std::string_view key)
 {
@@ -494,10 +498,9 @@ std::vector<LegTitles> leg_titles(JSONValue const &json, fs::path const &sidecar
     return ret;
 }
 
-// Changes the activity's names in the sidecar's `json` with `change`, or
-// leg `leg`'s, in its object in `"legs"`. Legs without names are left
-// off the end, and `"legs"` without any is left out.
-void change_names(JSONValue &json, std::optional<size_t> leg, std::function<void(JSONValue &)> const &change)
+}
+
+void change_sidecar_part(JSONValue &json, std::optional<size_t> leg, std::function<void(JSONValue &)> const &change)
 {
     if (!leg) {
         change(json);
@@ -525,6 +528,19 @@ void change_names(JSONValue &json, std::optional<size_t> leg, std::function<void
     json.set(LegsKey, list);
 }
 
+std::optional<JSONValue> sidecar_part(JSONValue const &json, std::optional<size_t> leg)
+{
+    if (!json.is_object()) {
+        return { };
+    }
+    if (!leg) {
+        return json;
+    }
+    auto const legs = json.get(LegsKey).and_then([](JSONValue const &legs) { return legs.to_array(); });
+    if (!legs || legs->size() <= *leg || !(*legs)[*leg].is_object()) {
+        return { };
+    }
+    return (*legs)[*leg];
 }
 
 Decoded<StravaTitle> StravaTitle::decode(JSONValue const &json)
@@ -645,7 +661,7 @@ std::optional<std::string> sidecar_own_title(fs::path const &sidecar)
 std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::string_view title, std::optional<size_t> leg)
 {
     return update_sidecar(sidecar, [title, leg](JSONValue &json) {
-        change_names(json, leg, [title](JSONValue &names) {
+        change_sidecar_part(json, leg, [title](JSONValue &names) {
             if (title.empty()) {
                 names.erase(OwnTitleKey);
             } else {
@@ -658,7 +674,7 @@ std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::
 std::expected<void, LibCError> save_sidecar_notes(fs::path const &sidecar, std::string_view notes, std::optional<size_t> leg)
 {
     return update_sidecar(sidecar, [notes, leg](JSONValue &json) {
-        change_names(json, leg, [notes](JSONValue &names) {
+        change_sidecar_part(json, leg, [notes](JSONValue &names) {
             if (notes.empty()) {
                 names.erase(OwnNotesKey);
             } else {
@@ -674,7 +690,7 @@ std::expected<void, LibCError> save_sidecar_strava(fs::path const &sidecar, Stra
         if (leg) {
             json.erase(StravaKey);
         }
-        change_names(json, leg, [&strava](JSONValue &names) {
+        change_sidecar_part(json, leg, [&strava](JSONValue &names) {
             names.set(StravaKey, strava.encode());
         });
     });
@@ -697,7 +713,7 @@ std::expected<void, LibCError> reject_sidecar_strava(fs::path const &sidecar, u6
         };
         take_off(json);
         for (size_t leg = 0; leg < legs; ++leg) {
-            change_names(json, leg, take_off);
+            change_sidecar_part(json, leg, take_off);
         }
         auto list = JSONValue::array();
         for (auto const rejected_id : rejected) {
