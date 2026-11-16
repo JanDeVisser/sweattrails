@@ -481,6 +481,29 @@ void test_titles_of_legs()
     CHECK_EQ(MUST_EVAL(update_strava_titles(t.strava, t.store.storage, race(0) - 3600, race(5000))).titles, 0u);
 }
 
+// A leg renamed on Strava gets the new name and drops its description,
+// for the background to fetch again; a leg whose name is the same keeps
+// its description.
+void test_renamed_leg_drops_its_description()
+{
+    StravaStore t;
+    auto const  filed = race(3591);
+    t.store.add_activity(filed);
+    auto const sidecar = t.store.storage.sidecar_of(filed);
+    MUST(write_file_by_name(fs::path { sidecar }.replace_extension(".fit").string(), std::string_view { duathlon() }));
+    MUST(save_sidecar_strava(sidecar, StravaTitle { .id = 1, .name = "Morning Run", .description = "Fast" }, 0));
+    MUST(save_sidecar_strava(sidecar, StravaTitle { .id = 3, .name = "Welland Sprint Du | Ride", .description = "Windy" }, 2));
+    t.list({ strava_activity(1, iso_time(race(2)), "Welland Sprint Du | Run 1"), strava_activity(3, iso_time(race(1510)), "Welland Sprint Du | Ride") });
+    auto const update = MUST_EVAL(update_strava_titles(t.strava, t.store.storage, race(0) - 3600, race(5000)));
+    CHECK_EQ(update.titles, 1u);
+    auto const legs = sidecar_titles(sidecar).legs;
+    CHECK_EQ(legs.size(), 3uz);
+    if (legs.size() == 3) {
+        CHECK((legs[0].strava == StravaTitle { .id = 1, .name = "Welland Sprint Du | Run 1" }));
+        CHECK((legs[2].strava == StravaTitle { .id = 3, .name = "Welland Sprint Du | Ride", .description = "Windy" }));
+    }
+}
+
 // A multisport file in the summary file has its legs from there, without
 // reading the file, which here isn't a FIT file at all.
 void test_legs_from_the_summary_file()
@@ -531,6 +554,7 @@ int main()
     test_match_the_duathlons_legs();
     test_match_im_ottawas_legs();
     test_titles_of_legs();
+    test_renamed_leg_drops_its_description();
     test_legs_from_the_summary_file();
     return ST::Test::test_result();
 }
