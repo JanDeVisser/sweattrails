@@ -32,6 +32,10 @@ i64 now();
 
 // The calendar of Unix time `time`, in UTC or as the user's clock says. As
 // gmtime_r() and localtime_r(), which Windows calls otherwise.
+//
+// On Windows these four only work from 1970 on: before that, the calendar
+// is all zeroes, utc_time() is -1, and utc_offset() makes no sense. The
+// app's times are after 1990, so that's never mattered.
 std::tm utc_tm(i64 time);
 std::tm local_tm(i64 time);
 // The user's clock's offset from UTC at `time`, in seconds.

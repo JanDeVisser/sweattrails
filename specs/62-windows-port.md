@@ -352,6 +352,23 @@ known flaky `test_many_connections`. Findings, most severe first:
 7. **Missing test**, added: `ChildTest::test_kill_while_waiting`, the
    spec's "another thread may call `kill()` while one waits". Passes on both.
 
+How they were resolved, with Jan:
+
+1. Fixed: `start()` checks both and returns the error, so a program never
+   starts without its handle list. `State` closes its own handles, so each
+   way out of `start()` cleans up.
+2. Fixed: all handles are made without inheritance, and only the program's
+   three get it, just before `CreateProcessW`. The app's end of the pipe is
+   never inheritable. The race isn't tested; it can't be reliably.
+3. Fixed: the mutex and `waited` are gone, and `kill()` says why it needs
+   no lock. `Child.h` says that on Windows a killed program ends with exit
+   code 1.
+4. Left as it is, since nothing reaches it: `Date.h` says these functions
+   only work from 1970 on, on Windows.
+5. Fixed: `Utf8.h` has `is_code_point()`, which `TextLine`, `TextArea` and
+   `Utf8.cpp` use instead of three checks of their own. `Utf8Test` tests it.
+6. and 7. Kept.
+
 Checked and fine: handle inheritance (the three handles are distinct, so the
 list has no duplicates; error paths close the pipe end, and `StdHandles`
 closes the program's ends); command-line quoting (backslashes before a quote
