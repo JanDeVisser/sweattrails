@@ -1,6 +1,6 @@
 # Packaging for macOS and Windows
 
-Status: In progress, on branch feature/63-packaging
+Status: In review
 
 <!--
 Status is one of:
