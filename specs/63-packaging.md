@@ -1,6 +1,6 @@
 # Packaging for macOS and Windows
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -400,3 +400,26 @@ fails: finding 1) and `test_find_data_dir_prefers_the_bundle`
 (`IOTest.cpp`, passes). The development build's full run: 83 of 84
 pass, the failure being finding 1. Not run: the Windows tests under
 Wine and the package scripts, which the Developer ran.
+
+How they were resolved, with Jan, who chose to fix all eight:
+
+1. Fixed: `float_from_chars()` takes subnormals; only an infinite or zero
+   result with `ERANGE` is out of range. The Reviewer's test passes, and
+   checks that `0e-999` is 0.
+2. Fixed: `find_data_dir()` returns the fallback for an empty path.
+   `IOTest`'s `test_find_data_dir_without_executable` failed before.
+3. Fixed: the installer adds `\SweatTrails` to the folder chosen, also
+   with `/D=`. Checked under Wine with a `C:\Tools\share` of its own,
+   which installing and uninstalling leave alone.
+4. Fixed: the app is notarized (as a zip) and stapled before it goes
+   into the `.dmg`, and the `.dmg` after it.
+5. Fixed: `notarize()` prints `notarytool`'s output and stops on
+   anything but "Accepted". Run with the Apple Development identity and
+   a profile that doesn't exist, it stops with `notarytool`'s error.
+   Real notarizing still waits for a Developer ID.
+6. Fixed: a stamp is named after the release, and the macOS minimum on
+   macOS, so a bump builds again. Checked with the helpers in a scratch
+   directory.
+7. Fixed: the retry is gone; `ctest` runs once.
+8. Fixed: `otool` runs on its own line, so `set -e` stops the script
+   when it fails.
