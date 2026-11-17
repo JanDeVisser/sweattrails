@@ -1,6 +1,6 @@
 # Packaging for macOS and Windows
 
-Status: Ready
+Status: In progress, on branch feature/63-packaging
 
 <!--
 Status is one of:
@@ -152,11 +152,163 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### The oldest macOS: 13.3
+
+The whole project, built with `CMAKE_OSX_DEPLOYMENT_TARGET` 11.0, fails
+on two libc++ features only:
+
+- floating-point `std::to_chars`, macOS 13.3, which `std::format` uses
+  for every `double`. This sets the floor.
+- floating-point `std::from_chars`, macOS 26.0, in `JSON.cpp` (every
+  number in a JSON file), `overlay/Layout.cpp` (twice) and
+  `storage/Laps.cpp`. Jan chose 13.3 over 26.0, so these four go
+  through `float_from_chars()` (`StringUtil.h`, new): the same
+  arguments and result as `std::from_chars`, built on `strtod()` and
+  `strtof()`. Like `from_chars`, it takes no leading space, `+` or
+  hexadecimal, and says `result_out_of_range` for `ERANGE`. `strtod()`
+  follows the C locale, which the app never changes.
+
+`CMAKE_OSX_DEPLOYMENT_TARGET` is 13.3, set in `CMakeLists.txt` before
+`project()`, for every macOS build, so the development build finds a
+newer library feature as soon as it's used.
+
+### Finding `share/` at runtime
+
+- `src/Lib/Base/FileIO.h` gets two functions:
+  - `executable_path()`: the running program's path
+    (`_NSGetExecutablePath()` on macOS, `GetModuleFileNameW()` on
+    Windows, `/proc/self/exe` on Linux).
+  - `find_data_dir(executable, fallback)`: the first of
+    `<exe dir>/../Resources/share` (in a macOS bundle) and
+    `<exe dir>/share` (on Windows) that's a directory, else `fallback`.
+    It checks both on every platform: that keeps it simple, and lets
+    the tests cover both on either platform.
+- `src/App/DataDir.h/.cpp` has `data_dir()`, which is
+  `find_data_dir(executable_path(), SWEATTRAILS_DATADIR)`, worked out
+  once. The build-time `SWEATTRAILS_DATADIR` stays in `config.h` as
+  the development fallback.
+- The eight uses of `SWEATTRAILS_DATADIR` in `SweatTrails.cpp`,
+  `Activity.cpp` and `ActivitySelector.cpp`, `${sweattrails_DATADIR}` in
+  the font directories included, use `data_dir()`. Tests that compile
+  those files get `DataDir.cpp` too.
+- The development build doesn't change: `CMAKE_INSTALL_PREFIX` stays
+  forced to the build directory, and `build/bundle/sweattrails.app` has
+  no `Resources/share`, so it finds `build/share` through the fallback.
+  The packaging scripts install into a staging directory with
+  `cmake --install <dir> --prefix <staging>`.
+
+### Version and Info.plist
+
+- `project(sweattrails VERSION 1.0.0 LANGUAGES CXX)`. `config.h` has
+  `SWEATTRAILS_VERSION` from `PROJECT_VERSION`; the `_MAJOR`/`_MINOR`
+  defines, which nothing uses, go.
+- The bundle's `Info.plist` comes from `src/App/macos/Info.plist.in`,
+  ours rather than CMake's default: CFBundleName `SweatTrails`, the
+  identifier `com.finiandarcy.sweattrails`, both versions,
+  `LSMinimumSystemVersion` (13.3), and `NSHighResolutionCapable`.
+- The scripts read the version from the build's `config.h`, so it's
+  written down only once.
+
+### Libraries for macOS
+
+- `scripts/deps.sh` (new) holds what both platforms share: the pinned
+  versions, URLs and SHA-256s, and the `fetch`, `cmake_build` and
+  `done_before` functions. `scripts/windows-deps.sh` sources it, and so
+  does `scripts/macos-deps.sh` (new), so a version is bumped in one
+  place for both.
+- `scripts/macos-deps.sh` builds freetype 2.15.0 (with the system's
+  zlib, nothing else, as on Windows), raylib 6.2 and OpenSSL 4.1.0
+  (`darwin64-arm64-cc no-shared`), all for arm64 and macOS 13.3, as
+  static libraries in `build-macos/deps`.
+- `CMakeLists.txt` takes `-DSWEATTRAILS_MACOS_DEPS=<prefix>`. With it,
+  CMake looks for freetype, raylib and OpenSSL there only, never in
+  Homebrew (`CMAKE_PREFIX_PATH`, `OPENSSL_ROOT_DIR`,
+  `OPENSSL_USE_STATIC_LIBS`, `PKG_CONFIG_LIBDIR`), and links raylib's
+  frameworks (Cocoa, IOKit, CoreVideo, CoreAudio, OpenGL). Without it,
+  the build uses Homebrew, as now: development is unchanged.
+
+### Packaging scripts
+
+Both scripts build in a release directory of their own, so they don't
+touch the development builds in `build` and `build-windows`, run the
+tests, and put the package in `dist/` (git ignores it).
+
+`scripts/package-macos.sh`:
+
+1. `scripts/macos-deps.sh`.
+2. Configure `build-macos/release` (Release, `SWEATTRAILS_MACOS_DEPS`),
+   build, `ctest`.
+3. `cmake --install` into a staging directory, then make
+   `SweatTrails.app`: the bundle, renamed, with `share/` in
+   `Contents/Resources/share`.
+4. Check that `otool -L` shows nothing outside `/usr/lib` and
+   `/System`, and stop if it does.
+5. Sign: with `SWEATTRAILS_SIGN_IDENTITY` (a Developer ID Application
+   identity), `codesign --options runtime --timestamp`; without it, ad
+   hoc (`--sign -`), with a message that the app isn't notarized and
+   Gatekeeper will warn. The app needs no entitlements: no JIT, no
+   unsigned libraries.
+6. `hdiutil create` a UDZO `.dmg` from a folder with the app and an
+   `Applications` link, signed like the app.
+7. With `SWEATTRAILS_NOTARY_PROFILE` (a `notarytool store-credentials`
+   keychain profile), `notarytool submit --wait`, then `stapler staple`.
+   Without it, the step is skipped, and the script says so.
+
+`scripts/package-windows.sh`:
+
+1. `scripts/windows-deps.sh`.
+2. Configure `build-windows/release` (Release, the llvm-mingw
+   toolchain), build, `ctest` under Wine.
+3. `cmake --install` into a staging directory.
+4. `makensis -DVERSION=... -DSTAGING=...
+   src/App/windows/sweattrails.nsi` makes
+   `dist/SweatTrails-1.0.0-setup.exe`. `makensis` comes from Homebrew
+   (`brew install makensis`).
+
+`src/App/windows/sweattrails.nsi`, with the Modern UI:
+
+- `RequestExecutionLevel user`, `InstallDir
+  $LOCALAPPDATA\Programs\SweatTrails`, `SetShellVarContext current`.
+- Installs `sweattrails.exe` and `share\`, a Start menu shortcut, and
+  `uninstall.exe`.
+- The uninstall entry in `HKCU\...\CurrentVersion\Uninstall\SweatTrails`:
+  name, version, publisher, icon, install location, size.
+- The uninstaller removes the install directory, the shortcut and the
+  entry, and leaves `%APPDATA%\sweattrails` and
+  `%LOCALAPPDATA%\sweattrails` alone.
+
+### Windows icon
+
+`sweattrails.exe` has no icon now, so Explorer, the Start menu and the
+installed apps list show Windows's default. `share/icons/make-app-icon.sh`
+also makes `sweattrails.ico` (PNGs at 16 to 256 pixels), which
+`sweattrails.rc` embeds in the app and the installer uses. Jan added
+this to the scope.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `StringUtilTest`: `float_from_chars()`
+  with what `from_chars` takes and refuses: decimals, exponents, a
+  number followed by text (`10km`), empty text, a leading space or `+`,
+  hexadecimal, out of range, for `double` and `float`.
+- `IOTest`: `find_data_dir()` with a temporary directory laid out as a
+  macOS bundle, as a Windows install, as neither (the fallback), and
+  with a file where the directory should be. `executable_path()` is an
+  absolute path to an existing file, whose name is the test's.
+- The macOS and Windows (under Wine) tests pass, in the development
+  builds and in the release builds the scripts make.
+- By hand, recorded here when done:
+  - macOS: the `.dmg` opens with the app and the Applications link;
+    the app copied to `/Applications` starts, finds its fonts, icons
+    and overlays, and opens a FIT file; `otool -L` shows only system
+    libraries; `codesign --verify --deep --strict` passes;
+    `spctl --assess` once Jan has a Developer ID.
+  - Windows, under Wine: the installer runs without asking for
+    administrator rights, installs into `%LOCALAPPDATA%\Programs`,
+    makes the Start menu shortcut and the uninstall entry; the
+    installed app starts and opens FIT files; the uninstaller removes
+    the program and leaves `%APPDATA%\sweattrails` alone. Silent
+    (`/S`) runs make this repeatable.
 
 ## Review notes
 
