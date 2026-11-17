@@ -12,6 +12,7 @@
 Unicode true
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
+!include "LogicLib.nsh"
 
 !define NAME "SweatTrails"
 !define PUBLISHER "Jan de Visser"
@@ -54,6 +55,12 @@ Function un.onInit
 FunctionEnd
 
 Section
+    ; Always a folder of its own, whatever folder the user chose: the
+    ; installer replaces share\ in it, and the uninstaller removes it.
+    ${GetFileName} "$INSTDIR" $0
+    ${If} $0 != "${NAME}"
+        StrCpy $INSTDIR "$INSTDIR\${NAME}"
+    ${EndIf}
     SetOutPath "$INSTDIR"
     ; A new version's share\ replaces the old one, so what it dropped goes.
     RMDir /r "$INSTDIR\share"
@@ -75,8 +82,8 @@ Section
     WriteRegDWORD HKCU "${UNINSTALL_KEY}" "EstimatedSize" $0
 SectionEnd
 
-; Only what the installer put there: the user may have installed into a
-; folder with other files in it. The activities and settings, in
+; Only what the installer put there, in the folder it made for the app.
+; The activities and settings, in
 ; %APPDATA%\sweattrails and %LOCALAPPDATA%\sweattrails, stay.
 Section "Uninstall"
     Delete "$SMPROGRAMS\${NAME}.lnk"
