@@ -1,5 +1,16 @@
 cmake_minimum_required(VERSION 3.27)
-project(sweattrails CXX)
+# The oldest macOS the app runs on: floating-point std::to_chars, which
+# std::format uses for doubles, needs 13.3. Only builds with the libraries
+# from scripts/macos-deps.sh are made for it: Homebrew's are built for the
+# macOS they're on, and the linker would warn about each one, at every link.
+set(SWEATTRAILS_MACOS_MINIMUM 13.3)
+if (SWEATTRAILS_MACOS_DEPS AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET ${SWEATTRAILS_MACOS_MINIMUM} CACHE STRING "The oldest macOS to run on")
+endif ()
+
+# The version: CMakeLists.txt is the only place it is set. See
+# specs/63-packaging.md.
+project(sweattrails VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 message("System: ${CMAKE_SYSTEM_NAME}. Processor: ${CMAKE_SYSTEM_PROCESSOR}. Version: ${CMAKE_SYSTEM_VERSION}. Compiler: ${CMAKE_CXX_COMPILER_ID}.")
@@ -60,10 +71,20 @@ set(CMAKE_INSTALL_PREFIX ${PROJECT_BINARY_DIR} CACHE PATH "..." FORCE)
 
 set(sweattrails_NAME SweatTrails)
 set(sweattrails_ID sweattrails)
-set(sweattrails_VERSION_MAJOR 1)
-set(sweattrails_VERSION_MINOR 0)
 set(sweattrails_DIR ${CMAKE_INSTALL_PREFIX})
 set(sweattrails_DATADIR ${CMAKE_INSTALL_PREFIX}/share)
+
+# The packaged app's libraries, from scripts/macos-deps.sh, linked
+# statically, so the app doesn't need Homebrew. Without them, the build uses
+# Homebrew's.
+if (APPLE AND SWEATTRAILS_MACOS_DEPS)
+  list(PREPEND CMAKE_PREFIX_PATH ${SWEATTRAILS_MACOS_DEPS})
+  set(CMAKE_IGNORE_PREFIX_PATH /opt/homebrew /usr/local)
+  set(ENV{PKG_CONFIG_LIBDIR} ${SWEATTRAILS_MACOS_DEPS}/lib/pkgconfig)
+  set(OPENSSL_ROOT_DIR ${SWEATTRAILS_MACOS_DEPS})
+  set(OPENSSL_USE_STATIC_LIBS TRUE)
+  set(raylib_USE_STATIC_LIBS TRUE)
+endif ()
 
 find_package(Freetype)
 if (DEFINED RAYLIB)
@@ -74,6 +95,10 @@ if (DEFINED RAYLIB)
 else ()
   set(raylib_VERBOSE ON)
   include(cmake/raylib-config.cmake)
+  if (APPLE AND raylib_USE_STATIC_LIBS)
+    # What the dynamic library would have brought along.
+    list(APPEND raylib_LIBRARIES "-framework Cocoa" "-framework IOKit" "-framework CoreVideo" "-framework CoreAudio" "-framework QuartzCore")
+  endif ()
 endif ()
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -244,6 +269,8 @@ add_executable(
         src/App/SweatTrails.h
         src/App/SweatTrails.cpp
         src/App/Coordinates.cpp
+        src/App/DataDir.h
+        src/App/DataDir.cpp
         src/App/Desktop.cpp
         src/App/Http.cpp
         src/App/OAuth.cpp
@@ -314,7 +341,17 @@ set_target_properties(sweattrails PROPERTIES WIN32_EXECUTABLE TRUE)
 
 # The bundle's icon, which the Dock and Finder show.
 set_source_files_properties(share/icons/sweattrails.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-set_target_properties(sweattrails PROPERTIES MACOSX_BUNDLE_ICON_FILE sweattrails.icns)
+set_target_properties(
+        sweattrails
+        PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST ${PROJECT_SOURCE_DIR}/src/App/macos/Info.plist.in
+        MACOSX_BUNDLE_ICON_FILE sweattrails.icns
+        MACOSX_BUNDLE_BUNDLE_NAME ${sweattrails_NAME}
+        MACOSX_BUNDLE_GUI_IDENTIFIER com.finiandarcy.sweattrails
+        MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+        MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+        MACOSX_BUNDLE_COPYRIGHT "Copyright (c) 2026, Jan de Visser"
+)
 
 target_include_directories(
         sweattrails
@@ -444,6 +481,7 @@ target_include_directories(desktop_test PRIVATE src/App)
 sweattrails_test(
         activity_selector_test
         test/ActivitySelectorTest.cpp
+        src/App/DataDir.cpp
         src/App/storage/Thresholds.cpp
         src/App/storage/Volume.cpp
         src/App/widget/ActivitySelector.cpp

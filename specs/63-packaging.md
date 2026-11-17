@@ -1,6 +1,6 @@
 # Packaging for macOS and Windows
 
-Status: Ready
+Status: Done
 
 <!--
 Status is one of:
@@ -152,12 +152,274 @@ None.
 
 ## Architecture
 
-*Filled in by the Developer.*
+### The oldest macOS: 13.3
+
+The whole project, built with `CMAKE_OSX_DEPLOYMENT_TARGET` 11.0, fails
+on two libc++ features only:
+
+- floating-point `std::to_chars`, macOS 13.3, which `std::format` uses
+  for every `double`. This sets the floor.
+- floating-point `std::from_chars`, macOS 26.0, in `JSON.cpp` (every
+  number in a JSON file), `overlay/Layout.cpp` (twice) and
+  `storage/Laps.cpp`. Jan chose 13.3 over 26.0, so these four go
+  through `float_from_chars()` (`StringUtil.h`, new): the same
+  arguments and result as `std::from_chars`, built on `strtod()` and
+  `strtof()`. Like `from_chars`, it takes no leading space, `+` or
+  hexadecimal, and says `result_out_of_range` for `ERANGE`. `strtod()`
+  follows the C locale, which the app never changes.
+
+`SWEATTRAILS_MACOS_MINIMUM` in `CMakeLists.txt` is 13.3. It goes into
+the `Info.plist`, and is `CMAKE_OSX_DEPLOYMENT_TARGET` in builds with
+`SWEATTRAILS_MACOS_DEPS`: the package's, and a development build pointed
+at those libraries. The plan was to set it in every build, but
+Homebrew's libraries are built for the macOS they're on (27), and the
+linker warns about each of them, at every link: some 300 warnings in a
+full build. So a newer library feature shows up when the package script
+builds, or in a development build with the macOS libraries, rather than
+in the Homebrew build.
+
+### Finding `share/` at runtime
+
+- `src/Lib/Base/FileIO.h` gets two functions:
+  - `executable_path()`: the running program's path
+    (`_NSGetExecutablePath()` on macOS, `GetModuleFileNameW()` on
+    Windows, `/proc/self/exe` on Linux).
+  - `find_data_dir(executable, fallback)`: the first of
+    `<exe dir>/../Resources/share` (in a macOS bundle) and
+    `<exe dir>/share` (on Windows) that's a directory, else `fallback`.
+    It checks both on every platform: that keeps it simple, and lets
+    the tests cover both on either platform.
+- `src/App/DataDir.h/.cpp` has `data_dir()`, which is
+  `find_data_dir(executable_path(), SWEATTRAILS_DATADIR)`, worked out
+  once. The build-time `SWEATTRAILS_DATADIR` stays in `config.h` as
+  the development fallback.
+- The eight uses of `SWEATTRAILS_DATADIR` in `SweatTrails.cpp`,
+  `Activity.cpp` and `ActivitySelector.cpp`, `${sweattrails_DATADIR}` in
+  the font directories included, use `data_dir()`. Tests that compile
+  those files get `DataDir.cpp` too.
+- The development build doesn't change: `CMAKE_INSTALL_PREFIX` stays
+  forced to the build directory, and `build/bundle/sweattrails.app` has
+  no `Resources/share`, so it finds `build/share` through the fallback.
+  The packaging scripts install into a staging directory with
+  `cmake --install <dir> --prefix <staging>`.
+
+### Version and Info.plist
+
+- `project(sweattrails VERSION 1.0.0 LANGUAGES CXX)`. `config.h` has
+  `SWEATTRAILS_VERSION` from `PROJECT_VERSION`; the `_MAJOR`/`_MINOR`
+  defines, which nothing uses, go.
+- The bundle's `Info.plist` comes from `src/App/macos/Info.plist.in`,
+  ours rather than CMake's default: CFBundleName `SweatTrails`, the
+  identifier `com.finiandarcy.sweattrails`, both versions,
+  `LSMinimumSystemVersion` (13.3), and `NSHighResolutionCapable`.
+- The scripts read the version from the build's `config.h`, so it's
+  written down only once.
+
+### Libraries for macOS
+
+- `scripts/deps.sh` (new) holds what both platforms share: the pinned
+  versions, URLs and SHA-256s, and the `fetch`, `cmake_build` and
+  `done_before` functions. `scripts/windows-deps.sh` sources it, and so
+  does `scripts/macos-deps.sh` (new), so a version is bumped in one
+  place for both.
+- `scripts/macos-deps.sh` builds freetype 2.15.0 (with the system's
+  zlib, nothing else, as on Windows), raylib 6.2 and OpenSSL 4.1.0
+  (`darwin64-arm64-cc no-shared`), all for arm64 and macOS 13.3, as
+  static libraries in `build-macos/deps`.
+- `CMakeLists.txt` takes `-DSWEATTRAILS_MACOS_DEPS=<prefix>`. With it,
+  CMake looks for freetype, raylib and OpenSSL there only, never in
+  Homebrew (`CMAKE_PREFIX_PATH`, `OPENSSL_ROOT_DIR`,
+  `OPENSSL_USE_STATIC_LIBS`, `PKG_CONFIG_LIBDIR`), and links raylib's
+  frameworks (Cocoa, IOKit, CoreVideo, CoreAudio, OpenGL). Without it,
+  the build uses Homebrew, as now: development is unchanged.
+
+### Packaging scripts
+
+Both scripts build in a release directory of their own, so they don't
+touch the development builds in `build` and `build-windows`, run the
+tests, and put the package in `dist/` (git ignores it).
+
+`scripts/package-macos.sh`:
+
+1. `scripts/macos-deps.sh`.
+2. Configure `build-macos/release` (Release, `SWEATTRAILS_MACOS_DEPS`),
+   build, `ctest`.
+3. `cmake --install` into a staging directory, then make
+   `SweatTrails.app`: the bundle, renamed, with `share/` in
+   `Contents/Resources/share`.
+4. Check that `otool -L` shows nothing outside `/usr/lib` and
+   `/System`, and stop if it does.
+5. Sign: with `SWEATTRAILS_SIGN_IDENTITY` (a Developer ID Application
+   identity), `codesign --options runtime --timestamp`; without it, ad
+   hoc (`--sign -`), with a message that the app isn't notarized and
+   Gatekeeper will warn. The app needs no entitlements: no JIT, no
+   unsigned libraries.
+6. `diskutil image create from` a UDZO `.dmg`, from a folder with the
+   app and an `Applications` link, signed like the app. On macOS 27,
+   `hdiutil create` says it's deprecated for this.
+7. With `SWEATTRAILS_NOTARY_PROFILE` (a `notarytool store-credentials`
+   keychain profile) as well, the app is notarized (as a zip) and
+   stapled before it goes into the `.dmg`, and then the `.dmg` is too:
+   the app keeps its own ticket once it's dragged out. Anything but
+   "Accepted", `notarytool`'s own failures included, stops the script
+   with its output. Without the profile, notarizing is skipped, and the
+   script says so.
+
+`scripts/package-windows.sh`:
+
+1. `scripts/windows-deps.sh`.
+2. Configure `build-windows/release` (Release, the llvm-mingw
+   toolchain), build, `ctest` under Wine.
+3. `cmake --install` into a staging directory.
+4. `makensis -DVERSION=... -DSTAGING=...
+   src/App/windows/sweattrails.nsi` makes
+   `dist/SweatTrails-1.0.0-setup.exe`. `makensis` comes from Homebrew
+   (`brew install makensis`).
+
+`src/App/windows/sweattrails.nsi`, with the Modern UI:
+
+- `RequestExecutionLevel user`, `InstallDir
+  $LOCALAPPDATA\Programs\SweatTrails`, `SetShellVarContext current`.
+- Installs `sweattrails.exe` and `share\`, a Start menu shortcut, and
+  `uninstall.exe`.
+- The uninstall entry in `HKCU\...\CurrentVersion\Uninstall\SweatTrails`:
+  name, version, publisher, icon, install location, size.
+- The uninstaller removes the install directory, the shortcut and the
+  entry, and leaves `%APPDATA%\sweattrails` and
+  `%LOCALAPPDATA%\sweattrails` alone.
+
+### Windows icon
+
+`sweattrails.exe` has no icon now, so Explorer, the Start menu and the
+installed apps list show Windows's default. `share/icons/make-app-icon.sh`
+also makes `sweattrails.ico` (PNGs at 16 to 256 pixels), which
+`sweattrails.rc` embeds in the app and the installer uses. Jan added
+this to the scope.
 
 ## Test plan
 
-*Filled in by the Developer.*
+- `StringUtilTest`: `float_from_chars()`
+  with what `from_chars` takes and refuses: decimals, exponents, a
+  number followed by text (`10km`), empty text, a leading space or `+`,
+  hexadecimal, out of range, for `double` and `float`.
+- `IOTest`: `find_data_dir()` with a temporary directory laid out as a
+  macOS bundle, as a Windows install, as neither (the fallback), and
+  with a file where the directory should be. `executable_path()` is an
+  absolute path to an existing file, whose name is the test's.
+- The macOS and Windows (under Wine) tests pass, in the development
+  builds and in the release builds the scripts make.
+- By hand, on 2026-11-17:
+  - macOS, without a signing identity: the `.dmg` (15 MB) mounts with
+    `SweatTrails.app` and the Applications link; `share/` is in
+    `Contents/Resources`; the app is signed ad hoc as
+    `com.finiandarcy.sweattrails`, `codesign --verify --deep --strict`
+    passes, `otool -L` shows only `/usr/lib` and `/System`, and `minos`
+    is 13.3. Started from the mounted `.dmg`, with no `share/` at the
+    build-time path, it runs and reads the activity store. Not seen yet:
+    the window itself (no screen capture here), and Gatekeeper with a
+    Developer ID, which Jan doesn't have yet.
+  - Windows, under Wine in a new prefix: the installer (12 MB) installs
+    silently (`/S`) into `%LOCALAPPDATA%\Programs\SweatTrails`, with the
+    Start menu shortcut and the uninstall entry (name, version,
+    publisher, icon, size). The installed app reads its fonts, emoji,
+    icon and settings from its own `share\` (`WINEDEBUG=+file`), and
+    makes its store in `%LOCALAPPDATA%\sweattrails`. The uninstaller
+    removes the program, the shortcut and the entry, and leaves
+    `%APPDATA%\sweattrails` and `%LOCALAPPDATA%\sweattrails`. The
+    installer's own pages haven't been seen.
+- Found by building as Release, which nothing did before:
+  `App::measure_text()` dereferenced a missing font, and
+  `input_box_test` and `query_box_test` crashed. Fixed in its own commit.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug.** `float_from_chars()` (`src/Lib/Base/StringUtil.cpp`, `parse_float`)
+   says `result_out_of_range` for subnormal numbers (`1e-310`, `5e-324`
+   for `double`; `1e-40` for `float`), which `std::from_chars` accepts:
+   `strtod()`/`strtof()` set `ERANGE` for them as well as for underflow
+   to zero and overflow. A JSON file with `5e-324` is now invalid. It
+   makes no difference to real activity data, but the spec says "same
+   result as `std::from_chars`". Found by comparing the two on a list of
+   inputs (all others, including `inf`, `nan`, `0x`, `1e`, `-`, `+1`,
+   ` 1`, agree). Fix: on `ERANGE`, only report out of range if the
+   result is infinite, or zero while the digits aren't. Test added,
+   failing: `test_float_from_chars_subnormal` in `test/StringUtilTest.cpp`.
+2. **Suggestion.** `executable_path()` returns an empty path when it
+   fails (`GetModuleFileNameW` returning 0, `read_symlink` error).
+   `find_data_dir()` then tests `../Resources/share` and `share` relative
+   to the current directory. Unlikely, but returning the fallback for an
+   empty `executable` is one line.
+3. **Suggestion.** The NSIS installer lets the user pick any folder, and
+   both installer (`RMDir /r "$INSTDIR\share"`) and uninstaller remove
+   `$INSTDIR\share` recursively. Choosing a folder that already has an
+   unrelated `share` (say `C:\msys64\usr`) deletes it. The comment says
+   the uninstaller removes "only what the installer put there", which
+   isn't true of this. Options: append `\SweatTrails` to a chosen folder
+   that doesn't end in it (the usual NSIS answer), or remove only the
+   files the installer lists.
+4. **Suggestion.** `scripts/package-macos.sh` staples only the `.dmg`.
+   Notarizing the `.dmg` covers the app, but the app dragged out of it
+   has no ticket of its own, so Gatekeeper needs the network on first
+   launch. The usual flow notarizes and staples the app (zipped for
+   `notarytool`) before the `.dmg` is made, then the `.dmg` too. This
+   path has never run, so it's worth deciding before the first release.
+5. **Suggestion.** In the same step, `result=$(xcrun notarytool submit
+   ...)` under `set -eu` exits silently if `notarytool` itself exits
+   non-zero, and the JSON on stdout (with the submission id) is lost.
+   `|| true` and then the status check would print it.
+6. **Suggestion.** The dependency stamps (`build-macos/deps/stamps`)
+   don't know the versions or `SWEATTRAILS_MACOS_MINIMUM`: bumping
+   either in `deps.sh` or `CMakeLists.txt` leaves the old libraries,
+   built for the old minimum, until a stamp is removed by hand. The
+   script says so at the top, but the minimum check in particular is
+   easy to forget; writing the version or minimum into the stamp and
+   comparing would do. Same on Windows, as before.
+7. **Suggestion.** Both package scripts retry tests with `--repeat
+   until-pass:2` "because `oauth_test` fails now and then". That's
+   fixed on main (and merged into this branch), so the comment is
+   stale, and the retry now hides any other flaky test. Plain `ctest`
+   is stricter.
+8. **Suggestion.** The `otool -L` check looks at the main executable
+   only, which is all there is. If `otool` fails, the pipeline still
+   passes (no `pipefail` in `sh`). Minor.
+
+Read and found fine: `executable_path()` on macOS (two-call
+`_NSGetExecutablePath`, `weakly_canonical`) and Windows (buffer doubling
+is right: a truncated result returns the size, so `length < size` is the
+test); `find_data_dir()` in the development builds (`build/share` is the
+fallback, and on Windows `build-windows/share` next to the exe is the
+same directory); callers of `float_from_chars()` (JSON, Layout, Laps:
+only `ec` and `end` are used, as before); the NSIS per-user install,
+upgrade (`InstallDirRegKey`, the old `share\` removed first) and
+uninstall leaving `%APPDATA%\sweattrails` and `%LOCALAPPDATA%\sweattrails`;
+`Info.plist.in`; `CMakeLists.txt`'s deployment target ordering (set before
+`project()`).
+
+Tests added: `test_float_from_chars_subnormal` (`StringUtilTest.cpp`,
+fails: finding 1) and `test_find_data_dir_prefers_the_bundle`
+(`IOTest.cpp`, passes). The development build's full run: 83 of 84
+pass, the failure being finding 1. Not run: the Windows tests under
+Wine and the package scripts, which the Developer ran.
+
+How they were resolved, with Jan, who chose to fix all eight:
+
+1. Fixed: `float_from_chars()` takes subnormals; only an infinite or zero
+   result with `ERANGE` is out of range. The Reviewer's test passes, and
+   checks that `0e-999` is 0.
+2. Fixed: `find_data_dir()` returns the fallback for an empty path.
+   `IOTest`'s `test_find_data_dir_without_executable` failed before.
+3. Fixed: the installer adds `\SweatTrails` to the folder chosen, also
+   with `/D=`. Checked under Wine with a `C:\Tools\share` of its own,
+   which installing and uninstalling leave alone.
+4. Fixed: the app is notarized (as a zip) and stapled before it goes
+   into the `.dmg`, and the `.dmg` after it.
+5. Fixed: `notarize()` prints `notarytool`'s output and stops on
+   anything but "Accepted". Run with the Apple Development identity and
+   a profile that doesn't exist, it stops with `notarytool`'s error.
+   Real notarizing still waits for a Developer ID.
+6. Fixed: a stamp is named after the release, and the macOS minimum on
+   macOS, so a bump builds again. Checked with the helpers in a scratch
+   directory.
+7. Fixed: the retry is gone; `ctest` runs once.
+8. Fixed: `otool` runs on its own line, so `set -e` stops the script
+   when it fails.

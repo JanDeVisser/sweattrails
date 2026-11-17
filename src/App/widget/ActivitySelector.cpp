@@ -7,6 +7,7 @@
 
 #include <Date.h>
 
+#include <DataDir.h>
 #include <storage/Storage.h>
 #include <widget/ActivitySelector.h>
 #include <widget/DataFields.h>
@@ -18,7 +19,7 @@ ActivityList::ListBoxEntry activity_entry(Activity const &activity)
 {
     ActivityList::ListBoxEntry ret { activity.title, activity.id };
     auto const                &start = activity.segment.start_time;
-    ret.icon = std::format(SWEATTRAILS_DATADIR "/icons/{}", sport_icon_file(activity.sport, activity.sub_sport));
+    ret.icon = (data_dir() / "icons" / sport_icon_file(activity.sport, activity.sub_sport)).string();
     // The day padded, so that the times line up: "Sat  4  10:00".
     ret.prefix = std::format("{} {:>2}  {:02}:{:02}", weekday_name(start.day_of_week).substr(0, 3), start.day_of_month, start.hour, start.minute);
     auto const &segment = activity.segment;

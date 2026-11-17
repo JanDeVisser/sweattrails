@@ -82,4 +82,13 @@ std::filesystem::path user_config_dir(std::string_view const &app);
 std::filesystem::path user_data_dir(std::string_view const &app);
 std::filesystem::path user_state_dir(std::string_view const &app);
 
+// The running program's file.
+std::filesystem::path executable_path();
+
+// Where an installed app keeps its data, for the program `executable`:
+// share/ in a macOS bundle's Resources, or share\ next to the program on
+// Windows, if that is a directory. Otherwise `fallback`, such as the build
+// directory's share/ during development.
+std::filesystem::path find_data_dir(std::filesystem::path const &executable, std::filesystem::path const &fallback);
+
 }

@@ -1,3 +1,7 @@
 // The application manifest: 1 is CREATEPROCESS_MANIFEST_RESOURCE_ID, and
 // 24 RT_MANIFEST.
 1 24 "sweattrails.manifest"
+
+// The program's icon, which Explorer, the Start menu and the installed apps
+// show: the icon with the lowest ID. share/icons/make-app-icon.sh makes it.
+1 ICON "../../../share/icons/sweattrails.ico"

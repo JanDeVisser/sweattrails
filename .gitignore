@@ -6,3 +6,5 @@ build
 compile_commands.json
 zig
 build-windows
+build-macos
+dist

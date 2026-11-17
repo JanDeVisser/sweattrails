@@ -27,6 +27,7 @@
 #include <TextAreaBox.h>
 #include <Widget.h>
 
+#include <DataDir.h>
 #include <Desktop.h>
 #include <Http.h>
 #include <OAuth.h>
@@ -879,10 +880,10 @@ pSweatTrails SweatTrails::the()
 SweatTrails::SweatTrails()
     : Main<Job, Notification>(SWEATTRAILS_ID)
 {
-    system_config_dir = fs::path { SWEATTRAILS_DATADIR };
+    system_config_dir = data_dir();
 #ifndef __APPLE__
     // macOS windows have no icon: the Dock and Finder show the bundle's.
-    icon_file = SWEATTRAILS_DATADIR "/icons/sweattrails.png";
+    icon_file = (data_dir() / "icons" / "sweattrails.png").string();
 #endif
 }
 
@@ -1669,7 +1670,7 @@ fs::path overlay_state_file(pSweatTrails const &sweattrails)
 // The built-in layouts, and the user's in the data directory.
 std::vector<LayoutEntry> overlay_layouts(pSweatTrails const &sweattrails)
 {
-    return overlay_layouts(fs::path { SWEATTRAILS_DATADIR } / "overlays", sweattrails->storage.overlays_dir);
+    return overlay_layouts(data_dir() / "overlays", sweattrails->storage.overlays_dir);
 }
 
 std::optional<LayoutEntry> overlay_layout(pSweatTrails const &sweattrails, std::string_view name)
@@ -3261,7 +3262,7 @@ EError SweatTrails::read_settings()
         return { };
     };
 
-    if (auto const &e = merge_settings(SWEATTRAILS_DATADIR, SWEATTRAILS_SYSTEM ".json"); !e) {
+    if (auto const &e = merge_settings(data_dir(), SWEATTRAILS_SYSTEM ".json"); !e) {
         return std::unexpected(e.error());
     }
     if (auto const &e = merge_settings(system_config_dir); !e) {
@@ -3296,7 +3297,7 @@ StringList SweatTrails::get_font_dirs()
         auto const append_dir = [&home, this](std::string_view const &dir) -> void {
             std::string d { dir };
             replace_all(d, "${HOME}", home);
-            replace_all(d, "${sweattrails_DATADIR}", SWEATTRAILS_DATADIR);
+            replace_all(d, "${sweattrails_DATADIR}", data_dir().string());
             if (std::find(font_dirs.begin(), font_dirs.end(), d) == font_dirs.end()) {
                 if (!fs::is_directory(d)) {
                     return;
@@ -3357,13 +3358,13 @@ void SweatTrails::load_font()
         font_error = std::format("The font `{}` in the settings isn't in any of the font directories", font_name);
         assert(load(default_font));
     }
-    set_emoji(SWEATTRAILS_DATADIR "/emoji/twemoji.zip");
+    set_emoji(data_dir() / "emoji" / "twemoji.zip");
 }
 
 ImageFinder SweatTrails::image_finder()
 {
     return [](std::string_view src, fs::path const &layout_dir) {
-        return find_image(src, layout_dir, fs::path { SWEATTRAILS_DATADIR } / "overlays", [](fs::path const &path) {
+        return find_image(src, layout_dir, data_dir() / "overlays", [](fs::path const &path) {
             std::error_code ec { };
             return fs::is_regular_file(path, ec);
         });

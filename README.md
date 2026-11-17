@@ -5,6 +5,28 @@ more, from FIT files, Garmin Connect and Wahoo, with their titles from
 Strava. It shows an activity on a map, with its data and graphs. It's
 written in C++26, on [raylib](https://www.raylib.com).
 
+## Installing
+
+The [releases page](https://github.com/JanDeVisser/sweattrails/releases)
+has a package for each platform:
+
+- **macOS** (13.3 or later, Apple silicon): open
+  `SweatTrails-<version>.dmg` and drag SweatTrails to Applications.
+- **Windows** (10 or 11, x64): run `SweatTrails-<version>-setup.exe`. It
+  installs for you only, without administrator rights, in
+  `%LOCALAPPDATA%\Programs\SweatTrails`, with a Start menu shortcut.
+  The installer isn't signed yet, so Windows warns that it "protected
+  your PC": "More info", then "Run anyway". Uninstall it from Settings ›
+  Apps › Installed apps.
+
+Your activities and settings aren't part of the app: uninstalling, or
+dragging the app to the Trash, leaves them. SweatTrails files the FIT
+files you put in its inbox, the `inbox` folder in its data folder
+(`~/Library/Application Support/sweattrails` on macOS,
+`%LOCALAPPDATA%\sweattrails` on Windows). Downloading from Garmin
+Connect, Wahoo and Strava takes some setting up, described in their
+sections below.
+
 ## Requirements
 
 SweatTrails builds with Clang and libc++, for C++26: the build links
@@ -124,10 +146,43 @@ Wine keeps its own `C:` drive in `build-windows/wineprefix`, away from
 `~/.wine`; the app's activities are in
 `drive_c/users/<you>/AppData/Local/sweattrails`.
 
-The app finds its icons, fonts and themes in `build-windows/share`,
-whose Mac path is compiled in. Wine shows the Mac's files as drive `Z:`,
-so that works under Wine, but not yet on a real Windows machine: finding
-`share` next to the program is part of packaging (spec 63).
+The app finds its icons, fonts and themes in `share` next to the
+program, as installed, and otherwise in `build-windows/share`, whose Mac
+path is compiled in. Wine shows the Mac's files as drive `Z:`, so that
+works under Wine.
+
+### Packages
+
+From the repository root on a Mac, one command makes each package, in
+`dist/`:
+
+```sh
+scripts/package-macos.sh      # dist/SweatTrails-<version>.dmg
+scripts/package-windows.sh    # dist/SweatTrails-<version>-setup.exe
+```
+
+Each builds its libraries from source (`scripts/macos-deps.sh` and
+`scripts/windows-deps.sh`, at the same versions, from
+`scripts/deps.sh`), builds the app as a Release build in a folder of its
+own (`build-macos/release`, `build-windows/release`), and runs the
+tests. The macOS app links raylib, FreeType and OpenSSL statically, so it
+needs nothing from Homebrew. The Windows script needs `makensis` (`brew
+install makensis`); the installer is made from
+`src/App/windows/sweattrails.nsi`.
+
+The macOS package is signed and notarized with a Developer ID:
+
+```sh
+xcrun notarytool store-credentials sweattrails    # once
+SWEATTRAILS_SIGN_IDENTITY="Developer ID Application: ..." \
+SWEATTRAILS_NOTARY_PROFILE=sweattrails scripts/package-macos.sh
+```
+
+Without them it's signed ad hoc and not notarized, and Gatekeeper warns
+whoever opens it. The version is in `CMakeLists.txt`, in `project()`. A
+release: bump it, commit, tag the commit `v<version>`, make both
+packages, and upload them with `gh release create v<version>
+dist/SweatTrails-<version>*`.
 
 ## Finding a command
 
@@ -541,6 +596,15 @@ that, and log in to it:
    ```sh
    mkcert -install    # once: asks for your password
    cd ~/Library/Application\ Support/sweattrails    # ~/.config/sweattrails on Linux
+   mkcert -cert-file localhost.pem -key-file localhost-key.pem localhost 127.0.0.1 ::1
+   ```
+
+   On Windows, in a terminal (PowerShell):
+
+   ```powershell
+   winget install FiloSottile.mkcert
+   mkcert -install    # once: Windows asks whether to trust it
+   cd $env:APPDATA\sweattrails
    mkcert -cert-file localhost.pem -key-file localhost-key.pem localhost 127.0.0.1 ::1
    ```
 

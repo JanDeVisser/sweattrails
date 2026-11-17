@@ -6,6 +6,9 @@
 
 #include <cassert>
 #include <cctype>
+#include <cerrno>
+#include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <format>
 
@@ -196,6 +199,53 @@ std::vector<std::string> clamp_lines(std::vector<std::string> lines, size_t max,
     }
     last = std::format("{}…", rstrip(last));
     return lines;
+}
+
+namespace {
+
+template<typename Float>
+std::from_chars_result parse_float(char const *first, char const *last, Float &value, Float (*strto)(char const *, char **))
+{
+    std::string_view text { first, last };
+    auto const       sign = text.starts_with('-') ? 1uz : 0uz;
+    auto const       number = text.substr(sign);
+    // strtod() skips spaces and takes a + and hexadecimal; from_chars
+    // doesn't, and only reads the 0 of 0x.
+    if (number.empty() || std::isspace(static_cast<unsigned char>(number[0])) || number[0] == '+') {
+        return { first, std::errc::invalid_argument };
+    }
+    if (number.starts_with("0x") || number.starts_with("0X")) {
+        text = text.substr(0, sign + 1);
+    }
+    // strtod() needs the text to end in a NUL.
+    std::string const copy { text };
+    char             *end { nullptr };
+    errno = 0;
+    auto const result = strto(copy.c_str(), &end);
+    if (end == copy.c_str()) {
+        return { first, std::errc::invalid_argument };
+    }
+    auto const ptr = first + (end - copy.c_str());
+    // strtod() also says ERANGE for subnormal numbers, such as 1e-310,
+    // which from_chars takes. Out of range is too big, or too small to be
+    // anything but 0.
+    if (errno == ERANGE && (std::isinf(result) || result == 0)) {
+        return { ptr, std::errc::result_out_of_range };
+    }
+    value = result;
+    return { ptr, std::errc { } };
+}
+
+}
+
+std::from_chars_result float_from_chars(char const *first, char const *last, double &value)
+{
+    return parse_float<double>(first, last, value, std::strtod);
+}
+
+std::from_chars_result float_from_chars(char const *first, char const *last, float &value)
+{
+    return parse_float<float>(first, last, value, std::strtof);
 }
 
 std::string_view strip(std::string_view const &s)

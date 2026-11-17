@@ -10,6 +10,7 @@
 #include <FileIO.h>
 #include <JSON.h>
 #include <Lexer.h>
+#include <StringUtil.h>
 
 namespace ST {
 
@@ -230,7 +231,7 @@ std::expected<JSONValue, JSONError> decode_number(JSONToken const &token, std::s
         // Too big for an integer: it can still be a double.
     }
     double number { 0 };
-    auto const [end, ec] = std::from_chars(text.data(), text.data() + text.size(), number);
+    auto const [end, ec] = float_from_chars(text.data(), text.data() + text.size(), number);
     if (ec != std::errc { } || end != text.data() + text.size()) {
         return invalid();
     }
