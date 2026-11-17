@@ -127,6 +127,16 @@ void test_find_data_dir()
     CHECK(find_data_dir(installed, fallback) == install / "share");
 }
 
+// A bundle's Resources come before share next to the program.
+void test_find_data_dir_prefers_the_bundle()
+{
+    TempDir    dir { "io" };
+    auto const macos = dir.path / "Contents" / "MacOS";
+    fs::create_directories(macos / "share");
+    fs::create_directories(dir.path / "Contents" / "Resources" / "share");
+    CHECK(fs::equivalent(find_data_dir(macos / "sweattrails", "fallback"), dir.path / "Contents" / "Resources" / "share"));
+}
+
 void test_find_data_dir_needs_a_directory()
 {
     TempDir dir { "io" };
@@ -146,6 +156,7 @@ int main()
     test_user_dirs();
     test_executable_path();
     test_find_data_dir();
+    test_find_data_dir_prefers_the_bundle();
     test_find_data_dir_needs_a_directory();
     return ST::Test::test_result();
 }

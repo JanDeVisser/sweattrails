@@ -167,6 +167,26 @@ void test_float_from_chars_float()
     CHECK_EQ(f, 2.5f);
 }
 
+// Subnormal numbers are numbers: from_chars takes them, though strtod() sets
+// ERANGE for them, and so float_from_chars() must look at what it returns.
+void test_float_from_chars_subnormal()
+{
+    double d { 42 };
+    CHECK(parse("1e-310", d) == std::pair(std::errc { }, size_t { 6 }));
+    CHECK(d > 0.0 && d < 1e-300);
+    CHECK(parse("-5e-324", d) == std::pair(std::errc { }, size_t { 7 }));
+    CHECK(d < 0.0);
+
+    float f { 42 };
+    CHECK(parse("1e-40", f) == std::pair(std::errc { }, size_t { 5 }));
+    CHECK(f > 0.0f && f < 1e-38f);
+
+    // Too small for even that.
+    d = 42;
+    CHECK(parse("1e-400", d).first == std::errc::result_out_of_range);
+    CHECK_EQ(d, 42.0);
+}
+
 int main()
 {
     test_base64url();
@@ -178,5 +198,6 @@ int main()
     test_float_from_chars();
     test_float_from_chars_refuses();
     test_float_from_chars_float();
+    test_float_from_chars_subnormal();
     return ST::Test::test_result();
 }

@@ -329,4 +329,70 @@ this to the scope.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug.** `float_from_chars()` (`src/Lib/Base/StringUtil.cpp`, `parse_float`)
+   says `result_out_of_range` for subnormal numbers (`1e-310`, `5e-324`
+   for `double`; `1e-40` for `float`), which `std::from_chars` accepts:
+   `strtod()`/`strtof()` set `ERANGE` for them as well as for underflow
+   to zero and overflow. A JSON file with `5e-324` is now invalid. It
+   makes no difference to real activity data, but the spec says "same
+   result as `std::from_chars`". Found by comparing the two on a list of
+   inputs (all others, including `inf`, `nan`, `0x`, `1e`, `-`, `+1`,
+   ` 1`, agree). Fix: on `ERANGE`, only report out of range if the
+   result is infinite, or zero while the digits aren't. Test added,
+   failing: `test_float_from_chars_subnormal` in `test/StringUtilTest.cpp`.
+2. **Suggestion.** `executable_path()` returns an empty path when it
+   fails (`GetModuleFileNameW` returning 0, `read_symlink` error).
+   `find_data_dir()` then tests `../Resources/share` and `share` relative
+   to the current directory. Unlikely, but returning the fallback for an
+   empty `executable` is one line.
+3. **Suggestion.** The NSIS installer lets the user pick any folder, and
+   both installer (`RMDir /r "$INSTDIR\share"`) and uninstaller remove
+   `$INSTDIR\share` recursively. Choosing a folder that already has an
+   unrelated `share` (say `C:\msys64\usr`) deletes it. The comment says
+   the uninstaller removes "only what the installer put there", which
+   isn't true of this. Options: append `\SweatTrails` to a chosen folder
+   that doesn't end in it (the usual NSIS answer), or remove only the
+   files the installer lists.
+4. **Suggestion.** `scripts/package-macos.sh` staples only the `.dmg`.
+   Notarizing the `.dmg` covers the app, but the app dragged out of it
+   has no ticket of its own, so Gatekeeper needs the network on first
+   launch. The usual flow notarizes and staples the app (zipped for
+   `notarytool`) before the `.dmg` is made, then the `.dmg` too. This
+   path has never run, so it's worth deciding before the first release.
+5. **Suggestion.** In the same step, `result=$(xcrun notarytool submit
+   ...)` under `set -eu` exits silently if `notarytool` itself exits
+   non-zero, and the JSON on stdout (with the submission id) is lost.
+   `|| true` and then the status check would print it.
+6. **Suggestion.** The dependency stamps (`build-macos/deps/stamps`)
+   don't know the versions or `SWEATTRAILS_MACOS_MINIMUM`: bumping
+   either in `deps.sh` or `CMakeLists.txt` leaves the old libraries,
+   built for the old minimum, until a stamp is removed by hand. The
+   script says so at the top, but the minimum check in particular is
+   easy to forget; writing the version or minimum into the stamp and
+   comparing would do. Same on Windows, as before.
+7. **Suggestion.** Both package scripts retry tests with `--repeat
+   until-pass:2` "because `oauth_test` fails now and then". That's
+   fixed on main (and merged into this branch), so the comment is
+   stale, and the retry now hides any other flaky test. Plain `ctest`
+   is stricter.
+8. **Suggestion.** The `otool -L` check looks at the main executable
+   only, which is all there is. If `otool` fails, the pipeline still
+   passes (no `pipefail` in `sh`). Minor.
+
+Read and found fine: `executable_path()` on macOS (two-call
+`_NSGetExecutablePath`, `weakly_canonical`) and Windows (buffer doubling
+is right: a truncated result returns the size, so `length < size` is the
+test); `find_data_dir()` in the development builds (`build/share` is the
+fallback, and on Windows `build-windows/share` next to the exe is the
+same directory); callers of `float_from_chars()` (JSON, Layout, Laps:
+only `ec` and `end` are used, as before); the NSIS per-user install,
+upgrade (`InstallDirRegKey`, the old `share\` removed first) and
+uninstall leaving `%APPDATA%\sweattrails` and `%LOCALAPPDATA%\sweattrails`;
+`Info.plist.in`; `CMakeLists.txt`'s deployment target ordering (set before
+`project()`).
+
+Tests added: `test_float_from_chars_subnormal` (`StringUtilTest.cpp`,
+fails: finding 1) and `test_find_data_dir_prefers_the_bundle`
+(`IOTest.cpp`, passes). The development build's full run: 83 of 84
+pass, the failure being finding 1. Not run: the Windows tests under
+Wine and the package scripts, which the Developer ran.
