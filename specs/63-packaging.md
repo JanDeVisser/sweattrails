@@ -304,18 +304,28 @@ this to the scope.
   absolute path to an existing file, whose name is the test's.
 - The macOS and Windows (under Wine) tests pass, in the development
   builds and in the release builds the scripts make.
-- By hand, recorded here when done:
-  - macOS: the `.dmg` opens with the app and the Applications link;
-    the app copied to `/Applications` starts, finds its fonts, icons
-    and overlays, and opens a FIT file; `otool -L` shows only system
-    libraries; `codesign --verify --deep --strict` passes;
-    `spctl --assess` once Jan has a Developer ID.
-  - Windows, under Wine: the installer runs without asking for
-    administrator rights, installs into `%LOCALAPPDATA%\Programs`,
-    makes the Start menu shortcut and the uninstall entry; the
-    installed app starts and opens FIT files; the uninstaller removes
-    the program and leaves `%APPDATA%\sweattrails` alone. Silent
-    (`/S`) runs make this repeatable.
+- By hand, on 2026-11-17:
+  - macOS, without a signing identity: the `.dmg` (15 MB) mounts with
+    `SweatTrails.app` and the Applications link; `share/` is in
+    `Contents/Resources`; the app is signed ad hoc as
+    `com.finiandarcy.sweattrails`, `codesign --verify --deep --strict`
+    passes, `otool -L` shows only `/usr/lib` and `/System`, and `minos`
+    is 13.3. Started from the mounted `.dmg`, with no `share/` at the
+    build-time path, it runs and reads the activity store. Not seen yet:
+    the window itself (no screen capture here), and Gatekeeper with a
+    Developer ID, which Jan doesn't have yet.
+  - Windows, under Wine in a new prefix: the installer (12 MB) installs
+    silently (`/S`) into `%LOCALAPPDATA%\Programs\SweatTrails`, with the
+    Start menu shortcut and the uninstall entry (name, version,
+    publisher, icon, size). The installed app reads its fonts, emoji,
+    icon and settings from its own `share\` (`WINEDEBUG=+file`), and
+    makes its store in `%LOCALAPPDATA%\sweattrails`. The uninstaller
+    removes the program, the shortcut and the entry, and leaves
+    `%APPDATA%\sweattrails` and `%LOCALAPPDATA%\sweattrails`. The
+    installer's own pages haven't been seen.
+- Found by building as Release, which nothing did before:
+  `App::measure_text()` dereferenced a missing font, and
+  `input_box_test` and `query_box_test` crashed. Fixed in its own commit.
 
 ## Review notes
 
