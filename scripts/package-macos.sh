@@ -52,6 +52,30 @@ if otool -L "$app/Contents/MacOS/sweattrails" | tail -n +2 | grep -vE '^[[:space
     exit 1
 fi
 
+# Notarizing needs both. Apple checks the app, and then the .dmg, and
+# each gets its ticket stapled to it: the app keeps its own once it's
+# dragged out of the .dmg, so Gatekeeper needn't ask Apple at its first
+# start.
+notarizing=
+if [ -n "$identity" ] && [ -n "$profile" ]; then
+    notarizing=yes
+fi
+
+# Sends `file` to Apple's notary service, and stops unless it's accepted.
+# notarytool's own failures, such as an unknown profile, stop it too, after
+# saying what they were.
+notarize() {
+    file=$1
+    echo "Notarizing $(basename "$file"): this can take a few minutes"
+    result=$(xcrun notarytool submit "$file" --keychain-profile "$profile" --wait --output-format json) || true
+    status=$(echo "$result" | plutil -extract status raw - 2>/dev/null) || true
+    if [ "$status" != "Accepted" ]; then
+        echo "$result" >&2
+        echo "Notarizing $(basename "$file") failed. Apple's log: xcrun notarytool log <id> --keychain-profile $profile" >&2
+        exit 1
+    fi
+}
+
 if [ -n "$identity" ]; then
     echo "Signing with $identity"
     codesign --force --options runtime --timestamp --sign "$identity" "$app"
@@ -60,6 +84,13 @@ else
     codesign --force --sign - "$app"
 fi
 codesign --verify --deep --strict "$app"
+
+if [ -n "$notarizing" ]; then
+    # notarytool takes an app as a zip.
+    ditto -c -k --keepParent "$app" "$work/SweatTrails.zip"
+    notarize "$work/SweatTrails.zip"
+    xcrun stapler staple "$app"
+fi
 
 echo "Making $dmg"
 ln -s /Applications "$work/dmg/Applications"
@@ -71,16 +102,11 @@ if [ -n "$identity" ]; then
     codesign --force --timestamp --sign "$identity" "$dmg"
 fi
 
-if [ -n "$identity" ] && [ -n "$profile" ]; then
-    echo "Notarizing: this can take a few minutes"
-    result=$(xcrun notarytool submit "$dmg" --keychain-profile "$profile" --wait --output-format json)
-    if [ "$(echo "$result" | plutil -extract status raw -)" != "Accepted" ]; then
-        echo "$result" >&2
-        echo "Notarizing failed. Apple's log: xcrun notarytool log <id> --keychain-profile $profile" >&2
-        exit 1
-    fi
+if [ -n "$notarizing" ]; then
+    notarize "$dmg"
     xcrun stapler staple "$dmg"
     spctl --assess --type open --context context:primary-signature --verbose "$dmg"
+    spctl --assess --type execute --verbose "$app"
 else
     echo "Not notarized: that needs SWEATTRAILS_SIGN_IDENTITY and SWEATTRAILS_NOTARY_PROFILE."
     echo "Gatekeeper will warn whoever opens it."

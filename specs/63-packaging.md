@@ -258,8 +258,12 @@ tests, and put the package in `dist/` (git ignores it).
    app and an `Applications` link, signed like the app. On macOS 27,
    `hdiutil create` says it's deprecated for this.
 7. With `SWEATTRAILS_NOTARY_PROFILE` (a `notarytool store-credentials`
-   keychain profile), `notarytool submit --wait`, then `stapler staple`.
-   Without it, the step is skipped, and the script says so.
+   keychain profile) as well, the app is notarized (as a zip) and
+   stapled before it goes into the `.dmg`, and then the `.dmg` is too:
+   the app keeps its own ticket once it's dragged out. Anything but
+   "Accepted", `notarytool`'s own failures included, stops the script
+   with its output. Without the profile, notarizing is skipped, and the
+   script says so.
 
 `scripts/package-windows.sh`:
 
