@@ -15,6 +15,9 @@
 #include <pwd.h>
 #include <unistd.h>
 #endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 
 #include <Error.h>
 #include <Expected.h>
@@ -158,6 +161,47 @@ std::filesystem::path user_state_dir(std::string_view const &app)
 #else
     return xdg_dir("XDG_STATE_HOME", std::filesystem::path { ".local" } / "state") / app;
 #endif
+}
+
+std::filesystem::path executable_path()
+{
+#if defined(IS_WINDOWS)
+    std::wstring path(MAX_PATH, L'\0');
+    for (;;) {
+        auto const length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+        if (length < path.size()) {
+            path.resize(length);
+            return path;
+        }
+        path.resize(path.size() * 2);
+    }
+#elif defined(IS_APPLE)
+    uint32_t size { 0 };
+    _NSGetExecutablePath(nullptr, &size);
+    std::string path(size, '\0');
+    _NSGetExecutablePath(path.data(), &size);
+    path.resize(path.find('\0'));
+    // The path the program was started with, which can be relative or go
+    // through a link.
+    std::error_code ec { };
+    auto            canonical = std::filesystem::weakly_canonical(path, ec);
+    return ec ? std::filesystem::path { path } : canonical;
+#else
+    std::error_code ec { };
+    return std::filesystem::read_symlink("/proc/self/exe", ec);
+#endif
+}
+
+std::filesystem::path find_data_dir(std::filesystem::path const &executable, std::filesystem::path const &fallback)
+{
+    auto const dir = executable.parent_path();
+    for (auto const &candidate : { dir / ".." / "Resources" / "share", dir / "share" }) {
+        std::error_code ec { };
+        if (std::filesystem::is_directory(candidate, ec)) {
+            return candidate.lexically_normal();
+        }
+    }
+    return fallback;
 }
 
 }

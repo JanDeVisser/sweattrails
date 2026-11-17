@@ -244,6 +244,8 @@ add_executable(
         src/App/SweatTrails.h
         src/App/SweatTrails.cpp
         src/App/Coordinates.cpp
+        src/App/DataDir.h
+        src/App/DataDir.cpp
         src/App/Desktop.cpp
         src/App/Http.cpp
         src/App/OAuth.cpp
@@ -444,6 +446,7 @@ target_include_directories(desktop_test PRIVATE src/App)
 sweattrails_test(
         activity_selector_test
         test/ActivitySelectorTest.cpp
+        src/App/DataDir.cpp
         src/App/storage/Thresholds.cpp
         src/App/storage/Volume.cpp
         src/App/widget/ActivitySelector.cpp

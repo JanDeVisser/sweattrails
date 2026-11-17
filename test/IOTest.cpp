@@ -97,6 +97,43 @@ void test_user_dirs()
 #endif
 }
 
+void test_executable_path()
+{
+    auto const exe = executable_path();
+    CHECK(exe.is_absolute());
+    CHECK(fs::is_regular_file(exe));
+    CHECK_EQ(exe.stem().string(), "io_test");
+}
+
+// Where a packaged app keeps share/: in a macOS bundle's Resources, or
+// next to sweattrails.exe on Windows. Otherwise, the fallback.
+void test_find_data_dir()
+{
+    TempDir    dir { "io" };
+    auto const fallback = dir.path / "build" / "share";
+
+    auto const bundle = dir.path / "SweatTrails.app" / "Contents";
+    fs::create_directories(bundle / "MacOS");
+    auto const in_bundle = bundle / "MacOS" / "sweattrails";
+    CHECK(find_data_dir(in_bundle, fallback) == fallback);
+    fs::create_directories(bundle / "Resources" / "share");
+    CHECK(fs::equivalent(find_data_dir(in_bundle, fallback), bundle / "Resources" / "share"));
+
+    auto const install = dir.path / "Programs" / "SweatTrails";
+    fs::create_directories(install);
+    auto const installed = install / "sweattrails.exe";
+    CHECK(find_data_dir(installed, fallback) == fallback);
+    fs::create_directories(install / "share");
+    CHECK(find_data_dir(installed, fallback) == install / "share");
+}
+
+void test_find_data_dir_needs_a_directory()
+{
+    TempDir dir { "io" };
+    CHECK(write_file_atomically(dir.path / "share", "not a directory").has_value());
+    CHECK(find_data_dir(dir.path / "sweattrails.exe", "fallback") == fs::path { "fallback" });
+}
+
 }
 
 int main()
@@ -107,5 +144,8 @@ int main()
     test_file_name_not_ascii();
     test_home_dir();
     test_user_dirs();
+    test_executable_path();
+    test_find_data_dir();
+    test_find_data_dir_needs_a_directory();
     return ST::Test::test_result();
 }

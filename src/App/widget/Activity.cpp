@@ -12,6 +12,7 @@
 #include <Chart.h>
 #include <Widget.h>
 
+#include <DataDir.h>
 #include <SweatTrails.h>
 #include <storage/Activity.h>
 #include <storage/Legs.h>
@@ -282,12 +283,12 @@ void ActivityDataDisplay::set_activity(std::shared_ptr<DisplayedActivity> const 
     this->activity = activity;
     if (this->activity) {
         auto const &a = activity->activity;
-        auto const  icon = std::format(SWEATTRAILS_DATADIR "/icons/{}", sport_icon_file(a.sport, a.sub_sport));
+        auto const  icon = (data_dir() / "icons" / sport_icon_file(a.sport, a.sub_sport)).string();
         sport_icon = LoadTexture(icon.c_str());
         // Once: if it's missing, as from a bundle that wasn't installed
         // again, not every frame either.
         if (!pen_loaded) {
-            pen_icon = LoadTexture(SWEATTRAILS_DATADIR "/icons/pen-48.png");
+            pen_icon = LoadTexture((data_dir() / "icons" / "pen-48.png").string().c_str());
             SetTextureFilter(pen_icon, TEXTURE_FILTER_BILINEAR);
             pen_loaded = true;
         }
