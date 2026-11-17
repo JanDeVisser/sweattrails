@@ -30,8 +30,7 @@ echo "Building the app"
 cmake -S "$root" -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DSWEATTRAILS_MACOS_DEPS="$root/build-macos/deps"
 ninja -C "$build"
-# Twice at most: oauth_test fails now and then, whatever is built.
-ctest --test-dir "$build" --output-on-failure --repeat until-pass:2
+ctest --test-dir "$build" --output-on-failure
 
 version=$(sed -n 's/^#define SWEATTRAILS_VERSION *"\(.*\)"$/\1/p' "$build/config.h")
 app=$work/dmg/SweatTrails.app
@@ -47,7 +46,9 @@ mkdir -p "$app/Contents/Resources/share"
 rsync -a --exclude '*.sh' --exclude '*.swift' "$work/install/share/" "$app/Contents/Resources/share/"
 
 # Everything the app links has to come with macOS.
-if otool -L "$app/Contents/MacOS/sweattrails" | tail -n +2 | grep -vE '^[[:space:]]+(/usr/lib/|/System/Library/)'; then
+# otool on its own first, so that set -e stops the script if it fails.
+linked=$(otool -L "$app/Contents/MacOS/sweattrails")
+if echo "$linked" | tail -n +2 | grep -vE '^[[:space:]]+(/usr/lib/|/System/Library/)'; then
     echo "The app links the libraries above, which macOS doesn't have" >&2
     exit 1
 fi

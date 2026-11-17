@@ -23,8 +23,7 @@ echo "Building the app"
 cmake -S "$root" -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE="$root/cmake/llvm-mingw.cmake"
 ninja -C "$build"
-# Twice at most: oauth_test fails now and then, whatever is built.
-ctest --test-dir "$build" --output-on-failure --repeat until-pass:2
+ctest --test-dir "$build" --output-on-failure
 
 version=$(sed -n 's/^#define SWEATTRAILS_VERSION *"\(.*\)"$/\1/p' "$build/config.h")
 setup=$dist/SweatTrails-$version-setup.exe
