@@ -110,7 +110,12 @@ std::optional<Texture2D> App::emoji_texture(std::string const &image)
 
 Vector2 App::measure_text(char const *text, FontSize size)
 {
-    auto const  font = *the()->font(size);
+    auto const maybe_font = the()->font(size);
+    if (!maybe_font) {
+        // Before the fonts are loaded, and in tests, which have none.
+        return Vector2 { 0, 0 };
+    }
+    auto const &font = *maybe_font;
     auto const  font_size = static_cast<float>(the()->font_sizes[static_cast<size_t>(size)]);
     auto const *set = emoji_set();
     // No emoji is all ASCII.
