@@ -37,7 +37,7 @@ std::expected<Split, std::string> parse_split(std::string_view text)
 {
     auto const trimmed = strip(text);
     float32    number { 0 };
-    auto const [end, ec] = std::from_chars(trimmed.data(), trimmed.data() + trimmed.size(), number);
+    auto const [end, ec] = float_from_chars(trimmed.data(), trimmed.data() + trimmed.size(), number);
     if (ec != std::errc { } || !(number > 0) || !std::isfinite(number)) {
         return std::unexpected(std::string { SplitExample });
     }

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <algorithm>
+#include <charconv>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -37,6 +38,12 @@ StringList  split_by_whitespace(std::string_view const &s);
 // std::string c_escape(std::string const& s);
 // std::string join(StringList const& collection, char sep);
 std::string_view strip(std::string_view const &s);
+
+// std::from_chars for floating point, which macOS's libc++ only has from
+// macOS 26 on, and the app runs from 13.3. It takes and refuses what
+// std::from_chars does.
+std::from_chars_result float_from_chars(char const *first, char const *last, double &value);
+std::from_chars_result float_from_chars(char const *first, char const *last, float &value);
 
 // The text in lines no wider than `width`, as `measure` measures them,
 // broken between words and at each newline. A word wider than that is a

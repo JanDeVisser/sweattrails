@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <cmath>
 #include <string>
 
 #include <StringUtil.h>
@@ -103,6 +104,69 @@ void test_integer_grouping()
     CHECK_EQ(integer_to_string(1234), "1234");
 }
 
+// Parses `text` as std::from_chars would, and says how much it took.
+template<typename Float>
+std::pair<std::errc, size_t> parse(std::string_view text, Float &value)
+{
+    auto const [end, ec] = float_from_chars(text.data(), text.data() + text.size(), value);
+    return { ec, end - text.data() };
+}
+
+void test_float_from_chars()
+{
+    double d { 0 };
+    CHECK(parse("3.25", d) == std::pair(std::errc { }, size_t { 4 }));
+    CHECK_EQ(d, 3.25);
+    CHECK(parse("-0.5", d) == std::pair(std::errc { }, size_t { 4 }));
+    CHECK_EQ(d, -0.5);
+    CHECK(parse("1e3", d) == std::pair(std::errc { }, size_t { 3 }));
+    CHECK_EQ(d, 1000.0);
+    CHECK(parse("0e5", d) == std::pair(std::errc { }, size_t { 3 }));
+    CHECK_EQ(d, 0.0);
+    CHECK(parse(".5", d) == std::pair(std::errc { }, size_t { 2 }));
+    CHECK_EQ(d, 0.5);
+
+    // It stops where the number does, as Laps' "10km" needs.
+    CHECK(parse("10km", d) == std::pair(std::errc { }, size_t { 2 }));
+    CHECK_EQ(d, 10.0);
+    CHECK(parse("1e", d) == std::pair(std::errc { }, size_t { 1 }));
+    CHECK_EQ(d, 1.0);
+
+    // Hexadecimal is only its 0, as with from_chars.
+    CHECK(parse("0x10", d) == std::pair(std::errc { }, size_t { 1 }));
+    CHECK_EQ(d, 0.0);
+    CHECK(parse("-0x10", d) == std::pair(std::errc { }, size_t { 2 }));
+
+    CHECK(parse("inf", d) == std::pair(std::errc { }, size_t { 3 }));
+    CHECK(std::isinf(d));
+}
+
+void test_float_from_chars_refuses()
+{
+    // What std::from_chars refuses, which strtod() takes. A refused number
+    // leaves the value alone.
+    double d { 42 };
+    CHECK(parse("", d).first == std::errc::invalid_argument);
+    CHECK(parse("-", d).first == std::errc::invalid_argument);
+    CHECK(parse(" 1", d).first == std::errc::invalid_argument);
+    CHECK(parse("+1", d).first == std::errc::invalid_argument);
+    CHECK(parse("km", d).first == std::errc::invalid_argument);
+    CHECK_EQ(d, 42.0);
+
+    CHECK(parse("1e999", d) == std::pair(std::errc::result_out_of_range, size_t { 5 }));
+    CHECK_EQ(d, 42.0);
+}
+
+void test_float_from_chars_float()
+{
+    float f { 0 };
+    CHECK(parse("2.5", f) == std::pair(std::errc { }, size_t { 3 }));
+    CHECK_EQ(f, 2.5f);
+    // Fits a double, not a float.
+    CHECK(parse("1e50", f).first == std::errc::result_out_of_range);
+    CHECK_EQ(f, 2.5f);
+}
+
 int main()
 {
     test_base64url();
@@ -111,5 +175,8 @@ int main()
     test_wrap_words();
     test_clamp_lines();
     test_integer_grouping();
+    test_float_from_chars();
+    test_float_from_chars_refuses();
+    test_float_from_chars_float();
     return ST::Test::test_result();
 }

@@ -168,7 +168,7 @@ std::expected<Coordinate, LayoutError> coordinate(JSONValue const &json, std::st
     if (text && text->ends_with('%')) {
         double     value { 0 };
         auto const digits = std::string_view { *text }.substr(0, text->length() - 1);
-        auto const [end, err] = std::from_chars(digits.data(), digits.data() + digits.size(), value);
+        auto const [end, err] = float_from_chars(digits.data(), digits.data() + digits.size(), value);
         if (err == std::errc { } && end == digits.data() + digits.size() && !digits.empty()) {
             return Coordinate { .value = value, .percent = true };
         }
@@ -1366,7 +1366,7 @@ double as_shown(std::string_view text, double value)
     }
     text = text.substr(start, end + 1 - start);
     double ret { 0 };
-    auto const [rest, error] = std::from_chars(text.data(), text.data() + text.size(), ret);
+    auto const [rest, error] = float_from_chars(text.data(), text.data() + text.size(), ret);
     return (error == std::errc { } && rest == text.data() + text.size()) ? ret : value;
 }
 
