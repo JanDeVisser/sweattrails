@@ -89,7 +89,8 @@ find_package(OpenGL REQUIRED)
 # Homebrew's OpenSSL isn't linked into /opt/homebrew, so CMake doesn't find
 # it by itself.
 if (APPLE AND NOT OPENSSL_ROOT_DIR)
-    foreach (prefix /opt/homebrew/opt/openssl /usr/local/opt/openssl)
+    foreach (prefix /opt/homebrew/opt/openssl /opt/homebrew/opt/openssl@3
+                    /usr/local/opt/openssl /usr/local/opt/openssl@3)
         if (EXISTS ${prefix})
             set(OPENSSL_ROOT_DIR ${prefix})
             break()
