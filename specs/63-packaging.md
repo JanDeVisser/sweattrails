@@ -168,9 +168,15 @@ on two libc++ features only:
   hexadecimal, and says `result_out_of_range` for `ERANGE`. `strtod()`
   follows the C locale, which the app never changes.
 
-`CMAKE_OSX_DEPLOYMENT_TARGET` is 13.3, set in `CMakeLists.txt` before
-`project()`, for every macOS build, so the development build finds a
-newer library feature as soon as it's used.
+`SWEATTRAILS_MACOS_MINIMUM` in `CMakeLists.txt` is 13.3. It goes into
+the `Info.plist`, and is `CMAKE_OSX_DEPLOYMENT_TARGET` in builds with
+`SWEATTRAILS_MACOS_DEPS`: the package's, and a development build pointed
+at those libraries. The plan was to set it in every build, but
+Homebrew's libraries are built for the macOS they're on (27), and the
+linker warns about each of them, at every link: some 300 warnings in a
+full build. So a newer library feature shows up when the package script
+builds, or in a development build with the macOS libraries, rather than
+in the Homebrew build.
 
 ### Finding `share/` at runtime
 
