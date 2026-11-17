@@ -8,8 +8,8 @@
 #   scripts/windows-deps.sh [prefix]
 #
 # The prefix defaults to build-windows/deps, where cmake/llvm-mingw.cmake
-# looks. A library that's already there is skipped: remove its stamp file,
-# <prefix>/stamps/<name>, to build it again. Needs llvm-mingw
+# looks. A library that's already there is skipped, unless its release changed:
+# remove its stamp file in <prefix>/stamps to build it again. Needs llvm-mingw
 # (LLVM_MINGW_ROOT, default ~/opt/llvm-mingw), cmake, ninja, make and perl.
 
 set -eu
@@ -40,32 +40,32 @@ cmake_build() {
     ninja -C "$sources/$name/build" install
 }
 
-if ! done_before zlib; then
+if ! done_before zlib "$zlib_file"; then
     fetch zlib "$zlib_url" "$zlib_file" "$zlib_sha256"
     cmake_build zlib -DZLIB_BUILD_EXAMPLES=OFF
     # zlib always builds a DLL too, and calls the static library zlibstatic.
     # Only the static one, under the name the others look for.
     rm -f "$prefix/bin/libzlib.dll" "$prefix/lib/libzlib.dll.a"
     mv "$prefix/lib/libzlibstatic.a" "$prefix/lib/libz.a"
-    touch "$stamps/zlib"
+    mark_built zlib "$zlib_file"
 fi
 
-if ! done_before freetype; then
+if ! done_before freetype "$freetype_file"; then
     fetch freetype "$freetype_url" "$freetype_file" "$freetype_sha256"
     # The app's emoji are pictures of its own, so no PNG fonts, and no
     # HarfBuzz: raylib doesn't shape text.
     cmake_build freetype -DFT_REQUIRE_ZLIB=ON -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_PNG=ON \
         -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON
-    touch "$stamps/freetype"
+    mark_built freetype "$freetype_file"
 fi
 
-if ! done_before raylib; then
+if ! done_before raylib "$raylib_file"; then
     fetch raylib "$raylib_url" "$raylib_file" "$raylib_sha256"
     cmake_build raylib -DPLATFORM=Desktop -DBUILD_EXAMPLES=OFF
-    touch "$stamps/raylib"
+    mark_built raylib "$raylib_file"
 fi
 
-if ! done_before openssl; then
+if ! done_before openssl "$openssl_file"; then
     fetch openssl "$openssl_url" "$openssl_file" "$openssl_sha256"
     (
         cd "$sources/openssl"
@@ -75,17 +75,17 @@ if ! done_before openssl; then
         PATH="$LLVM_MINGW_ROOT/bin:$PATH" make -j"$jobs"
         PATH="$LLVM_MINGW_ROOT/bin:$PATH" make install_sw
     )
-    touch "$stamps/openssl"
+    mark_built openssl "$openssl_file"
 fi
 
-if ! done_before curl; then
+if ! done_before curl "$curl_file"; then
     fetch curl "$curl_url" "$curl_file" "$curl_sha256"
     # HTTPS with Schannel, and only what the app uses.
     cmake_build curl -DCURL_USE_SCHANNEL=ON -DCURL_USE_OPENSSL=OFF -DBUILD_CURL_EXE=OFF \
         -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DCURL_USE_LIBPSL=OFF -DCURL_USE_LIBSSH2=OFF \
         -DUSE_NGHTTP2=OFF -DUSE_LIBIDN2=OFF -DCURL_BROTLI=OFF -DCURL_ZSTD=OFF \
         -DCURL_DISABLE_LDAP=ON -DZLIB_ROOT="$prefix"
-    touch "$stamps/curl"
+    mark_built curl "$curl_file"
 fi
 
 echo "The Windows libraries are in $prefix"

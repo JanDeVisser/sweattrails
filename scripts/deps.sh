@@ -1,6 +1,7 @@
 # What scripts/windows-deps.sh and scripts/macos-deps.sh share: the
 # libraries' releases, so both platforms ship the same versions, and how
-# they're fetched. Sourced, not run. The caller sets $sources and $stamps.
+# they're fetched and built. Sourced, not run. The caller sets $sources and
+# $stamps, and may set $stamp_suffix.
 # See specs/63-packaging.md.
 
 zlib_url=https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
@@ -42,11 +43,24 @@ fetch() {
     tar -xf "$sources/$file" -C "$sources/$name" --strip-components 1
 }
 
+# The stamp that says library `name` is built from release `file`. It's
+# named after the release, and $stamp_suffix (such as the macOS version
+# it's built for), so that after a bump the library is built again.
+stamp() {
+    echo "$stamps/$2${stamp_suffix:-}"
+}
+
 done_before() {
-    if [ -f "$stamps/$1" ]; then
+    if [ -f "$(stamp "$1" "$2")" ]; then
         echo "$1: already built"
         return 0
     fi
     echo "$1: building"
     return 1
+}
+
+# Marks library `name` built from release `file`, and forgets the others.
+mark_built() {
+    rm -f "$stamps/$1" "$stamps/$1"-*
+    touch "$(stamp "$1" "$2")"
 }

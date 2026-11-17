@@ -11,8 +11,8 @@
 #
 # The prefix defaults to build-macos/deps. Configure the app with
 # -DSWEATTRAILS_MACOS_DEPS=<prefix> to use them. A library that's already
-# there is skipped: remove its stamp file, <prefix>/stamps/<name>, to build
-# it again. Needs cmake, ninja, make and perl.
+# there is skipped, unless its release changed: remove its stamp file in
+# <prefix>/stamps to build it again. Needs cmake, ninja, make and perl.
 
 set -eu
 
@@ -30,6 +30,8 @@ if [ -z "$minimum" ]; then
     echo "SWEATTRAILS_MACOS_MINIMUM isn't in CMakeLists.txt" >&2
     exit 1
 fi
+# A library built for an older macOS than that is built again.
+stamp_suffix=-macos$minimum
 
 # Configures, builds and installs the CMake project in $sources/<name>.
 # Homebrew's libraries are ignored, so nothing is built against them.
@@ -48,21 +50,21 @@ cmake_build() {
     ninja -C "$sources/$name/build" install
 }
 
-if ! done_before freetype; then
+if ! done_before freetype "$freetype_file"; then
     fetch freetype "$freetype_url" "$freetype_file" "$freetype_sha256"
     # As on Windows: with zlib, which is macOS's here, and nothing else.
     cmake_build freetype -DFT_REQUIRE_ZLIB=ON -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_PNG=ON \
         -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON
-    touch "$stamps/freetype"
+    mark_built freetype "$freetype_file"
 fi
 
-if ! done_before raylib; then
+if ! done_before raylib "$raylib_file"; then
     fetch raylib "$raylib_url" "$raylib_file" "$raylib_sha256"
     cmake_build raylib -DPLATFORM=Desktop -DBUILD_EXAMPLES=OFF
-    touch "$stamps/raylib"
+    mark_built raylib "$raylib_file"
 fi
 
-if ! done_before openssl; then
+if ! done_before openssl "$openssl_file"; then
     fetch openssl "$openssl_url" "$openssl_file" "$openssl_sha256"
     (
         cd "$sources/openssl"
@@ -72,7 +74,7 @@ if ! done_before openssl; then
         make -j"$jobs"
         make install_sw
     )
-    touch "$stamps/openssl"
+    mark_built openssl "$openssl_file"
 fi
 
 echo "The macOS libraries are in $prefix"
