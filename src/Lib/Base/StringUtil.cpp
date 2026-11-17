@@ -7,6 +7,7 @@
 #include <cassert>
 #include <cctype>
 #include <cerrno>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <format>
@@ -225,7 +226,10 @@ std::from_chars_result parse_float(char const *first, char const *last, Float &v
         return { first, std::errc::invalid_argument };
     }
     auto const ptr = first + (end - copy.c_str());
-    if (errno == ERANGE) {
+    // strtod() also says ERANGE for subnormal numbers, such as 1e-310,
+    // which from_chars takes. Out of range is too big, or too small to be
+    // anything but 0.
+    if (errno == ERANGE && (std::isinf(result) || result == 0)) {
         return { ptr, std::errc::result_out_of_range };
     }
     value = result;

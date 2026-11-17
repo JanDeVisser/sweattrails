@@ -185,6 +185,9 @@ void test_float_from_chars_subnormal()
     d = 42;
     CHECK(parse("1e-400", d).first == std::errc::result_out_of_range);
     CHECK_EQ(d, 42.0);
+    // But a zero is a zero, however small its exponent.
+    CHECK(parse("0e-999", d) == std::pair(std::errc { }, size_t { 6 }));
+    CHECK_EQ(d, 0.0);
 }
 
 int main()
