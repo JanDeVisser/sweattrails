@@ -108,7 +108,10 @@ std::expected<socket_t, LibCError> listen_on(sockaddr const *address, socklen_t 
     if (address->sa_family == AF_INET6) {
         ::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<char const *>(&on), sizeof(on));
     }
-    if (::bind(fd, address, size) < 0 || ::listen(fd, 4) < 0) {
+    // The longest queue the system allows: connections wait in it while
+    // MaxConnections are open. On Windows, one that finds the queue full
+    // is reset, not kept waiting as on macOS.
+    if (::bind(fd, address, size) < 0 || ::listen(fd, SOMAXCONN) < 0) {
         auto const error = socket_error();
         close_socket(fd);
         return std::unexpected(error);
