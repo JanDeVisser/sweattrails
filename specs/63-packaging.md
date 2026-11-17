@@ -254,8 +254,9 @@ tests, and put the package in `dist/` (git ignores it).
    hoc (`--sign -`), with a message that the app isn't notarized and
    Gatekeeper will warn. The app needs no entitlements: no JIT, no
    unsigned libraries.
-6. `hdiutil create` a UDZO `.dmg` from a folder with the app and an
-   `Applications` link, signed like the app.
+6. `diskutil image create from` a UDZO `.dmg`, from a folder with the
+   app and an `Applications` link, signed like the app. On macOS 27,
+   `hdiutil create` says it's deprecated for this.
 7. With `SWEATTRAILS_NOTARY_PROFILE` (a `notarytool store-credentials`
    keychain profile), `notarytool submit --wait`, then `stapler staple`.
    Without it, the step is skipped, and the script says so.
