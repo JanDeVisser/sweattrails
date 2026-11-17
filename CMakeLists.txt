@@ -74,6 +74,18 @@ set(sweattrails_ID sweattrails)
 set(sweattrails_DIR ${CMAKE_INSTALL_PREFIX})
 set(sweattrails_DATADIR ${CMAKE_INSTALL_PREFIX}/share)
 
+# The packaged app's libraries, from scripts/macos-deps.sh, linked
+# statically, so the app doesn't need Homebrew. Without them, the build uses
+# Homebrew's.
+if (APPLE AND SWEATTRAILS_MACOS_DEPS)
+  list(PREPEND CMAKE_PREFIX_PATH ${SWEATTRAILS_MACOS_DEPS})
+  set(CMAKE_IGNORE_PREFIX_PATH /opt/homebrew /usr/local)
+  set(ENV{PKG_CONFIG_LIBDIR} ${SWEATTRAILS_MACOS_DEPS}/lib/pkgconfig)
+  set(OPENSSL_ROOT_DIR ${SWEATTRAILS_MACOS_DEPS})
+  set(OPENSSL_USE_STATIC_LIBS TRUE)
+  set(raylib_USE_STATIC_LIBS TRUE)
+endif ()
+
 find_package(Freetype)
 if (DEFINED RAYLIB)
   set(raylib_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/${RAYLIB}")
@@ -83,6 +95,10 @@ if (DEFINED RAYLIB)
 else ()
   set(raylib_VERBOSE ON)
   include(cmake/raylib-config.cmake)
+  if (APPLE AND raylib_USE_STATIC_LIBS)
+    # What the dynamic library would have brought along.
+    list(APPEND raylib_LIBRARIES "-framework Cocoa" "-framework IOKit" "-framework CoreVideo" "-framework CoreAudio" "-framework QuartzCore")
+  endif ()
 endif ()
 
 if(NOT CMAKE_BUILD_TYPE)
