@@ -137,6 +137,17 @@ void test_find_data_dir_prefers_the_bundle()
     CHECK(fs::equivalent(find_data_dir(macos / "sweattrails", "fallback"), dir.path / "Contents" / "Resources" / "share"));
 }
 
+// Without the program's path, the current directory isn't a guess.
+void test_find_data_dir_without_executable()
+{
+    TempDir    dir { "io" };
+    auto const before = fs::current_path();
+    fs::create_directories(dir.path / "share");
+    fs::current_path(dir.path);
+    CHECK(find_data_dir({ }, "fallback") == fs::path { "fallback" });
+    fs::current_path(before);
+}
+
 void test_find_data_dir_needs_a_directory()
 {
     TempDir dir { "io" };
@@ -158,5 +169,6 @@ int main()
     test_find_data_dir();
     test_find_data_dir_prefers_the_bundle();
     test_find_data_dir_needs_a_directory();
+    test_find_data_dir_without_executable();
     return ST::Test::test_result();
 }

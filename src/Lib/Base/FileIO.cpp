@@ -194,6 +194,10 @@ std::filesystem::path executable_path()
 
 std::filesystem::path find_data_dir(std::filesystem::path const &executable, std::filesystem::path const &fallback)
 {
+    // Without it, the candidates would be in the current directory.
+    if (executable.empty()) {
+        return fallback;
+    }
     auto const dir = executable.parent_path();
     for (auto const &candidate : { dir / ".." / "Resources" / "share", dir / "share" }) {
         std::error_code ec { };
