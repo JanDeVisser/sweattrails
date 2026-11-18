@@ -315,9 +315,19 @@ this to the scope.
     `com.finiandarcy.sweattrails`, `codesign --verify --deep --strict`
     passes, `otool -L` shows only `/usr/lib` and `/System`, and `minos`
     is 13.3. Started from the mounted `.dmg`, with no `share/` at the
-    build-time path, it runs and reads the activity store. Not seen yet:
-    the window itself (no screen capture here), and Gatekeeper with a
-    Developer ID, which Jan doesn't have yet.
+    build-time path, it runs and reads the activity store. The window
+    itself and Gatekeeper with a Developer ID were seen on 2026-11-18
+    (below).
+  - On 2026-11-18, macOS with the Developer ID (`Developer ID
+    Application: JOHANNES H DE VISSER (RF6G8PRSUJ)`) and a `notarytool`
+    profile: the script's tests pass, and Apple accepts both the app and
+    the `.dmg` (16 MB). Both staples validate, and `spctl` accepts both
+    as "Notarized Developer ID". The app in the mounted `.dmg` has the
+    hardened runtime and a secure timestamp, and passes `codesign
+    --verify --deep --strict`. Jan downloaded the `.dmg` so that it was
+    quarantined, dragged the app to Applications and started it:
+    Gatekeeper opened it without warning, and the window showed the
+    activities.
   - Windows, under Wine in a new prefix: the installer (12 MB) installs
     silently (`/S`) into `%LOCALAPPDATA%\Programs\SweatTrails`, with the
     Start menu shortcut and the uninstall entry (name, version,
@@ -416,7 +426,7 @@ How they were resolved, with Jan, who chose to fix all eight:
 5. Fixed: `notarize()` prints `notarytool`'s output and stops on
    anything but "Accepted". Run with the Apple Development identity and
    a profile that doesn't exist, it stops with `notarytool`'s error.
-   Real notarizing still waits for a Developer ID.
+   Real notarizing worked on 2026-11-18 (see the test plan).
 6. Fixed: a stamp is named after the release, and the macOS minimum on
    macOS, so a bump builds again. Checked with the helpers in a scratch
    directory.
