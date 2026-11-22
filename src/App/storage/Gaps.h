@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: MIT
  *
  * Gaps in an activity, where the watch was stopped and moved while it
- * was, filled with the track of another activity of the same stretch. See
- * specs/30-fill-gaps.md.
+ * was, filled with the track of another activity of the same stretch, or
+ * with the track a Wahoo logged while it was paused. See
+ * specs/30-fill-gaps.md and specs/65-fill-from-paused-track.md.
  */
 
 #pragma once
@@ -48,6 +49,11 @@ struct Gap {
 // covers. The fills' distances go on from the activity's at the stop, and
 // the earlier fills'.
 [[nodiscard]] std::vector<FIT::FITFill> plan_fills(std::span<record const> records, std::vector<Gap> const &gaps, std::span<record const> other);
+
+// A fill for each gap that `paused`, the track a Wahoo logged while it was
+// paused, covers, with the distance along its path, or why there's none.
+// See specs/65-fill-from-paused-track.md.
+[[nodiscard]] std::expected<std::vector<FIT::FITFill>, std::string> plan_paused_fills(std::span<record const> records, std::span<record const> paused);
 
 // "Fill 2 gaps: 1.4 km at 0:23:10, 1.6 km at 0:41:05?", the times since
 // the activity's `start`.
