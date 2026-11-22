@@ -1,6 +1,6 @@
 # Filling a gap from a Wahoo's paused track
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -217,3 +217,12 @@ No bugs found. `along_path()`, `plan_paused_fills()` and the shared
 `ask_to_fill()` match the spec; the messages are the spec's; the README
 matches. Full test run: 86 of 86 pass.
 
+
+### Resolution
+
+1. No change: the gap's own track ends a second or so before the
+   restart, nearer than any point of a next pause, and when it doesn't
+   the jump is about what was ridden.
+2. No change.
+3. Kept.
+4. Jan tried Ctrl+F on the ride of 2026-11-22 on 2026-11-22: it works.
