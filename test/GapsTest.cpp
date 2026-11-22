@@ -302,6 +302,38 @@ void test_plan_paused_fills_without_fix()
     CHECK(std::abs(fills->front().distance - (299 * step + 6)) < 0.001 * 299 * step);
 }
 
+// A Wahoo logs a pause after a pause: the track's path runs on from one
+// to the next, jumping between them, and each gap still gets only its own
+// pause's length, the second carrying on after the first's fill.
+void test_plan_paused_fills_two_pauses()
+{
+    Storage    storage { };
+    Activity   watched { storage, ActivityID::dummy(ActivityFile::Fit) };
+    auto const bytes = Test::run_two_gaps();
+    watched.depth = LoadingDepth::Deep;
+    MUST(watched.load_from_slice(bytes));
+    auto       paused = paused_track(99, 200);
+    auto const second = paused_track(299, 400);
+    paused.insert(paused.end(), second.begin(), second.end());
+    auto const fills = plan_paused_fills(watched.recorded, paused);
+    CHECK(fills.has_value() && fills->size() == 2);
+    if (!fills || fills->size() != 2) {
+        return;
+    }
+    auto const step = std::hypot(3.0, 40.0);
+    CHECK(std::abs((*fills)[0].distance - 101 * step) < 0.001 * 101 * step);
+    CHECK(std::abs((*fills)[1].distance - 101 * step) < 0.001 * 101 * step);
+    auto const &first = (*fills)[0].records;
+    auto const &next = (*fills)[1].records;
+    CHECK(!first.empty() && !next.empty());
+    if (first.empty() || next.empty() || !first.back().distance || !next.front().distance) {
+        return;
+    }
+    // The watch's distance at the second stop, 594 m, has none of the first
+    // fill in it: the second's first record adds it, and a step.
+    CHECK(std::abs(*next.front().distance - (594 + 102 * step)) < 0.001 * 102 * step);
+}
+
 void test_plan_paused_fills_none()
 {
     auto const records = watch();
@@ -428,6 +460,7 @@ int main()
     test_fill_with_records_missing_values();
     test_plan_paused_fills();
     test_plan_paused_fills_without_fix();
+    test_plan_paused_fills_two_pauses();
     test_plan_paused_fills_none();
     test_fill_from_paused_in_the_store();
     test_fill_question();
