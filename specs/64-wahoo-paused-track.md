@@ -1,6 +1,6 @@
 # The track a Wahoo recorded while paused
 
-Status: In progress, on branch feature/64-wahoo-paused-track
+Status: In review
 
 <!--
 Status is one of:
@@ -174,7 +174,9 @@ They're in the widget library, as nothing about them is the map's.
   segments.
 - The drawing itself, `draw_dashed_line()` and the map, needs raylib
   and a window, so it's checked by looking: the ride of 2026-11-22 from
-  the Wahoo, with its 6.6 km pause, in the app.
+  the Wahoo, with its 6.6 km pause, in the app. Jan looked on
+  2026-11-22: the paused stretch is dashed and joins the track at both
+  ends.
 
 ## Review notes
 
