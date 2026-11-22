@@ -1,6 +1,6 @@
 # Filling a gap from a Wahoo's paused track
 
-Status: In progress, on branch feature/65-fill-from-paused-track
+Status: In review
 
 <!--
 Status is one of:
