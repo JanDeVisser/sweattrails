@@ -58,6 +58,7 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
     failed.clear();
     track.clear();
     paused.clear();
+    resumed.clear();
     has_map = false;
     summary_only = false;
     map_id = next_tile_owner();
@@ -103,6 +104,7 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
         }
         line.points.push_back(track[paused_track.before + 1]);
         paused.push_back(std::move(line));
+        resumed.insert(paused_track.before + 1);
     }
     // The layout gives the map its size for this activity next, which may
     // be another one: only then load and download the tiles.
@@ -425,19 +427,15 @@ void ActivityMap::draw_track() const
         }
         draw_dashed_line(dashed, TrackWidth, PausedDash, PausedGap, RED);
     }
-    auto const after_pause = [this](size_t ix) {
-        return std::ranges::any_of(paused, [ix](PausedLine const &line) { return line.before + 1 == ix; });
-    };
-
     // Points less than a pixel from the one before are left out.
-    auto const draw_path = [&points, &after_pause](size_t from, size_t to, Color color) {
+    auto const draw_path = [this, &points](size_t from, size_t to, Color color) {
         auto previous = points[from];
         for (auto ix = from; ix < to; ++ix) {
             auto const &p = points[ix];
             if (std::isnan(p.x) || std::isnan(p.y)) {
                 continue;
             }
-            if (std::isnan(previous.x) || std::isnan(previous.y) || after_pause(ix)) {
+            if (std::isnan(previous.x) || std::isnan(previous.y) || resumed.contains(ix)) {
                 previous = p;
                 continue;
             }

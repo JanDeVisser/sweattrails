@@ -107,6 +107,7 @@ struct ActivityMap : public Widget {
         std::vector<WorldPoint> points { }; // At zoom 0
     };
     std::vector<PausedLine>    paused { };
+    std::set<size_t>           resumed { }; // Each paused line's before + 1: no line goes to it
     std::map<Tile, LoadedTile> tiles { };
     std::set<Tile>             failed { };   // Not tried again for this activity
     pTileDownload              download { }; // The view's tiles that weren't cached, while they download
