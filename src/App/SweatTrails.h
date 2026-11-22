@@ -7,6 +7,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <set>
 #include <string_view>
@@ -30,6 +31,7 @@
 #include <storage/Storage.h>
 #include <storage/Strava.h>
 #include <storage/StravaBacklog.h>
+#include <storage/StravaUpload.h>
 #include <storage/Summaries.h>
 #include <storage/Types.h>
 #include <storage/Wahoo.h>
@@ -131,6 +133,14 @@ struct DeleteRequest {
     std::string           done { };
 };
 
+// The UploadToStrava job: the recording on display, and the activity's
+// start, to read its names again after. See specs/66-strava-upload.md.
+struct StravaUploadJob {
+    StravaClient  client { };
+    UploadRequest upload { };
+    i64           start { 0 };
+};
+
 // The FindNewestActivity job. At startup, it also tells the UI whether
 // the store is empty, which then offers to download its history.
 struct FindNewest {
@@ -168,7 +178,8 @@ struct DescribingProgress {
     S(GroupWithMain, RecordingsRequest)        \
     S(ImportStravaExport, StravaExportRequest) \
     S(DescribeFromStrava, DescribingProgress)  \
-    S(DeleteActivity, DeleteRequest)
+    S(DeleteActivity, DeleteRequest)           \
+    S(UploadToStrava, StravaUploadJob)
 
 enum class JobType {
     JOBTYPE(ENUMVALUE2)
@@ -254,6 +265,12 @@ struct ActivityDeleted {
     std::string               error { };
 };
 
+// Sent by the UploadToStrava job as it uploads, and each time it has
+// waited for Strava to process the upload: how long it has waited.
+struct Uploading {
+    std::chrono::seconds waited { 0 };
+};
+
 // The steps of the ImportStravaExport job, in order.
 enum class ImportStep {
     Descriptions,
@@ -328,7 +345,9 @@ struct StoreChecked {
     S(DescribingPaused, DescribingPaused)           \
     S(StubsReplaced, StubsReplaced)                 \
     S(ActivityDeleted, ActivityDeleted)             \
-    S(WeatherArrived, WeatherArrived)
+    S(WeatherArrived, WeatherArrived)               \
+    S(Uploading, Uploading)                         \
+    S(UploadedToStrava, UploadReport)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -361,6 +380,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void job_import_strava_export(Job::Payload const &data);
     static void job_describe_from_strava(Job::Payload const &data);
     static void job_delete_activity(Job::Payload const &data);
+    static void job_upload_to_strava(Job::Payload const &data);
 
     // The payload variant starts with a std::monostate, so a job type's
     // payload comes one after its value.
@@ -386,6 +406,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 job_import_strava_export,
                 job_describe_from_strava,
                 job_delete_activity,
+                job_upload_to_strava,
             });
     }
 
@@ -416,6 +437,8 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_stubs_replaced(Notification::Payload const &data);
     static void notif_activity_deleted(Notification::Payload const &data);
     static void notif_weather_arrived(Notification::Payload const &data);
+    static void notif_uploading(Notification::Payload const &data);
+    static void notif_uploaded_to_strava(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -444,6 +467,8 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_stubs_replaced,
                 notif_activity_deleted,
                 notif_weather_arrived,
+                notif_uploading,
+                notif_uploaded_to_strava,
             });
     }
 

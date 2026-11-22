@@ -109,6 +109,7 @@ BacklogChunk fetch_backlog(Strava &strava, std::vector<Undescribed> &waiting, si
                 chunk.resume_at = error.resets_at;
                 break;
             case StravaError::Kind::NotLoggedIn:
+            case StravaError::Kind::Forbidden:
                 chunk.stopped = true;
                 break;
             case StravaError::Kind::Failed:

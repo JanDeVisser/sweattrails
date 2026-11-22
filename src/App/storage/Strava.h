@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: MIT
  *
  * Reads the athlete's activities from Strava's API, for their titles and
- * descriptions: see specs/24-strava-titles.md. The user registers an app with
+ * descriptions: see specs/24-strava-titles.md. Uploads FIT files: see
+ * specs/66-strava-upload.md. The user registers an app with
  * Strava, and logs in to it from SweatTrails with OAuth 2. Strava has no
  * PKCE: the token request takes the app's client secret. The login's
  * tokens are kept in a file in SweatTrails' config folder.
@@ -39,8 +40,9 @@ constexpr std::string_view StravaBaseUrl = "https://www.strava.com";
 // localhost as the callback domain.
 constexpr std::string_view StravaRedirectUri = "https://localhost:8090/callback";
 
-// activity:read_all reads the activities only the athlete sees, too.
-constexpr std::string_view StravaScopes = "activity:read_all";
+// activity:read_all reads the activities only the athlete sees, too, and
+// activity:write uploads. Always both, so that one login does for both.
+constexpr std::string_view StravaScopes = "activity:read_all,activity:write";
 
 // The number of days a download looks back when the settings don't say.
 constexpr int StravaDefaultDays = 30;
@@ -53,6 +55,7 @@ struct StravaError {
     enum class Kind {
         NotLoggedIn, // No tokens, or tokens Strava no longer accepts
         RateLimited, // Strava answered 429: see `resets_at`
+        Forbidden,   // An upload Strava refused the login for: one without activity:write
         Failed,      // Anything else: no connection, an HTTP error, bad data
     };
 
@@ -119,6 +122,18 @@ struct StravaPage {
     bool                        last { false }; // Nothing comes after it
 };
 
+// An upload, as Strava says it's doing: it's processed in the
+// background, and done when it has an activity ID or an error.
+struct StravaUpload {
+    u64                id { 0 };
+    std::optional<u64> activity_id { }; // The new activity, once it's there
+    std::string        error { };       // Why Strava rejected the file, if it did
+};
+
+// The activity an upload's error says it's a duplicate of: "x.fit
+// duplicate of activity 21234316", or with a link to /activities/21234316.
+std::optional<u64> duplicate_of(std::string_view error);
+
 struct Strava {
     HttpFetch                  fetch;
     std::string                client_id { };
@@ -154,9 +169,23 @@ struct Strava {
     // An activity's description: empty if it has none.
     StravaResult<std::string> description(u64 id);
 
+    // Whether the athlete still has activity `id`: Strava answers 404 for
+    // one deleted on strava.com.
+    StravaResult<bool> has_activity(u64 id);
+
+    // Sends a FIT file, `fit` its bytes and `file_name` its name, with the
+    // name and description for its activity, if they aren't empty. A file Strava rejects at
+    // once, such as a duplicate, is an upload with an error, as when it's
+    // rejected later. Never asked twice: Strava may have it, unanswered.
+    StravaResult<StravaUpload> upload(std::string const &fit, std::string const &file_name, std::string const &name, std::optional<std::string> const &description);
+
+    // How upload `id` is doing.
+    StravaResult<StravaUpload> upload_status(u64 id);
+
 private:
     StravaResult<void>         refresh_if_expiring();
     StravaResult<void>         request_tokens(std::vector<std::pair<std::string, std::string>> const &form);
+    StravaResult<HttpResponse> send(HttpRequest request, bool retry);
     StravaResult<HttpResponse> get(std::string const &path);
     StravaResult<StravaPage>   list_page(i64 after, i64 before, size_t count, size_t page = 1);
     StravaResult<StravaPage>   fetch_page(i64 after, i64 before, size_t count, size_t page);

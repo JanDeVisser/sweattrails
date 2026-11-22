@@ -634,7 +634,7 @@ forgets the login, and Ctrl+G asks you to log in again.
 
 SweatTrails doesn't download activities from Strava, which doesn't hand
 out the FIT files, but it gives the activities it has their names and
-descriptions from Strava. Strava has you register an app of your own for
+descriptions from Strava, and uploads an activity to it. Strava has you register an app of your own for
 that, and log in to it:
 
 1. Create an app at https://www.strava.com/settings/api. Give it the
@@ -652,7 +652,7 @@ that, and log in to it:
    same certificate: see step 3 under Wahoo.
 4. Press Ctrl+G. SweatTrails asks whether to log in to Strava: Yes opens
    the browser at Strava's login page, which asks to let SweatTrails read
-   your activities, private ones too. The browser then comes back to
+   your activities, private ones too, and upload them. The browser then comes back to
    SweatTrails, which fetches the titles. The login is saved in
    `strava-tokens.json` in the config folder, readable only by you.
 
@@ -675,6 +675,22 @@ carries on when the limit resets, also after a restart.
 Strava's account export has them all: see below. A description changed
 on Strava, without the name, isn't seen again. One you wrote in
 SweatTrails wins over Strava's.
+
+### Uploading to Strava
+
+"Upload to Strava" in the command palette sends the FIT file of the
+activity on display to Strava, as it is in SweatTrails: a ride with its
+gaps filled goes with the fills. Of an activity with several recordings,
+it's the one on display. The activity on Strava gets its name from
+SweatTrails, and the description Strava had, if SweatTrails has it.
+
+Strava can't replace an activity's file, and its API can't delete an
+activity. So when Strava already has the activity, SweatTrails asks to
+open it in the browser: delete it there, and upload again. Its gear,
+privacy, photos, kudos and comments are lost with it. Uploads need a
+login with write access: one from before SweatTrails asked for it is
+refused, and SweatTrails asks you to log in again. Multisport activities
+aren't uploaded yet.
 
 ## Strava's export
 
