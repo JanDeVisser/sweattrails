@@ -13,6 +13,7 @@
 #include <chrono>
 #include <expected>
 #include <filesystem>
+#include <format>
 #include <functional>
 #include <optional>
 #include <string>
@@ -66,10 +67,15 @@ StravaResult<UploadOutcome> upload_to_strava(Strava &strava, UploadRequest const
 
 // What the UI says when an upload is over, and what it offers: to open a
 // Strava activity in the browser, to delete it there, or to log in again.
+// The question is apart from the text, for when the UI can't offer it.
 struct UploadReport {
     std::string        text { };
+    std::string        question { }; // Asked for `open` or `log_in`
     std::optional<u64> open { };
     bool               log_in { false };
+
+    // The text with the question.
+    [[nodiscard]] std::string asked() const { return question.empty() ? text : std::format("{} {}", text, question); }
 };
 
 UploadReport upload_report(StravaResult<UploadOutcome> const &outcome);

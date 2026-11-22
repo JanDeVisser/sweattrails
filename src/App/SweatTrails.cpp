@@ -2832,17 +2832,18 @@ void SweatTrails::notif_uploaded_to_strava(Notification::Payload const &data)
                 message_box(std::format("Couldn't open {}: {}", url, opened.error().to_string()));
             }
         };
-        query_box(the, report.text, open, QueryOptionYesNo);
+        query_box(the, report.asked(), open, QueryOptionYesNo);
         return;
     }
-    // Not while a login is waiting for the browser already.
+    // Not while a login is waiting for the browser already: then the text
+    // goes without the question.
     if (report.log_in && the->logging_in.empty()) {
         auto const log_in = [](pSweatTrails const &sweattrails, QueryOption selection) {
             if (selection == QueryOption::QueryOptionYes) {
                 sweattrails->bus.submit("st-strava-login", JSONValue::object());
             }
         };
-        query_box(the, report.text, log_in, QueryOptionYesNo);
+        query_box(the, report.asked(), log_in, QueryOptionYesNo);
         return;
     }
     message_box(report.text);

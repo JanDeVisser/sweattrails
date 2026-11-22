@@ -72,9 +72,9 @@ UploadReport upload_report(StravaResult<UploadOutcome> const &outcome)
         auto const &error = outcome.error();
         switch (error.kind) {
         case StravaError::Kind::NotLoggedIn:
-            return UploadReport { .text = std::format("{} Log in to Strava now?", error.to_string()), .log_in = true };
+            return UploadReport { .text = error.to_string(), .question = "Log in to Strava now?", .log_in = true };
         case StravaError::Kind::Forbidden:
-            return UploadReport { .text = std::format("{} Log in to Strava again to upload?", error.to_string()), .log_in = true };
+            return UploadReport { .text = error.to_string(), .question = "Log in to Strava again to upload?", .log_in = true };
         case StravaError::Kind::RateLimited:
             return UploadReport { .text = std::format("Strava: its limit is reached for now. Try again after {}.", clock_time(error.resets_at)) };
         case StravaError::Kind::Failed:
@@ -88,10 +88,11 @@ UploadReport upload_report(StravaResult<UploadOutcome> const &outcome)
         }
         return UploadReport { .text = "Uploaded to Strava." };
     case UploadOutcome::Kind::StillOnStrava:
-        return UploadReport { .text = "Strava still has this activity. Open it to delete it?", .open = outcome->activity_id };
+        return UploadReport { .text = "Strava still has this activity.", .question = "Open it to delete it?", .open = outcome->activity_id };
     case UploadOutcome::Kind::Duplicate:
         return UploadReport {
-            .text = std::format("Strava already has this activity, as activity {}. Open it to delete it?", outcome->activity_id),
+            .text = std::format("Strava already has this activity, as activity {}.", outcome->activity_id),
+            .question = "Open it to delete it?",
             .open = outcome->activity_id,
         };
     case UploadOutcome::Kind::Rejected:
