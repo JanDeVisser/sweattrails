@@ -1,6 +1,6 @@
 # The track a Wahoo recorded while paused
 
-Status: In review
+Status: Done
 
 <!--
 Status is one of:
@@ -181,6 +181,9 @@ They're in the widget library, as nothing about them is the map's.
 ## Review notes
 
 1. Suggestion: `after_pause()` in `ActivityMap::draw_track()` (src/App/widget/ActivityMap.cpp) scans all paused lines for every track point, on every frame, for both the red and the blue path. Harmless with a few pauses, but a ride with hundreds of stops does O(points x pauses) per frame. A `std::set<size_t>` of the `before + 1` indexes, built in `set_activity()`, would make it O(log n).
+   Fixed in 8352214: `set_activity()` keeps the indexes in `resumed`.
 2. Suggestion: the map's drawing, including the cutting of the straight line for a selected range that starts or ends at a pause, is only checked by looking, as the spec says. Nothing found wrong in the code: a range starting at `before + 1` restarts its path there, and one ending at `before` stops before the straight line.
+   No change: the spec already has the drawing checked by looking, and
+   Jan looked at the real ride.
 
 No bugs found. Checked: the empty and single-record cases of `paused_tracks()` (the loop doesn't run), the strict bounds at both ends (`upper_bound` and `< restart`), pauses of exactly `RangeMovingGap` (left out), `dashes()` with zero-length segments, a pattern ending exactly at a segment end, and a zero gap, and that `paused` is only filled on a deep load of a Wahoo file. Every item of the Test plan has a test (`paused_test`, `dashes_test`); I added none. Full run: 86 of 86 pass.
