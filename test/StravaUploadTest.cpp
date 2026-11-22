@@ -280,6 +280,28 @@ void test_not_logged_in()
     CHECK(t.fake.requests.empty());
 }
 
+void test_report()
+{
+    auto const report = [](UploadOutcome outcome) { return upload_report(outcome); };
+    CHECK_EQ(report({ .kind = UploadOutcome::Kind::Uploaded, .activity_id = NewId }).text, "Uploaded to Strava.");
+    auto const still = report({ .kind = UploadOutcome::Kind::StillOnStrava, .activity_id = OldId });
+    CHECK_EQ(still.text, "Strava still has this activity. Open it to delete it?");
+    CHECK_EQ(still.open.value_or(0), OldId);
+    auto const duplicate = report({ .kind = UploadOutcome::Kind::Duplicate, .activity_id = 21234316 });
+    CHECK_EQ(duplicate.text, "Strava already has this activity, as activity 21234316. Open it to delete it?");
+    CHECK_EQ(duplicate.open.value_or(0), 21234316u);
+    CHECK_EQ(report({ .kind = UploadOutcome::Kind::Rejected, .message = "Improperly formatted data." }).text, "Strava didn't take the file: Improperly formatted data.");
+    CHECK(!report({ .kind = UploadOutcome::Kind::StillProcessing }).open.has_value());
+    auto const forbidden = upload_report(std::unexpected(StravaError { .kind = StravaError::Kind::Forbidden, .message = "No write access." }));
+    CHECK(forbidden.log_in);
+    CHECK(forbidden.text.ends_with("Log in to Strava again to upload?"));
+    auto const not_logged_in = upload_report(std::unexpected(StravaError { .kind = StravaError::Kind::NotLoggedIn, .message = "Not logged in." }));
+    CHECK(not_logged_in.log_in);
+    auto const failed = upload_report(std::unexpected(StravaError { .message = "Could not reach Strava: Timeout was reached" }));
+    CHECK_EQ(failed.text, "Couldn't upload to Strava: Could not reach Strava: Timeout was reached");
+    CHECK(!failed.log_in && !failed.open);
+}
+
 }
 
 int main()
@@ -296,5 +318,6 @@ int main()
     test_check_fails();
     test_no_write_access();
     test_not_logged_in();
+    test_report();
     return ST::Test::test_result();
 }

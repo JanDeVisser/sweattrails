@@ -46,6 +46,7 @@
 #include <storage/StravaBacklog.h>
 #include <storage/StravaExport.h>
 #include <storage/StravaTitles.h>
+#include <storage/StravaUpload.h>
 #include <storage/Summaries.h>
 #include <storage/Types.h>
 #include <storage/Volume.h>
@@ -637,6 +638,37 @@ void SweatTrails::job_delete_activity(Job::Payload const &data)
 void SweatTrails::job_download(Job::Payload const &data)
 {
     run_downloads(SweatTrails::the(), std::get<DownloadRequest>(data));
+}
+
+// Uploads the recording on display to Strava, and says how it went. See
+// specs/66-strava-upload.md.
+void SweatTrails::job_upload_to_strava(Job::Payload const &data)
+{
+    auto const &job = std::get<StravaUploadJob>(data);
+    auto const  the = SweatTrails::the();
+    auto const  tokens_file = strava_tokens_file(the->user_config_dir);
+    Strava      strava {
+        .fetch = http_fetch,
+        .client_id = job.client.id,
+        .client_secret = job.client.secret,
+        .tokens_file = tokens_file,
+        .tokens = read_tokens(tokens_file),
+        .wait = [](std::chrono::seconds pause) { std::this_thread::sleep_for(pause); },
+    };
+    the->notify<NotificationType::Uploading>(Uploading { });
+    UploadPacing const pacing {
+        .wait = [&the, waited = std::chrono::seconds { 0 }](std::chrono::seconds pause) mutable {
+            std::this_thread::sleep_for(pause);
+            waited += pause;
+            the->notify<NotificationType::Uploading>(Uploading { waited });
+        },
+    };
+    auto const outcome = upload_to_strava(strava, job.upload, pacing);
+    if (outcome && outcome->kind == UploadOutcome::Kind::Uploaded) {
+        info(ST, "Uploaded `{}` to Strava, as activity {}", job.upload.fit.string(), outcome->activity_id);
+        the->notify<NotificationType::TitlesChanged>(TitlesChanged { { job.start } });
+    }
+    the->notify<NotificationType::UploadedToStrava>(upload_report(outcome));
 }
 
 void SweatTrails::job_wahoo_login(Job::Payload const &data)
@@ -2331,6 +2363,57 @@ void cmd_delete_activity(pSweatTrails const &sweattrails, JSONValue const &)
     query_box(sweattrails, delete_question(activity), remove, QueryOptionYesNo, QueryOptionNo);
 }
 
+// The palette's "Upload to Strava": the recording on display, as it is in
+// the store, with the activity's title and the description Strava had.
+// See specs/66-strava-upload.md.
+void cmd_upload_to_strava(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    auto const displayed = activity_for_keys(sweattrails);
+    if (!displayed) {
+        return;
+    }
+    auto const &activity = displayed->activity;
+    // Their Strava titles are per leg.
+    if (activity.leg) {
+        message_box("Not on a single leg: press Tab to go to Whole.");
+        return;
+    }
+    if (activity.legs.size() > 1) {
+        message_box("Uploading a multisport activity to Strava isn't supported yet.");
+        return;
+    }
+    auto const client = strava_client(sweattrails->settings);
+    if (auto const problem = strava_setup_problem(client); problem) {
+        message_box(*problem);
+        return;
+    }
+    auto const fit = fit_path(activity);
+    auto const main = main_of(fit);
+    auto const json_of = [](fs::path file) { return file.replace_extension(".json"); };
+    // The main recording, and the others but the one on display.
+    std::vector<fs::path> others;
+    for (auto const &recording : recordings_of(main)) {
+        others.push_back(json_of(recording));
+    }
+    others.push_back(json_of(main));
+    std::erase(others, activity.sidecar);
+    auto const strava = sidecar_titles(activity.sidecar).strava;
+    // The activity's name is its start, which TitlesChanged goes by.
+    i64 start { 0 };
+    std::from_chars(activity.id.name.data(), activity.id.name.data() + activity.id.name.size(), start);
+    sweattrails->schedule<JobType::UploadToStrava>(StravaUploadJob {
+        .client = *client,
+        .upload = UploadRequest {
+            .fit = fit,
+            .sidecar = activity.sidecar,
+            .name = activity.title,
+            .description = strava ? strava->description : std::nullopt,
+            .others = std::move(others),
+        },
+        .start = start,
+    });
+}
+
 // Ctrl+J: groups the activity on display with the activities that are
 // recordings of the same one, those split before too, with it as the main
 // one.
@@ -2723,6 +2806,46 @@ void SweatTrails::notif_activity_deleted(Notification::Payload const &data)
     the->activity_display->clear_activity();
     the->set_status(deleted.done);
     the->update_summaries();
+}
+
+void SweatTrails::notif_uploading(Notification::Payload const &data)
+{
+    auto const &uploading = std::get<Uploading>(data);
+    SweatTrails::the()->set_status(uploading.waited.count() == 0
+            ? std::string { "Uploading to Strava…" }
+            : std::format("Waiting for Strava to process the upload: {}", uploading.waited));
+}
+
+// Says how the upload went, and offers to open the activity Strava still
+// has, to delete it, or to log in again.
+void SweatTrails::notif_uploaded_to_strava(Notification::Payload const &data)
+{
+    auto const &report = std::get<UploadReport>(data);
+    auto const  the = SweatTrails::the();
+    the->set_status("");
+    if (report.open) {
+        auto const open = [url = std::format("{}/activities/{}", StravaBaseUrl, *report.open)](pSweatTrails const &, QueryOption selection) {
+            if (selection != QueryOption::QueryOptionYes) {
+                return;
+            }
+            if (auto const opened = open_browser(url); !opened) {
+                message_box(std::format("Couldn't open {}: {}", url, opened.error().to_string()));
+            }
+        };
+        query_box(the, report.text, open, QueryOptionYesNo);
+        return;
+    }
+    // Not while a login is waiting for the browser already.
+    if (report.log_in && the->logging_in.empty()) {
+        auto const log_in = [](pSweatTrails const &sweattrails, QueryOption selection) {
+            if (selection == QueryOption::QueryOptionYes) {
+                sweattrails->bus.submit("st-strava-login", JSONValue::object());
+            }
+        };
+        query_box(the, report.text, log_in, QueryOptionYesNo);
+        return;
+    }
+    message_box(report.text);
 }
 
 // Keeps the weather in the sidecar, whether the box is still open or not,
@@ -3172,6 +3295,10 @@ void SweatTrails::initialize()
     bus.add_task<SweatTrails>("st-delete-activity", self(), cmd_delete_activity)
         .titled("Delete activity")
         .when([this] { return !showing_summaries() && activity_display->activity != nullptr; });
+    // No key: uploading is rare, and only for Strava's users.
+    bus.add_task<SweatTrails>("st-upload-to-strava", self(), cmd_upload_to_strava)
+        .titled("Upload to Strava")
+        .when([this] { return !showing_summaries() && activity_display->activity != nullptr && strava_client(settings).has_value(); });
     bus.add_task<SweatTrails>("st-split-recordings", self(), cmd_split_recordings)
         .titled("Split the recordings")
         .bind(split_recordings_key)

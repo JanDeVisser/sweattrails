@@ -293,15 +293,20 @@ function: without one nothing waits, as in the tests.
 - A new job, `UploadToStrava`, runs `upload_to_strava()` on the job
   thread. Polling waits there, a second at a time, up to a minute;
   other jobs wait behind it.
-- A new notification, `UploadedToStrava`, with what to say, the Strava
-  activity to offer to open, and whether to offer a login. The UI then
+- A new notification, `UploadedToStrava`, with an `UploadReport` from
+  `upload_report()` (in `StravaUpload.h`, so that tests check the
+  texts): what to say, the Strava activity to offer to open, and whether
+  to offer a login. The UI then
   shows a message, or "Open it to delete it?" (Yes runs
   `open_browser()`), or "Log in to Strava again to upload?" (Yes submits
   `st-strava-login`). After an upload it also sends `TitlesChanged` for
   the activity, so that the display reads its sidecar again.
 - The status bar says "Uploading to Strava…" while the job runs, and
-  "Waiting for Strava: <n> s" while polling, from a `Downloading`
-  notification with source "Strava".
+  "Waiting for Strava to process the upload: <n>s" while polling, from a
+  new `Uploading` notification. `Downloading`'s steps are a download's.
+- The command refuses a leg ("Not on a single leg: press Tab to go to
+  Whole.") and a multisport activity's Whole, which has more than one
+  leg.
 - The README's Strava section says the login asks for write access, for
   uploads.
 
@@ -332,6 +337,9 @@ No new widgets: the query and message boxes there are do.
   - Another error: `Rejected` with Strava's text.
   - Never done: `StillProcessing` after the polls, nothing saved.
   - The check failing (a 500, a 429): the error, nothing posted.
+  - No write access (a 401 to the POST): `Forbidden`; no login: nothing
+    asked.
+  - `upload_report()`'s texts and offers for each outcome and error.
 - What can't be tested automatically: the palette command and the boxes
   it opens, opening the browser, and Strava itself. Those are checked by
   hand against Strava: see Checked first.

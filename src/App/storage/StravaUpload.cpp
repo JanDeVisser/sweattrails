@@ -6,6 +6,7 @@
 
 #include <format>
 
+#include <Date.h>
 #include <FileIO.h>
 
 #include <storage/StravaUpload.h>
@@ -63,6 +64,42 @@ StravaResult<UploadOutcome> upload_to_strava(Strava &strava, UploadRequest const
         ret.message = saved.error().to_string();
     }
     return ret;
+}
+
+UploadReport upload_report(StravaResult<UploadOutcome> const &outcome)
+{
+    if (!outcome) {
+        auto const &error = outcome.error();
+        switch (error.kind) {
+        case StravaError::Kind::NotLoggedIn:
+            return UploadReport { .text = std::format("{} Log in to Strava now?", error.to_string()), .log_in = true };
+        case StravaError::Kind::Forbidden:
+            return UploadReport { .text = std::format("{} Log in to Strava again to upload?", error.to_string()), .log_in = true };
+        case StravaError::Kind::RateLimited:
+            return UploadReport { .text = std::format("Strava: its limit is reached for now. Try again after {}.", clock_time(error.resets_at)) };
+        case StravaError::Kind::Failed:
+            return UploadReport { .text = std::format("Couldn't upload to Strava: {}", error.to_string()) };
+        }
+    }
+    switch (outcome->kind) {
+    case UploadOutcome::Kind::Uploaded:
+        if (!outcome->message.empty()) {
+            return UploadReport { .text = std::format("Uploaded to Strava, but its new activity couldn't be saved with this one: {}", outcome->message) };
+        }
+        return UploadReport { .text = "Uploaded to Strava." };
+    case UploadOutcome::Kind::StillOnStrava:
+        return UploadReport { .text = "Strava still has this activity. Open it to delete it?", .open = outcome->activity_id };
+    case UploadOutcome::Kind::Duplicate:
+        return UploadReport {
+            .text = std::format("Strava already has this activity, as activity {}. Open it to delete it?", outcome->activity_id),
+            .open = outcome->activity_id,
+        };
+    case UploadOutcome::Kind::Rejected:
+        return UploadReport { .text = std::format("Strava didn't take the file: {}", outcome->message) };
+    case UploadOutcome::Kind::StillProcessing:
+        return UploadReport { .text = "Strava is still processing the upload. The activity will show up on Strava once it's done." };
+    }
+    return { };
 }
 
 std::expected<void, LibCError> save_uploaded(UploadRequest const &request, std::optional<u64> old_id, StravaTitle const &uploaded)
