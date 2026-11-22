@@ -54,6 +54,26 @@ std::optional<record> nearest(std::span<record const> records, DateTime const &t
     return ret;
 }
 
+// The paused track's distance stays at the pause's start: this replaces
+// it with the length of its path up to each record, which is what the
+// device would have counted had it been running.
+std::vector<record> along_path(std::span<record const> paused)
+{
+    std::vector<record>        ret { paused.begin(), paused.end() };
+    auto                       length = 0.0;
+    std::optional<Coordinates> last;
+    for (auto &rec : ret) {
+        if (has_position(rec)) {
+            if (last) {
+                length += distance_between(*last, *rec.position);
+            }
+            last = rec.position;
+        }
+        rec.distance = static_cast<float32>(length);
+    }
+    return ret;
+}
+
 std::string since(u32 seconds)
 {
     return std::format("{}:{:02}:{:02}", seconds / 3600, (seconds % 3600) / 60, seconds % 60);
@@ -118,6 +138,22 @@ std::vector<FIT::FITFill> plan_fills(std::span<record const> records, std::vecto
         ret.push_back(std::move(fill));
     }
     return ret;
+}
+
+std::expected<std::vector<FIT::FITFill>, std::string> plan_paused_fills(std::span<record const> records, std::span<record const> paused)
+{
+    if (paused.empty()) {
+        return std::unexpected(std::string { "This activity has no paused track to fill gaps with." });
+    }
+    auto const gaps = find_gaps(records);
+    if (gaps.empty()) {
+        return std::unexpected(std::string { "This activity has no gaps to fill." });
+    }
+    auto fills = plan_fills(records, gaps, along_path(paused));
+    if (fills.empty()) {
+        return std::unexpected(std::string { "The paused track doesn't cover this activity's gaps." });
+    }
+    return fills;
 }
 
 std::string fill_question(std::vector<FIT::FITFill> const &fills, DateTime const &start)

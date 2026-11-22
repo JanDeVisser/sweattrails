@@ -68,6 +68,19 @@ std::vector<record> friend_run(u32 from = 0, double east = 0)
     return ret;
 }
 
+// The track a Wahoo logged while it was paused in the run's gap, a point a
+// second from `from` s up to `to`, zigzagging 40 m east and back as it
+// goes north at 3 m/s, `east` metres to the side. Its distance stays at
+// the stop's, as the device's does.
+std::vector<record> paused_track(u32 from = 99, u32 to = 400, double east = 0)
+{
+    std::vector<record> ret;
+    for (auto seconds = from; seconds <= to; ++seconds) {
+        ret.push_back(at(seconds, 3.0 * seconds, 297, east + 40.0 * (seconds % 2)));
+    }
+    return ret;
+}
+
 void test_distance_between()
 {
     auto const amsterdam = Coordinates { .lat = 52.3676f, .lon = 4.9041f };
@@ -242,6 +255,128 @@ void test_plan_fills_watch_without_distance()
     CHECK(!patched && patched.error() == "its records have no distance");
 }
 
+// The gap's distance is the path's, each step 3 m north and 40 m east or
+// west, not the frozen distance, nor the straight line from the stop.
+void test_plan_paused_fills()
+{
+    auto const records = watch();
+    auto const fills = plan_paused_fills(records, paused_track());
+    CHECK(fills.has_value() && fills->size() == 1);
+    if (!fills || fills->size() != 1) {
+        return;
+    }
+    auto const &fill = fills->front();
+    // Positions are float32, a few decimetres apart here: the path's
+    // length is within 0.1%.
+    auto const step = std::hypot(3.0, 40.0);
+    CHECK_EQ(fill.stop, Test::Start + 99);
+    CHECK_EQ(fill.restart, Test::Start + 400);
+    CHECK(std::abs(fill.distance - 301 * step) < 0.001 * 301 * step);
+    CHECK_EQ(fill.records.size(), 300uz);
+    if (fill.records.size() == 300) {
+        CHECK_EQ(fill.records.front().timestamp, Test::Start + 100);
+        CHECK(fill.records.front().distance && std::abs(*fill.records.front().distance - (297 + step)) < 0.5);
+        CHECK(fill.records.back().distance && std::abs(*fill.records.back().distance - (297 + 300 * step)) < 0.001 * 300 * step);
+        CHECK(fill.records.front().lat.has_value());
+    }
+}
+
+// A point without a fix goes in without a position, with the path's
+// length so far, and the path goes on from the point before it.
+void test_plan_paused_fills_without_fix()
+{
+    auto const records = watch();
+    auto       paused = paused_track();
+    paused[101].position.reset(); // 200 s
+    auto const fills = plan_paused_fills(records, paused);
+    CHECK(fills.has_value() && fills->size() == 1);
+    if (!fills || fills->size() != 1 || fills->front().records.size() != 300) {
+        return;
+    }
+    auto const &inserted = fills->front().records;
+    auto const  step = std::hypot(3.0, 40.0);
+    CHECK(!inserted[100].lat && !inserted[100].lon);
+    CHECK(inserted[100].distance && *inserted[100].distance == *inserted[99].distance);
+    // From 199 s to 201 s: 6 m north, back to the same east.
+    CHECK(inserted[101].distance && std::abs(*inserted[101].distance - *inserted[99].distance - 6) < 0.5);
+    CHECK(std::abs(fills->front().distance - (299 * step + 6)) < 0.001 * 299 * step);
+}
+
+// A Wahoo logs a pause after a pause: the track's path runs on from one
+// to the next, jumping between them, and each gap still gets only its own
+// pause's length, the second carrying on after the first's fill.
+void test_plan_paused_fills_two_pauses()
+{
+    Storage    storage { };
+    Activity   watched { storage, ActivityID::dummy(ActivityFile::Fit) };
+    auto const bytes = Test::run_two_gaps();
+    watched.depth = LoadingDepth::Deep;
+    MUST(watched.load_from_slice(bytes));
+    auto       paused = paused_track(99, 200);
+    auto const second = paused_track(299, 400);
+    paused.insert(paused.end(), second.begin(), second.end());
+    auto const fills = plan_paused_fills(watched.recorded, paused);
+    CHECK(fills.has_value() && fills->size() == 2);
+    if (!fills || fills->size() != 2) {
+        return;
+    }
+    auto const step = std::hypot(3.0, 40.0);
+    CHECK(std::abs((*fills)[0].distance - 101 * step) < 0.001 * 101 * step);
+    CHECK(std::abs((*fills)[1].distance - 101 * step) < 0.001 * 101 * step);
+    auto const &first = (*fills)[0].records;
+    auto const &next = (*fills)[1].records;
+    CHECK(!first.empty() && !next.empty());
+    if (first.empty() || next.empty() || !first.back().distance || !next.front().distance) {
+        return;
+    }
+    // The watch's distance at the second stop, 594 m, has none of the first
+    // fill in it: the second's first record adds it, and a step.
+    CHECK(std::abs(*next.front().distance - (594 + 102 * step)) < 0.001 * 102 * step);
+}
+
+void test_plan_paused_fills_none()
+{
+    auto const records = watch();
+    auto const none = plan_paused_fills(records, { });
+    CHECK(!none && none.error() == "This activity has no paused track to fill gaps with.");
+    // A pause where the user stood still isn't a gap.
+    std::vector<record> const waited { at(0, 0, 0), at(300, 10, 10), at(301, 13, 13) };
+    std::vector<record> const stood { at(100, 2, 0), at(200, 5, 0) };
+    auto const                no_gaps = plan_paused_fills(waited, stood);
+    CHECK(!no_gaps && no_gaps.error() == "This activity has no gaps to fill.");
+    auto const late = plan_paused_fills(records, paused_track(150));
+    CHECK(!late && late.error() == "The paused track doesn't cover this activity's gaps.");
+    auto const away = plan_paused_fills(records, paused_track(99, 400, 500));
+    CHECK(!away && away.error() == "The paused track doesn't cover this activity's gaps.");
+}
+
+// The run in a store, filled from its paused track: it loads again with
+// the path's distance added, and without a gap.
+void test_fill_from_paused_in_the_store()
+{
+    Test::TempStore store;
+    auto const      start = DateTime::from_timestamp(static_cast<i32>(unix_time(0)));
+    auto const      dir = store.storage.activity_dir / std::format("{:04}/{:02}", static_cast<u16>(start.year), static_cast<u8>(start.month) + 1);
+    fs::create_directories(dir);
+    MUST(write_file_by_name((dir / std::format("{}.fit", unix_time(0))).string(), std::string_view { Test::run() }));
+    ActivityID const id { Month { static_cast<size_t>(start.year), start.month }, std::format("{}", unix_time(0)), FileTypes::one(ActivityFile::Fit) };
+
+    Activity watched { store.storage, id };
+    CHECK(watched.load(LoadingDepth::Deep).value_or(false));
+    auto const fills = plan_paused_fills(watched.recorded, paused_track());
+    CHECK(fills.has_value());
+    if (!fills) {
+        return;
+    }
+    CHECK(fill_gaps(watched, *fills).has_value());
+
+    Activity filled { store.storage, id };
+    CHECK(filled.load(LoadingDepth::Deep).value_or(false));
+    CHECK_EQ(filled.recorded.size(), 500uz);
+    CHECK(std::abs(filled.segment.distance - (watched.segment.distance + fills->front().distance)) < 1);
+    CHECK(find_gaps(filled.recorded).empty());
+}
+
 void test_fill_question()
 {
     auto const         start = DateTime::from_timestamp(static_cast<i32>(unix_time(0)));
@@ -323,6 +458,11 @@ int main()
     test_plan_fills_not_covered();
     test_plan_fills_watch_without_distance();
     test_fill_with_records_missing_values();
+    test_plan_paused_fills();
+    test_plan_paused_fills_without_fix();
+    test_plan_paused_fills_two_pauses();
+    test_plan_paused_fills_none();
+    test_fill_from_paused_in_the_store();
     test_fill_question();
     test_drop_problem();
     test_fill_in_the_store();
