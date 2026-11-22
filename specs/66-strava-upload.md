@@ -346,4 +346,32 @@ No new widgets: the query and message boxes there are do.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug**: a 401 or 403 when polling an upload isn't `Forbidden`.
+   `Strava::upload_status()` goes through `get()`, which makes a 401
+   `NotLoggedIn` and a 403 `Failed`, while the spec says a 401 or 403 to
+   the upload *or its poll* is `Forbidden`. The user then sees "Log in to
+   Strava now?" or a bare failure instead of "Log in to Strava again to
+   upload?". Unlikely in practice (the POST would have failed first), but
+   the spec and code disagree. Tested by
+   `test_no_write_access_when_polling` in `test/StravaUploadTest.cpp`,
+   which fails for 401 and for 403 until it's fixed.
+2. **Missing test, added**: `test_unreadable_file` (no POST, nothing saved)
+   and `test_upload_is_not_retried` (a 500 to the POST is asked once).
+   Both pass.
+3. **Suggestion**: `notif_uploaded_to_strava` shows a `log_in` report as
+   a plain message while a login is already waiting
+   (`the->logging_in` not empty), and the text still ends in "Log in to
+   Strava again to upload?", a question nobody can answer. Drop the
+   question from the text in that case.
+4. **Suggestion**: the upload's `name` is `activity.title`, which falls
+   back to the FIT file's own title when nothing else is set. That is what
+   SweatTrails shows, as the spec says, but the sidecar then keeps that
+   as Strava's name; harmless, but an empty title would be posted as an
+   empty `name` field.
+5. **Checked, no problem**: `send()`/`get()` retry only GETs; the
+   switches over `StravaError::Kind` (`SweatTrails.cpp`, `StravaBacklog.cpp`)
+   all handle `Forbidden`, and `StravaTitles.cpp` only tests `RateLimited`;
+   `save_uploaded()` saves the displayed sidecar first, so the `others`
+   comparison works even if it contains the displayed sidecar;
+   multisport is refused as the spec says; the polling count (initial
+   POST plus up to 60 polls) matches "up to a minute".
