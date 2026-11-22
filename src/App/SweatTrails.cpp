@@ -221,6 +221,7 @@ SourceOutcome download_from_strava(pSweatTrails const &the, std::optional<Strava
     if (!update) {
         switch (update.error().kind) {
         case StravaError::Kind::NotLoggedIn:
+        case StravaError::Kind::Forbidden:
             outcome.kind = SourceOutcome::Kind::NeedsLogin;
             return outcome;
         case StravaError::Kind::RateLimited:

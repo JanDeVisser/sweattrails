@@ -51,7 +51,7 @@ void test_authorize_url()
     CHECK_EQ(query.at("client_id"), "12345");
     CHECK_EQ(query.at("redirect_uri"), "https://localhost:8090/callback");
     CHECK_EQ(query.at("response_type"), "code");
-    CHECK_EQ(query.at("scope"), "activity:read_all");
+    CHECK_EQ(query.at("scope"), "activity:read_all,activity:write");
     CHECK_EQ(query.at("state"), "the-state");
     // The secret is never in a URL.
     CHECK(!url.contains("the-secret"));
@@ -585,6 +585,144 @@ void test_description_does_not_wait()
     CHECK_EQ(waits, 0);
 }
 
+void test_has_activity()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-has-activity" };
+    auto       strava = logged_in(fake, dir);
+    fake.answer("/api/v3/activities/5", HttpResponse { .status = 200, .body = R"({"id":5,"name":"Ride"})" });
+    CHECK_EQ(strava.has_activity(5).value_or(false), true);
+    // As Strava answered for an activity deleted on strava.com.
+    fake.answer("/api/v3/activities/6", HttpResponse { .status = 404, .body = R"({"message":"Record Not Found","errors":[]})" });
+    CHECK_EQ(strava.has_activity(6).value_or(true), false);
+    fake.answer("/api/v3/activities/7", too_many("101,400"));
+    auto const limited = strava.has_activity(7);
+    CHECK(!limited.has_value() && limited.error().kind == StravaError::Kind::RateLimited);
+}
+
+// The value of the text field `name` in a multipart body.
+std::string form_field(std::string const &body, std::string const &name)
+{
+    auto const head = std::format("Content-Disposition: form-data; name=\"{}\"\r\n\r\n", name);
+    auto const start = body.find(head);
+    if (start == std::string::npos) {
+        return "<missing>";
+    }
+    auto const value = start + head.size();
+    return body.substr(value, body.find("\r\n", value) - value);
+}
+
+void test_upload()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-upload" };
+    auto       strava = logged_in(fake, dir);
+    fake.answer("/api/v3/uploads", HttpResponse { .status = 201, .body = R"({"id":42,"id_str":"42","external_id":"1793275500.fit","error":null,"status":"Your activity is still being processed.","activity_id":null})" });
+    std::string const fit { "\x0e\x10\0\x01FIT", 7 };
+    auto const        uploaded = strava.upload(fit, "1793275500.fit", "Morning ride", "Windy");
+    CHECK(uploaded.has_value());
+    if (uploaded) {
+        CHECK_EQ(uploaded->id, 42u);
+        CHECK(!uploaded->activity_id.has_value());
+        CHECK_EQ(uploaded->error, "");
+    }
+    CHECK_EQ(fake.requests.size(), 1uz);
+    auto const &request = fake.requests.front();
+    CHECK_EQ(request.method, "POST");
+    CHECK(has_header(request, "Authorization: Bearer access"));
+    auto const content_type = std::ranges::find_if(request.headers, [](auto const &header) { return header.starts_with("Content-Type: multipart/form-data; boundary="); });
+    CHECK(content_type != request.headers.end());
+    CHECK_EQ(form_field(request.body, "data_type"), "fit");
+    CHECK_EQ(form_field(request.body, "name"), "Morning ride");
+    CHECK_EQ(form_field(request.body, "description"), "Windy");
+    CHECK(request.body.contains(std::string { "filename=\"1793275500.fit\"\r\nContent-Type: application/octet-stream\r\n\r\n" } + fit + "\r\n"));
+}
+
+void test_upload_without_description()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-upload-no-description" };
+    auto       strava = logged_in(fake, dir);
+    fake.answer("/api/v3/uploads", HttpResponse { .status = 201, .body = R"({"id":42,"error":null,"activity_id":null})" });
+    fake.answer("/api/v3/uploads", HttpResponse { .status = 201, .body = R"({"id":43,"error":null,"activity_id":null})" });
+    CHECK(strava.upload("FIT", "a.fit", "Ride", std::nullopt).has_value());
+    CHECK(strava.upload("FIT", "a.fit", "Ride", "").has_value());
+    CHECK_EQ(fake.requests.size(), 2uz);
+    for (auto const &request : fake.requests) {
+        CHECK_EQ(form_field(request.body, "description"), "<missing>");
+    }
+}
+
+// A login without activity:write.
+void test_upload_forbidden()
+{
+    for (auto const status : { 401L, 403L }) {
+        FakeStrava fake;
+        TempDir    dir { "strava-upload-forbidden" };
+        auto       strava = logged_in(fake, dir);
+        fake.answer("/api/v3/uploads", HttpResponse { .status = status, .body = R"({"message":"Authorization Error","errors":[{"resource":"AccessToken","field":"activity:write_permission","code":"missing"}]})" });
+        auto const uploaded = strava.upload("FIT", "a.fit", "Ride", std::nullopt);
+        CHECK(!uploaded.has_value() && uploaded.error().kind == StravaError::Kind::Forbidden);
+    }
+}
+
+// Strava may have the file, though it didn't answer: asked again, it
+// would be a duplicate of itself.
+void test_upload_is_not_retried()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-upload-no-retry" };
+    auto       strava = logged_in(fake, dir);
+    size_t     waits { 0 };
+    strava.wait = [&waits](std::chrono::seconds) { ++waits; };
+    fake.answer("/api/v3/uploads", HttpResponse { .status = 0 });
+    fake.answer("/api/v3/uploads", HttpResponse { .status = 502, .body = "Bad gateway" });
+    CHECK(!strava.upload("FIT", "a.fit", "Ride", std::nullopt).has_value());
+    auto const failed = strava.upload("FIT", "a.fit", "Ride", std::nullopt);
+    CHECK(!failed.has_value() && failed.error().status == 502);
+    CHECK_EQ(waits, 0uz);
+    CHECK_EQ(fake.requests.size(), 2uz);
+}
+
+void test_upload_rejected_at_once()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-upload-400" };
+    auto       strava = logged_in(fake, dir);
+    fake.answer("/api/v3/uploads", HttpResponse { .status = 400, .body = R"({"id":44,"error":"a.fit duplicate of activity 21234316","activity_id":null})" });
+    fake.answer("/api/v3/uploads", HttpResponse { .status = 400, .body = R"({"message":"Bad Request","errors":[{"resource":"Upload","field":"data_type","code":"invalid"}]})" });
+    fake.answer("/api/v3/uploads", HttpResponse { .status = 400, .body = "" });
+    CHECK_EQ(strava.upload("FIT", "a.fit", "Ride", std::nullopt).value_or(StravaUpload { }).error, "a.fit duplicate of activity 21234316");
+    CHECK_EQ(strava.upload("FIT", "a.fit", "Ride", std::nullopt).value_or(StravaUpload { }).error, "Bad Request");
+    CHECK_EQ(strava.upload("FIT", "a.fit", "Ride", std::nullopt).value_or(StravaUpload { }).error, "HTTP 400");
+}
+
+void test_upload_status()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-upload-status" };
+    auto       strava = logged_in(fake, dir);
+    fake.answer("/api/v3/uploads/42", HttpResponse { .status = 200, .body = R"({"id":42,"error":null,"status":"Your activity is still being processed.","activity_id":null})" });
+    fake.answer("/api/v3/uploads/42", HttpResponse { .status = 200, .body = R"({"id":42,"error":null,"status":"Your activity is ready.","activity_id":21300000001})" });
+    fake.answer("/api/v3/uploads/42", HttpResponse { .status = 200, .body = R"({"id":42,"error":"Improperly formatted data.","status":"There was an error processing your activity.","activity_id":null})" });
+    auto const pending = strava.upload_status(42);
+    CHECK(pending.has_value() && !pending->activity_id && pending->error.empty());
+    auto const done = strava.upload_status(42);
+    CHECK(done.has_value() && done->activity_id == 21300000001u);
+    auto const failed = strava.upload_status(42);
+    CHECK(failed.has_value() && !failed->activity_id && failed->error == "Improperly formatted data.");
+    fake.answer("/api/v3/uploads/43", HttpResponse { .status = 200, .body = "not JSON" });
+    CHECK(!strava.upload_status(43).has_value());
+}
+
+void test_duplicate_of()
+{
+    CHECK_EQ(duplicate_of("Test_Walk.gpx duplicate of activity 21234316").value_or(0), 21234316u);
+    CHECK_EQ(duplicate_of("1793275500.fit duplicate of <a href='/activities/21234316' target='_blank'>Morning ride</a>").value_or(0), 21234316u);
+    CHECK(!duplicate_of("Improperly formatted data.").has_value());
+    CHECK(!duplicate_of("duplicate of an activity").has_value());
+}
+
 void test_tokens_file()
 {
     TempDir dir { "strava-tokens" };
@@ -625,6 +763,14 @@ int main()
     test_list_waits_run_out();
     test_list_does_not_wait_for_the_day();
     test_description_does_not_wait();
+    test_has_activity();
+    test_upload();
+    test_upload_without_description();
+    test_upload_forbidden();
+    test_upload_is_not_retried();
+    test_upload_rejected_at_once();
+    test_upload_status();
+    test_duplicate_of();
     test_tokens_file();
     return ST::Test::test_result();
 }

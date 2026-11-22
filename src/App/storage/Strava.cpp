@@ -25,6 +25,7 @@ constexpr std::string_view AuthorizePath = "/oauth/authorize";
 constexpr std::string_view TokenPath = "/oauth/token";
 constexpr std::string_view ActivitiesPath = "/api/v3/athlete/activities";
 constexpr std::string_view ActivityPath = "/api/v3/activities";
+constexpr std::string_view UploadsPath = "/api/v3/uploads";
 
 // Strava's largest page.
 constexpr size_t PageSize = 200;
@@ -71,6 +72,49 @@ StravaError http_error(HttpResponse const &response, std::string_view what, i64 
         .message = std::format("Strava answered HTTP {} {}", response.status, what),
         .status = response.status,
     };
+}
+
+StravaError forbidden()
+{
+    return StravaError {
+        .kind = StravaError::Kind::Forbidden,
+        .message = "Strava doesn't take uploads with this login: it was made without write access.",
+    };
+}
+
+// An upload in Strava's answer: its activity ID and its error are null
+// until it's done.
+StravaResult<StravaUpload> parse_upload(std::string const &body)
+{
+    auto const json = JSONValue::deserialize(body);
+    if (!json || !json->is_object()) {
+        return std::unexpected(failed("Strava's answer to the upload isn't JSON"));
+    }
+    auto const id = json->try_get<u64>("id");
+    if (!id) {
+        return std::unexpected(failed("Strava's answer to the upload has no ID"));
+    }
+    auto const activity_id = json->try_get<u64>("activity_id");
+    return StravaUpload {
+        .id = *id,
+        .activity_id = activity_id ? std::optional { *activity_id } : std::nullopt,
+        .error = json->try_get<std::string>("error").value_or(""),
+    };
+}
+
+// A 400 to the upload: a file Strava rejects at once. It says why in
+// `error`, as when polling, or else in `message`, as for other requests.
+StravaUpload rejected_upload(HttpResponse const &response)
+{
+    auto const  json = JSONValue::deserialize(response.body);
+    std::string error;
+    if (json && json->is_object()) {
+        error = json->try_get<std::string>("error").value_or("");
+        if (error.empty()) {
+            error = json->try_get<std::string>("message").value_or("");
+        }
+    }
+    return StravaUpload { .error = error.empty() ? std::format("HTTP {}", response.status) : error };
 }
 
 // What a 400 or 401 from the token request means. A code or refresh token
@@ -142,6 +186,24 @@ std::optional<StravaUsage> rate_limit_usage(HttpResponse const &response)
         .day_used = usage->second,
         .day_limit = limit->second,
     };
+}
+
+std::optional<u64> duplicate_of(std::string_view error)
+{
+    auto const duplicate = error.find("duplicate of");
+    if (duplicate == std::string_view::npos) {
+        return { };
+    }
+    auto const digits = error.find_first_of("0123456789", duplicate);
+    if (digits == std::string_view::npos) {
+        return { };
+    }
+    u64        id { 0 };
+    auto const result = std::from_chars(error.data() + digits, error.data() + error.size(), id);
+    if (result.ec != std::errc { }) {
+        return { };
+    }
+    return id;
 }
 
 i64 next_quarter_hour(i64 now)
@@ -265,18 +327,18 @@ StravaResult<void> Strava::refresh_if_expiring()
     });
 }
 
-StravaResult<HttpResponse> Strava::get(std::string const &path)
+// Sends `request` with the access token, refreshed first if it's about to
+// expire. With `retry`, a request Strava doesn't answer, or answers with a
+// server error, is asked again. Any status is an answer.
+StravaResult<HttpResponse> Strava::send(HttpRequest request, bool retry)
 {
     if (auto const refreshed = refresh_if_expiring(); !refreshed) {
         return std::unexpected(refreshed.error());
     }
-    HttpRequest const request {
-        .url = std::format("{}{}", StravaBaseUrl, path),
-        .headers = { "Accept: application/json", std::format("Authorization: Bearer {}", tokens->access_token) },
-    };
+    request.headers.push_back(std::format("Authorization: Bearer {}", tokens->access_token));
     auto response = fetch(request);
-    for (auto retry = 0; retry < retries && (!response || response->status >= 500); ++retry) {
-        warning(Strava, "Strava didn't answer `{}` ({}): asking again in {}", path,
+    for (auto count = 0; retry && count < retries && (!response || response->status >= 500); ++count) {
+        warning(Strava, "Strava didn't answer `{}` ({}): asking again in {}", request.url.substr(StravaBaseUrl.size()),
             response ? std::format("HTTP {}", response->status) : response.error().to_string(), retry_pause);
         if (wait) {
             wait(retry_pause);
@@ -288,6 +350,15 @@ StravaResult<HttpResponse> Strava::get(std::string const &path)
     }
     if (auto const said = rate_limit_usage(*response); said) {
         usage = said;
+    }
+    return std::move(*response);
+}
+
+StravaResult<HttpResponse> Strava::get(std::string const &path)
+{
+    auto response = send(HttpRequest { .url = std::format("{}{}", StravaBaseUrl, path), .headers = { "Accept: application/json" } }, true);
+    if (!response) {
+        return std::unexpected(response.error());
     }
     if (response->status == 401) {
         return std::unexpected(not_logged_in());
@@ -448,6 +519,61 @@ StravaResult<std::string> Strava::description(u64 id)
     }
     // A null description is none.
     return json->try_get<std::string>("description").value_or("");
+}
+
+StravaResult<bool> Strava::has_activity(u64 id)
+{
+    auto const response = get(std::format("{}/{}", ActivityPath, id));
+    if (!response && response.error().status == 404) {
+        return false;
+    }
+    if (!response) {
+        return std::unexpected(response.error());
+    }
+    return true;
+}
+
+StravaResult<StravaUpload> Strava::upload(std::string const &fit, std::string const &file_name, std::string const &name, std::optional<std::string> const &description)
+{
+    std::vector<FormPart> parts {
+        { .name = "data_type", .value = "fit" },
+        { .name = "name", .value = name },
+    };
+    if (description && !description->empty()) {
+        parts.push_back({ .name = "description", .value = *description });
+    }
+    parts.push_back({ .name = "file", .value = fit, .file_name = file_name });
+    auto const boundary = random_token(24);
+    auto const response = send(
+        HttpRequest {
+            .method = "POST",
+            .url = std::format("{}{}", StravaBaseUrl, UploadsPath),
+            .headers = { "Accept: application/json", multipart_content_type(boundary) },
+            .body = multipart_encode(boundary, parts),
+        },
+        false);
+    if (!response) {
+        return std::unexpected(response.error());
+    }
+    if (response->status == 401 || response->status == 403) {
+        return std::unexpected(forbidden());
+    }
+    if (response->status == 400) {
+        return rejected_upload(*response);
+    }
+    if (response->status != 200 && response->status != 201) {
+        return std::unexpected(http_error(*response, "to the upload", now()));
+    }
+    return parse_upload(response->body);
+}
+
+StravaResult<StravaUpload> Strava::upload_status(u64 id)
+{
+    auto const response = get(std::format("{}/{}", UploadsPath, id));
+    if (!response) {
+        return std::unexpected(response.error());
+    }
+    return parse_upload(response->body);
 }
 
 }
