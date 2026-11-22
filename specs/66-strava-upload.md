@@ -355,19 +355,27 @@ No new widgets: the query and message boxes there are do.
    the spec and code disagree. Tested by
    `test_no_write_access_when_polling` in `test/StravaUploadTest.cpp`,
    which fails for 401 and for 403 until it's fixed.
+   *Resolved*: `upload_status()` sends its own request and takes a 401 or
+   403 as `Forbidden`, as `upload()` does (31cb194).
 2. **Missing test, added**: `test_unreadable_file` (no POST, nothing saved)
    and `test_upload_is_not_retried` (a 500 to the POST is asked once).
-   Both pass.
+   Both pass. *Kept.*
 3. **Suggestion**: `notif_uploaded_to_strava` shows a `log_in` report as
    a plain message while a login is already waiting
    (`the->logging_in` not empty), and the text still ends in "Log in to
    Strava again to upload?", a question nobody can answer. Drop the
    question from the text in that case.
+   *Resolved*: `UploadReport` keeps the `question` apart from the `text`;
+   a query box asks `asked()`, the message without one shows only the
+   text (9e239a6).
 4. **Suggestion**: the upload's `name` is `activity.title`, which falls
    back to the FIT file's own title when nothing else is set. That is what
    SweatTrails shows, as the spec says, but the sidecar then keeps that
    as Strava's name; harmless, but an empty title would be posted as an
    empty `name` field.
+   *Resolved*: `upload()` leaves an empty name out, and Strava names the
+   activity itself. The empty name saved in the sidecar is skipped by the
+   title, and the next titles run replaces it (be3e0ad).
 5. **Checked, no problem**: `send()`/`get()` retry only GETs; the
    switches over `StravaError::Kind` (`SweatTrails.cpp`, `StravaBacklog.cpp`)
    all handle `Forbidden`, and `StravaTitles.cpp` only tests `RateLimited`;
