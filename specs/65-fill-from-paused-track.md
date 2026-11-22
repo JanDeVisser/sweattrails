@@ -194,4 +194,26 @@ copy of it:
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Suggestion** (`src/App/storage/Gaps.cpp`, `plan_fills()`, nothing
+   to fix now): `nearest()` picks the paused point nearest in time to the
+   restart, which can be a point just after it that belongs to the next
+   pause. The gap's distance then includes the jump between the two
+   pauses, which is the distance ridden between them, so it is about right
+   for a ride on a road. The spec says the jump doesn't matter; it does a
+   little in this one case. Not worth code until a real ride shows it.
+2. **Suggestion**: `cmd_fill_from_paused()` and `cmd_fill_gaps()` both
+   end with `check_fills()` then `ask_to_fill()`. That is two lines
+   twice; fine as it is.
+3. **Missing test, added**: `test_plan_paused_fills_two_pauses()` in
+   `test/GapsTest.cpp`, two gaps and a track of two pauses (path running
+   on across the jump): each gap gets its own pause's path length, and the
+   second's records carry on from the watch's distance plus the first
+   fill. Passes.
+4. **Not tested, needs a window**: the Ctrl+F wiring, `.when()`, the
+   leg's message and the box; the by-hand check on the ride of 2026-11-22
+   is still to do.
+
+No bugs found. `along_path()`, `plan_paused_fills()` and the shared
+`ask_to_fill()` match the spec; the messages are the spec's; the README
+matches. Full test run: 86 of 86 pass.
+
