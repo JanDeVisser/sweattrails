@@ -282,6 +282,9 @@ struct Activity {
     Segment             segment { };
     std::vector<record> records { };  // Smoothed, for the graph
     std::vector<record> recorded { }; // As recorded, for a range's stats
+    // Where a Wahoo was while it was paused, on a deep load: drawn on the
+    // map, not part of the activity (specs/64-wahoo-paused-track.md).
+    std::vector<record> paused { };
     std::vector<Lap>    laps { };
     std::vector<Lap>    device_laps { }; // The FIT file's, which the user's laps replace
     // This one, and the others of the activity, in its `.recordings`

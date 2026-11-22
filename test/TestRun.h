@@ -10,6 +10,7 @@
 #pragma once
 
 #include <cmath>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -110,7 +111,28 @@ struct RunOptions {
     // Two laps, to 50 s and from 51 s, rather than one: only the second
     // spans the gap.
     bool two_laps { false };
+    // Who made the file: 1 is Garmin, 32 Wahoo.
+    u16 manufacturer { 1 };
+    // The track a Wahoo logs while it's paused, in message 0xFF00: where
+    // the friend ran in the gap, with the distance at the stop's, and
+    // one without a position after the end, as an ELEMNT writes it.
+    bool paused_track { false };
 };
+
+// A paused record `north` metres north of the start, without a
+// position if `north` is empty.
+inline std::vector<Field> paused_fields(u32 at, std::optional<double> north)
+{
+    auto const invalid = static_cast<u64>(0x7FFFFFFF);
+    return {
+        { .num = 253, .size = 4, .base_type = Uint32, .value = Start + at },
+        { .num = 0, .size = 4, .base_type = Sint32, .value = north ? static_cast<u32>(lat_at(*north)) : invalid },
+        { .num = 1, .size = 4, .base_type = Sint32, .value = north ? static_cast<u32>(home_lon()) : invalid },
+        { .num = 2, .size = 2, .base_type = Uint16, .value = (10 + 500) * 5 },
+        { .num = 5, .size = 4, .base_type = Uint32, .value = 29'700 },
+        { .num = 6, .size = 2, .base_type = Uint16, .value = 3000 },
+    };
+}
 
 inline std::vector<Field> event_fields(u32 at, u8 event, u8 event_type)
 {
@@ -138,7 +160,7 @@ inline std::vector<Field> lap_fields(u32 from, u32 to, u32 timer_ms, u32 distanc
 inline std::string run(RunOptions const &options = { })
 {
     FITBuilder fit;
-    add_file_id(fit, 1);
+    add_file_id(fit, options.manufacturer);
     if (options.other_events) {
         message(fit, 2, 21, event_fields(0, 0, 0));
     }
@@ -158,6 +180,12 @@ inline std::string run(RunOptions const &options = { })
     if (options.other_events) {
         message(fit, 2, 21, event_fields(200, 11, 3));
     }
+    if (options.paused_track) {
+        define(fit, 5, 0xFF00, paused_fields(0, 0));
+        for (auto at = 100u; at < 400; ++at) {
+            data(fit, 5, paused_fields(at, 297.0 + 3 * (at - 99)));
+        }
+    }
     auto start = event;
     start[0].value = Start + 400;
     start[2].value = 0;
@@ -168,6 +196,9 @@ inline std::string run(RunOptions const &options = { })
     }
     if (options.other_events) {
         message(fit, 2, 21, event_fields(499, 0, 4));
+    }
+    if (options.paused_track) {
+        data(fit, 5, paused_fields(500, { }));
     }
     if (options.two_laps) {
         message(fit, 3, 19, lap_fields(51, 499, 149'000, 45'000));

@@ -167,6 +167,34 @@ std::expected<record, FITError> make_from_rec(FITDataRecord const &rec)
         f32>(rec);
 }
 
+constexpr static TypeMetaData paused_record_meta = [] {
+    auto ret = record_meta;
+    ret.mesg_num = mesg_num::vendor;
+    return ret;
+}();
+
+std::expected<record, FITError> make_paused_record(FITDataRecord const &rec)
+{
+    return make_from_rec_<
+        record,
+        paused_record_meta,
+        DateTime,
+        Coordinates,
+        Coordinates,
+        f32,
+        u8,
+        u8,
+        f32,
+        f32,
+        u16,
+        f32,
+        i8,
+        u8,
+        u16,
+        f32,
+        f32>(rec);
+}
+
 template<>
 std::optional<FITError> on_load(FITDataRecord const &fitrec, record &rec)
 {

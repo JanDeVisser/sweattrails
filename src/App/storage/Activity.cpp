@@ -965,6 +965,17 @@ bool Activity::load_fit_file_filter(FITDataRecord const &rec)
             records.emplace_back(*r);
         }
     } break;
+    case mesg_num::vendor: {
+        if (depth == LoadingDepth::Deep && manufacturer == FIT::manufacturer::wahoo_fitness) {
+            // A message nobody documents isn't worth giving up the
+            // activity for: one that can't be read is left out.
+            if (auto r = make_paused_record(rec); r) {
+                paused.emplace_back(*r);
+            } else {
+                warning(Storage, "Error converting Wahoo's paused record to struct: {}", r.error());
+            }
+        }
+    } break;
     default:
         break;
     }
