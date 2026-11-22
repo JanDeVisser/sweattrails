@@ -229,6 +229,8 @@ add_library(
         src/Lib/Widget/TopBar.cpp
         src/Lib/Widget/Colors.h
         src/Lib/Widget/Colors.cpp
+        src/Lib/Widget/Dashes.h
+        src/Lib/Widget/Dashes.cpp
         src/Lib/Widget/Emoji.h
         src/Lib/Widget/Emoji.cpp
         src/Lib/Widget/FontCache.h
@@ -451,6 +453,7 @@ sweattrails_test(emoji_pack_test test/EmojiPackTest.cpp)
 target_compile_definitions(emoji_pack_test PRIVATE SWEATTRAILS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 sweattrails_test(text_area_box_test test/TextAreaBoxTest.cpp)
 sweattrails_test(colors_test test/ColorsTest.cpp)
+sweattrails_test(dashes_test test/DashesTest.cpp)
 sweattrails_test(window_test test/WindowTest.cpp)
 sweattrails_test(font_cache_test test/FontCacheTest.cpp)
 sweattrails_test(pick_box_test test/PickBoxTest.cpp)
