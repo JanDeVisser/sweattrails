@@ -54,4 +54,17 @@ std::string url_encode(std::string_view text);
 // `name=value&...`, URL-encoded: a query string, or the body of a form.
 std::string form_encode(std::vector<std::pair<std::string, std::string>> const &fields);
 
+// A part of a multipart/form-data body: a text field, or a file.
+struct FormPart {
+    std::string name { };
+    std::string value { };     // The text, or the file's bytes
+    std::string file_name { }; // Empty for a text field
+};
+
+// A multipart/form-data body, with `boundary` between the parts, and the
+// Content-Type header that goes with it. The boundary must not be in any
+// of the parts: a random one won't be.
+std::string multipart_encode(std::string_view boundary, std::vector<FormPart> const &parts);
+std::string multipart_content_type(std::string_view boundary);
+
 }

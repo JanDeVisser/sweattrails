@@ -82,6 +82,29 @@ std::string form_encode(std::vector<std::pair<std::string, std::string>> const &
     return encoded;
 }
 
+std::string multipart_encode(std::string_view boundary, std::vector<FormPart> const &parts)
+{
+    std::string encoded;
+    for (auto const &part : parts) {
+        encoded += std::format("--{}\r\n", boundary);
+        if (part.file_name.empty()) {
+            encoded += std::format("Content-Disposition: form-data; name=\"{}\"\r\n\r\n", part.name);
+        } else {
+            encoded += std::format("Content-Disposition: form-data; name=\"{}\"; filename=\"{}\"\r\n", part.name, part.file_name);
+            encoded += "Content-Type: application/octet-stream\r\n\r\n";
+        }
+        encoded += part.value;
+        encoded += "\r\n";
+    }
+    encoded += std::format("--{}--\r\n", boundary);
+    return encoded;
+}
+
+std::string multipart_content_type(std::string_view boundary)
+{
+    return std::format("Content-Type: multipart/form-data; boundary={}", boundary);
+}
+
 std::expected<HttpResponse, LibCError> http_fetch(HttpRequest const &request)
 {
     static std::once_flag initialized;
