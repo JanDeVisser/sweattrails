@@ -299,6 +299,13 @@ heart rate, cadence and power aren't yours, so the gap has none. The
 distance after the gap, and the activity's and lap's distance and
 moving time, go up by the gap's.
 
+A Wahoo ELEMNT that was paused keeps logging where it is, and the map
+shows that track dashed. If you rode on without starting it again,
+Ctrl+F, "Fill the gaps from the paused track", fills the gaps with that
+track, without another file: it asks as a drop does, and the gap's
+distance is the length of the track's path. A pause where you stood
+still isn't a gap, and stays dashed.
+
 This changes the activity's FIT file, so that the totals, the overlay
 and other programs get the whole activity too. The original is kept
 next to it, as `<start>.fit.original`, and Ctrl+Shift+F puts it back,

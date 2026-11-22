@@ -2014,6 +2014,28 @@ void show_again(pSweatTrails const &sweattrails, ActivityID const &id, std::stri
     sweattrails->update_summaries();
 }
 
+// Asks whether to fill the gaps of `displayed` with `fills`, which can
+// be, and on Yes fills them and shows the activity again.
+void ask_to_fill(pSweatTrails const &sweattrails, std::shared_ptr<DisplayedActivity> const &displayed, std::vector<FIT::FITFill> const &fills)
+{
+    auto fill = [displayed, fills](pSweatTrails const &st, QueryOption selection) {
+        if (selection != QueryOption::QueryOptionYes) {
+            return;
+        }
+        if (auto const filled = fill_gaps(displayed->activity, fills); !filled) {
+            message_box(std::format("Couldn't fill the gaps: {}", filled.error()));
+            return;
+        }
+        auto distance = 0.0;
+        for (auto const &f : fills) {
+            distance += f.distance;
+        }
+        show_again(st, displayed->activity.id,
+            std::format("Filled {}: {:.1f} km", fills.size() == 1 ? std::string { "the gap" } : std::format("{} gaps", fills.size()), distance / 1000));
+    };
+    query_box(sweattrails, fill_question(fills, displayed->activity.recorded.front().timestamp), fill, QueryOptionYesNo);
+}
+
 // A FIT file dropped on the window, `paths`: fills the gaps of the
 // activity on display that it covers. See specs/30-fill-gaps.md.
 void cmd_fill_gaps(pSweatTrails const &sweattrails, JSONValue const &arguments)
@@ -2052,23 +2074,28 @@ void cmd_fill_gaps(pSweatTrails const &sweattrails, JSONValue const &arguments)
         message_box(std::format("This activity can't be filled: {}.", can.error()));
         return;
     }
-    auto const start = activity.recorded.front().timestamp;
-    auto       fill = [displayed, fills](pSweatTrails const &st, QueryOption selection) {
-        if (selection != QueryOption::QueryOptionYes) {
-            return;
-        }
-        if (auto const filled = fill_gaps(displayed->activity, fills); !filled) {
-            message_box(std::format("Couldn't fill the gaps: {}", filled.error()));
-            return;
-        }
-        auto distance = 0.0;
-        for (auto const &f : fills) {
-            distance += f.distance;
-        }
-        show_again(st, displayed->activity.id,
-            std::format("Filled {}: {:.1f} km", fills.size() == 1 ? std::string { "the gap" } : std::format("{} gaps", fills.size()), distance / 1000));
-    };
-    query_box(sweattrails, fill_question(fills, start), fill, QueryOptionYesNo);
+    ask_to_fill(sweattrails, displayed, fills);
+}
+
+// Ctrl+F: fills the gaps of the activity on display with the track its
+// Wahoo logged while it was paused. See specs/65-fill-from-paused-track.md.
+void cmd_fill_from_paused(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    auto const displayed = whole_for_keys(sweattrails);
+    if (!displayed) {
+        return;
+    }
+    auto const &activity = displayed->activity;
+    auto const  fills = plan_paused_fills(activity.recorded, activity.paused);
+    if (!fills) {
+        message_box(fills.error());
+        return;
+    }
+    if (auto const can = check_fills(activity, *fills); !can) {
+        message_box(std::format("This activity can't be filled: {}.", can.error()));
+        return;
+    }
+    ask_to_fill(sweattrails, displayed, *fills);
 }
 
 // Ctrl+Shift+F: the activity as the watch recorded it, without the fills.
@@ -3197,6 +3224,10 @@ void SweatTrails::initialize()
         .bind(KeyCombo { KEY_KP_SUBTRACT, KModNone })
         .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-fill-gaps", self(), cmd_fill_gaps);
+    bus.add_task<SweatTrails>("st-fill-from-paused", self(), cmd_fill_from_paused)
+        .titled("Fill the gaps from the paused track")
+        .bind(KeyCombo { KEY_F, KModControl })
+        .when(on_activity_screen);
     bus.add_task<SweatTrails>("st-remove-fills", self(), cmd_remove_fills)
         .titled("Remove the filled gaps")
         .bind(KeyCombo { KEY_F, KModControl | KModShift })
