@@ -174,7 +174,7 @@ struct Strava {
     StravaResult<bool> has_activity(u64 id);
 
     // Sends a FIT file, `fit` its bytes and `file_name` its name, with the
-    // name and description for its activity. A file Strava rejects at
+    // name and description for its activity, if they aren't empty. A file Strava rejects at
     // once, such as a duplicate, is an upload with an error, as when it's
     // rejected later. Never asked twice: Strava may have it, unanswered.
     StravaResult<StravaUpload> upload(std::string const &fit, std::string const &file_name, std::string const &name, std::optional<std::string> const &description);

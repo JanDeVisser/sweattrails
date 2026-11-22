@@ -537,8 +537,12 @@ StravaResult<StravaUpload> Strava::upload(std::string const &fit, std::string co
 {
     std::vector<FormPart> parts {
         { .name = "data_type", .value = "fit" },
-        { .name = "name", .value = name },
     };
+    // Without a name, Strava gives the activity its own, such as "Morning
+    // Ride", rather than none.
+    if (!name.empty()) {
+        parts.push_back({ .name = "name", .value = name });
+    }
     if (description && !description->empty()) {
         parts.push_back({ .name = "description", .value = *description });
     }

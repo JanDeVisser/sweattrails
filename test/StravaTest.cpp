@@ -654,6 +654,20 @@ void test_upload_without_description()
 }
 
 // A login without activity:write.
+// Strava names the activity itself.
+void test_upload_without_name()
+{
+    FakeStrava fake;
+    TempDir    dir { "strava-upload-no-name" };
+    auto       strava = logged_in(fake, dir);
+    fake.answer("/api/v3/uploads", HttpResponse { .status = 201, .body = R"({"id":42,"error":null,"activity_id":null})" });
+    CHECK(strava.upload("FIT", "a.fit", "", std::nullopt).has_value());
+    CHECK_EQ(fake.requests.size(), 1uz);
+    if (!fake.requests.empty()) {
+        CHECK_EQ(form_field(fake.requests.front().body, "name"), "<missing>");
+    }
+}
+
 void test_upload_forbidden()
 {
     for (auto const status : { 401L, 403L }) {
@@ -766,6 +780,7 @@ int main()
     test_has_activity();
     test_upload();
     test_upload_without_description();
+    test_upload_without_name();
     test_upload_forbidden();
     test_upload_is_not_retried();
     test_upload_rejected_at_once();
