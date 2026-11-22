@@ -376,6 +376,11 @@ template<>
 std::expected<lap, FITError> make_from_rec(FITDataRecord const &rec);
 template<>
 std::expected<record, FITError> make_from_rec(FITDataRecord const &rec);
+// A Wahoo ELEMNT logs where it is while it's paused, in message 0xFF00
+// (`vendor`), with the fields numbered as a record's. Only a Wahoo file's
+// can be taken for that: in another maker's, the number may mean
+// anything. See specs/64-wahoo-paused-track.md.
+std::expected<record, FITError> make_paused_record(FITDataRecord const &rec);
 template<>
 std::expected<workout, FITError> make_from_rec(FITDataRecord const &rec);
 template<>

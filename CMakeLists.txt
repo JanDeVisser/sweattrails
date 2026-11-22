@@ -311,6 +311,7 @@ add_executable(
         src/App/storage/Devices.cpp
         src/App/storage/Boundaries.cpp
         src/App/storage/Gaps.cpp
+        src/App/storage/Paused.cpp
         src/App/storage/Comparison.cpp
         src/App/storage/Recordings.cpp
         src/App/storage/Laps.cpp
@@ -1123,6 +1124,27 @@ sweattrails_test(
 )
 target_include_directories(gaps_test PRIVATE src/App)
 target_link_libraries(gaps_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        paused_test
+        test/PausedTest.cpp
+        src/App/storage/Paused.cpp
+        src/App/storage/Gaps.cpp
+        src/App/fit/FITPatch.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
+        src/App/storage/Devices.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Stubs.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(paused_test PRIVATE src/App)
+target_link_libraries(paused_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         legs_test
