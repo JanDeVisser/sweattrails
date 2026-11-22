@@ -567,11 +567,20 @@ StravaResult<StravaUpload> Strava::upload(std::string const &fit, std::string co
     return parse_upload(response->body);
 }
 
+// A poll is part of the upload: a 401 or 403 means the same as to the
+// upload, a login without write access.
 StravaResult<StravaUpload> Strava::upload_status(u64 id)
 {
-    auto const response = get(std::format("{}/{}", UploadsPath, id));
+    auto const path = std::format("{}/{}", UploadsPath, id);
+    auto const response = send(HttpRequest { .url = std::format("{}{}", StravaBaseUrl, path), .headers = { "Accept: application/json" } }, true);
     if (!response) {
         return std::unexpected(response.error());
+    }
+    if (response->status == 401 || response->status == 403) {
+        return std::unexpected(forbidden());
+    }
+    if (response->status != 200) {
+        return std::unexpected(http_error(*response, std::format("for `{}`", path), now()));
     }
     return parse_upload(response->body);
 }
