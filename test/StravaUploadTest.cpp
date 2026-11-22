@@ -271,6 +271,43 @@ void test_no_write_access()
     CHECK(!strava_of(t.request.sidecar).has_value());
 }
 
+// A login that can post but not read the upload's progress, or the
+// reverse, is a login without write access too: the spec says a 401 or 403
+// to the upload or its poll is Forbidden.
+void test_no_write_access_when_polling()
+{
+    for (auto const status : { 401L, 403L }) {
+        Upload t { std::format("upload-forbidden-poll-{}", status) };
+        t.fake.answer("/api/v3/uploads", processing());
+        t.fake.answer("/api/v3/uploads/42", HttpResponse { .status = status, .body = R"({"message":"Authorization Error"})" });
+        auto const outcome = t.run();
+        CHECK(!outcome.has_value() && outcome.error().kind == StravaError::Kind::Forbidden);
+        CHECK(!strava_of(t.request.sidecar).has_value());
+    }
+}
+
+void test_unreadable_file()
+{
+    Upload t { "upload-unreadable" };
+    t.request.fit = t.dir.path / "missing.fit";
+    auto const outcome = t.run();
+    CHECK(!outcome.has_value());
+    CHECK_EQ(t.uploads(), 0uz);
+    CHECK(!strava_of(t.request.sidecar).has_value());
+}
+
+// A POST Strava answered with a server error isn't asked again: it may have
+// the file already.
+void test_upload_is_not_retried()
+{
+    Upload t { "upload-not-retried" };
+    t.fake.answer("/api/v3/uploads", HttpResponse { .status = 500, .body = "" });
+    auto const outcome = t.run();
+    CHECK(!outcome.has_value() && outcome.error().kind == StravaError::Kind::Failed);
+    CHECK_EQ(t.uploads(), 1uz);
+    CHECK(!strava_of(t.request.sidecar).has_value());
+}
+
 void test_not_logged_in()
 {
     Upload t { "upload-not-logged-in" };
@@ -317,6 +354,9 @@ int main()
     test_still_processing();
     test_check_fails();
     test_no_write_access();
+    test_no_write_access_when_polling();
+    test_unreadable_file();
+    test_upload_is_not_retried();
     test_not_logged_in();
     test_report();
     return ST::Test::test_result();
