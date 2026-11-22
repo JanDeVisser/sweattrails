@@ -9,6 +9,7 @@
  * gets the tiles cut from its world's map instead (specs/23-zwift-maps.md).
  */
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 #include <limits>
@@ -16,9 +17,11 @@
 #include <raylib.h>
 
 #include <App.h>
+#include <Dashes.h>
 
 #include <Map.h>
 #include <SweatTrails.h>
+#include <storage/Paused.h>
 #include <widget/Activity.h>
 #include <widget/DataFields.h>
 
@@ -27,6 +30,8 @@ namespace ST {
 namespace {
 
 constexpr float TrackWidth = 3.0f;
+constexpr float PausedDash = 8.0f;
+constexpr float PausedGap = 6.0f;
 
 }
 
@@ -52,6 +57,7 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
     unload_tiles();
     failed.clear();
     track.clear();
+    paused.clear();
     has_map = false;
     summary_only = false;
     map_id = next_tile_owner();
@@ -88,6 +94,15 @@ void ActivityMap::set_activity(std::shared_ptr<DisplayedActivity> const &activit
         } else {
             track.push_back(track.empty() ? WorldPoint { .x = none, .y = none } : track.back());
         }
+    }
+    for (auto const &paused_track : paused_tracks(route.records, route.paused)) {
+        PausedLine line { .before = paused_track.before };
+        line.points.push_back(track[paused_track.before]);
+        for (auto const &position : paused_track.positions) {
+            line.points.push_back(world_pixel(position, 0));
+        }
+        line.points.push_back(track[paused_track.before + 1]);
+        paused.push_back(std::move(line));
     }
     // The layout gives the map its size for this activity next, which may
     // be another one: only then load and download the tiles.
@@ -383,29 +398,46 @@ void ActivityMap::draw_tiles()
 }
 
 // The track in red, the selected range or lap in blue over it, and the
-// marked record as a black dot.
+// marked record as a black dot. Where a Wahoo was paused, its track is
+// dashed, and there's no line straight across.
 void ActivityMap::draw_track() const
 {
     if (track.empty()) {
         return;
     }
-    auto const           scale = world_size(navigator.view.zoom) / world_size(0);
+    auto const scale = world_size(navigator.view.zoom) / world_size(0);
+    auto const to_screen = [this, scale](WorldPoint const &p) {
+        auto const screen = navigator.view.to_screen(WorldPoint { .x = p.x * scale, .y = p.y * scale });
+        return Vector2 { .x = viewport.x + screen.x, .y = viewport.y + screen.y };
+    };
     std::vector<Vector2> points;
     points.reserve(track.size());
     for (auto const &p : track) {
-        auto const screen = navigator.view.to_screen(WorldPoint { .x = p.x * scale, .y = p.y * scale });
-        points.push_back(Vector2 { .x = viewport.x + screen.x, .y = viewport.y + screen.y });
+        points.push_back(to_screen(p));
     }
 
+    for (auto const &line : paused) {
+        std::vector<Vector2> dashed;
+        for (auto const &p : line.points) {
+            if (!std::isnan(p.x) && !std::isnan(p.y)) {
+                dashed.push_back(to_screen(p));
+            }
+        }
+        draw_dashed_line(dashed, TrackWidth, PausedDash, PausedGap, RED);
+    }
+    auto const after_pause = [this](size_t ix) {
+        return std::ranges::any_of(paused, [ix](PausedLine const &line) { return line.before + 1 == ix; });
+    };
+
     // Points less than a pixel from the one before are left out.
-    auto const draw_path = [&points](size_t from, size_t to, Color color) {
+    auto const draw_path = [&points, &after_pause](size_t from, size_t to, Color color) {
         auto previous = points[from];
         for (auto ix = from; ix < to; ++ix) {
             auto const &p = points[ix];
             if (std::isnan(p.x) || std::isnan(p.y)) {
                 continue;
             }
-            if (std::isnan(previous.x) || std::isnan(previous.y)) {
+            if (std::isnan(previous.x) || std::isnan(previous.y) || after_pause(ix)) {
                 previous = p;
                 continue;
             }

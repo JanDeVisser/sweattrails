@@ -99,12 +99,20 @@ struct ActivityMap : public Widget {
     bool                               summary_only { false }; // A stub: it says so instead
     bool                               view_pending { false }; // The tiles aren't loaded for the view yet
     std::vector<WorldPoint>            track { };              // At zoom 0; NaN without a position
-    std::map<Tile, LoadedTile>         tiles { };
-    std::set<Tile>                     failed { };   // Not tried again for this activity
-    pTileDownload                      download { }; // The view's tiles that weren't cached, while they download
-    u64                                map_id { 0 }; // Tiles downloaded for another map are dropped
-    size_t                             frame { 0 };
-    bool                               reporting_failures { false }; // The status line says tiles failed
+    // Where a Wahoo was while it was paused, drawn dashed in place of the
+    // line from track[before] to track[before + 1], with those at its
+    // ends (specs/64-wahoo-paused-track.md).
+    struct PausedLine {
+        size_t                  before { 0 };
+        std::vector<WorldPoint> points { }; // At zoom 0
+    };
+    std::vector<PausedLine>    paused { };
+    std::map<Tile, LoadedTile> tiles { };
+    std::set<Tile>             failed { };   // Not tried again for this activity
+    pTileDownload              download { }; // The view's tiles that weren't cached, while they download
+    u64                        map_id { 0 }; // Tiles downloaded for another map are dropped
+    size_t                     frame { 0 };
+    bool                       reporting_failures { false }; // The status line says tiles failed
 
     explicit ActivityMap(pWidget const &parent);
     ~ActivityMap();
