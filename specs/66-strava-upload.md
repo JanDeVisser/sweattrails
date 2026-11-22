@@ -1,6 +1,6 @@
 # Uploading to Strava
 
-Status: In progress, on branch feature/66-strava-upload
+Status: In review
 
 <!--
 Status is one of:
