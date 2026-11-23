@@ -2844,7 +2844,11 @@ void SweatTrails::notif_summaries_updated(Notification::Payload const &data)
     auto const  the = SweatTrails::the();
     the->summaries = updated.summaries;
     the->summaries_screen->set_summaries(updated.summaries);
-    the->gear_screen->set_summaries(updated.summaries);
+    // Working out the gear's totals goes over every activity: not while
+    // the screen is closed, as it's given the summaries when it opens.
+    if (the->showing_gear()) {
+        the->gear_screen->set_summaries(updated.summaries);
+    }
     // Whatever adds or removes activities updates the summaries, so this
     // keeps the status bar's summary of the store up to date.
     the->status->idle = store_summary(the->summaries);
