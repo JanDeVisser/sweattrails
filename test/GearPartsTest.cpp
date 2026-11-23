@@ -419,6 +419,9 @@ void test_pick_of_a_part()
     auto const totals = gear_totals(list, { summary }, GearPicks { { pick_key(summary), GearPick { .name = "KMC blue" } } }, Today);
     CHECK_EQ(total_of(totals, "KMC blue").km, 0.0);
     CHECK_EQ(total_of(totals, "KMC blue").activities, 0uz);
+    // It's shown as an unknown name instead, after the gear.
+    CHECK(!totals.empty() && totals.back().name == "KMC blue" && totals.back().unknown());
+    CHECK(!totals.empty() && totals.back().km == 50.0 && totals.back().activities == 1);
 }
 
 }

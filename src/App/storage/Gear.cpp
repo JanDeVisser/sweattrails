@@ -723,8 +723,12 @@ std::map<std::string, Wax const *> last_waxes(GearList const &list, chrono::year
 std::vector<GearTotal> gear_totals(GearList const &list, ActivitySummaries const &summaries, GearPicks const &picks,
     chrono::year_month_day today)
 {
-    std::map<std::string, GearTotal>             by_name;
+    std::map<std::string, GearTotal> by_name;
+    // Picked names that aren't shoes or a bike, apart from the gear: a
+    // part's name picked by hand is unknown, not a ride of the part.
+    std::map<std::string, GearTotal>             unknown;
     std::map<std::string, std::set<std::string>> files; // To count a multisport file once
+    std::map<std::string, std::set<std::string>> unknown_files;
     auto const                                   waxes = last_waxes(list, today);
     for (auto const &gear : list.gear) {
         auto &total = by_name[gear.name] = GearTotal { .name = gear.name, .gear = gear, .km = gear.start_km };
@@ -735,11 +739,11 @@ std::vector<GearTotal> gear_totals(GearList const &list, ActivitySummaries const
             total.wax = WaxTotal { .day = wax->second->day };
         }
     }
-    auto const add = [&](std::string const &name, ActivitySummary const &summary) -> GearTotal & {
-        auto &total = by_name[name];
+    auto const add = [&](std::string const &name, ActivitySummary const &summary, bool is_unknown = false) -> GearTotal & {
+        auto &total = (is_unknown ? unknown : by_name)[name];
         total.name = name;
         total.km += summary.distance / 1000.0;
-        if (files[name].insert(summary.source.file).second) {
+        if ((is_unknown ? unknown_files : files)[name].insert(summary.source.file).second) {
             ++total.activities;
         }
         return total;
@@ -756,7 +760,10 @@ std::vector<GearTotal> gear_totals(GearList const &list, ActivitySummaries const
         if (!used) {
             continue;
         }
-        add(used->name, summary);
+        add(used->name, summary, used->unknown);
+        if (used->unknown) {
+            continue;
+        }
         auto const *bike = list.find(used->name);
         if (bike == nullptr || bike->type != GearType::Bike) {
             continue;
@@ -783,10 +790,8 @@ std::vector<GearTotal> gear_totals(GearList const &list, ActivitySummaries const
             }
         }
     }
-    for (auto const &[name, total] : by_name) {
-        if (total.unknown()) {
-            ret.push_back(total);
-        }
+    for (auto const &[name, total] : unknown) {
+        ret.push_back(total);
     }
     return ret;
 }
