@@ -531,6 +531,77 @@ runs on through a stop, such as at a traffic light, and distance gained
 faster than 8 m/s between two records is a GPS glitch, and doesn't
 count. The pace is as run: hills aren't taken into account.
 
+## Gear
+
+SweatTrails keeps track of your shoes and bikes, and the distance on
+each, for example to know when a pair of shoes is worn out. You write
+the gear in `gear.json` in the data directory, next to `summaries.json`
+(`~/Library/Application Support/sweattrails` on macOS; the Gear screen
+says where):
+
+```json
+{
+  "shoes": [
+    { "name": "Pegasus blue", "brand": "Nike", "model": "Pegasus",
+      "version": "41", "colourway": "Blue",
+      "purchased": "2026-03-14", "where": "Running Room", "price": "179.99",
+      "start_km": 0, "retired": "2026-11-01" }
+  ],
+  "bikes": [
+    { "name": "Canyon", "brand": "Canyon", "model": "Ultimate CF SL", "year": 2022,
+      "purchased": "2022-05-01", "where": "canyon.com", "price": "3200",
+      "start_km": 4300 },
+    { "name": "Gravel", "brand": "Cervélo", "model": "Áspero" }
+  ],
+  "defaults": [
+    { "for": "running", "gear": "Pegasus blue", "from": "2026-03-14" },
+    { "for": "road", "gear": "Canyon", "from": "2022-05-01" },
+    { "for": "indoor", "gear": "Canyon", "from": "2025-11-01" },
+    { "for": "indoor", "gear": "Gravel", "from": "2026-04-01" }
+  ]
+}
+```
+
+- `name` is what the app shows, and what an activity's pick refers to:
+  it's unique over shoes and bikes. Renaming gear leaves the activities
+  picked under the old name on gear that isn't there, shown as
+  `Old Canyon (unknown)`, until you name it back.
+- Everything else is optional. `version` is the model's, as makers
+  bring out a new one most years: the 5 of a Saucony Endorphin Speed 5.
+  It's text, for a "v3" or a "Pro 4". Dates are `YYYY-MM-DD`, and `price` is
+  text, so you can write a currency with it. `start_km` is what the gear
+  did before SweatTrails knew about it. `retired` is the day it went out
+  of use. Fields of your own in an entry, such as a note, are left
+  alone, but anything besides `shoes`, `bikes` and `defaults` at the top
+  is taken for a typo, and the file isn't read.
+- `defaults` says which gear an activity uses when you haven't picked
+  any: from its date on, until a later entry for the same kind. The kinds
+  are `running`; `road`, `gravel`, `mountain` and `tt` rides, which fall
+  back to `cycling` without an entry of their own; `indoor`, for the
+  trainer and Zwift, which also falls back to `cycling`; and `cycling`,
+  for every other ride. The FIT files have no time trials, so a TT bike
+  is picked. Walks and hikes have no default. A default whose gear was
+  retired before an activity's day gives it no gear: add an entry for
+  the new shoes or bike.
+
+The app reads the file at startup, and again as the Gear screen, the
+picker or the activity info box opens, so edits show without a restart.
+What's wrong with it is on the status line, and the gear read before
+stays.
+
+The activity info box (Cmd+I) shows the activity's gear; a default is
+dimmed, as a guess. Click it, or run **Gear: pick for this activity**
+from the command palette, to pick other gear, **Default** to go back to
+the default, or **None** for no gear, such as for a run in borrowed
+shoes. The pick is saved in the activity's sidecar. A multisport
+activity's gear is picked per leg, on the leg's tab.
+
+**Gear** in the menu, or **Gear: list** in the palette, lists the gear:
+shoes, then bikes, retired gear dimmed at the bottom of each, with the
+activities it was used for and the distance on it, `start_km` included.
+Names picked for activities that aren't in `gear.json` have a row of
+their own. Escape goes back to the activity.
+
 ## Zwift
 
 A ride in Zwift shows on the map of its Zwift world rather than on

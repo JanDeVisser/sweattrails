@@ -32,6 +32,11 @@ std::vector<InfoRow> info_rows(ActivityInfo const &info)
         ret.push_back({ .kind = Heading, .line = { .text = "File" } });
         ret.push_back({ .kind = Entry, .line = { .text = info.file }, .link = true });
     }
+    if (info.gear) {
+        ret.push_back({ .kind = Heading, .line = { .text = "Gear" } });
+        // A default is a guess, dimmed to tell it from a pick.
+        ret.push_back({ .kind = Entry, .line = { .text = gear_text(*info.gear) }, .link = true, .dim = info.gear->from_default });
+    }
     ret.push_back({ .kind = Heading, .line = { .text = "Recorded with" } });
     ret.push_back({ .kind = Entry, .line = info.device });
     ret.push_back({ .kind = Heading, .line = { .text = "Sensors" } });
@@ -45,6 +50,15 @@ std::vector<InfoRow> info_rows(ActivityInfo const &info)
         }
     }
     return ret;
+}
+
+std::optional<size_t> gear_row(ActivityInfo const &info)
+{
+    if (!info.gear) {
+        return { };
+    }
+    // Under its heading, after the file's two rows if there's a file.
+    return info.file.empty() ? 1uz : 3uz;
 }
 
 std::string info_title(ActivityInfo const &info)
@@ -66,12 +80,13 @@ std::string info_hint(ActivityInfo const &info)
     return join(keys, " · ");
 }
 
-ActivityInfoBox::ActivityInfoBox(Describe describe, SwitchRecording switch_recording, Reveal reveal, Copy copy)
+ActivityInfoBox::ActivityInfoBox(Describe describe, SwitchRecording switch_recording, Reveal reveal, Copy copy, PickGear pick_gear)
     : InfoBox("Activity info")
     , describe_fnc(std::move(describe))
     , switch_fnc(std::move(switch_recording))
     , reveal_fnc(std::move(reveal))
     , copy_fnc(std::move(copy))
+    , pick_gear_fnc(std::move(pick_gear))
 {
 }
 
@@ -126,8 +141,12 @@ std::string ActivityInfoBox::hint_text(double now) const
     return info_hint(info);
 }
 
-void ActivityInfoBox::click_link(double now)
+void ActivityInfoBox::click_link(size_t row, double now)
 {
+    if (row == gear_row(info)) {
+        pick_gear_fnc();
+        return;
+    }
     copy(now);
 }
 

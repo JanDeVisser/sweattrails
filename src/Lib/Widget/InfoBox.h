@@ -42,14 +42,22 @@ struct InfoRow {
 
     Kind     kind { Kind::Entry };
     InfoLine line { };
-    bool     link { false }; // A click on it calls click_link(): one row at most
+    bool     link { false }; // A click on it calls click_link() with its index
+    bool     dim { false };  // Drawn in grey: a guess, not a fact
 
     bool operator==(InfoRow const &) const = default;
 };
 
+// Where draw() drew a link row's text, for a click: the row's index
+// among box_rows(), and the text's area.
+struct InfoLink {
+    size_t    row { 0 };
+    Rectangle area { };
+};
+
 struct InfoBox : public Modal {
-    Rectangle hint_area { }; // Where draw() drew the hint, for a click
-    Rectangle link_area { }; // Where draw() drew the link row's text, likewise
+    Rectangle             hint_area { }; // Where draw() drew the hint, for a click
+    std::vector<InfoLink> links { };     // Likewise the link rows
 
     explicit InfoBox(std::string_view const &name);
 
@@ -58,10 +66,10 @@ struct InfoBox : public Modal {
     // The line at the bottom at `now`, as GetTime().
     [[nodiscard]] virtual std::string hint_text(double now) const = 0;
 
-    // What a click on the link row, or on the hint, does: nothing, unless a
-    // subclass says. The hand cursor shows over the hint only if it's
-    // clickable.
-    virtual void               click_link(double now);
+    // What a click on link row `row`, or on the hint, does: nothing,
+    // unless a subclass says. The hand cursor shows over the hint only if
+    // it's clickable.
+    virtual void               click_link(size_t row, double now);
     virtual void               click_hint();
     [[nodiscard]] virtual bool hint_clickable() const;
 

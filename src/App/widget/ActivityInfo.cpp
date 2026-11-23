@@ -10,6 +10,7 @@
 
 #include <StringUtil.h>
 
+#include <storage/Volume.h>
 #include <widget/ActivityInfo.h>
 #include <widget/DataFields.h>
 
@@ -186,7 +187,15 @@ std::string sensor_type_name(Sensor const &sensor)
     return std::string { known_type_name(sensor).value_or("sensor") };
 }
 
-ActivityInfo describe(Activity const &activity, std::filesystem::path const &store)
+std::optional<ActivityGear> gear_of(Activity const &activity, GearList const &list)
+{
+    if (!activity.leg && activity.is_multisport()) {
+        return { };
+    }
+    return activity_gear(list, activity.gear_pick, gear_kinds(activity.sport, activity.sub_sport), day_of(activity.segment.start_time));
+}
+
+ActivityInfo describe(Activity const &activity, std::filesystem::path const &store, GearList const &gear)
 {
     ActivityInfo ret;
     ret.path = fit_path(activity);
@@ -210,6 +219,7 @@ ActivityInfo describe(Activity const &activity, std::filesystem::path const &sto
             .details = sensor_details(sensor),
         });
     }
+    ret.gear = gear_of(activity, gear);
     return ret;
 }
 

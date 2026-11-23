@@ -61,6 +61,20 @@ void test_set_rows()
     CHECK(!table->scroll.overflows());
 }
 
+// Rows can be dimmed, and new rows without say are none; rows past the
+// list aren't.
+void test_dimmed_rows()
+{
+    auto table = make_table(8);
+    table->set_rows({ { .header = "Gear" } }, { { "Canyon" }, { "Old Canyon" }, { "Gravel" } }, { false, true });
+    CHECK(!table->is_dimmed(0));
+    CHECK(table->is_dimmed(1));
+    CHECK(!table->is_dimmed(2));
+    CHECK(!table->is_dimmed(7));
+    table->set_rows({ { .header = "Gear" } }, { { "Canyon" }, { "Old Canyon" } });
+    CHECK(!table->is_dimmed(1));
+}
+
 void test_select_scrolls()
 {
     auto table = make_table(12);
@@ -256,6 +270,7 @@ int main()
     test_characters_table_shows_its_rows(app);
     test_fit_rows();
     test_set_rows();
+    test_dimmed_rows();
     test_select_scrolls();
     test_row_at();
     test_click();

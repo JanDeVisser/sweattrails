@@ -44,7 +44,7 @@ InfoBox::InfoBox(std::string_view const &name)
     background = BLACK;
 }
 
-void InfoBox::click_link(double)
+void InfoBox::click_link(size_t, double)
 {
 }
 
@@ -80,16 +80,18 @@ void InfoBox::process_input()
 void InfoBox::handle_input(ScrollInput const &input)
 {
     auto const on_hint = hint_clickable() && CheckCollisionPointRec(input.mouse, hint_area);
-    auto const on_link = CheckCollisionPointRec(input.mouse, link_area);
-    if (!on_hint && !on_link) {
+    auto const on_link = std::ranges::find_if(links, [&input](InfoLink const &link) {
+        return CheckCollisionPointRec(input.mouse, link.area);
+    });
+    if (!on_hint && on_link == links.end()) {
         return;
     }
     App::the()->request_cursor(MOUSE_CURSOR_POINTING_HAND);
     if (!input.pressed) {
         return;
     }
-    if (on_link) {
-        click_link(input.time);
+    if (on_link != links.end()) {
+        click_link(on_link->row, input.time);
     } else {
         click_hint();
     }
@@ -132,15 +134,21 @@ void InfoBox::draw()
     draw_line(2, y + Margin / 2, -2, y + Margin / 2, RAYWHITE);
     y += Margin;
 
-    link_area = { };
-    for (auto const &row : box_rows()) {
-        auto const x = (row.kind == InfoRow::Kind::Heading) ? Margin : EntryIndent;
-        auto const color = (row.kind == InfoRow::Kind::Heading) ? HeadingColor : RAYWHITE;
-        auto       small_x = x;
+    links.clear();
+    auto const rows = box_rows();
+    for (auto ix = 0uz; ix < rows.size(); ++ix) {
+        auto const &row = rows[ix];
+        auto const  x = (row.kind == InfoRow::Kind::Heading) ? Margin : EntryIndent;
+        auto const  color = row.dim ? SmallColor : (row.kind == InfoRow::Kind::Heading) ? HeadingColor
+                                                                                        : RAYWHITE;
+        auto        small_x = x;
         if (!row.line.text.empty()) {
             render_text(x, y, row.line.text, FontSize::Medium, color);
             if (row.link) {
-                link_area = Rectangle { .x = viewport.x + x, .y = viewport.y + y, .width = text_width(row.line.text, FontSize::Medium), .height = medium.y };
+                links.push_back(InfoLink {
+                    .row = ix,
+                    .area = Rectangle { .x = viewport.x + x, .y = viewport.y + y, .width = text_width(row.line.text, FontSize::Medium), .height = medium.y },
+                });
             }
             small_x += text_width(row.line.text, FontSize::Medium) + text_width(" ", FontSize::Medium);
         }

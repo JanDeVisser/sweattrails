@@ -179,6 +179,7 @@ Activity leg_activity(Activity const &whole, size_t leg)
     ret.original_title = the_leg.original_title;
     ret.notes = the_leg.notes;
     ret.original_notes = the_leg.original_notes;
+    ret.gear_pick = the_leg.gear_pick;
     return ret;
 }
 

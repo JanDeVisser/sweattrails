@@ -27,6 +27,7 @@
 #include <storage/Activity.h>
 #include <storage/Download.h>
 #include <storage/Garmin.h>
+#include <storage/Gear.h>
 #include <storage/Recordings.h>
 #include <storage/Storage.h>
 #include <storage/Strava.h>
@@ -37,6 +38,7 @@
 #include <storage/Wahoo.h>
 #include <storage/Weather.h>
 #include <widget/Activity.h>
+#include <widget/Gear.h>
 #include <widget/Summaries.h>
 #include <widget/Weather.h>
 
@@ -141,6 +143,12 @@ struct StravaUploadJob {
     i64           start { 0 };
 };
 
+// The ReadGearPicks job, as the Gear screen opens: the summaries whose
+// sidecars to read the gear picked for them from.
+struct GearPicksRequest {
+    ActivitySummaries summaries { };
+};
+
 // The FindNewestActivity job. At startup, it also tells the UI whether
 // the store is empty, which then offers to download its history.
 struct FindNewest {
@@ -179,7 +187,8 @@ struct DescribingProgress {
     S(ImportStravaExport, StravaExportRequest) \
     S(DescribeFromStrava, DescribingProgress)  \
     S(DeleteActivity, DeleteRequest)           \
-    S(UploadToStrava, StravaUploadJob)
+    S(UploadToStrava, StravaUploadJob)         \
+    S(ReadGearPicks, GearPicksRequest)
 
 enum class JobType {
     JOBTYPE(ENUMVALUE2)
@@ -319,6 +328,11 @@ struct WeatherArrived {
     std::string                    error { };
 };
 
+// Sent by the ReadGearPicks job: the gear picked in the sidecars.
+struct GearPicksRead {
+    GearPicks picks { };
+};
+
 // What the FindNewestActivity job at startup found.
 struct StoreChecked {
     bool empty { false };
@@ -347,7 +361,8 @@ struct StoreChecked {
     S(ActivityDeleted, ActivityDeleted)             \
     S(WeatherArrived, WeatherArrived)               \
     S(Uploading, Uploading)                         \
-    S(UploadedToStrava, UploadReport)
+    S(UploadedToStrava, UploadReport)               \
+    S(GearPicksRead, GearPicksRead)
 
 enum class NotificationType {
     NOTIFICATIONTYPE(ENUMVALUE2)
@@ -381,6 +396,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void job_describe_from_strava(Job::Payload const &data);
     static void job_delete_activity(Job::Payload const &data);
     static void job_upload_to_strava(Job::Payload const &data);
+    static void job_read_gear_picks(Job::Payload const &data);
 
     // The payload variant starts with a std::monostate, so a job type's
     // payload comes one after its value.
@@ -407,6 +423,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 job_describe_from_strava,
                 job_delete_activity,
                 job_upload_to_strava,
+                job_read_gear_picks,
             });
     }
 
@@ -439,6 +456,7 @@ struct SweatTrails : public Main<Job, Notification> {
     static void notif_weather_arrived(Notification::Payload const &data);
     static void notif_uploading(Notification::Payload const &data);
     static void notif_uploaded_to_strava(Notification::Payload const &data);
+    static void notif_gear_picks_read(Notification::Payload const &data);
 
     template<NotificationType Type>
     static Notification make_notification(auto data)
@@ -469,6 +487,7 @@ struct SweatTrails : public Main<Job, Notification> {
                 notif_weather_arrived,
                 notif_uploading,
                 notif_uploaded_to_strava,
+                notif_gear_picks_read,
             });
     }
 
@@ -539,6 +558,7 @@ struct SweatTrails : public Main<Job, Notification> {
     std::shared_ptr<WidgetStack>     widget_stack { nullptr };
     std::shared_ptr<ActivityDisplay> activity_display { nullptr };
     std::shared_ptr<SummariesScreen> summaries_screen { nullptr };
+    std::shared_ptr<GearScreen>      gear_screen { nullptr };
     std::string                      thresholds_error { }; // Why the settings' thresholds can't be read
     std::string                      settings_error { };   // Why a settings file can't be read
     std::string                      font_error { };       // Why the font in the settings isn't used
@@ -553,6 +573,12 @@ struct SweatTrails : public Main<Job, Notification> {
     bool               describe_again { false };
     // Run from the command palette, for as long as the app runs.
     RecentCommands recent_commands { };
+    // From gear.json: none without the file. A file that can't be read
+    // leaves the gear read before. Only used on the UI thread.
+    std::optional<GearList> gear { };
+    // Why gear.json can't be read, as it was last read: a new error gets
+    // a message box, one said before only the status line.
+    std::string gear_error { };
 
     SweatTrails();
     static pSweatTrails the();
@@ -565,7 +591,11 @@ struct SweatTrails : public Main<Job, Notification> {
     void   on_terminate() override;
     void   files_dropped(std::vector<std::string> const &paths) override;
     EError read_settings();
-    void   load_font();
+    // Reads gear.json again, so that an edit shows without a restart: at
+    // startup, and as the gear is shown. What's wrong with it goes on the
+    // status line.
+    void read_gear_file();
+    void load_font();
     // The font file of this name in the font directories, if there is one.
     std::optional<fs::path> find_font(std::string_view name);
     // The pictures next to a layout, or with the built-in ones.
@@ -594,6 +624,10 @@ struct SweatTrails : public Main<Job, Notification> {
     void               describe_from_strava();
     [[nodiscard]] bool showing_summaries() const;
     void               show_summaries(bool on);
+    [[nodiscard]] bool showing_gear() const;
+    void               show_gear(bool on);
+    // Neither the totals nor the Gear screen.
+    [[nodiscard]] bool showing_activity() const;
     // Where Zwift worlds' maps are cut into tiles.
     [[nodiscard]] fs::path zwift_cache() const { return storage.tiles_dir / "zwift"; }
     // Has the job cut the world into tiles, unless it's doing that already,

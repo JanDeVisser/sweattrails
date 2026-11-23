@@ -24,8 +24,13 @@
 
 namespace ST {
 
-// The rows under the title: the file, the device, and the sensors.
+// The rows under the title: the file, the gear, the device, and the
+// sensors.
 [[nodiscard]] std::vector<InfoRow> info_rows(ActivityInfo const &info);
+
+// The gear's row among info_rows(), which a click picks gear on: none
+// without gear.
+[[nodiscard]] std::optional<size_t> gear_row(ActivityInfo const &info);
 
 // The line at the top: "Activity info", and which recording for one of
 // several.
@@ -43,6 +48,8 @@ struct ActivityInfoBox : public InfoBox {
     using Reveal = std::function<void(std::filesystem::path const &)>;
     // Puts the text on the clipboard.
     using Copy = std::function<void(std::string const &)>;
+    // Opens the gear picker for the activity on display.
+    using PickGear = std::function<void()>;
 
     // How long "Copied" shows in place of the hint.
     static constexpr double CopiedSeconds = 2.0;
@@ -51,10 +58,11 @@ struct ActivityInfoBox : public InfoBox {
     SwitchRecording       switch_fnc;
     Reveal                reveal_fnc;
     Copy                  copy_fnc;
+    PickGear              pick_gear_fnc;
     ActivityInfo          info { };
     std::optional<double> copied_at { }; // When the path was copied, as GetTime()
 
-    ActivityInfoBox(Describe describe, SwitchRecording switch_recording, Reveal reveal, Copy copy);
+    ActivityInfoBox(Describe describe, SwitchRecording switch_recording, Reveal reveal, Copy copy, PickGear pick_gear);
 
     // Describes the activity on display, and sizes the box for it.
     void initialize() override;
@@ -70,9 +78,9 @@ struct ActivityInfoBox : public InfoBox {
     // "Copied" for a while after a copy, else info_hint().
     [[nodiscard]] std::string hint_text(double now) const override;
 
-    // A click on the file's line copies its path, and one on the hint
-    // shows the file.
-    void               click_link(double now) override;
+    // A click on the file's line copies its path, one on the gear's opens
+    // the gear picker, and one on the hint shows the file.
+    void               click_link(size_t row, double now) override;
     void               click_hint() override;
     [[nodiscard]] bool hint_clickable() const override;
 

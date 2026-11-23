@@ -9,6 +9,7 @@
 #include <utility>
 
 #include <Date.h>
+#include <StringUtil.h>
 
 #include <storage/Volume.h>
 
@@ -114,6 +115,25 @@ std::optional<VolumeSport> volume_sport(std::optional<FIT::sport> sport, std::op
 chrono::year_month_day start_day(ActivitySummary const &summary)
 {
     return day_of(DateTime::from_timestamp(static_cast<i32>(summary.start)));
+}
+
+std::optional<chrono::year_month_day> parse_day(std::string_view text)
+{
+    auto const parts = split(text, '-');
+    if (parts.size() != 3) {
+        return { };
+    }
+    auto const year = string_to_integer<int>(parts[0], 10);
+    auto const month = string_to_integer<unsigned>(parts[1], 10);
+    auto const day = string_to_integer<unsigned>(parts[2], 10);
+    if (!year || !month || !day) {
+        return { };
+    }
+    auto const ret = chrono::year { *year } / chrono::month { *month } / chrono::day { *day };
+    if (!ret.ok()) {
+        return { };
+    }
+    return ret;
 }
 
 chrono::year_month_day day_of(DateTime const &time)

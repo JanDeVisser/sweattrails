@@ -211,6 +211,49 @@ void test_no_sensors()
     CHECK(describe(t.activity, Store).sensors.empty());
 }
 
+// The gear: the pick, or the default on the activity's day, by its kind.
+void test_gear()
+{
+    Made t;
+    t.activity.sport = FIT::sport::Cycling;
+    t.activity.sub_sport = FIT::sub_sport::road;
+    t.activity.segment.start_time = DateTime::from_timestamp(1794572226); // 13 Nov 2026
+    GearList const list {
+        .gear = { Gear { .type = GearType::Bike, .name = "Canyon" }, Gear { .type = GearType::Bike, .name = "Gravel" } },
+        .defaults = { GearDefault { .kind = GearKind::Road, .gear = "Canyon", .from = std::chrono::year { 2022 } / 5 / 1 } },
+    };
+    CHECK(!describe(t.activity, Store).gear.has_value());
+    CHECK((describe(t.activity, Store, list).gear == ActivityGear { .name = "Canyon", .from_default = true }));
+    t.activity.gear_pick = GearPick { .name = "Gravel" };
+    CHECK((describe(t.activity, Store, list).gear == ActivityGear { .name = "Gravel" }));
+    t.activity.gear_pick = GearPick { };
+    CHECK(!describe(t.activity, Store, list).gear.has_value());
+    // A run doesn't get the road bike.
+    t.activity.gear_pick.reset();
+    t.activity.sport = FIT::sport::Running;
+    t.activity.sub_sport.reset();
+    CHECK(!describe(t.activity, Store, list).gear.has_value());
+}
+
+// The whole of a multisport activity has no gear; a leg on its tab has
+// its own.
+void test_gear_of_a_multisport_activity()
+{
+    Made t;
+    t.activity.segment.start_time = DateTime::from_timestamp(1794572226);
+    t.activity.legs = { Leg { .sport = FIT::sport::Running }, Leg { .sport = FIT::sport::Cycling } };
+    t.activity.sport = FIT::sport::Multisport;
+    GearList const list {
+        .gear = { Gear { .type = GearType::Shoes, .name = "Racers" } },
+        .defaults = { GearDefault { .kind = GearKind::Running, .gear = "Racers", .from = std::chrono::year { 2022 } / 5 / 1 } },
+    };
+    CHECK(!gear_of(t.activity, list).has_value());
+    auto leg = t.activity;
+    leg.leg = LegShown { .name = "Run", .number = 1, .count = 2, .index = 0 };
+    leg.sport = FIT::sport::Running;
+    CHECK((gear_of(leg, list) == ActivityGear { .name = "Racers", .from_default = true }));
+}
+
 }
 
 int main()
@@ -229,5 +272,7 @@ int main()
     test_an_unknown_types_product_name_is_kept();
     test_sensor_types();
     test_no_sensors();
+    test_gear();
+    test_gear_of_a_multisport_activity();
     return test_result();
 }

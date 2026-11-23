@@ -15,25 +15,6 @@ namespace chrono = std::chrono;
 
 namespace {
 
-std::optional<chrono::year_month_day> parse_day(std::string_view text)
-{
-    auto const parts = split(text, '-');
-    if (parts.size() != 3) {
-        return { };
-    }
-    auto const year = string_to_integer<int>(parts[0], 10);
-    auto const month = string_to_integer<unsigned>(parts[1], 10);
-    auto const day = string_to_integer<unsigned>(parts[2], 10);
-    if (!year || !month || !day) {
-        return { };
-    }
-    auto const ret = chrono::year { *year } / chrono::month { *month } / chrono::day { *day };
-    if (!ret.ok()) {
-        return { };
-    }
-    return ret;
-}
-
 std::expected<std::optional<float64>, std::string> threshold(JSONValue const &entry, std::string_view name, size_t ix)
 {
     if (!entry.has(name)) {

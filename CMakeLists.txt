@@ -308,6 +308,7 @@ add_executable(
         src/App/widget/OverlayPreview.cpp
         src/App/widget/SportIcon.cpp
         src/App/widget/Summaries.cpp
+        src/App/widget/Gear.cpp
         src/App/storage/Activity.cpp
         src/App/storage/Legs.cpp
         src/App/storage/Devices.cpp
@@ -318,6 +319,7 @@ add_executable(
         src/App/storage/Recordings.cpp
         src/App/storage/Laps.cpp
         src/App/storage/Summaries.cpp
+        src/App/storage/Gear.cpp
         src/App/storage/PowerCurve.cpp
         src/App/storage/PaceCurve.cpp
         src/App/storage/Fitness.cpp
@@ -544,6 +546,7 @@ sweattrails_test(
         activity_info_test
         test/ActivityInfoTest.cpp
         src/App/widget/ActivityInfo.cpp
+        src/App/storage/Gear.cpp
         src/App/storage/Thresholds.cpp
         src/App/storage/Volume.cpp
         src/App/widget/DataFields.cpp
@@ -568,6 +571,7 @@ sweattrails_test(
         test/ActivityInfoBoxTest.cpp
         src/App/widget/ActivityInfoBox.cpp
         src/App/widget/ActivityInfo.cpp
+        src/App/storage/Gear.cpp
         src/App/storage/Thresholds.cpp
         src/App/storage/Volume.cpp
         src/App/widget/DataFields.cpp
@@ -1176,6 +1180,47 @@ sweattrails_test(
         src/App/storage/Volume.cpp
 )
 target_include_directories(fitness_test PRIVATE src/App)
+
+sweattrails_test(
+        gear_test
+        test/GearTest.cpp
+        src/App/storage/Gear.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
+        src/App/storage/Devices.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Stubs.cpp
+        src/App/storage/Volume.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(gear_test PRIVATE src/App)
+target_link_libraries(gear_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
+        gear_screen_test
+        test/GearScreenTest.cpp
+        src/App/widget/Gear.cpp
+        src/App/storage/Gear.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
+        src/App/storage/Devices.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Stubs.cpp
+        src/App/storage/Volume.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(gear_screen_test PRIVATE src/App)
+target_link_libraries(gear_screen_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
         volume_test
