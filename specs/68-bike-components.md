@@ -1,6 +1,6 @@
 # Bike components
 
-Status: In progress, on branch feature/68-bike-components
+Status: In review, on branch feature/68-bike-components
 
 <!--
 Status is one of:
@@ -208,7 +208,8 @@ spec 67.
   chain. A default naming a part is an error too ("isn't in `shoes` or
   `bikes`").
 - `fitting_of(list, part, day) -> Fitting const *`: the part's latest
-  entry in effect on `day`, none if it isn't fitted.
+  entry in effect on `day`, none if it isn't fitted, or if a later part
+  has taken its place there (the 11-28 during the 11-34's week).
 - `part_at(list, place, type, at, day) -> Gear const *`: the part in a
   place: of the entries in effect there for that type (and position),
   latest first, the first whose part's `fitting_of()` is that entry.
@@ -229,8 +230,9 @@ spec 67.
 - `GearTotal` gets `std::string on` (where the part is today, empty for
   shoes and bikes) and `std::optional<WaxTotal> wax` for a chain
   (`std::optional<year_month_day> last`, `float64 km` since it), and
-  `worn()` (over `max_km`) and `needs_wax()` (over `wax_km`), both false
-  for retired gear. `gear_totals()` takes `today`, for the On column
+  `worn()` (over `max_km`) and `needs_wax()` (over `wax_km` since the
+  last wax, or in all for a chain never waxed), both false for retired
+  gear. `gear_totals()` takes `today`, for the On column
   and the wax: for each ride it finds the bike as before, then adds the
   ride to each of `parts_used()`, and to a chain's wax total if it
   started after the chain's last wax. Parts come after bikes, retired
@@ -257,10 +259,14 @@ spec 67.
   Distance, **Waxed**. On is `Canyon`, `Race wheels, rear`, or `–`;
   Waxed is `212 km (20 Nov)`, or `–` for a chain never waxed; both blank
   for the rest.
+- `GearColumn` names the columns' indexes.
 - `gear_highlights(totals)` gives the table's orange cells: Distance
-  for `worn()`, Waxed for `needs_wax()`.
-- The note counts parts too: `2 pairs of shoes, 2 bikes, 7 parts`.
-- `GearScreen::refresh()` passes today, the computer's local day.
+  for `worn()`, Waxed for `needs_wax()`, or Distance for a chain never
+  waxed, which has no Waxed to show it on.
+- The note counts parts too, when there are any:
+  `2 pairs of shoes, 2 bikes, 7 parts`.
+- `GearScreen::open()` takes today, the computer's local day, as
+  `SummariesScreen::open()` does.
 - Until the picks are read, Waxed is blank with the other numbers.
 
 ### README
@@ -272,7 +278,7 @@ No new dependencies, files or widgets beyond the above.
 
 ## Test plan
 
-- `gear_test`:
+- `gear_parts_test` (new, as `gear_test` is long enough):
   - `decode_gear()`: the spec's example with parts, `fitted` and
     `waxed`; each new error: unknown part type, fitted part unknown or
     not a part, unknown place, a cassette on a bike, a chain on wheels,
