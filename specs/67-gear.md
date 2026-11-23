@@ -1,6 +1,6 @@
 # Gear
 
-Status: In review, on branch feature/67-gear
+Status: Done
 
 <!--
 Status is one of:
