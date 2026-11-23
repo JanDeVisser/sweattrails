@@ -84,6 +84,10 @@ void test_note()
     CHECK_EQ(gear_note(GearState { .file = "/data/gear.json" }), "No gear yet: write /data/gear.json, as the README says · Esc goes back");
     CHECK_EQ(gear_note(GearState { .gear = list(), .reading = true }), "2 pairs of shoes, 1 bike · Reading which gear the activities used… · Esc goes back");
     CHECK_EQ(gear_note(GearState { .gear = GearList { } }), "0 pairs of shoes, 0 bikes · Esc goes back");
+    // What's wrong with the file comes first.
+    CHECK_EQ(gear_note(GearState { .gear = list(), .reading = true, .error = "gear.json can't be read: oops" }),
+        "gear.json can't be read: oops. Showing the gear read before it broke · Esc goes back");
+    CHECK_EQ(gear_note(GearState { .error = "gear.json can't be read: oops" }), "gear.json can't be read: oops. No gear until it's fixed · Esc goes back");
 }
 
 // Until the picks are read, the gear is listed without numbers; then
@@ -105,6 +109,24 @@ void test_numbers_come_with_the_picks()
     // Opening it again reads the picks again.
     screen->open(list(), "/data/gear.json");
     CHECK(screen->table->rows.size() == 3 && screen->table->rows[2][4].empty());
+}
+
+bool same(Color a, Color b)
+{
+    return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+// A broken gear.json stands out.
+void test_error_stands_out()
+{
+    ScopedTestApp app;
+    auto          screen = make_screen();
+    screen->open(list(), "/data/gear.json", "gear.json can't be read: oops");
+    CHECK(screen->note->text.starts_with("gear.json can't be read: oops"));
+    CHECK(same(screen->note->color, ORANGE));
+    CHECK_EQ(screen->table->rows.size(), 3uz);
+    screen->open(list(), "/data/gear.json");
+    CHECK(same(screen->note->color, LIGHTGRAY));
 }
 
 void test_without_gear()
@@ -140,6 +162,7 @@ int main()
     test_rows();
     test_note();
     test_numbers_come_with_the_picks();
+    test_error_stands_out();
     test_without_gear();
     test_step_row();
     return test_result();

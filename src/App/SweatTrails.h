@@ -576,6 +576,9 @@ struct SweatTrails : public Main<Job, Notification> {
     // From gear.json: none without the file. A file that can't be read
     // leaves the gear read before. Only used on the UI thread.
     std::optional<GearList> gear { };
+    // Why gear.json can't be read, as it was last read: a new error gets
+    // a message box, one said before only the status line.
+    std::string gear_error { };
 
     SweatTrails();
     static pSweatTrails the();

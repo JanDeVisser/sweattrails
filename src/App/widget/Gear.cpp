@@ -73,6 +73,10 @@ std::vector<bool> gear_dimmed(std::vector<GearTotal> const &totals)
 
 std::string gear_note(GearState const &state)
 {
+    if (!state.error.empty()) {
+        auto const what = state.gear ? "Showing the gear read before it broke" : "No gear until it's fixed";
+        return std::format("{}. {} · Esc goes back", state.error, what);
+    }
     if (!state.gear) {
         return std::format("No gear yet: write {}, as the README says · Esc goes back", state.file.string());
     }
@@ -103,9 +107,9 @@ void GearScreen::initialize()
     };
 }
 
-void GearScreen::open(std::optional<GearList> gear, std::filesystem::path file)
+void GearScreen::open(std::optional<GearList> gear, std::filesystem::path file, std::string error)
 {
-    state = GearState { .gear = std::move(gear), .file = std::move(file), .reading = true };
+    state = GearState { .gear = std::move(gear), .file = std::move(file), .reading = true, .error = std::move(error) };
     picks.reset();
     refresh();
 }
@@ -136,6 +140,7 @@ void GearScreen::step_row(int step)
 void GearScreen::refresh()
 {
     note->text = gear_note(state);
+    note->color = state.error.empty() ? LIGHTGRAY : ORANGE;
     auto const totals = gear_totals(state.gear.value_or(GearList { }), summaries, picks.value_or(GearPicks { }));
     auto       rows = gear_rows(totals);
     // Until the picks are read, the numbers would be the defaults' alone:

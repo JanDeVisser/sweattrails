@@ -1654,7 +1654,7 @@ void cmd_gear_list(pSweatTrails const &sweattrails, JSONValue const &)
         return;
     }
     sweattrails->read_gear_file();
-    sweattrails->gear_screen->open(sweattrails->gear, gear_path(sweattrails->storage));
+    sweattrails->gear_screen->open(sweattrails->gear, gear_path(sweattrails->storage), sweattrails->gear_error);
     sweattrails->gear_screen->set_summaries(sweattrails->summaries);
     sweattrails->schedule<JobType::ReadGearPicks>(GearPicksRequest { .summaries = sweattrails->summaries });
     sweattrails->show_gear(true);
@@ -3536,9 +3536,19 @@ void SweatTrails::read_gear_file()
 {
     auto read = read_gear(gear_path(storage));
     if (!read) {
-        set_status(std::format("{}. SweatTrails keeps the gear it had.", read.error()));
+        auto const message = std::format("{}. {}", read.error(),
+            gear ? "SweatTrails keeps the gear it read before." : "SweatTrails has no gear until it's fixed.");
+        set_status(message);
+        // Easy to miss on the status line, which the next message replaces.
+        // A notification, so that the box opens over the box or the screen
+        // that read the file, rather than under it.
+        if (read.error() != gear_error) {
+            notify<NotificationType::Message>(message);
+        }
+        gear_error = read.error();
         return;
     }
+    gear_error.clear();
     gear = std::move(*read);
 }
 

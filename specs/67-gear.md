@@ -156,8 +156,11 @@ keeps up to date.
   and the picker says there's no gear.
 - **A `gear.json` that can't be read**, or that has two pieces of gear
   of the same name, or a default naming gear that isn't there, is an
-  error on the status line, as a broken settings file is
-  (`specs/47-status-bar.md`). The gear read before stays in use.
+  error in a message box, the first time it's read so: on the status
+  line alone, as at first, it was too easy to miss. Read again with the
+  same error, it's on the status line only, so as not to nag; the Gear
+  screen's note says it too, in orange. The gear read before stays in
+  use.
 
 ### Gear on the activity screen
 
