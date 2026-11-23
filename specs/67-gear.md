@@ -271,9 +271,6 @@ each, is here, as pure functions a test reaches without a window.
   - Anything else, walking and hiking too: none.
   - FIT has no time-trial sub-sport, so nothing maps onto `tt`. It's
     accepted in `gear.json`, and the README says a TT bike is picked.
-- `struct GearPick { std::optional<std::string> name; }`: the `"gear"`
-  key of a sidecar part. No `GearPick` is no key; a `GearPick` without
-  a name is `"gear": null`.
 - `default_gear(list, kinds, day) -> std::optional<std::string>`: for each
   kind in order, the latest entry for it dated on or before `day`; the
   first kind with one wins. If that entry's gear was retired before
@@ -287,25 +284,35 @@ each, is here, as pure functions a test reaches without a window.
 - The picker's entries, `gear_choices(list, kinds, pick, day)`: a
   `GearChoice` per line, its text and the `std::optional<GearPick>` to
   save (none for Default). Shoes for `running`, bikes for a cycling
-  kind, both without kinds; retired gear left out unless it's the
-  pick. And which line is the current choice.
+  kind, both without kinds; gear retired before the activity's day left
+  out unless it's the pick, so an old activity can still get the gear
+  it was done with. A pick of gear that isn't in the list gets a line
+  of its own, `Old Canyon (unknown)`. And which line is the current
+  choice.
 - The Gear screen's numbers: `GearPicks`, the picks in the sidecars,
   by summary file and leg; `read_gear_picks(Storage, summaries)`, which
   reads the sidecar of each summary that has one, for the job; and
   `gear_totals(list, summaries, picks) -> std::vector<GearTotal>`
   (name, unknown, retired, count, km), shoes then bikes, retired last
   in their group, then the unknown names.
-- `save_sidecar_gear(sidecar, std::optional<GearPick>, leg)`, with
-  `update_sidecar()` and `change_sidecar_part()`, as the title.
-
 ### The activity (`storage/Activity.h`, `.cpp`)
 
+The sidecar's part of the gear is here rather than in `storage/Gear`, so
+that the many tests that link `Activity.cpp` don't all need `Gear.cpp`.
+
+- `struct GearPick { std::optional<std::string> name; }`: the `"gear"`
+  key of a sidecar part. No `GearPick` is no key; a `GearPick` without
+  a name is `"gear": null`. `sidecar_gear(part)` reads it; anything but
+  a non-empty string or null is no pick.
+- `save_sidecar_gear(sidecar, std::optional<GearPick>, leg)`, with
+  `update_sidecar()` and `change_sidecar_part()`, as the title.
 - `SidecarTitles` and `LegTitles` get `std::optional<GearPick> gear`, read
   in the same read of the sidecar as the names.
-- `Activity` gets `std::optional<GearPick> gear_pick`, which `read_names()`
-  sets, the leg's on a leg's tab, and
-  `Activity::set_gear(std::optional<GearPick>)`, which saves it as
-  `rename()` does.
+- `Activity` and `Leg` get `std::optional<GearPick> gear_pick`, which
+  `read_names()` sets: the activity's, the legs' for a multisport
+  activity (whose whole has none), and `leg_activity()` passes the
+  leg's on to its tab. `Activity::set_gear(std::optional<GearPick>)`
+  saves it as `rename()` does, the leg's on a leg's tab.
 
 ### The widget library
 
@@ -316,6 +323,11 @@ each, is here, as pure functions a test reaches without a window.
   info box's file row and gear row are both links.
 - `Table` (`src/Lib/Widget/Table.*`): `std::vector<bool> dimmed`, set with
   the rows, drawn in grey: retired gear.
+- `PickBox` (`Modal.h`) takes a `ListBoxConfig`, as `ListBox` does, and
+  `list_box<Config>()` passes one on, so that the gear picker keeps its
+  order (Default, None, then the gear as in the file). Its default still
+  sorts. The picker's payload is the line's index into the
+  `GearChoices`, as a `ListBox` orders entries by their payloads.
 
 ### The app
 
@@ -331,22 +343,27 @@ each, is here, as pure functions a test reaches without a window.
   `gear_heading(...)` as text, and `GearScreen : Layout`, a heading and a
   `Table`, as `SummariesScreen` has. `set_gear(list)`, `set_summaries()`
   and `set_picks()` work the totals out again.
-- `SweatTrails`: `GearList gear`, `read_gear_file()` (at startup, when the
-  screen or the picker opens; an error on the status line, keeping the
+- `SweatTrails`: `std::optional<GearList> gear` (none without the file),
+  `read_gear_file()` (at startup, and when the screen, the picker or
+  the activity info box opens; an error on the status line, keeping the
   gear before), and `gear_screen` in the widget stack. `showing_gear()`,
   and `showing_activity()` in place of the `!showing_summaries()` that
   stand for "on the activity screen".
 - A job, `ReadGearPicks`, reads the sidecars' picks when the Gear screen
-  opens (6,000 sidecars, half a second), and its notification,
-  `GearPicksRead`, hands them to the screen. A pick made in the app
+  opens (6,000 sidecars, half a second), of the summaries it's given,
+  and its notification, `GearPicksRead`, hands them to the screen.
+  Until then the screen lists the gear without numbers. A pick made in the app
   while the screen is closed is read with the rest next time.
 - Commands: `st-gear` ("Gear: pick for this activity", on the activity
   screen), `st-gear-list` ("Gear: list", and the hamburger menu's
-  `Gear`), and `st-gear-close` (Esc on the Gear screen). The picker is a
+  `Gear`), `st-gear-close` (Esc on the Gear screen), and `st-gear-row`
+  (Up and Down through its rows). The picker is a
   `list_box()` whose payload is the `std::optional<GearPick>` to save;
   saving calls `Activity::set_gear()` on the activity on display, as
   renaming does.
-- The README gets a section on `gear.json`. No new dependency, and
+- The README gets a section on `gear.json`. Its example adds the
+  `Gravel` bike that the spec's example's defaults name but its `bikes`
+  leave out: as it is above, the app says the file can't be read. No new dependency, and
   `.clang-format`'s groups already cover `storage/` and `widget/`.
 
 ## Test plan
