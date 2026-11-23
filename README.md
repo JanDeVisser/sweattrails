@@ -602,13 +602,15 @@ activity's gear is picked per leg, on the leg's tab.
 
 A bike's chainset, wheels, cassettes, chains and tyres are gear too,
 in `parts`, with the same fields as a bike and a `type`: `chainset`,
-`wheels`, `cassette`, `chain` or `tyre`. Where each is fitted is a
+`front wheel`, `rear wheel`, `cassette`, `chain` or `tyre`. A pair of
+wheels is two parts, a front wheel and a rear wheel. Where each is fitted is a
 dated list, `fitted`, and a chain's waxes are in `waxed`:
 
 ```json
 "parts": [
   { "name": "Ultegra 52/36", "type": "chainset" },
-  { "name": "Canyon stock wheels", "type": "wheels" },
+  { "name": "Canyon front", "type": "front wheel" },
+  { "name": "Canyon rear", "type": "rear wheel" },
   { "name": "105 11-28", "type": "cassette" },
   { "name": "105 11-34", "type": "cassette" },
   { "name": "GP5000 front", "type": "tyre" },
@@ -617,25 +619,27 @@ dated list, `fitted`, and a chain's waxes are in `waxed`:
 ],
 "fitted": [
   { "part": "Ultegra 52/36", "on": "Canyon", "from": "2022-05-01" },
-  { "part": "Canyon stock wheels", "on": "Canyon", "from": "2022-05-01" },
-  { "part": "105 11-28", "on": "Canyon stock wheels", "from": "2022-05-01" },
-  { "part": "GP5000 front", "on": "Canyon stock wheels", "at": "front", "from": "2026-03-01" },
-  { "part": "GP5000 rear", "on": "Canyon stock wheels", "at": "rear", "from": "2026-03-01" },
+  { "part": "Canyon front", "on": "Canyon", "from": "2022-05-01" },
+  { "part": "Canyon rear", "on": "Canyon", "from": "2022-05-01" },
+  { "part": "105 11-28", "on": "Canyon rear", "from": "2022-05-01" },
+  { "part": "GP5000 front", "on": "Canyon front", "from": "2026-03-01" },
+  { "part": "GP5000 rear", "on": "Canyon rear", "from": "2026-03-01" },
   { "part": "KMC blue", "on": "Canyon", "from": "2026-06-01" },
-  { "part": "105 11-34", "on": "Canyon stock wheels", "from": "2026-07-01", "until": "2026-07-12" }
+  { "part": "105 11-34", "on": "Canyon rear", "from": "2026-07-01", "until": "2026-07-12" }
 ],
 "waxed": [ { "chain": "KMC blue", "on": "2026-11-20" } ]
 ```
 
-- A chainset, wheels or a chain is fitted `on` a bike; a cassette or a
-  tyre on wheels. A tyre says where, `"at": "front"` or `"rear"`.
+- A chainset, a chain or a wheel is fitted `on` a bike, a cassette on a
+  rear wheel, and a tyre on either wheel. Moving a tyre from the rear
+  to the front is a `fitted` line, and it keeps its distance.
 - From its `from` on, a part takes the place of the part of the same
-  type (and, for a tyre, position) that was there. With an `until`, the
+  type that was there. With an `until`, the
   last day it applies, the part before it is back afterwards: a
   cassette for a week in the mountains is one line. A part is in one
-  place at a time, so moving wheels to another bike takes them off the
-  first, which has the wheels it had before them again, if those are
-  still free.
+  place at a time, so moving a wheel to another bike takes it off the
+  first, which has the wheel it had before again, if that's still
+  free.
 - A ride counts for the parts on its bike that day, the bike it was
   picked for or the default. An indoor ride counts for the chain and
   chainset only: on a direct-drive trainer the wheels don't turn.
@@ -653,8 +657,9 @@ dated list, `fitted`, and a chain's waxes are in `waxed`:
 **Gear** in the menu, or **Gear: list** in the palette, lists the gear:
 shoes, then bikes, then parts, retired gear dimmed at the bottom of
 each, with the activities it was used for and the distance on it,
-`start_km` included. A part's row says where it is today (`On`), and a
-chain's how far it went since its last wax (`Waxed`).
+`start_km` included. A part's row says where it is today (`On`): a
+bike, or for a cassette or tyre its wheel. A chain's row says how far
+it went since its last wax (`Waxed`).
 Names picked for activities that aren't in `gear.json` have a row of
 their own. Escape goes back to the activity.
 
