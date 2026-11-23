@@ -192,8 +192,9 @@ struct GearList {
 // default.
 [[nodiscard]] std::optional<std::string> default_gear(GearList const &list, std::vector<GearKind> const &kinds, std::chrono::year_month_day day);
 
-// Where `part` is fitted on `day`: its latest entry in effect. None if it
-// isn't fitted, or was retired before `day`.
+// Where `part` is fitted on `day`: its latest entry in effect, if no later
+// part has taken its place there. None if it isn't fitted, or was
+// retired before `day`.
 [[nodiscard]] Fitting const *fitting_of(GearList const &list, std::string_view part, std::chrono::year_month_day day);
 
 // The part of `type` fitted on `place` on `day`, at `at` for a tyre: of
@@ -264,22 +265,40 @@ using GearPicks = std::map<GearPickKey, GearPick>;
 // file that has one: for a job.
 [[nodiscard]] GearPicks read_gear_picks(Storage const &storage, ActivitySummaries const &summaries);
 
+// A chain's last wax, and the distance it did since.
+struct WaxTotal {
+    std::chrono::year_month_day day { };
+    float64                     km { 0 };
+
+    bool operator==(WaxTotal const &) const = default;
+};
+
 // A row of the Gear screen: a piece of gear, or a name picked in sidecars
 // that isn't in the list, with the activities it was used for and its
-// distance, start_km and theirs.
+// distance, start_km and theirs. For a part, where it's fitted today, and
+// for a waxed chain, its last wax.
 struct GearTotal {
-    std::string         name { };
-    std::optional<Gear> gear { }; // None for a name that isn't in the list
-    size_t              activities { 0 };
-    float64             km { 0 };
+    std::string             name { };
+    std::optional<Gear>     gear { }; // None for a name that isn't in the list
+    size_t                  activities { 0 };
+    float64                 km { 0 };
+    std::optional<Fitting>  fitted { };
+    std::optional<WaxTotal> wax { };
 
     [[nodiscard]] bool unknown() const { return !gear.has_value(); }
+    // Over its max_km: time to replace it. Never for retired gear.
+    [[nodiscard]] bool worn() const;
+    // A chain over its wax_km since its last wax, or in all if it was
+    // never waxed. Never for a retired chain.
+    [[nodiscard]] bool needs_wax() const;
     bool               operator==(GearTotal const &) const = default;
 };
 
-// A row per piece of gear, shoes then bikes, with retired gear at the
-// bottom of its group, then a row per unknown name. A multisport file
-// counts once for each piece of gear its legs used.
-[[nodiscard]] std::vector<GearTotal> gear_totals(GearList const &list, ActivitySummaries const &summaries, GearPicks const &picks);
+// A row per piece of gear, shoes, bikes then parts, with retired gear at
+// the bottom of its group, then a row per unknown name. A multisport file
+// counts once for each piece of gear its legs used. A ride counts for the
+// parts on its bike that day too. `today` is for where the parts are.
+[[nodiscard]] std::vector<GearTotal> gear_totals(GearList const &list, ActivitySummaries const &summaries, GearPicks const &picks,
+    std::chrono::year_month_day today);
 
 }

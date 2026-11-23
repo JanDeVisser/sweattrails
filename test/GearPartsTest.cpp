@@ -8,8 +8,11 @@
  * (specs/68-bike-components.md).
  */
 
+#include <algorithm>
 #include <chrono>
+#include <ctime>
 #include <expected>
+#include <format>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -17,6 +20,7 @@
 #include <JSON.h>
 
 #include <storage/Gear.h>
+#include <storage/Volume.h>
 
 #include <TestApp.h>
 
@@ -214,6 +218,9 @@ void test_part_at()
     CHECK_EQ(on_wheels(list, "Canyon stock wheels", PartType::Cassette, day(2026, 7, 12)), "105 11-34");
     CHECK_EQ(on_wheels(list, "Canyon stock wheels", PartType::Cassette, day(2026, 7, 13)), "105 11-28");
     CHECK(fitting_of(list, "105 11-34", day(2026, 7, 13)) == nullptr);
+    // The 11-28's entry is still in effect during the swap, but it's off.
+    CHECK(fitting_of(list, "105 11-28", day(2026, 7, 5)) == nullptr);
+    CHECK(fitting_of(list, "105 11-28", day(2026, 7, 13)) != nullptr);
     auto const *fitting = fitting_of(list, "105 11-34", day(2026, 7, 5));
     CHECK(fitting != nullptr && fitting->on == "Canyon stock wheels");
 }
@@ -290,6 +297,107 @@ void test_parts_used()
     CHECK(parts_used(list, "Gravel", day(2026, 6, 1), false).empty());
 }
 
+constexpr chrono::year_month_day Today = chrono::year { 2026 } / chrono::November / chrono::day { 23 };
+
+// A summary of a ride starting at `hour` on `on`, local time.
+ActivitySummary ride(chrono::year_month_day on, float64 km, int hour = 12, std::optional<FIT::sub_sport> sub = FIT::sub_sport::road)
+{
+    std::tm tm { };
+    tm.tm_year = static_cast<int>(on.year()) - 1900;
+    tm.tm_mon = static_cast<int>(static_cast<unsigned>(on.month())) - 1;
+    tm.tm_mday = static_cast<int>(static_cast<unsigned>(on.day()));
+    tm.tm_hour = hour;
+    tm.tm_isdst = -1;
+    auto const start = static_cast<i64>(std::mktime(&tm));
+    return ActivitySummary {
+        .source = SummaryFile { .file = std::format("{}.fit", start) },
+        .start = start,
+        .sport = FIT::sport::Cycling,
+        .sub_sport = sub,
+        .distance = km * 1000.0,
+    };
+}
+
+GearTotal total_of(std::vector<GearTotal> const &totals, std::string_view name)
+{
+    auto const it = std::ranges::find(totals, name, &GearTotal::name);
+    CHECK(it != totals.end());
+    return it == totals.end() ? GearTotal { } : *it;
+}
+
+void test_totals()
+{
+    auto const               list = example();
+    auto const               totals = gear_totals(list,
+        {
+            ride(day(2026, 6, 15), 50),
+            ride(day(2026, 7, 5), 100), // On the 11-34
+            ride(day(2026, 8, 1), 30, 18, FIT::sub_sport::indoor_cycling),
+            ride(day(2026, 11, 20), 20), // The day of the wax: before it
+            ride(day(2026, 11, 22), 40),
+        },
+        { }, Today);
+    std::vector<std::string> order;
+    for (auto const &total : totals) {
+        order.push_back(total.name);
+    }
+    CHECK(order
+        == (Names { "Canyon", "Gravel", "Ultegra 52/36", "Canyon stock wheels", "105 11-28", "GP5000 front", "GP5000 rear", "KMC blue", "105 11-34" }));
+    CHECK_EQ(total_of(totals, "Canyon").km, 4540.0);
+    CHECK_EQ(total_of(totals, "Canyon").activities, 5uz);
+    // Indoors too.
+    CHECK_EQ(total_of(totals, "Ultegra 52/36").km, 240.0);
+    CHECK_EQ(total_of(totals, "KMC blue").km, 240.0);
+    // Not indoors.
+    CHECK_EQ(total_of(totals, "Canyon stock wheels").km, 210.0);
+    CHECK_EQ(total_of(totals, "GP5000 rear").km, 210.0);
+    // start_km, and not during the swap.
+    CHECK_EQ(total_of(totals, "105 11-28").km, 210.0);
+    CHECK_EQ(total_of(totals, "105 11-28").activities, 3uz);
+    CHECK_EQ(total_of(totals, "105 11-34").km, 100.0);
+    CHECK_EQ(total_of(totals, "105 11-34").activities, 1uz);
+
+    // Where each is today.
+    auto const rear = total_of(totals, "GP5000 rear").fitted;
+    CHECK(rear && rear->on == "Canyon stock wheels" && rear->at == TyrePosition::Rear);
+    CHECK(!total_of(totals, "105 11-34").fitted);
+    CHECK(!total_of(totals, "Canyon").fitted);
+
+    // Since the wax on the 20th: from the next day.
+    CHECK((total_of(totals, "KMC blue").wax == WaxTotal { .day = day(2026, 11, 20), .km = 40 }));
+    CHECK(!total_of(totals, "Canyon").wax);
+}
+
+// A wax with a time counts the rides that start after it that day.
+void test_wax_at_a_time()
+{
+    auto list = example();
+    list.waxed = { Wax { .chain = "KMC blue", .day = day(2026, 11, 20), .counts_from = chrono::local_days { day(2026, 11, 20) } + chrono::hours { 8 } } };
+    auto const totals = gear_totals(list, { ride(day(2026, 11, 20), 15, 7), ride(day(2026, 11, 20), 25, 9) }, { }, Today);
+    CHECK((total_of(totals, "KMC blue").wax == WaxTotal { .day = day(2026, 11, 20), .km = 25 }));
+    // A wax after today doesn't count yet.
+    auto const before = gear_totals(list, { ride(day(2026, 11, 20), 15, 7) }, { }, day(2026, 11, 19));
+    CHECK(!total_of(before, "KMC blue").wax);
+}
+
+void test_limits()
+{
+    auto const chain = Gear { .type = GearType::Part, .name = "Chain", .part = PartType::Chain, .max_km = 3000, .wax_km = 300 };
+    CHECK(!(GearTotal { .gear = chain, .km = 3000 }).worn());
+    CHECK((GearTotal { .gear = chain, .km = 3001 }).worn());
+    auto retired = chain;
+    retired.retired = day(2026, 1, 1);
+    CHECK(!(GearTotal { .gear = retired, .km = 3001 }).worn());
+    CHECK(!(GearTotal { .gear = retired, .km = 3001 }).needs_wax());
+    // Since its wax, or in all if it was never waxed.
+    CHECK(!(GearTotal { .gear = chain, .km = 1000, .wax = WaxTotal { .km = 300 } }).needs_wax());
+    CHECK((GearTotal { .gear = chain, .km = 1000, .wax = WaxTotal { .km = 301 } }).needs_wax());
+    CHECK((GearTotal { .gear = chain, .km = 301 }).needs_wax());
+    // No limits, no warnings; shoes can have one too.
+    CHECK(!(GearTotal { .gear = Gear { .name = "Bike" }, .km = 1e6 }).worn());
+    CHECK((GearTotal { .gear = Gear { .name = "Shoes", .max_km = 800 }, .km = 801 }).worn());
+}
+
 // The picker offers shoes and bikes, never parts.
 void test_choices_leave_out_parts()
 {
@@ -313,5 +421,8 @@ int main()
     test_wheels_move();
     test_retired_part();
     test_parts_used();
+    test_totals();
+    test_wax_at_a_time();
+    test_limits();
     return Test::test_result();
 }

@@ -136,6 +136,12 @@ std::optional<chrono::year_month_day> parse_day(std::string_view text)
     return ret;
 }
 
+chrono::local_seconds local_start(ActivitySummary const &summary)
+{
+    auto const time = DateTime::from_timestamp(static_cast<i32>(summary.start));
+    return chrono::local_days { day_of(time) } + chrono::hours { time.hour } + chrono::minutes { time.minute } + chrono::seconds { time.second };
+}
+
 chrono::year_month_day day_of(DateTime const &time)
 {
     return chrono::year { time.year } / chrono::month { static_cast<unsigned>(time.month) + 1 } / chrono::day { time.day_of_month };

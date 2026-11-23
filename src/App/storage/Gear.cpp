@@ -555,10 +555,14 @@ Fitting const *latest_fitting(GearList const &list, std::string_view part, chron
 Fitting const *fitting_of(GearList const &list, std::string_view part, chrono::year_month_day day)
 {
     auto const *gear = list.find(part);
-    if (gear == nullptr || gear->retired_on(day)) {
+    if (gear == nullptr || !gear->part || gear->retired_on(day)) {
         return nullptr;
     }
-    return latest_fitting(list, part, day);
+    auto const *fitting = latest_fitting(list, part, day);
+    if (fitting == nullptr || part_at(list, fitting->on, *gear->part, fitting->at, day) != gear) {
+        return nullptr;
+    }
+    return fitting;
 }
 
 Gear const *part_at(GearList const &list, std::string_view place, PartType type, std::optional<TyrePosition> at, chrono::year_month_day day)
@@ -690,35 +694,87 @@ GearPicks read_gear_picks(Storage const &storage, ActivitySummaries const &summa
     return ret;
 }
 
-std::vector<GearTotal> gear_totals(GearList const &list, ActivitySummaries const &summaries, GearPicks const &picks)
+bool GearTotal::worn() const
+{
+    return gear && !gear->retired && gear->max_km && km > *gear->max_km;
+}
+
+bool GearTotal::needs_wax() const
+{
+    return gear && !gear->retired && gear->wax_km && (wax ? wax->km : km) > *gear->wax_km;
+}
+
+namespace {
+
+// The last wax of each chain on or before `today`, when it counts from.
+std::map<std::string, Wax const *> last_waxes(GearList const &list, chrono::year_month_day today)
+{
+    std::map<std::string, Wax const *> ret;
+    for (auto const &wax : list.waxed) {
+        if (wax.day <= today) {
+            ret[wax.chain] = &wax; // In order, so the last is the latest
+        }
+    }
+    return ret;
+}
+
+}
+
+std::vector<GearTotal> gear_totals(GearList const &list, ActivitySummaries const &summaries, GearPicks const &picks,
+    chrono::year_month_day today)
 {
     std::map<std::string, GearTotal>             by_name;
     std::map<std::string, std::set<std::string>> files; // To count a multisport file once
+    auto const                                   waxes = last_waxes(list, today);
     for (auto const &gear : list.gear) {
-        by_name[gear.name] = GearTotal { .name = gear.name, .gear = gear, .km = gear.start_km };
+        auto &total = by_name[gear.name] = GearTotal { .name = gear.name, .gear = gear, .km = gear.start_km };
+        if (auto const *fitting = fitting_of(list, gear.name, today); fitting != nullptr) {
+            total.fitted = *fitting;
+        }
+        if (auto const wax = waxes.find(gear.name); wax != waxes.end()) {
+            total.wax = WaxTotal { .day = wax->second->day };
+        }
     }
+    auto const add = [&](std::string const &name, ActivitySummary const &summary) -> GearTotal & {
+        auto &total = by_name[name];
+        total.name = name;
+        total.km += summary.distance / 1000.0;
+        if (files[name].insert(summary.source.file).second) {
+            ++total.activities;
+        }
+        return total;
+    };
     for (auto const &summary : summaries) {
         if (!summary.sport) {
             continue;
         }
         auto const found = picks.find(pick_key(summary));
         auto const pick = found == picks.end() ? std::nullopt : std::optional { found->second };
-        auto const used = activity_gear(list, pick, gear_kinds(summary.sport, summary.sub_sport), start_day(summary));
+        auto const kinds = gear_kinds(summary.sport, summary.sub_sport);
+        auto const day = start_day(summary);
+        auto const used = activity_gear(list, pick, kinds, day);
         if (!used) {
             continue;
         }
-        auto &total = by_name[used->name];
-        total.name = used->name;
-        total.km += summary.distance / 1000.0;
-        if (files[used->name].insert(summary.source.file).second) {
-            ++total.activities;
+        add(used->name, summary);
+        auto const *bike = list.find(used->name);
+        if (bike == nullptr || bike->type != GearType::Bike) {
+            continue;
+        }
+        auto const indoor = !kinds.empty() && kinds.front() == GearKind::Indoor;
+        for (auto const *part : parts_used(list, bike->name, day, indoor)) {
+            auto      &total = add(part->name, summary);
+            auto const wax = waxes.find(part->name);
+            if (wax != waxes.end() && local_start(summary) >= wax->second->counts_from) {
+                total.wax->km += summary.distance / 1000.0;
+            }
         }
     }
 
-    // Shoes, then bikes, in use before retired, each in the file's order;
-    // then the unknown names, by name.
+    // Shoes, bikes, then parts, in use before retired, each in the file's
+    // order; then the unknown names, by name.
     std::vector<GearTotal> ret;
-    for (auto const type : { GearType::Shoes, GearType::Bike }) {
+    for (auto const type : { GearType::Shoes, GearType::Bike, GearType::Part }) {
         for (auto const retired : { false, true }) {
             for (auto const &gear : list.gear) {
                 if (gear.type == type && gear.retired.has_value() == retired) {

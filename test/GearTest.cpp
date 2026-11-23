@@ -57,6 +57,8 @@ chrono::year_month_day day(int y, unsigned m, unsigned d)
     return chrono::year { y } / chrono::month { m } / chrono::day { d };
 }
 
+constexpr chrono::year_month_day Today = chrono::year { 2026 } / chrono::November / chrono::day { 23 };
+
 std::expected<GearList, std::string> decode_text(std::string_view text)
 {
     auto const json = JSONValue::deserialize(text);
@@ -374,7 +376,7 @@ void test_totals()
     picks[pick_key(summaries[4])] = GearPick { .name = "Pegasus blue" }; // Shoes count on a walk when picked
     picks[pick_key(summaries[5])] = GearPick { .name = "Old Pegasus" };
     picks[pick_key(summaries[6])] = GearPick { .name = "Gravel" };
-    auto const totals = gear_totals(list, summaries, picks);
+    auto const totals = gear_totals(list, summaries, picks, Today);
     CHECK_EQ(totals.size(), 4uz);
     // Shoes, then bikes, as in the file; then the unknown names.
     CHECK(totals.size() == 4 && totals[0].name == "Pegasus blue" && totals[1].name == "Canyon" && totals[2].name == "Gravel" && totals[3].name == "Old Pegasus");
@@ -394,7 +396,7 @@ void test_retired_at_the_bottom_of_their_group()
         "shoes": [{ "name": "Old", "retired": "2025-01-01" }, { "name": "New" }],
         "bikes": [{ "name": "Sold", "retired": "2024-01-01" }, { "name": "Canyon", "start_km": 100 }]
     })");
-    auto const totals = gear_totals(list, { }, { });
+    auto const totals = gear_totals(list, { }, { }, Today);
     CHECK_EQ(totals.size(), 4uz);
     CHECK(totals.size() == 4 && totals[0].name == "New" && totals[1].name == "Old" && totals[2].name == "Canyon" && totals[3].name == "Sold");
     // Gear without activities has its start_km.
@@ -421,7 +423,7 @@ void test_totals_of_legs()
     };
     GearPicks picks;
     picks[pick_key(summaries[2])] = GearPick { .name = "TT" };
-    auto const  totals = gear_totals(list, summaries, picks);
+    auto const  totals = gear_totals(list, summaries, picks, Today);
     auto const *shoes = row(totals, "Racers");
     CHECK(shoes != nullptr && shoes->activities == 1 && shoes->km == 15.0);
     auto const *bike = row(totals, "TT");
@@ -482,7 +484,7 @@ void test_totals_without_retired_default()
         summary(day(2026, 4, 1), FIT::sport::Running, { }, 6),
         summary(day(2026, 4, 2), FIT::sport::Running, { }, 7),
     };
-    auto const totals = gear_totals(list, summaries, { });
+    auto const totals = gear_totals(list, summaries, { }, Today);
     CHECK_EQ(totals.size(), 1uz);
     CHECK(totals.size() == 1 && totals[0].activities == 2 && totals[0].km == 21.0);
 }

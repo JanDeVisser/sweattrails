@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -34,10 +35,11 @@ namespace ST {
 
 // What the screen knows so far.
 struct GearState {
-    std::optional<GearList> gear { };          // None without gear.json
-    std::filesystem::path   file { };          // gear.json, where it would be
-    bool                    reading { false }; // The sidecars' picks
-    std::string             error { };         // Why gear.json can't be read, if it can't
+    std::optional<GearList>     gear { };          // None without gear.json
+    std::filesystem::path       file { };          // gear.json, where it would be
+    bool                        reading { false }; // The sidecars' picks
+    std::string                 error { };         // Why gear.json can't be read, if it can't
+    std::chrono::year_month_day today { };         // For where the parts are, and the last waxes
 };
 
 // The line under the heading: what's wrong with gear.json, how to make
@@ -61,7 +63,7 @@ struct GearScreen : public Layout {
     // As the screen opens: the gear read again, and the picks to be read.
     // `error` is why gear.json can't be read now, if it can't: the note
     // says so, in a colour that stands out.
-    void open(std::optional<GearList> gear, std::filesystem::path file, std::string error = { });
+    void open(std::optional<GearList> gear, std::filesystem::path file, std::chrono::year_month_day today, std::string error = { });
     // New summaries, as the job reads them, and the picks, as their job
     // has read them: the rows are worked out again.
     void set_summaries(ActivitySummaries new_summaries);

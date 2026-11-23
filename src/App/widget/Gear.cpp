@@ -13,6 +13,8 @@
 
 namespace ST {
 
+namespace chrono = std::chrono;
+
 std::vector<TableColumn> gear_columns()
 {
     return {
@@ -107,9 +109,9 @@ void GearScreen::initialize()
     };
 }
 
-void GearScreen::open(std::optional<GearList> gear, std::filesystem::path file, std::string error)
+void GearScreen::open(std::optional<GearList> gear, std::filesystem::path file, chrono::year_month_day today, std::string error)
 {
-    state = GearState { .gear = std::move(gear), .file = std::move(file), .reading = true, .error = std::move(error) };
+    state = GearState { .gear = std::move(gear), .file = std::move(file), .reading = true, .error = std::move(error), .today = today };
     picks.reset();
     refresh();
 }
@@ -141,7 +143,7 @@ void GearScreen::refresh()
 {
     note->text = gear_note(state);
     note->color = state.error.empty() ? LIGHTGRAY : ORANGE;
-    auto const totals = gear_totals(state.gear.value_or(GearList { }), summaries, picks.value_or(GearPicks { }));
+    auto const totals = gear_totals(state.gear.value_or(GearList { }), summaries, picks.value_or(GearPicks { }), state.today);
     auto       rows = gear_rows(totals);
     // Until the picks are read, the numbers would be the defaults' alone:
     // the gear is listed without them.

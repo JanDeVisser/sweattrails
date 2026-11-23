@@ -1654,7 +1654,8 @@ void cmd_gear_list(pSweatTrails const &sweattrails, JSONValue const &)
         return;
     }
     sweattrails->read_gear_file();
-    sweattrails->gear_screen->open(sweattrails->gear, gear_path(sweattrails->storage), sweattrails->gear_error);
+    auto const today = day_of(DateTime::from_timestamp(static_cast<i32>(std::time(nullptr))));
+    sweattrails->gear_screen->open(sweattrails->gear, gear_path(sweattrails->storage), today, sweattrails->gear_error);
     sweattrails->gear_screen->set_summaries(sweattrails->summaries);
     sweattrails->schedule<JobType::ReadGearPicks>(GearPicksRequest { .summaries = sweattrails->summaries });
     sweattrails->show_gear(true);

@@ -48,6 +48,8 @@ ActivitySummary ride(i64 start, float64 km)
     };
 }
 
+constexpr chrono::year_month_day Today = chrono::year { 2026 } / chrono::November / chrono::day { 23 };
+
 // Mid-May 2026.
 constexpr i64 May = 1778846400;
 
@@ -61,7 +63,7 @@ std::shared_ptr<GearScreen> make_screen()
 void test_rows()
 {
     auto const                  old = ride(May + 86400, 10);
-    auto const                  totals = gear_totals(list(), { ride(May, 40), old }, { { pick_key(old), GearPick { .name = "Old Canyon" } } });
+    auto const                  totals = gear_totals(list(), { ride(May, 40), old }, { { pick_key(old), GearPick { .name = "Old Canyon" } } }, Today);
     auto const                  rows = gear_rows(totals);
     std::vector<TableRow> const expected {
         { "Pegasus blue", "Nike Pegasus 41", "2026-03-14", "0", "0 km" },
@@ -96,7 +98,7 @@ void test_numbers_come_with_the_picks()
 {
     ScopedTestApp app;
     auto          screen = make_screen();
-    screen->open(list(), "/data/gear.json");
+    screen->open(list(), "/data/gear.json", Today);
     CHECK_EQ(screen->table->rows.size(), 3uz);
     CHECK(screen->table->rows.size() == 3 && screen->table->rows[2][4].empty());
     CHECK(screen->note->text.contains("Reading"));
@@ -107,7 +109,7 @@ void test_numbers_come_with_the_picks()
     screen->set_summaries({ ride(May, 40) });
     CHECK(screen->table->rows.size() == 3 && screen->table->rows[2][3] == "1" && screen->table->rows[2][4] == "4340 km");
     // Opening it again reads the picks again.
-    screen->open(list(), "/data/gear.json");
+    screen->open(list(), "/data/gear.json", Today);
     CHECK(screen->table->rows.size() == 3 && screen->table->rows[2][4].empty());
 }
 
@@ -121,11 +123,11 @@ void test_error_stands_out()
 {
     ScopedTestApp app;
     auto          screen = make_screen();
-    screen->open(list(), "/data/gear.json", "gear.json can't be read: oops");
+    screen->open(list(), "/data/gear.json", Today, "gear.json can't be read: oops");
     CHECK(screen->note->text.starts_with("gear.json can't be read: oops"));
     CHECK(same(screen->note->color, ORANGE));
     CHECK_EQ(screen->table->rows.size(), 3uz);
-    screen->open(list(), "/data/gear.json");
+    screen->open(list(), "/data/gear.json", Today);
     CHECK(same(screen->note->color, LIGHTGRAY));
 }
 
@@ -133,7 +135,7 @@ void test_without_gear()
 {
     ScopedTestApp app;
     auto          screen = make_screen();
-    screen->open(std::nullopt, "/data/gear.json");
+    screen->open(std::nullopt, "/data/gear.json", Today);
     screen->set_picks({ });
     CHECK(screen->table->rows.empty());
     CHECK(screen->note->text.starts_with("No gear yet"));
@@ -143,7 +145,7 @@ void test_step_row()
 {
     ScopedTestApp app;
     auto          screen = make_screen();
-    screen->open(list(), "/data/gear.json");
+    screen->open(list(), "/data/gear.json", Today);
     screen->step_row(1);
     CHECK(screen->table->selection == 0uz);
     screen->step_row(5);
