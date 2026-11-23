@@ -53,53 +53,60 @@ tracks shoes and bikes as whole items.
 
 - **Parts are gear too**, in a new `parts` list in `gear.json`, with the
   same fields as a bike (name, brand, model, purchased, where, price,
-  `start_km`, `retired`) and a `type`: `chainset`, `wheels`, `cassette`,
-  `chain` or `tyre`. Tyres were added to what spec 67 listed: they wear
-  out as the rest do. The name is unique over shoes, bikes and parts.
+  `start_km`, `retired`) and a `type`: `chainset`, `front wheel`,
+  `rear wheel`, `cassette`, `chain` or `tyre`. Tyres were added to what
+  spec 67 listed: they wear out as the rest do. The name is unique over
+  shoes, bikes and parts.
+- **Wheels are front and rear, not pairs.** Wheels come as a pair, or a
+  front or a rear wheel on its own; modelling both pairs and single
+  wheels is more than it's worth, so a pair is two parts. That's two
+  `fitted` lines to change a pair, which is rare. *(Changed during
+  development, from a `wheels` type with a tyre's `at`.)*
 - **Where a part is fitted is a dated list**, `fitted`, like `defaults`:
 
   ```json
   "fitted": [
     { "part": "Ultegra 52/36", "on": "Canyon", "from": "2022-05-01" },
-    { "part": "Canyon stock wheels", "on": "Canyon", "from": "2022-05-01" },
-    { "part": "105 11-28", "on": "Canyon stock wheels", "from": "2022-05-01" },
-    { "part": "GP5000 front", "on": "Canyon stock wheels", "at": "front", "from": "2026-03-01" },
-    { "part": "GP5000 rear", "on": "Canyon stock wheels", "at": "rear", "from": "2026-03-01" },
+    { "part": "Canyon front", "on": "Canyon", "from": "2022-05-01" },
+    { "part": "Canyon rear", "on": "Canyon", "from": "2022-05-01" },
+    { "part": "105 11-28", "on": "Canyon rear", "from": "2022-05-01" },
+    { "part": "GP5000 front", "on": "Canyon front", "from": "2026-03-01" },
+    { "part": "GP5000 rear", "on": "Canyon rear", "from": "2026-03-01" },
     { "part": "KMC blue", "on": "Canyon", "from": "2026-06-01" },
-    { "part": "105 11-34", "on": "Canyon stock wheels", "from": "2026-07-01", "until": "2026-07-12" }
+    { "part": "105 11-34", "on": "Canyon rear", "from": "2026-07-01", "until": "2026-07-12" }
   ]
   ```
 
-  A chainset, wheels or chain is fitted on a bike; a cassette or a tyre
-  on wheels. A tyre says where, `"at": "front"` or `"rear"`, as the rear
-  wears faster and is replaced on its own.
+  A chainset, chain or wheel is fitted on a bike, a cassette on a rear
+  wheel, and a tyre on either wheel: the wheel says where the tyre is.
+  Moving a tyre from the rear to the front is one line, and it keeps
+  its distance.
 - **From its date on, a part is where its entry puts it**, taking the
-  place of the part of the same type (and, for a tyre, position) that
-  was there, until a later entry. `until` is optional: after that day
+  place of the part of the same type that was there, until a later entry. `until` is optional: after that day
   the entry no longer applies, and what was there before it is back.
-  That's a temporary swap in one line: a 10-28 on the race wheels for a
-  flat race, or a 10-34 on the road bike's wheels for a week in the
-  mountains. Dates rather than per-activity picks, because a swap lasts
+  That's a temporary swap in one line: a 10-28 on the race rear wheel
+  for a flat race, or a 10-34 on the road bike's rear wheel for a week
+  in the mountains. Dates rather than per-activity picks, because a swap lasts
   more than one ride (warm-up, race and cool-down, or a whole trip).
 - **A part is in one place at a time**: on a day, it's where its latest
   entry in effect puts it, and a place has the part of the latest entry
-  in effect there whose part is still there. So moving wheels to
-  another bike takes them off the first, which then has the wheels it
-  had before them, if those haven't moved on as well.
+  in effect there whose part is still there. So moving a wheel to
+  another bike takes it off the first, which then has the wheel it had
+  before, if that hasn't moved on as well.
 - **Why a dated list, and not parts listed under each bike**: a part
-  that moves between bikes, such as a pair of wheels, keeps its whole
+  that moves between bikes, such as a wheel, keeps its whole
   history in one list, and the rule is the same "from this day on" as
   `defaults`. Swaps are rare (Jan doesn't rotate chains), so editing
   `fitted` by hand is fine; an in-app "swap chain" isn't needed.
 - **A part's distance** is `start_km` plus the distance of every ride on
-  a bike it was on that day, directly or, for a cassette or tyre, on
-  wheels that were on the bike. The bike of a ride is the one spec 67
+  a bike it was on that day, directly or, for a cassette or tyre, on a
+  wheel that was on the bike. The bike of a ride is the one spec 67
   settles: picked, or the default.
 - **Errors**, as for the rest of `gear.json` (a message box the first
   time, the status line after): a `fitted` entry naming a part or place
   that isn't there, a part on the wrong kind of place (a cassette on a
-  bike, a chain on wheels), a tyre without `at`, or `until` before
-  `from`.
+  bike or a front wheel, a chain on a wheel, a tyre on a bike), or
+  `until` before `from`.
 - **Indoor rides** (the `indoor` kind: trainer, Zwift) count for the
   chain and the chainset, not for the wheels, their cassette or tyres: on a
   direct-drive trainer they don't turn. The trainer's own cassette isn't
@@ -134,8 +141,8 @@ tracks shoes and bikes as whole items.
 - **Parts are a third group**, after shoes and bikes, in the order of
   the file, retired parts dimmed at the bottom, as for the rest.
 - **Two new columns**, blank for the rows they don't apply to:
-  - **On**: where the part is today, `Canyon`, `Race wheels`, or
-    `Race wheels, rear` for a tyre; `–` for a part that isn't fitted.
+  - **On**: where the part is today, `Canyon`, or `Race rear` for a
+    cassette or tyre; `–` for a part that isn't fitted.
   - **Waxed**: for a chain, the distance since the last wax and its
     day, `212 km (20 Nov)`; `–` for a chain never waxed.
 - A flat group rather than parts listed under their bike: a part
@@ -180,15 +187,16 @@ spec 67.
 - `GEARTYPES` gets `Part`, `"parts"`, after `Bike`. `GearList::gear`
   keeps shoes, bikes, then parts, each in the file's order, and `find()`
   covers them all, so a name stays unique over the three.
-- `PARTTYPES`, an X-macro: `Chainset` `"chainset"`, `Wheels` `"wheels"`,
-  `Cassette` `"cassette"`, `Chain` `"chain"`, `Tyre` `"tyre"`, with
-  `PartType_name()`, `PartType_by_name()`, and
-  `part_goes_on(PartType) -> GearType` (`Bike`, or `Part` for wheels).
-  `TYREPOSITIONS`: `Front` `"front"`, `Rear` `"rear"`.
+- `PARTTYPES`, an X-macro: `Chainset` `"chainset"`, `FrontWheel`
+  `"front wheel"`, `RearWheel` `"rear wheel"`, `Cassette` `"cassette"`,
+  `Chain` `"chain"`, `Tyre` `"tyre"`, with `PartType_name()`,
+  `PartType_by_name()`, and `fits_on(PartType, Gear const &place)`: a
+  chainset, chain or wheel on a bike, a cassette on a rear wheel, a
+  tyre on either wheel.
 - `Gear` gets `std::optional<PartType> part` (set for parts only),
   `std::optional<float64> max_km`, for any gear, and
   `std::optional<float64> wax_km`, for a chain.
-- `struct Fitting { std::string part; std::string on; std::optional<TyrePosition> at; year_month_day from; std::optional<year_month_day> until; }`
+- `struct Fitting { std::string part; std::string on; year_month_day from; std::optional<year_month_day> until; }`
   with `in_effect(day)`: `from <= day <= until`.
 - `struct Wax { std::string chain; year_month_day day; std::chrono::local_seconds counts_from; }`.
   `counts_from` is midnight after `day` for `"2026-11-20"`, the time
@@ -201,8 +209,7 @@ spec 67.
   `waxed`, `max_km` and `wax_km`, and accepts the three new top-level
   keys. New errors: a part without a known `type`; a `fitted` entry
   naming a part that isn't a part, or a place that isn't there, or the
-  wrong kind of place; a tyre without `at`, or `at` on anything but a
-  tyre; `until` before `from`; a `waxed` entry naming anything but a
+  wrong kind of place; `until` before `from`; a `waxed` entry naming anything but a
   chain, or an `on` that isn't a date or a date and time; a `max_km` or
   `wax_km` that isn't a number over 0, or a `wax_km` on anything but a
   chain. A default naming a part is an error too ("isn't in `shoes` or
@@ -210,15 +217,14 @@ spec 67.
 - `fitting_of(list, part, day) -> Fitting const *`: the part's latest
   entry in effect on `day`, none if it isn't fitted, or if a later part
   has taken its place there (the 11-28 during the 11-34's week).
-- `part_at(list, place, type, at, day) -> Gear const *`: the part in a
-  place: of the entries in effect there for that type (and position),
-  latest first, the first whose part's `fitting_of()` is that entry.
+- `part_at(list, place, type, day) -> Gear const *`: the part in a
+  place: of the entries in effect there for that type, latest first, the first whose part's `fitting_of()` is that entry.
   This is the spec's "a place has the part of the latest entry in
   effect there whose part is still there".
 - `parts_used(list, bike, day, indoor) -> std::vector<Gear const *>`: the
   parts a ride on `bike` wears that day: the bike's chainset, chain and
-  wheels, and the wheels' cassette and tyres; only chainset and chain
-  when `indoor`.
+  wheels, the front wheel's tyre, and the rear wheel's cassette and
+  tyre; only chainset and chain when `indoor`.
 - **A retired part** isn't counted for rides after its `retired` day,
   and isn't "on" anything after it, as a default's gear stops counting
   once it's retired. The part it replaced doesn't come back: retiring a
@@ -256,7 +262,7 @@ spec 67.
 ### The Gear screen (`widget/Gear.h`, `.cpp`)
 
 - Columns: Gear, Brand and model, In use since, **On**, Activities,
-  Distance, **Waxed**. On is `Canyon`, `Race wheels, rear`, or `–`;
+  Distance, **Waxed**. On is `Canyon`, `Race rear`, or `–`;
   Waxed is `212 km (20 Nov)`, or `–` for a chain never waxed; both blank
   for the rest.
 - `GearColumn` names the columns' indexes.
@@ -271,8 +277,7 @@ spec 67.
 
 ### README
 
-The `gear.json` section gets `parts`, `fitted` (with `until` and
-`at`), `waxed`, `max_km` and `wax_km`, with the spec's example.
+The `gear.json` section gets `parts`, `fitted` (with `until`), `waxed`, `max_km` and `wax_km`, with the spec's example.
 
 No new dependencies, files or widgets beyond the above.
 
@@ -281,17 +286,19 @@ No new dependencies, files or widgets beyond the above.
 - `gear_parts_test` (new, as `gear_test` is long enough):
   - `decode_gear()`: the spec's example with parts, `fitted` and
     `waxed`; each new error: unknown part type, fitted part unknown or
-    not a part, unknown place, a cassette on a bike, a chain on wheels,
-    a tyre without `at`, `at` on a chain, `until` before `from`, a wax of
+    not a part, unknown place, a cassette on a bike or a front wheel, a
+    chain on a wheel, a wheel on a wheel, a tyre on a bike, `until`
+    before `from`, a wax of
     a cassette, a bad wax date, `wax_km` on a bike, a default naming a
     part; the new top-level keys accepted.
   - `fitting_of()` / `part_at()`: the latest entry wins; `until` ends a
     swap and the part before is back (inclusive of the `until` day);
-    wheels moved to another bike leave the first with the wheels it had
-    before; both moved on leaves it with none; two entries on one day,
+    a wheel moved to another bike leaves the first with the wheel it
+    had before; both moved on leaves it with none; two entries on one day,
     the later in the file wins.
-  - `parts_used()`: a road ride wears chainset, chain, wheels, cassette,
-    both tyres; an indoor ride only chainset and chain; the swap
+  - `parts_used()`: a road ride wears chainset, chain, both wheels,
+    cassette, both tyres; a tyre moved from the rear wheel to the front
+    keeps its distance; an indoor ride only chainset and chain; the swap
     cassette during its `until` window.
   - `gear_totals()`: part distances from rides on the bike (picked and
     default), `start_km` added, indoor rides not on the wheels, a
