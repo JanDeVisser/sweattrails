@@ -65,11 +65,28 @@ void test_select()
     CHECK_EQ(box->selected().text, "running");
 }
 
+// Unsorted, the entries stay in the order they came in.
+void test_unsorted()
+{
+    Test::ScopedTestApp scoped;
+    using InOrder = PickBox<Target, int, decltype(submit), ListBoxConfig { .sort = false }>;
+    auto target = std::make_shared<Target>();
+    auto box = std::make_shared<InOrder>(target, "Gear", InOrder::Entries { { "Default (Canyon)", 0 }, { "None", 1 }, { "Canyon", 2 } }, submit);
+    box->sort();
+    box->filter();
+    box->selection = 0;
+    CHECK_EQ(box->selected().text, "Default (Canyon)");
+    box->select("Canyon");
+    box->submit();
+    CHECK_EQ(target->picked.value_or(-1), 2);
+}
+
 }
 
 int main()
 {
     test_submit_picks_the_selected_payload();
     test_select();
+    test_unsorted();
     return ST::Test::test_result();
 }

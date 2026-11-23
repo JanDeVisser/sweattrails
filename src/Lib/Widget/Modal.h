@@ -832,9 +832,10 @@ void query_box(std::shared_ptr<C> target, std::string_view const &prompt, Submit
 
 // A list of entries to pick one of, each a text and a payload. Enter calls
 // `submit(target, payload)` with the selected one's. The entry `initial`,
-// if there's one with that text, is selected when the box opens.
-template<typename C, typename Payload, typename Submit>
-struct PickBox : public ListBox<Payload> {
+// if there's one with that text, is selected when the box opens. Sorted,
+// unless `Config` says not to.
+template<typename C, typename Payload, typename Submit, ListBoxConfig Config = DefaultListBoxConfig>
+struct PickBox : public ListBox<Payload, Config> {
     using pC = std::shared_ptr<C>;
     using Entries = std::vector<std::pair<std::string, Payload>>;
 
@@ -842,7 +843,7 @@ struct PickBox : public ListBox<Payload> {
     Submit submit_fnc;
 
     PickBox(pC target, std::string_view prompt, Entries const &entries, Submit submit)
-        : ListBox<Payload>(prompt)
+        : ListBox<Payload, Config>(prompt)
         , target(std::move(target))
         , submit_fnc(std::move(submit))
     {
@@ -870,13 +871,19 @@ struct PickBox : public ListBox<Payload> {
     }
 };
 
-template<typename C, typename Payload, typename Submit>
+template<ListBoxConfig Config, typename C, typename Payload, typename Submit>
 void list_box(std::shared_ptr<C> target, std::string_view const &prompt, std::vector<std::pair<std::string, Payload>> const &entries, Submit fnc, std::string_view initial = "")
 {
-    auto const &box = Widget::make<PickBox<C, Payload, Submit>>(target, prompt, entries, fnc);
+    auto const &box = Widget::make<PickBox<C, Payload, Submit, Config>>(target, prompt, entries, fnc);
     // After show(), which selects the first entry.
     box->show();
     box->select(initial);
+}
+
+template<typename C, typename Payload, typename Submit>
+void list_box(std::shared_ptr<C> target, std::string_view const &prompt, std::vector<std::pair<std::string, Payload>> const &entries, Submit fnc, std::string_view initial = "")
+{
+    list_box<DefaultListBoxConfig>(std::move(target), prompt, entries, std::move(fnc), initial);
 }
 
 inline static void message_box(std::string_view const &prompt, QueryOption options = QueryOptionOK)

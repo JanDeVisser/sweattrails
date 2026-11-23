@@ -27,6 +27,7 @@
 #include <storage/Activity.h>
 #include <storage/Download.h>
 #include <storage/Garmin.h>
+#include <storage/Gear.h>
 #include <storage/Recordings.h>
 #include <storage/Storage.h>
 #include <storage/Strava.h>
@@ -553,6 +554,9 @@ struct SweatTrails : public Main<Job, Notification> {
     bool               describe_again { false };
     // Run from the command palette, for as long as the app runs.
     RecentCommands recent_commands { };
+    // From gear.json: none without the file. A file that can't be read
+    // leaves the gear read before. Only used on the UI thread.
+    std::optional<GearList> gear { };
 
     SweatTrails();
     static pSweatTrails the();
@@ -565,7 +569,11 @@ struct SweatTrails : public Main<Job, Notification> {
     void   on_terminate() override;
     void   files_dropped(std::vector<std::string> const &paths) override;
     EError read_settings();
-    void   load_font();
+    // Reads gear.json again, so that an edit shows without a restart: at
+    // startup, and as the gear is shown. What's wrong with it goes on the
+    // status line.
+    void read_gear_file();
+    void load_font();
     // The font file of this name in the font directories, if there is one.
     std::optional<fs::path> find_font(std::string_view name);
     // The pictures next to a layout, or with the built-in ones.

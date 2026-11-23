@@ -1378,6 +1378,46 @@ void cmd_map_whole_route(pSweatTrails const &sweattrails, JSONValue const &)
     }
 }
 
+// The gear picker for `displayed`, the activity on display or its leg,
+// with the gear that fits it and Default and None, at its choice now.
+// `picked` runs after a pick is saved, as the info box shows it.
+void pick_gear(pSweatTrails const &sweattrails, std::shared_ptr<DisplayedActivity> const &displayed, std::function<void()> picked = { })
+{
+    auto const &activity = displayed->activity;
+    if (!activity.leg && activity.is_multisport()) {
+        sweattrails->set_status("A multisport activity's gear is its legs': pick it on a leg's tab");
+        return;
+    }
+    sweattrails->read_gear_file();
+    auto const choices = gear_choices(sweattrails->gear.value_or(GearList { }), gear_kinds(activity.sport, activity.sub_sport),
+        activity.gear_pick, day_of(activity.segment.start_time));
+    // By their index: the list box orders its entries by their payloads.
+    std::vector<std::pair<std::string, size_t>> entries;
+    for (auto ix = 0uz; ix < choices.choices.size(); ++ix) {
+        entries.emplace_back(choices.choices[ix].text, ix);
+    }
+    auto save = [displayed, picked, choices](pSweatTrails const &st, size_t ix) {
+        if (auto const saved = displayed->activity.set_gear(choices.choices[ix].pick); !saved) {
+            st->set_status(std::format("Couldn't save the gear: {}", saved.error().to_string()));
+            return;
+        }
+        if (picked) {
+            picked();
+        }
+    };
+    auto const prompt = sweattrails->gear ? "Gear" : "Gear: there's none yet, see gear.json in the README";
+    // In order: Default and None first, then the gear as in gear.json.
+    list_box<ListBoxConfig { .search = true, .sort = false }>(sweattrails, prompt, entries, save, choices.choices[choices.current].text);
+}
+
+// From the palette: gear for the activity on display.
+void cmd_pick_gear(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (auto activity = activity_for_keys(sweattrails)) {
+        pick_gear(sweattrails, activity);
+    }
+}
+
 // Opens a box with the activity's name. A name that can't be saved keeps
 // the title it had, and the status line says why.
 void cmd_rename_activity(pSweatTrails const &sweattrails, JSONValue const &)
@@ -2240,12 +2280,13 @@ void cmd_activity_info(pSweatTrails const &sweattrails, JSONValue const &)
     if (!activity_for_keys(sweattrails)) {
         return;
     }
+    sweattrails->read_gear_file();
     auto describe_shown = [sweattrails]() -> std::optional<ActivityInfo> {
         auto const displayed = sweattrails->activity_display->activity;
         if (!displayed) {
             return { };
         }
-        return describe(displayed->activity, sweattrails->storage.data_dir);
+        return describe(displayed->activity, sweattrails->storage.data_dir, sweattrails->gear.value_or(GearList { }));
     };
     auto switch_recording = [sweattrails](int step) {
         show_recording_next_to(sweattrails, sweattrails->activity_display->activity, step);
@@ -2256,7 +2297,23 @@ void cmd_activity_info(pSweatTrails const &sweattrails, JSONValue const &)
         }
     };
     auto const copy = [](std::string const &text) { SetClipboardText(text.c_str()); };
-    auto const box = Widget::make<ActivityInfoBox>(describe_shown, switch_recording, reveal, copy, [] { });
+    // The picker opens over the box, which shows the pick once it's saved.
+    // The box is made after its callback: the callback finds it here.
+    auto made = std::make_shared<std::weak_ptr<ActivityInfoBox>>();
+    auto gear = [sweattrails, made]() {
+        auto const displayed = sweattrails->activity_display->activity;
+        if (!displayed) {
+            return;
+        }
+        pick_gear(sweattrails, displayed, [made]() {
+            if (auto const shown = made->lock(); shown) {
+                shown->refresh();
+                shown->resize();
+            }
+        });
+    };
+    auto const box = Widget::make<ActivityInfoBox>(describe_shown, switch_recording, reveal, copy, gear);
+    *made = box;
     box->show();
 }
 
@@ -3114,6 +3171,7 @@ void SweatTrails::initialize()
         thresholds_error = thresholds.error();
         set_status(std::format("No TSS: in the settings, {}", thresholds_error));
     }
+    read_gear_file();
     // In a message box, not on the status line: the once over the store
     // would replace it there, and choose the main recordings without it.
     std::string prefer_error { };
@@ -3320,6 +3378,10 @@ void SweatTrails::initialize()
         .titled("Previous recording, or leg")
         .bind(KeyCombo { KEY_TAB, KModShift })
         .when(on_activity_screen);
+    // No key: it isn't done often enough to spend a key on.
+    bus.add_task<SweatTrails>("st-gear", self(), cmd_pick_gear)
+        .titled("Gear: pick for this activity")
+        .when([this] { return !showing_summaries() && activity_display->activity != nullptr; });
     bus.add_task<SweatTrails>("st-activity-info", self(), cmd_activity_info)
         .titled("Activity info")
         .bind(KeyCombo { KEY_I, command })
@@ -3391,6 +3453,16 @@ void SweatTrails::initialize()
     if (!prefer_error.empty()) {
         message_box(std::format("In the settings, {}. SweatTrails chooses the longest recording of an activity as its main one.", prefer_error));
     }
+}
+
+void SweatTrails::read_gear_file()
+{
+    auto read = read_gear(gear_path(storage));
+    if (!read) {
+        set_status(std::format("{}. SweatTrails keeps the gear it had.", read.error()));
+        return;
+    }
+    gear = std::move(*read);
 }
 
 EError SweatTrails::read_settings()
