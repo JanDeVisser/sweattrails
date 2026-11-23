@@ -513,6 +513,15 @@ void SweatTrails::job_update_summaries(Job::Payload const &data)
     update_summaries_chunk(SweatTrails::the(), std::get<SummaryProgress>(data));
 }
 
+// Reads the sidecars of the store for the Gear screen: thousands of
+// small files, off the UI thread.
+void SweatTrails::job_read_gear_picks(Job::Payload const &data)
+{
+    auto const the = SweatTrails::the();
+    auto       picks = read_gear_picks(the->storage, std::get<GearPicksRequest>(data).summaries);
+    the->notify<NotificationType::GearPicksRead>(GearPicksRead { .picks = std::move(picks) });
+}
+
 void SweatTrails::job_group_recordings(Job::Payload const &data)
 {
     group_recordings_chunk(SweatTrails::the(), std::get<GroupingProgress>(data));
@@ -961,7 +970,7 @@ std::optional<ActivityID> activity_on_display(pSweatTrails const &sweattrails)
 void SweatTrails::process_input()
 {
     // Each frame, as the activity on display changes in many places.
-    if (showing_summaries()) {
+    if (!showing_activity()) {
         top_bar->trail.clear();
     } else {
         auto const shown = activity_on_display(self<SweatTrails>());
@@ -1636,6 +1645,32 @@ void cmd_summaries(pSweatTrails const &sweattrails, JSONValue const &)
     sweattrails->show_summaries(true);
 }
 
+// The Gear screen, or back to the activity from it. The gear is read
+// again, and the sidecars' picks by a job, so that an edit shows.
+void cmd_gear_list(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    if (sweattrails->showing_gear()) {
+        sweattrails->show_gear(false);
+        return;
+    }
+    sweattrails->read_gear_file();
+    sweattrails->gear_screen->open(sweattrails->gear, gear_path(sweattrails->storage));
+    sweattrails->gear_screen->set_summaries(sweattrails->summaries);
+    sweattrails->schedule<JobType::ReadGearPicks>(GearPicksRequest { .summaries = sweattrails->summaries });
+    sweattrails->show_gear(true);
+}
+
+void cmd_gear_close(pSweatTrails const &sweattrails, JSONValue const &)
+{
+    sweattrails->show_gear(false);
+}
+
+// Up and Down through the Gear screen's rows.
+void cmd_gear_row(pSweatTrails const &sweattrails, JSONValue const &arguments)
+{
+    sweattrails->gear_screen->step_row(arguments.try_get<int>("step").value_or(0));
+}
+
 // Esc: back up a level, and at the top, back to the activity.
 void cmd_summaries_close(pSweatTrails const &sweattrails, JSONValue const &)
 {
@@ -2115,7 +2150,7 @@ void cmd_fill_gaps(pSweatTrails const &sweattrails, JSONValue const &arguments)
 {
     auto const paths = arguments.try_get_array<std::string>("paths").value_or(std::vector<std::string> { });
     auto const displayed = sweattrails->activity_display->activity;
-    auto const showing = !sweattrails->showing_summaries() && sweattrails->modals.empty() && displayed != nullptr;
+    auto const showing = sweattrails->showing_activity() && sweattrails->modals.empty() && displayed != nullptr;
     if (auto const problem = drop_problem(paths, showing); problem) {
         message_box(*problem);
         return;
@@ -2532,7 +2567,7 @@ void load_again(pSweatTrails const &the, ActivityID const &id)
     auto loaded = load_to_show(the->storage, id);
     if (!loaded) {
         the->set_status(loaded.error());
-    } else if (the->showing_summaries()) {
+    } else if (!the->showing_activity()) {
         the->last_activity = id;
         the->activity_display->set_activity(*loaded, route_for(the->storage, *loaded));
         the->compare_if_on();
@@ -2779,12 +2814,37 @@ void SweatTrails::show_summaries(bool on)
     }
 }
 
+bool SweatTrails::showing_gear() const
+{
+    return !widget_stack->widgets.empty() && widget_stack->widgets.front() == gear_screen;
+}
+
+void SweatTrails::show_gear(bool on)
+{
+    if (on) {
+        widget_stack->activate<GearScreen>();
+    } else {
+        widget_stack->activate<ActivityDisplay>();
+    }
+}
+
+bool SweatTrails::showing_activity() const
+{
+    return !showing_summaries() && !showing_gear();
+}
+
+void SweatTrails::notif_gear_picks_read(Notification::Payload const &data)
+{
+    SweatTrails::the()->gear_screen->set_picks(std::get<GearPicksRead>(data).picks);
+}
+
 void SweatTrails::notif_summaries_updated(Notification::Payload const &data)
 {
     auto const &updated = std::get<SummariesUpdated>(data);
     auto const  the = SweatTrails::the();
     the->summaries = updated.summaries;
     the->summaries_screen->set_summaries(updated.summaries);
+    the->gear_screen->set_summaries(updated.summaries);
     // Whatever adds or removes activities updates the summaries, so this
     // keeps the status bar's summary of the store up to date.
     the->status->idle = store_summary(the->summaries);
@@ -3116,12 +3176,14 @@ void SweatTrails::initialize()
     // The top bar, the screens, and the status bar, top to bottom.
     top_bar = add_widget<TopBar>();
     top_bar->menu = {
+        MenuItem { .title = "Gear", .action = [this]() { bus.submit("st-gear-list", JSONValue { }); } },
         MenuItem { .title = "Quit", .action = [this]() { bus.submit("st-quit", JSONValue { }); } },
     };
     top_bar->on_crumb = [this](size_t ix) { open_crumb(the(), ix); };
     widget_stack = add_widget<WidgetStack>();
     activity_display = widget_stack->add_widget<ActivityDisplay>();
     summaries_screen = widget_stack->add_widget<SummariesScreen>();
+    gear_screen = widget_stack->add_widget<GearScreen>();
     // Drilling into a week lists it, at its first activity.
     summaries_screen->on_week = [this](ActivitySummary const &summary) {
         if (auto const id = summary_activity(summary); id) {
@@ -3228,8 +3290,9 @@ void SweatTrails::initialize()
         .titled("Log in to Strava");
     bus.add_task<SweatTrails>("st-message", self(), cmd_message);
     // The screens' keys: Left, Right, Up, Down and Esc are both's.
-    auto const on_activity_screen = [this] { return !showing_summaries(); };
+    auto const on_activity_screen = [this] { return showing_activity(); };
     auto const on_summaries = [this] { return showing_summaries(); };
+    auto const on_gear = [this] { return showing_gear(); };
     bus.add_task<SweatTrails>("st-summaries", self(), cmd_summaries)
         .titled("Show or close the totals")
         .bind(KeyCombo { KEY_T, KModControl });
@@ -3273,6 +3336,16 @@ void SweatTrails::initialize()
     auto &year = bus.add_task<SweatTrails>("st-summaries-year", self(), cmd_summaries_year).when(on_summaries);
     year.bind(KeyCombo { KEY_LEFT, KModNone }, summaries_argument("step", JSONValue { -1 }), "Totals: earlier");
     year.bind(KeyCombo { KEY_RIGHT, KModNone }, summaries_argument("step", JSONValue { 1 }), "Totals: later");
+    // No key: from the palette and the menu, as it isn't often looked at.
+    bus.add_task<SweatTrails>("st-gear-list", self(), cmd_gear_list)
+        .titled("Gear: list");
+    bus.add_task<SweatTrails>("st-gear-close", self(), cmd_gear_close)
+        .titled("Gear: back to the activity")
+        .bind(KeyCombo { KEY_ESCAPE, KModNone })
+        .when(on_gear);
+    auto &gear_row = bus.add_task<SweatTrails>("st-gear-row", self(), cmd_gear_row).when(on_gear);
+    gear_row.bind(KeyCombo { KEY_UP, KModNone }, summaries_argument("step", JSONValue { -1 }));
+    gear_row.bind(KeyCombo { KEY_DOWN, KModNone }, summaries_argument("step", JSONValue { 1 }));
     auto &row = bus.add_task<SweatTrails>("st-summaries-row", self(), cmd_summaries_row).when(on_summaries);
     row.bind(KeyCombo { KEY_UP, KModNone }, summaries_argument("step", JSONValue { -1 }));
     row.bind(KeyCombo { KEY_DOWN, KModNone }, summaries_argument("step", JSONValue { 1 }));
@@ -3357,7 +3430,7 @@ void SweatTrails::initialize()
     // No key: uploading is rare, and only for Strava's users.
     bus.add_task<SweatTrails>("st-upload-to-strava", self(), cmd_upload_to_strava)
         .titled("Upload to Strava")
-        .when([this] { return !showing_summaries() && activity_display->activity != nullptr && strava_client(settings).has_value(); });
+        .when([this] { return showing_activity() && activity_display->activity != nullptr && strava_client(settings).has_value(); });
     bus.add_task<SweatTrails>("st-split-recordings", self(), cmd_split_recordings)
         .titled("Split the recordings")
         .bind(split_recordings_key)
@@ -3381,7 +3454,7 @@ void SweatTrails::initialize()
     // No key: it isn't done often enough to spend a key on.
     bus.add_task<SweatTrails>("st-gear", self(), cmd_pick_gear)
         .titled("Gear: pick for this activity")
-        .when([this] { return !showing_summaries() && activity_display->activity != nullptr; });
+        .when([this] { return showing_activity() && activity_display->activity != nullptr; });
     bus.add_task<SweatTrails>("st-activity-info", self(), cmd_activity_info)
         .titled("Activity info")
         .bind(KeyCombo { KEY_I, command })
