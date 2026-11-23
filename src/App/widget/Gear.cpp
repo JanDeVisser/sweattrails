@@ -57,9 +57,6 @@ std::string on_text(GearTotal const &total)
     if (!total.fitted) {
         return NotThere;
     }
-    if (total.fitted->at) {
-        return std::format("{}, {}", total.fitted->on, TyrePosition_name(*total.fitted->at));
-    }
     return total.fitted->on;
 }
 

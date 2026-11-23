@@ -61,11 +61,12 @@ enum class GearKind {
 };
 
 // The parts of a bike that wear, as a part's `type` names them.
-#define PARTTYPES(S)        \
-    S(Chainset, "chainset") \
-    S(Wheels, "wheels")     \
-    S(Cassette, "cassette") \
-    S(Chain, "chain")       \
+#define PARTTYPES(S)             \
+    S(Chainset, "chainset")      \
+    S(FrontWheel, "front wheel") \
+    S(RearWheel, "rear wheel")   \
+    S(Cassette, "cassette")      \
+    S(Chain, "chain")            \
     S(Tyre, "tyre")
 
 enum class PartType {
@@ -75,29 +76,17 @@ enum class PartType {
 #undef S
 };
 
-// Where a tyre is on its wheels.
-#define TYREPOSITIONS(S) \
-    S(Front, "front")    \
-    S(Rear, "rear")
+char const             *GearType_name(GearType type);
+char const             *GearKind_name(GearKind kind);
+std::optional<GearKind> GearKind_by_name(std::string_view name);
+char const             *PartType_name(PartType type);
+std::optional<PartType> PartType_by_name(std::string_view name);
 
-enum class TyrePosition {
-#undef S
-#define S(V, N) V,
-    TYREPOSITIONS(S)
-#undef S
-};
+struct Gear;
 
-char const                 *GearType_name(GearType type);
-char const                 *GearKind_name(GearKind kind);
-std::optional<GearKind>     GearKind_by_name(std::string_view name);
-char const                 *PartType_name(PartType type);
-std::optional<PartType>     PartType_by_name(std::string_view name);
-char const                 *TyrePosition_name(TyrePosition at);
-std::optional<TyrePosition> TyrePosition_by_name(std::string_view name);
-
-// What a part of this type is fitted on: a bike, or, for a cassette or a
-// tyre, wheels.
-[[nodiscard]] bool goes_on_wheels(PartType type);
+// Whether a part of this type is fitted on `place`: a chainset, chain or
+// wheel on a bike, a cassette on a rear wheel, a tyre on either wheel.
+[[nodiscard]] bool fits_on(PartType type, Gear const &place);
 
 struct Gear {
     GearType                                   type { GearType::Shoes };
@@ -133,11 +122,10 @@ struct GearDefault {
 };
 
 // From `from` on, until `until` if it has one, `part` is fitted on `on`,
-// a bike or wheels, at the front or the rear for a tyre.
+// a bike or a wheel.
 struct Fitting {
     std::string                                part { };
     std::string                                on { };
-    std::optional<TyrePosition>                at { };
     std::chrono::year_month_day                from { };
     std::optional<std::chrono::year_month_day> until { }; // The last day it applies
 
@@ -197,16 +185,16 @@ struct GearList {
 // retired before `day`.
 [[nodiscard]] Fitting const *fitting_of(GearList const &list, std::string_view part, std::chrono::year_month_day day);
 
-// The part of `type` fitted on `place` on `day`, at `at` for a tyre: of
-// the entries in effect there, the latest whose part is still there. None
-// if there's none, or if that part was retired before `day`: the part it
-// replaced doesn't come back.
-[[nodiscard]] Gear const *part_at(GearList const &list, std::string_view place, PartType type,
-    std::optional<TyrePosition> at, std::chrono::year_month_day day);
+// The part of `type` fitted on `place` on `day`: of the entries in effect
+// there, the latest whose part is still there. None if there's none, or
+// if that part was retired before `day`: the part it replaced doesn't
+// come back.
+[[nodiscard]] Gear const *part_at(GearList const &list, std::string_view place, PartType type, std::chrono::year_month_day day);
 
 // The parts a ride on `bike` wears on `day`: its chainset, chain and
-// wheels, and the wheels' cassette and tyres. Only the chainset and chain
-// `indoor`, as the wheels don't turn on a direct-drive trainer.
+// wheels, the front wheel's tyre, and the rear wheel's cassette and tyre.
+// Only the chainset and chain `indoor`, as the wheels don't turn on a
+// direct-drive trainer.
 [[nodiscard]] std::vector<Gear const *> parts_used(GearList const &list, std::string_view bike, std::chrono::year_month_day day, bool indoor);
 
 // The gear an activity uses, as shown.

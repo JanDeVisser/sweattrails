@@ -38,7 +38,8 @@ constexpr char const Example[] = R"({
   ],
   "parts": [
     { "name": "Ultegra 52/36", "type": "chainset", "max_km": 30000 },
-    { "name": "Canyon stock wheels", "type": "wheels" },
+    { "name": "Canyon front", "type": "front wheel" },
+    { "name": "Canyon rear", "type": "rear wheel" },
     { "name": "105 11-28", "type": "cassette", "start_km": 100 },
     { "name": "GP5000 front", "type": "tyre" },
     { "name": "GP5000 rear", "type": "tyre" },
@@ -51,12 +52,13 @@ constexpr char const Example[] = R"({
   ],
   "fitted": [
     { "part": "Ultegra 52/36", "on": "Canyon", "from": "2022-05-01" },
-    { "part": "Canyon stock wheels", "on": "Canyon", "from": "2022-05-01" },
-    { "part": "105 11-28", "on": "Canyon stock wheels", "from": "2022-05-01" },
-    { "part": "GP5000 front", "on": "Canyon stock wheels", "at": "front", "from": "2026-03-01" },
-    { "part": "GP5000 rear", "on": "Canyon stock wheels", "at": "rear", "from": "2026-03-01" },
+    { "part": "Canyon front", "on": "Canyon", "from": "2022-05-01" },
+    { "part": "Canyon rear", "on": "Canyon", "from": "2022-05-01" },
+    { "part": "105 11-28", "on": "Canyon rear", "from": "2022-05-01" },
+    { "part": "GP5000 front", "on": "Canyon front", "from": "2026-03-01" },
+    { "part": "GP5000 rear", "on": "Canyon rear", "from": "2026-03-01" },
     { "part": "KMC blue", "on": "Canyon", "from": "2026-06-01" },
-    { "part": "105 11-34", "on": "Canyon stock wheels", "from": "2026-07-01", "until": "2026-07-12" }
+    { "part": "105 11-34", "on": "Canyon rear", "from": "2026-07-01", "until": "2026-07-12" }
   ],
   "waxed": [ { "chain": "KMC blue", "on": "2026-11-20" } ]
 })";
@@ -95,7 +97,8 @@ std::string with(std::string_view rest)
     return std::format(R"({{
   "bikes": [ {{ "name": "Canyon" }} ],
   "parts": [
-    {{ "name": "Wheels", "type": "wheels" }},
+    {{ "name": "Front", "type": "front wheel" }},
+    {{ "name": "Rear", "type": "rear wheel" }},
     {{ "name": "Cassette", "type": "cassette" }},
     {{ "name": "Chain", "type": "chain" }},
     {{ "name": "Tyre", "type": "tyre" }}
@@ -108,7 +111,7 @@ std::string with(std::string_view rest)
 void test_decode_the_example()
 {
     auto const list = example();
-    CHECK_EQ(list.gear.size(), 9uz);
+    CHECK_EQ(list.gear.size(), 10uz);
     auto const *chain = list.find("KMC blue");
     CHECK(chain != nullptr);
     if (chain != nullptr) {
@@ -119,9 +122,10 @@ void test_decode_the_example()
     }
     auto const *bike = list.find("Canyon");
     CHECK(bike != nullptr && !bike->part && !bike->max_km);
-    CHECK_EQ(list.fitted.size(), 7uz);
-    CHECK((list.fitted.back() == Fitting { .part = "105 11-34", .on = "Canyon stock wheels", .from = day(2026, 7, 1), .until = day(2026, 7, 12) }));
-    CHECK(list.fitted.size() == 7 && list.fitted[3].at == TyrePosition::Front && list.fitted[4].at == TyrePosition::Rear);
+    auto const *rear = list.find("Canyon rear");
+    CHECK(rear != nullptr && rear->part == PartType::RearWheel);
+    CHECK_EQ(list.fitted.size(), 8uz);
+    CHECK((list.fitted.back() == Fitting { .part = "105 11-34", .on = "Canyon rear", .from = day(2026, 7, 1), .until = day(2026, 7, 12) }));
     // A wax on a day counts from the next one.
     CHECK_EQ(list.waxed.size(), 1uz);
     CHECK(list.waxed.size() == 1
@@ -139,8 +143,8 @@ void test_wax_with_a_time()
 
 void test_decode_errors()
 {
-    CHECK_EQ(error_of(R"({"parts": [{"name": "A"}]})"), "parts 1's `type` isn't one of chainset, wheels, cassette, chain, tyre");
-    CHECK_EQ(error_of(R"({"parts": [{"name": "A", "type": "saddle"}]})"), "parts 1's `type` isn't one of chainset, wheels, cassette, chain, tyre");
+    CHECK_EQ(error_of(R"({"parts": [{"name": "A"}]})"), "parts 1's `type` isn't one of chainset, front wheel, rear wheel, cassette, chain, tyre");
+    CHECK_EQ(error_of(R"({"parts": [{"name": "A", "type": "saddle"}]})"), "parts 1's `type` isn't one of chainset, front wheel, rear wheel, cassette, chain, tyre");
     // Unique over shoes, bikes and parts.
     CHECK_EQ(error_of(R"({"bikes": [{"name": "A"}], "parts": [{"name": "A", "type": "chain"}]})"), "there are two pieces of gear called `A`");
     CHECK_EQ(error_of(R"({"shoes": [{"name": "A", "max_km": 0}]})"), "shoes 1's `max_km` isn't a number over 0");
@@ -155,17 +159,19 @@ void test_decode_errors()
     CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Canyon", "on": "Canyon", "from": "2026-01-01" } ])")),
         "fitted 1's `part`, `Canyon`, isn't in `parts`");
     CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Chain", "on": "Nope", "from": "2026-01-01" } ])")),
-        "fitted 1's `on`, `Nope`, isn't a bike or wheels");
+        "fitted 1's `on`, `Nope`, isn't a bike or a wheel");
     CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Cassette", "on": "Canyon", "from": "2026-01-01" } ])")),
-        "fitted 1: a cassette goes on wheels, and `Canyon` isn't wheels");
-    CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Chain", "on": "Wheels", "from": "2026-01-01" } ])")),
-        "fitted 1: a chain goes on a bike, and `Wheels` isn't a bike");
-    CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Tyre", "on": "Wheels", "from": "2026-01-01" } ])")),
-        "fitted 1: a tyre needs `at`, \"front\" or \"rear\"");
-    CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Tyre", "on": "Wheels", "at": "middle", "from": "2026-01-01" } ])")),
-        "fitted 1's `at` isn't \"front\" or \"rear\"");
-    CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Chain", "on": "Canyon", "at": "rear", "from": "2026-01-01" } ])")),
-        "fitted 1 has an `at`, but only a tyre has one");
+        "fitted 1: a cassette goes on a rear wheel, and `Canyon` isn't one");
+    CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Cassette", "on": "Front", "from": "2026-01-01" } ])")),
+        "fitted 1: a cassette goes on a rear wheel, and `Front` isn't one");
+    CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Chain", "on": "Rear", "from": "2026-01-01" } ])")),
+        "fitted 1: a chain goes on a bike, and `Rear` isn't one");
+    CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Rear", "on": "Front", "from": "2026-01-01" } ])")),
+        "fitted 1: a rear wheel goes on a bike, and `Front` isn't one");
+    CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Tyre", "on": "Canyon", "from": "2026-01-01" } ])")),
+        "fitted 1: a tyre goes on a front or a rear wheel, and `Canyon` isn't one");
+    CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Tyre", "on": "Front", "from": "2026-01-01" } ])")), "");
+    CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Tyre", "on": "Rear", "from": "2026-01-01" } ])")), "");
     CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Chain", "on": "Canyon" } ])")),
         "fitted 1 has no `from`, the date it's fitted from, as \"2026-03-14\"");
     CHECK_EQ(error_of(with(R"("fitted": [ { "part": "Chain", "on": "Canyon", "from": "2026-01-10", "until": "2026-01-09" } ])")),
@@ -200,41 +206,42 @@ std::string part_name(Gear const *part)
 
 std::string on_wheels(GearList const &list, std::string_view wheels, PartType type, chrono::year_month_day on)
 {
-    return part_name(part_at(list, wheels, type, { }, on));
+    return part_name(part_at(list, wheels, type, on));
 }
 
 void test_part_at()
 {
     auto const list = example();
     // Not fitted yet before its date.
-    CHECK_EQ(part_name(part_at(list, "Canyon", PartType::Chain, { }, day(2026, 5, 31))), "none");
-    CHECK_EQ(part_name(part_at(list, "Canyon", PartType::Chain, { }, day(2026, 6, 1))), "KMC blue");
-    CHECK_EQ(part_name(part_at(list, "Canyon stock wheels", PartType::Tyre, TyrePosition::Rear, day(2026, 3, 1))), "GP5000 rear");
-    CHECK_EQ(part_name(part_at(list, "Canyon stock wheels", PartType::Tyre, { }, day(2026, 3, 1))), "none");
+    CHECK_EQ(part_name(part_at(list, "Canyon", PartType::Chain, day(2026, 5, 31))), "none");
+    CHECK_EQ(part_name(part_at(list, "Canyon", PartType::Chain, day(2026, 6, 1))), "KMC blue");
+    CHECK_EQ(part_name(part_at(list, "Canyon rear", PartType::Tyre, day(2026, 3, 1))), "GP5000 rear");
+    CHECK_EQ(part_name(part_at(list, "Canyon front", PartType::Tyre, day(2026, 3, 1))), "GP5000 front");
+    CHECK_EQ(part_name(part_at(list, "Canyon front", PartType::Tyre, day(2026, 2, 28))), "none");
     // The swap applies up to and including its until, and the cassette
     // before it is back after.
-    CHECK_EQ(on_wheels(list, "Canyon stock wheels", PartType::Cassette, day(2026, 6, 30)), "105 11-28");
-    CHECK_EQ(on_wheels(list, "Canyon stock wheels", PartType::Cassette, day(2026, 7, 1)), "105 11-34");
-    CHECK_EQ(on_wheels(list, "Canyon stock wheels", PartType::Cassette, day(2026, 7, 12)), "105 11-34");
-    CHECK_EQ(on_wheels(list, "Canyon stock wheels", PartType::Cassette, day(2026, 7, 13)), "105 11-28");
+    CHECK_EQ(on_wheels(list, "Canyon rear", PartType::Cassette, day(2026, 6, 30)), "105 11-28");
+    CHECK_EQ(on_wheels(list, "Canyon rear", PartType::Cassette, day(2026, 7, 1)), "105 11-34");
+    CHECK_EQ(on_wheels(list, "Canyon rear", PartType::Cassette, day(2026, 7, 12)), "105 11-34");
+    CHECK_EQ(on_wheels(list, "Canyon rear", PartType::Cassette, day(2026, 7, 13)), "105 11-28");
     CHECK(fitting_of(list, "105 11-34", day(2026, 7, 13)) == nullptr);
     // The 11-28's entry is still in effect during the swap, but it's off.
     CHECK(fitting_of(list, "105 11-28", day(2026, 7, 5)) == nullptr);
     CHECK(fitting_of(list, "105 11-28", day(2026, 7, 13)) != nullptr);
     auto const *fitting = fitting_of(list, "105 11-34", day(2026, 7, 5));
-    CHECK(fitting != nullptr && fitting->on == "Canyon stock wheels");
+    CHECK(fitting != nullptr && fitting->on == "Canyon rear");
 }
 
-// Wheels moved to another bike leave the first with the wheels it had
-// before them, unless those have moved on too.
+// A wheel moved to another bike leaves the first with the wheel it had
+// before it, unless that has moved on too.
 void test_wheels_move()
 {
     auto const list = decode_text(R"({
   "bikes": [ { "name": "Road" }, { "name": "TT" } ],
   "parts": [
-    { "name": "Alloy", "type": "wheels" },
-    { "name": "Carbon", "type": "wheels" },
-    { "name": "Spare", "type": "wheels" }
+    { "name": "Alloy", "type": "rear wheel" },
+    { "name": "Carbon", "type": "rear wheel" },
+    { "name": "Spare", "type": "rear wheel" }
   ],
   "fitted": [
     { "part": "Alloy", "on": "Road", "from": "2026-01-01" },
@@ -247,16 +254,16 @@ void test_wheels_move()
 })")
                           .value_or(GearList { });
     auto const wheels = [&list](std::string_view bike, chrono::year_month_day on) {
-        return part_name(part_at(list, bike, PartType::Wheels, { }, on));
+        return part_name(part_at(list, bike, PartType::RearWheel, on));
     };
     CHECK_EQ(wheels("Road", day(2026, 2, 15)), "Carbon");
     CHECK_EQ(wheels("Road", day(2026, 3, 1)), "Alloy");
     CHECK_EQ(wheels("TT", day(2026, 3, 1)), "Carbon");
-    // The alloy wheels on the TT bike for ten days: the road bike has
-    // none, as the carbon wheels it had before moved on too.
+    // The alloy wheel on the TT bike for ten days: the road bike has
+    // none, as the carbon wheel it had before moved on too.
     CHECK_EQ(wheels("TT", day(2026, 4, 5)), "Alloy");
     CHECK_EQ(wheels("Road", day(2026, 4, 5)), "none");
-    // After, the alloy wheels go back where they were before.
+    // After, the alloy wheel goes back where it was before.
     CHECK_EQ(wheels("Road", day(2026, 4, 11)), "Alloy");
     CHECK_EQ(wheels("TT", day(2026, 4, 11)), "Carbon");
     // Two entries on one day: the later in the file wins.
@@ -279,8 +286,8 @@ void test_retired_part()
   ]
 })")
                           .value_or(GearList { });
-    CHECK_EQ(part_name(part_at(list, "Canyon", PartType::Chain, { }, day(2026, 3, 1))), "New chain");
-    CHECK_EQ(part_name(part_at(list, "Canyon", PartType::Chain, { }, day(2026, 3, 2))), "none");
+    CHECK_EQ(part_name(part_at(list, "Canyon", PartType::Chain, day(2026, 3, 1))), "New chain");
+    CHECK_EQ(part_name(part_at(list, "Canyon", PartType::Chain, day(2026, 3, 2))), "none");
     CHECK(fitting_of(list, "New chain", day(2026, 3, 1)) != nullptr);
     CHECK(fitting_of(list, "New chain", day(2026, 3, 2)) == nullptr);
 }
@@ -289,11 +296,11 @@ void test_parts_used()
 {
     auto const list = example();
     CHECK(names(parts_used(list, "Canyon", day(2026, 6, 1), false))
-        == (Names { "Ultegra 52/36", "KMC blue", "Canyon stock wheels", "105 11-28", "GP5000 front", "GP5000 rear" }));
+        == (Names { "Ultegra 52/36", "KMC blue", "Canyon front", "GP5000 front", "Canyon rear", "105 11-28", "GP5000 rear" }));
     CHECK(names(parts_used(list, "Canyon", day(2026, 7, 4), false))
-        == (Names { "Ultegra 52/36", "KMC blue", "Canyon stock wheels", "105 11-34", "GP5000 front", "GP5000 rear" }));
+        == (Names { "Ultegra 52/36", "KMC blue", "Canyon front", "GP5000 front", "Canyon rear", "105 11-34", "GP5000 rear" }));
     CHECK(names(parts_used(list, "Canyon", day(2026, 6, 1), true)) == (Names { "Ultegra 52/36", "KMC blue" }));
-    CHECK(names(parts_used(list, "Canyon", day(2022, 6, 1), false)) == (Names { "Ultegra 52/36", "Canyon stock wheels", "105 11-28" }));
+    CHECK(names(parts_used(list, "Canyon", day(2022, 6, 1), false)) == (Names { "Ultegra 52/36", "Canyon front", "Canyon rear", "105 11-28" }));
     CHECK(parts_used(list, "Gravel", day(2026, 6, 1), false).empty());
 }
 
@@ -325,6 +332,26 @@ GearTotal total_of(std::vector<GearTotal> const &totals, std::string_view name)
     return it == totals.end() ? GearTotal { } : *it;
 }
 
+// A tyre moved from the rear wheel to the front keeps its distance, and
+// the rear wheel gets a new one.
+void test_tyre_moves_to_the_front()
+{
+    auto list = example();
+    list.gear.push_back(Gear { .type = GearType::Part, .name = "New rear", .part = PartType::Tyre });
+    list.fitted.push_back(Fitting { .part = "GP5000 rear", .on = "Canyon front", .from = day(2026, 10, 1) });
+    list.fitted.push_back(Fitting { .part = "New rear", .on = "Canyon rear", .from = day(2026, 10, 1) });
+    CHECK(names(parts_used(list, "Canyon", day(2026, 10, 1), false))
+        == (Names { "Ultegra 52/36", "KMC blue", "Canyon front", "GP5000 rear", "Canyon rear", "105 11-28", "New rear" }));
+    // The front tyre it replaced is off.
+    CHECK(fitting_of(list, "GP5000 front", day(2026, 10, 1)) == nullptr);
+    auto const totals = gear_totals(list, { ride(day(2026, 9, 1), 30), ride(day(2026, 10, 2), 20) }, { }, Today);
+    CHECK_EQ(total_of(totals, "GP5000 rear").km, 50.0);
+    CHECK_EQ(total_of(totals, "GP5000 front").km, 30.0);
+    CHECK_EQ(total_of(totals, "New rear").km, 20.0);
+    auto const fitted = total_of(totals, "GP5000 rear").fitted;
+    CHECK(fitted && fitted->on == "Canyon front");
+}
+
 void test_totals()
 {
     auto const               list = example();
@@ -342,14 +369,16 @@ void test_totals()
         order.push_back(total.name);
     }
     CHECK(order
-        == (Names { "Canyon", "Gravel", "Ultegra 52/36", "Canyon stock wheels", "105 11-28", "GP5000 front", "GP5000 rear", "KMC blue", "105 11-34" }));
+        == (Names { "Canyon", "Gravel", "Ultegra 52/36", "Canyon front", "Canyon rear", "105 11-28", "GP5000 front", "GP5000 rear", "KMC blue",
+            "105 11-34" }));
     CHECK_EQ(total_of(totals, "Canyon").km, 4540.0);
     CHECK_EQ(total_of(totals, "Canyon").activities, 5uz);
     // Indoors too.
     CHECK_EQ(total_of(totals, "Ultegra 52/36").km, 240.0);
     CHECK_EQ(total_of(totals, "KMC blue").km, 240.0);
     // Not indoors.
-    CHECK_EQ(total_of(totals, "Canyon stock wheels").km, 210.0);
+    CHECK_EQ(total_of(totals, "Canyon front").km, 210.0);
+    CHECK_EQ(total_of(totals, "Canyon rear").km, 210.0);
     CHECK_EQ(total_of(totals, "GP5000 rear").km, 210.0);
     // start_km, and not during the swap.
     CHECK_EQ(total_of(totals, "105 11-28").km, 210.0);
@@ -359,7 +388,7 @@ void test_totals()
 
     // Where each is today.
     auto const rear = total_of(totals, "GP5000 rear").fitted;
-    CHECK(rear && rear->on == "Canyon stock wheels" && rear->at == TyrePosition::Rear);
+    CHECK(rear && rear->on == "Canyon rear");
     CHECK(!total_of(totals, "105 11-34").fitted);
     CHECK(!total_of(totals, "Canyon").fitted);
 
@@ -437,6 +466,7 @@ int main()
     test_retired_part();
     test_parts_used();
     test_totals();
+    test_tyre_moves_to_the_front();
     test_wax_at_a_time();
     test_limits();
     test_pick_of_a_part();

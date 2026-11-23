@@ -42,7 +42,7 @@ struct GearColumn {
 [[nodiscard]] std::vector<TableColumn> gear_columns();
 // "Pegasus blue", "Nike Pegasus 41" (brand, model and version),
 // "2026-03-14", "", "42", "512 km", "". A part's On is where it's fitted,
-// "Canyon", "Race wheels, rear", or "–"; a chain's Waxed is "212 km (20
+// "Canyon", "Race rear", or "–"; a chain's Waxed is "212 km (20
 // Nov)", or "–" if it was never waxed. An unknown name's "Unknown: Old
 // Canyon", with only its numbers.
 [[nodiscard]] std::vector<TableRow> gear_rows(std::vector<GearTotal> const &totals);

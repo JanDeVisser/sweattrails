@@ -83,33 +83,33 @@ std::optional<PartType> PartType_by_name(std::string_view name)
     return { };
 }
 
-char const *TyrePosition_name(TyrePosition at)
+bool fits_on(PartType type, Gear const &place)
 {
-    switch (at) {
-#undef S
-#define S(V, N)           \
-    case TyrePosition::V: \
-        return N;
-        TYREPOSITIONS(S)
-#undef S
+    switch (type) {
+    case PartType::Cassette:
+        return place.part == PartType::RearWheel;
+    case PartType::Tyre:
+        return place.part == PartType::FrontWheel || place.part == PartType::RearWheel;
+    default:
+        return place.type == GearType::Bike;
     }
-    UNREACHABLE();
 }
 
-std::optional<TyrePosition> TyrePosition_by_name(std::string_view name)
+namespace {
+
+// What a part of this type goes on, for the error when it's somewhere else.
+char const *place_name(PartType type)
 {
-#undef S
-#define S(V, N)    \
-    if (name == N) \
-        return TyrePosition::V;
-    TYREPOSITIONS(S)
-#undef S
-    return { };
+    switch (type) {
+    case PartType::Cassette:
+        return "a rear wheel";
+    case PartType::Tyre:
+        return "a front or a rear wheel";
+    default:
+        return "a bike";
+    }
 }
 
-bool goes_on_wheels(PartType type)
-{
-    return type == PartType::Cassette || type == PartType::Tyre;
 }
 
 bool Fitting::in_effect(chrono::year_month_day day) const
@@ -302,7 +302,7 @@ std::expected<void, std::string> decode_defaults(JSONValue const &json, GearList
 }
 
 // A fitting's part and place, checked: a part goes on a bike, or, for a
-// cassette or a tyre, on wheels, and a tyre says where.
+// cassette on a rear wheel, a tyre on either wheel.
 std::expected<void, std::string> check_fitting(GearList const &list, Fitting const &fitting, std::string const &where)
 {
     auto const *part = list.find(fitting.part);
@@ -311,20 +311,10 @@ std::expected<void, std::string> check_fitting(GearList const &list, Fitting con
     }
     auto const *place = list.find(fitting.on);
     if (place == nullptr) {
-        return Problem { std::format("{}'s `on`, `{}`, isn't a bike or wheels", where, fitting.on) };
+        return Problem { std::format("{}'s `on`, `{}`, isn't a bike or a wheel", where, fitting.on) };
     }
-    if (goes_on_wheels(*part->part)) {
-        if (place->part != PartType::Wheels) {
-            return Problem { std::format("{}: a {} goes on wheels, and `{}` isn't wheels", where, PartType_name(*part->part), fitting.on) };
-        }
-    } else if (place->type != GearType::Bike) {
-        return Problem { std::format("{}: a {} goes on a bike, and `{}` isn't a bike", where, PartType_name(*part->part), fitting.on) };
-    }
-    if (part->part == PartType::Tyre && !fitting.at) {
-        return Problem { std::format("{}: a tyre needs `at`, \"front\" or \"rear\"", where) };
-    }
-    if (part->part != PartType::Tyre && fitting.at) {
-        return Problem { std::format("{} has an `at`, but only a tyre has one", where) };
+    if (!fits_on(*part->part, *place)) {
+        return Problem { std::format("{}: a {} goes on {}, and `{}` isn't one", where, PartType_name(*part->part), place_name(*part->part), fitting.on) };
     }
     if (fitting.until && *fitting.until < fitting.from) {
         return Problem { std::format("{}'s `until` is before its `from`", where) };
@@ -351,12 +341,6 @@ std::expected<void, std::string> decode_fitted(JSONValue const &json, GearList &
             .part = TRY_EVAL(text_field(entry, "part", where)),
             .on = TRY_EVAL(text_field(entry, "on", where)),
         };
-        if (entry.has("at")) {
-            fitting.at = TyrePosition_by_name(TRY_EVAL(text_field(entry, "at", where)));
-            if (!fitting.at) {
-                return Problem { std::format("{}'s `at` isn't \"front\" or \"rear\"", where) };
-            }
-        }
         auto const from = TRY_EVAL(date_field(entry, "from", where));
         if (!from) {
             return Problem { std::format("{} has no `from`, the date it's fitted from, {}", where, DateExample) };
@@ -559,18 +543,18 @@ Fitting const *fitting_of(GearList const &list, std::string_view part, chrono::y
         return nullptr;
     }
     auto const *fitting = latest_fitting(list, part, day);
-    if (fitting == nullptr || part_at(list, fitting->on, *gear->part, fitting->at, day) != gear) {
+    if (fitting == nullptr || part_at(list, fitting->on, *gear->part, day) != gear) {
         return nullptr;
     }
     return fitting;
 }
 
-Gear const *part_at(GearList const &list, std::string_view place, PartType type, std::optional<TyrePosition> at, chrono::year_month_day day)
+Gear const *part_at(GearList const &list, std::string_view place, PartType type, chrono::year_month_day day)
 {
     // Latest first: the fittings are in order of their dates, and the
     // file's order on a day, so the later in the file wins.
     for (auto const &fitting : list.fitted | std::views::reverse) {
-        if (fitting.on != place || fitting.at != at || !fitting.in_effect(day)) {
+        if (fitting.on != place || !fitting.in_effect(day)) {
             continue;
         }
         auto const *part = list.find(fitting.part);
@@ -590,19 +574,20 @@ std::vector<Gear const *> parts_used(GearList const &list, std::string_view bike
             ret.push_back(part);
         }
     };
-    add(part_at(list, bike, PartType::Chainset, { }, day));
-    add(part_at(list, bike, PartType::Chain, { }, day));
+    add(part_at(list, bike, PartType::Chainset, day));
+    add(part_at(list, bike, PartType::Chain, day));
     if (indoor) {
         return ret;
     }
-    auto const *wheels = part_at(list, bike, PartType::Wheels, { }, day);
-    if (wheels == nullptr) {
-        return ret;
+    if (auto const *front = part_at(list, bike, PartType::FrontWheel, day); front != nullptr) {
+        add(front);
+        add(part_at(list, front->name, PartType::Tyre, day));
     }
-    add(wheels);
-    add(part_at(list, wheels->name, PartType::Cassette, { }, day));
-    add(part_at(list, wheels->name, PartType::Tyre, TyrePosition::Front, day));
-    add(part_at(list, wheels->name, PartType::Tyre, TyrePosition::Rear, day));
+    if (auto const *rear = part_at(list, bike, PartType::RearWheel, day); rear != nullptr) {
+        add(rear);
+        add(part_at(list, rear->name, PartType::Cassette, day));
+        add(part_at(list, rear->name, PartType::Tyre, day));
+    }
     return ret;
 }
 

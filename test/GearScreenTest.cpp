@@ -97,7 +97,7 @@ void test_part_rows()
     auto const tyre = GearTotal {
         .name = "GP5000 rear",
         .gear = part("GP5000 rear", PartType::Tyre),
-        .fitted = Fitting { .part = "GP5000 rear", .on = "Race wheels", .at = TyrePosition::Rear },
+        .fitted = Fitting { .part = "GP5000 rear", .on = "Race rear" },
     };
     auto const chain = GearTotal {
         .name = "KMC blue",
@@ -113,7 +113,7 @@ void test_part_rows()
     if (rows.size() != 3) {
         return;
     }
-    CHECK_EQ(rows[0][GearColumn::On], "Race wheels, rear");
+    CHECK_EQ(rows[0][GearColumn::On], "Race rear");
     CHECK_EQ(rows[0][GearColumn::Waxed], "");
     CHECK((rows[1] == TableRow { "KMC blue", "", "", "Canyon", "12", "812 km", "212 km (20 Nov)" }));
     // Not fitted, and never waxed.
