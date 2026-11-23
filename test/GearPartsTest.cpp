@@ -409,6 +409,18 @@ void test_choices_leave_out_parts()
     CHECK((activity_gear(list, GearPick { .name = "KMC blue" }, { }, day(2026, 8, 1)) == ActivityGear { .name = "KMC blue", .unknown = true }));
 }
 
+// A sidecar naming a part as the activity's gear (only by hand) is an
+// unknown pick: the ride isn't the part's own, and the part isn't counted
+// twice.
+void test_pick_of_a_part()
+{
+    auto const list = example();
+    auto const summary = ride(day(2026, 8, 1), 50);
+    auto const totals = gear_totals(list, { summary }, GearPicks { { pick_key(summary), GearPick { .name = "KMC blue" } } }, Today);
+    CHECK_EQ(total_of(totals, "KMC blue").km, 0.0);
+    CHECK_EQ(total_of(totals, "KMC blue").activities, 0uz);
+}
+
 }
 
 int main()
@@ -424,5 +436,6 @@ int main()
     test_totals();
     test_wax_at_a_time();
     test_limits();
+    test_pick_of_a_part();
     return Test::test_result();
 }

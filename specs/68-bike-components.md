@@ -309,4 +309,23 @@ No new dependencies, files or widgets beyond the above.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug.** A sidecar pick naming a part is credited to the part.
+   `activity_gear()` marks it `unknown`, as the spec says, but
+   `gear_totals()` (`src/App/storage/Gear.cpp`, the `add(used->name, summary)`
+   call) adds the ride to `by_name[part]`, which is the part's own total:
+   a pick of `KMC blue` gives the chain the ride's km and an activity,
+   and no `Unknown:` row shows, as `GearTotal::unknown()` is false for a
+   name that is in the list. Only by hand-editing a sidecar, so low
+   severity. The fix is to credit the ride only when `!used->unknown`, and
+   to show an unknown row for it otherwise. Test
+   `test_pick_of_a_part` in `test/GearPartsTest.cpp` fails until then.
+2. **Suggestion.** `Fitting` entries of a part are checked against its
+   place only when read, so a part retired or a place later in the file is
+   fine, but a `fitted` entry before the part's own `parts` entry can't
+   occur (parts are decoded first); no change needed. Everything else
+   checked held up: `part_at()`/`fitting_of()` follow the spec's rule
+   (including wheels moving, both moving on, the same-day later-wins and
+   `until` inclusive), wax counts from the next day or the time in local
+   time, indoor rides skip wheels, cassette and tyres, and the build and
+   all 90 tests passed before my test was added.
+
