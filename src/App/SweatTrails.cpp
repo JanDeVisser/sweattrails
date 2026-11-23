@@ -3426,7 +3426,7 @@ void SweatTrails::initialize()
     // No key: deleting is rare, and a key is easy to hit by mistake.
     bus.add_task<SweatTrails>("st-delete-activity", self(), cmd_delete_activity)
         .titled("Delete activity")
-        .when([this] { return !showing_summaries() && activity_display->activity != nullptr; });
+        .when([this] { return showing_activity() && activity_display->activity != nullptr; });
     // No key: uploading is rare, and only for Strava's users.
     bus.add_task<SweatTrails>("st-upload-to-strava", self(), cmd_upload_to_strava)
         .titled("Upload to Strava")
