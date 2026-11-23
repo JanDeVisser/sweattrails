@@ -405,4 +405,34 @@ that the many tests that link `Activity.cpp` don't all need `Gear.cpp`.
 
 ## Review notes
 
-*Filled in by the Reviewer.*
+1. **Bug**: `st-delete-activity` (`SweatTrails.cpp`, its `.when()`, near
+   "Delete activity") still says `!showing_summaries()`, one of the
+   replacements by `showing_activity()` that was missed. On the Gear
+   screen the palette offers "Delete activity", and it deletes the
+   activity behind the screen, which the user can't see. It should be
+   `showing_activity() && activity_display->activity != nullptr`.
+2. **Suggestion**: `notif_summaries_updated()` calls
+   `gear_screen->set_summaries()`, which runs `gear_totals()` over every
+   summary (thousands) on each update while the Gear screen is closed,
+   and the update job notifies per chunk. `GearScreen::refresh()` could
+   do nothing until `open()`.
+3. **Suggestion**: `ReadGearPicks` results aren't tied to an opening of
+   the screen. Close and reopen the screen while the first job runs: the
+   first job's `GearPicksRead` clears `reading` and shows its numbers,
+   and the second replaces them. Harmless, but the picks of the first
+   may be older than a pick made in between.
+4. **Suggestion**: `decode_gear()` ignores unknown top-level keys, so a
+   typo such as `"shoe"` or `"default"` is no gear and no error, with
+   nothing on the status line.
+5. **Missing tests (added)**: `gear_test` gets the defaults in any order
+   (and two on one day: the later in the file wins), the totals with a
+   default naming gear retired before the day, and `gear_kinds()` for a
+   walk on a treadmill, a walk, a hike and no sport. All pass.
+
+Checked and fine: the sub-sport mapping in `gear_kinds()`;
+`default_gear()` with sorted defaults and retirement; a multisport file
+counted once per piece of gear; leg picks read back after `show_tab()`
+(`read_names()` refreshes them, so `set_gear()`'s no-change shortcut
+isn't fooled by a stale copy); the info box's `weak_ptr` holder; the row
+index of the gear link; the day of a summary and of an activity are the
+same `DateTime`.

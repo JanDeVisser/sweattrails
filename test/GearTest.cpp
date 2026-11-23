@@ -447,6 +447,49 @@ void test_read_gear_picks()
     CHECK(picks.contains(pick_key(leg2)) && picks.at(pick_key(leg2)) == GearPick { .name = "TT" });
 }
 
+// Entries in any order in the file: the latest by date counts, and of two
+// on the same day the one later in the file.
+void test_defaults_in_any_order()
+{
+    auto const list = decoded(R"({
+        "bikes": [{ "name": "A" }, { "name": "B" }, { "name": "C" }],
+        "defaults": [
+            { "for": "cycling", "gear": "C", "from": "2026-06-01" },
+            { "for": "cycling", "gear": "A", "from": "2025-01-01" },
+            { "for": "cycling", "gear": "B", "from": "2026-06-01" }
+        ]})");
+    CHECK(default_gear(list, { Cycling }, day(2025, 12, 31)) == "A");
+    CHECK(default_gear(list, { Cycling }, day(2026, 5, 31)) == "A");
+    CHECK(default_gear(list, { Cycling }, day(2026, 6, 1)) == "B");
+    CHECK(default_gear(list, { Cycling }, day(2030, 1, 1)) == "B");
+}
+
+// A default naming retired gear gives no gear in the totals either, and a
+// pick of null isn't overridden by it.
+void test_totals_without_retired_default()
+{
+    auto const        list = decoded(R"({
+        "shoes": [{ "name": "Old", "retired": "2026-04-01", "start_km": 10 }],
+        "defaults": [{ "for": "running", "gear": "Old", "from": "2026-01-01" }]
+    })");
+    ActivitySummaries summaries {
+        summary(day(2026, 3, 31), FIT::sport::Running, { }, 5),
+        summary(day(2026, 4, 1), FIT::sport::Running, { }, 6),
+        summary(day(2026, 4, 2), FIT::sport::Running, { }, 7),
+    };
+    auto const totals = gear_totals(list, summaries, { });
+    CHECK_EQ(totals.size(), 1uz);
+    CHECK(totals.size() == 1 && totals[0].activities == 2 && totals[0].km == 21.0);
+}
+
+void test_walking_on_a_treadmill_is_a_run()
+{
+    CHECK(gear_kinds(FIT::sport::Walking, sub_sport::treadmill) == std::vector { Running });
+    CHECK(gear_kinds(FIT::sport::Walking, { }).empty());
+    CHECK(gear_kinds(FIT::sport::Hiking, sub_sport::generic).empty());
+    CHECK(gear_kinds({ }, { }).empty());
+}
+
 }
 
 int main()
@@ -467,5 +510,8 @@ int main()
     test_retired_at_the_bottom_of_their_group();
     test_totals_of_legs();
     test_read_gear_picks();
+    test_defaults_in_any_order();
+    test_totals_without_retired_default();
+    test_walking_on_a_treadmill_is_a_run();
     return ST::Test::test_result();
 }
