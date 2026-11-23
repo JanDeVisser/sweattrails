@@ -1004,6 +1004,75 @@ void test_leg_names_that_arent_valid()
     CHECK_EQ(sidecar_titles(u.dir / "dummy.json").legs[0].own.value_or(""), "Bike");
 }
 
+// A pick of gear is its name under "gear", null for no gear, and none
+// without the key; anything else in the key is no pick.
+void test_gear_pick_in_the_sidecar()
+{
+    ActivityInDir t { R"({"name": "Morning ride", "gear": "Canyon"})" };
+    CHECK(t.activity.gear_pick == std::optional { GearPick { .name = "Canyon" } });
+    ActivityInDir none { R"({"gear": null})" };
+    CHECK(none.activity.gear_pick == std::optional { GearPick { } });
+    ActivityInDir no_key { R"({"name": "Morning ride"})" };
+    CHECK(!no_key.activity.gear_pick.has_value());
+    for (auto const *contents : { R"({"gear": 12})", R"({"gear": ""})", R"({"gear": ["Canyon"]})" }) {
+        ActivityInDir bad { contents };
+        CHECK(!bad.activity.gear_pick.has_value());
+    }
+}
+
+// Picking saves the name, null for no gear, and back to the default
+// takes the key out, and the sidecar with it if nothing else is there.
+void test_set_gear()
+{
+    ActivityInDir t { "" };
+    auto const    sidecar = t.dir / "dummy.json";
+    CHECK(t.activity.set_gear(GearPick { .name = "Pegasus blue" }).has_value());
+    CHECK(sidecar_titles(sidecar).gear == std::optional { GearPick { .name = "Pegasus blue" } });
+    Activity again { t.storage, ActivityID::dummy(ActivityFile::Fit) };
+    again.depth = LoadingDepth::Deep;
+    CHECK(again.load_from_dir(t.dir).value_or(false));
+    CHECK(again.gear_pick == std::optional { GearPick { .name = "Pegasus blue" } });
+
+    CHECK(t.activity.set_gear(GearPick { }).has_value());
+    auto const json = JSONValue::deserialize(read_json(sidecar));
+    CHECK(json.has_value() && json->has("gear") && json->get("gear")->is_null());
+    CHECK(sidecar_titles(sidecar).gear == std::optional { GearPick { } });
+
+    CHECK(t.activity.set_gear(std::nullopt).has_value());
+    CHECK(!t.activity.gear_pick.has_value());
+    CHECK(!fs::exists(sidecar));
+}
+
+// A sidecar that can't be written leaves the pick as it was.
+void test_set_gear_that_fails()
+{
+    ActivityInDir t { "not JSON" };
+    CHECK(!t.activity.set_gear(GearPick { .name = "Canyon" }).has_value());
+    CHECK(!t.activity.gear_pick.has_value());
+}
+
+// A leg's pick goes in its object in "legs", and comes back with its
+// names.
+void test_save_leg_gear()
+{
+    ActivityInDir t { R"({"activityName": "Morning Multisport"})" };
+    auto const    sidecar = t.dir / "dummy.json";
+    CHECK(save_sidecar_gear(sidecar, GearPick { .name = "Canyon" }, 2).has_value());
+    CHECK(save_sidecar_gear(sidecar, GearPick { }, 0).has_value());
+    auto const names = sidecar_titles(sidecar);
+    CHECK(!names.gear.has_value());
+    CHECK_EQ(names.legs.size(), 3uz);
+    if (names.legs.size() == 3) {
+        CHECK(names.legs[0].gear == std::optional { GearPick { } });
+        CHECK(!names.legs[1].gear.has_value());
+        CHECK(names.legs[2].gear == std::optional { GearPick { .name = "Canyon" } });
+    }
+    CHECK(save_sidecar_gear(sidecar, std::nullopt, 0).has_value());
+    CHECK(save_sidecar_gear(sidecar, std::nullopt, 2).has_value());
+    auto const json = JSONValue::deserialize(read_json(sidecar));
+    CHECK(json.has_value() && !json->has("legs"));
+}
+
 // The time of record `ix` of the two-lap activity, as the sidecar has it.
 i64 two_laps_time(u32 ix)
 {
@@ -1235,6 +1304,10 @@ int main()
     test_save_sidecar_strava();
     test_save_leg_names();
     test_leg_names_that_arent_valid();
+    test_gear_pick_in_the_sidecar();
+    test_set_gear();
+    test_set_gear_that_fails();
+    test_save_leg_gear();
     test_rename_over_stravas_title();
     test_save_keeps_the_rest_of_the_sidecar();
     test_save_without_a_sidecar();

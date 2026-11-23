@@ -315,6 +315,8 @@ void Activity::read_names()
     } else {
         notes = old_strava.description.value_or("");
     }
+    // The whole of a multisport activity has no gear: its legs have.
+    gear_pick = is_multisport() ? std::nullopt : names.gear;
     if (is_multisport()) {
         read_whole_names(names);
     }
@@ -375,7 +377,9 @@ LegTitles titles_of_leg(SidecarTitles const &names, size_t leg)
 
 void Activity::read_leg_names(SidecarTitles const &names)
 {
-    take_names(*this, leg_names(leg->name, titles_of_leg(names, leg->index)));
+    auto const titles = titles_of_leg(names, leg->index);
+    take_names(*this, leg_names(leg->name, titles));
+    gear_pick = titles.gear;
 }
 
 // The legs' names, and from them the whole's: the legs' common title
@@ -423,6 +427,25 @@ constexpr char const LapsKey[] = "laps";
 // And for the names of a multisport activity's legs.
 constexpr char const LegsKey[] = "legs";
 
+// And for the gear picked for it.
+constexpr char const GearKey[] = "gear";
+
+}
+
+std::optional<GearPick> sidecar_gear(JSONValue const &part)
+{
+    auto const gear = part.get(GearKey);
+    if (!gear) {
+        return { };
+    }
+    if (gear->is_null()) {
+        return GearPick { };
+    }
+    if (auto const name = part.try_get<std::string>(GearKey); name && !name->empty()) {
+        return GearPick { .name = *name };
+    }
+    // Anything else in the key is no pick, rather than a pick of no gear.
+    return { };
 }
 
 std::optional<JSONValue> read_sidecar(fs::path const &sidecar)
@@ -493,6 +516,7 @@ std::vector<LegTitles> leg_titles(JSONValue const &json, fs::path const &sidecar
             .strava = strava_title(leg, sidecar),
             .own = non_empty_string(leg, OwnTitleKey),
             .own_notes = non_empty_string(leg, OwnNotesKey),
+            .gear = sidecar_gear(leg),
         });
     }
     return ret;
@@ -579,6 +603,7 @@ SidecarTitles sidecar_titles(fs::path const &sidecar)
         .service = service_title(*json),
         .own = non_empty_string(*json, OwnTitleKey),
         .own_notes = non_empty_string(*json, OwnNotesKey),
+        .gear = sidecar_gear(*json),
         .strava = strava_title(*json, sidecar),
         .legs = leg_titles(*json, sidecar),
     };
@@ -684,6 +709,21 @@ std::expected<void, LibCError> save_sidecar_notes(fs::path const &sidecar, std::
     });
 }
 
+std::expected<void, LibCError> save_sidecar_gear(fs::path const &sidecar, std::optional<GearPick> const &pick, std::optional<size_t> leg)
+{
+    return update_sidecar(sidecar, [&pick, leg](JSONValue &json) {
+        change_sidecar_part(json, leg, [&pick](JSONValue &part) {
+            if (!pick) {
+                part.erase(GearKey);
+            } else if (!pick->name) {
+                part.set(GearKey, JSONValue { });
+            } else {
+                part.set(GearKey, JSONValue { *pick->name });
+            }
+        });
+    });
+}
+
 std::expected<void, LibCError> save_sidecar_strava(fs::path const &sidecar, StravaTitle const &strava, std::optional<size_t> leg)
 {
     return update_sidecar(sidecar, [&strava, leg](JSONValue &json) {
@@ -762,6 +802,19 @@ std::expected<void, LibCError> Activity::rename(std::string_view name)
     }
     TRY(save_sidecar_title(activity_sidecar, trimmed, leg.transform([](LegShown const &shown) { return shown.index; })));
     title = new_title;
+    return { };
+}
+
+std::expected<void, LibCError> Activity::set_gear(std::optional<GearPick> pick)
+{
+    if (pick == gear_pick) {
+        return { };
+    }
+    if (activity_sidecar.empty()) {
+        return std::unexpected(LibCError { "`{}`'s gear can't be saved: it wasn't loaded from the store", id.name });
+    }
+    TRY(save_sidecar_gear(activity_sidecar, pick, leg.transform([](LegShown const &shown) { return shown.index; })));
+    gear_pick = std::move(pick);
     return { };
 }
 

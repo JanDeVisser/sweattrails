@@ -89,12 +89,26 @@ struct StravaTitle {
     bool                        operator==(StravaTitle const &) const = default;
 };
 
+// The gear picked for an activity, or a leg, under SweatTrails' key
+// `"gear"` in its sidecar: a piece of gear's name, or none, `"gear":
+// null`, for no gear. No GearPick at all is no key: the default applies.
+// See specs/67-gear.md.
+struct GearPick {
+    std::optional<std::string> name { };
+
+    bool operator==(GearPick const &) const = default;
+};
+
+// The pick in a part of a sidecar, the activity's or a leg's.
+std::optional<GearPick> sidecar_gear(JSONValue const &part);
+
 // The names of a leg of a multisport activity, under `"legs"` in its
 // sidecar, by the leg's index: see specs/58-multisport-leg-titles.md.
 struct LegTitles {
     std::optional<StravaTitle> strava { };
     std::optional<std::string> own { };       // The user's, "title"
     std::optional<std::string> own_notes { }; // The user's, "notes"
+    std::optional<GearPick>    gear { };
 };
 
 // The names in a sidecar, from one read of it.
@@ -102,6 +116,7 @@ struct SidecarTitles {
     std::optional<std::string> service { };   // sidecar_title()
     std::optional<std::string> own { };       // sidecar_own_title()
     std::optional<std::string> own_notes { }; // The user's description, "notes"
+    std::optional<GearPick>    gear { };
     std::optional<StravaTitle> strava { };
     // Strava activities that aren't this one, though the titles run
     // matched them: see reject_sidecar_strava().
@@ -176,6 +191,11 @@ std::expected<void, LibCError> save_sidecar_title(fs::path const &sidecar, std::
 // leg `leg`, as `"notes"`, with update_sidecar(), or removes it for empty
 // `notes`. See specs/41-edit-description.md.
 std::expected<void, LibCError> save_sidecar_notes(fs::path const &sidecar, std::string_view notes, std::optional<size_t> leg = { });
+
+// Saves the gear picked for the activity in its sidecar, or for its leg
+// `leg`, with update_sidecar(), or removes the pick for none, so that the
+// default applies again.
+std::expected<void, LibCError> save_sidecar_gear(fs::path const &sidecar, std::optional<GearPick> const &pick, std::optional<size_t> leg = { });
 
 struct Segment {
     DateTime                    start_time { };
@@ -295,6 +315,9 @@ struct Activity {
     // The starts of the laps the user made, after the first: nothing for
     // the device's laps.
     std::optional<std::vector<i64>> user_lap_starts { };
+    // The gear picked for it in the sidecar, or for the leg on its tab:
+    // none for the default.
+    std::optional<GearPick> gear_pick { };
     // The FIT file's sessions, one for most. With more, it's a multisport
     // activity, and its device laps are the legs.
     std::vector<Leg> legs { };
@@ -373,6 +396,9 @@ struct Activity {
     // the sidecar. An empty one goes back to Strava's, and an unchanged
     // one isn't saved, so that Strava's isn't copied into the user's.
     std::expected<void, LibCError> set_notes(std::string_view text);
+    // Picks the gear, for the leg on a leg's tab, and saves it in the
+    // sidecar; none goes back to the default.
+    std::expected<void, LibCError> set_gear(std::optional<GearPick> pick);
 
 private:
     Error<StorageError> analyze();
