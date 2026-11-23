@@ -329,3 +329,11 @@ No new dependencies, files or widgets beyond the above.
    time, indoor rides skip wheels, cassette and tyres, and the build and
    all 90 tests passed before my test was added.
 
+
+### Resolution
+
+1. Fixed in 2caf037, as Jan chose: a pick naming a part gets an
+   `Unknown: KMC blue` row, as any name not in `gear.json` does, and its
+   ride counts for no part. The unknown names are kept apart from the
+   gear in `gear_totals()`. `test_pick_of_a_part` also checks the row.
+2. Nothing to change.
