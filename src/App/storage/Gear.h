@@ -3,9 +3,11 @@
  *
  * SPDX-License-Identifier: MIT
  *
- * The user's gear, shoes and bikes, from `gear.json` in the data
- * directory, which the user writes by hand: which gear an activity uses,
- * picked or by default, and the distance on each. See specs/67-gear.md.
+ * The user's gear, shoes, bikes and the bikes' parts, from `gear.json` in
+ * the data directory, which the user writes by hand: which gear an
+ * activity uses, picked or by default, where each part is fitted, and
+ * the distance on each. See specs/67-gear.md and
+ * specs/68-bike-components.md.
  */
 
 #pragma once
@@ -31,7 +33,8 @@ struct Storage;
 
 #define GEARTYPES(S)  \
     S(Shoes, "shoes") \
-    S(Bike, "bikes")
+    S(Bike, "bikes")  \
+    S(Part, "parts")
 
 enum class GearType {
 #undef S
@@ -57,9 +60,44 @@ enum class GearKind {
 #undef S
 };
 
-char const             *GearType_name(GearType type);
-char const             *GearKind_name(GearKind kind);
-std::optional<GearKind> GearKind_by_name(std::string_view name);
+// The parts of a bike that wear, as a part's `type` names them.
+#define PARTTYPES(S)        \
+    S(Chainset, "chainset") \
+    S(Wheels, "wheels")     \
+    S(Cassette, "cassette") \
+    S(Chain, "chain")       \
+    S(Tyre, "tyre")
+
+enum class PartType {
+#undef S
+#define S(V, N) V,
+    PARTTYPES(S)
+#undef S
+};
+
+// Where a tyre is on its wheels.
+#define TYREPOSITIONS(S) \
+    S(Front, "front")    \
+    S(Rear, "rear")
+
+enum class TyrePosition {
+#undef S
+#define S(V, N) V,
+    TYREPOSITIONS(S)
+#undef S
+};
+
+char const                 *GearType_name(GearType type);
+char const                 *GearKind_name(GearKind kind);
+std::optional<GearKind>     GearKind_by_name(std::string_view name);
+char const                 *PartType_name(PartType type);
+std::optional<PartType>     PartType_by_name(std::string_view name);
+char const                 *TyrePosition_name(TyrePosition at);
+std::optional<TyrePosition> TyrePosition_by_name(std::string_view name);
+
+// What a part of this type is fitted on: a bike, or, for a cassette or a
+// tyre, wheels.
+[[nodiscard]] bool goes_on_wheels(PartType type);
 
 struct Gear {
     GearType                                   type { GearType::Shoes };
@@ -74,6 +112,9 @@ struct Gear {
     std::string                                price { };      // Free text, with its currency if the user writes one
     float64                                    start_km { 0 }; // What it did before SweatTrails knew about it
     std::optional<std::chrono::year_month_day> retired { };
+    std::optional<PartType>                    part { };   // A part's type; none for shoes and bikes
+    std::optional<float64>                     max_km { }; // When it's worn out
+    std::optional<float64>                     wax_km { }; // When a chain needs waxing again
 
     // Whether it was out of use on `day`: retired before it.
     [[nodiscard]] bool retired_on(std::chrono::year_month_day day) const;
@@ -91,9 +132,36 @@ struct GearDefault {
     bool operator==(GearDefault const &) const = default;
 };
 
+// From `from` on, until `until` if it has one, `part` is fitted on `on`,
+// a bike or wheels, at the front or the rear for a tyre.
+struct Fitting {
+    std::string                                part { };
+    std::string                                on { };
+    std::optional<TyrePosition>                at { };
+    std::chrono::year_month_day                from { };
+    std::optional<std::chrono::year_month_day> until { }; // The last day it applies
+
+    [[nodiscard]] bool in_effect(std::chrono::year_month_day day) const;
+
+    bool operator==(Fitting const &) const = default;
+};
+
+// A chain waxed on `day`. Rides that start at or after `counts_from`, in
+// local time, are after the wax: the next midnight, as a chain is waxed
+// after the day's ride, or the time the file gives.
+struct Wax {
+    std::string                 chain { };
+    std::chrono::year_month_day day { };
+    std::chrono::local_seconds  counts_from { };
+
+    bool operator==(Wax const &) const = default;
+};
+
 struct GearList {
-    std::vector<Gear>        gear { }; // Shoes, then bikes, each as in the file
-    std::vector<GearDefault> defaults { };
+    std::vector<Gear>        gear { };     // Shoes, then bikes, then parts, each as in the file
+    std::vector<GearDefault> defaults { }; // These three in order of their dates
+    std::vector<Fitting>     fitted { };
+    std::vector<Wax>         waxed { };
 
     [[nodiscard]] Gear const *find(std::string_view name) const;
 
@@ -101,8 +169,10 @@ struct GearList {
 };
 
 // `gear.json`'s contents, or what's wrong with them: a field of the wrong
-// type, a date that isn't YYYY-MM-DD, a kind it doesn't know, two pieces
-// of gear of the same name, or a default naming gear that isn't there.
+// type, a date that isn't YYYY-MM-DD, a kind or part type it doesn't
+// know, two pieces of gear of the same name, a default naming gear that
+// isn't shoes or a bike, a part fitted on what it can't go on, or a wax
+// of something that isn't a chain.
 [[nodiscard]] std::expected<GearList, std::string> decode_gear(JSONValue const &json);
 
 [[nodiscard]] std::filesystem::path gear_path(Storage const &storage);

@@ -5,6 +5,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <format>
 #include <set>
 #include <system_error>
@@ -57,6 +58,64 @@ std::optional<GearKind> GearKind_by_name(std::string_view name)
     return { };
 }
 
+char const *PartType_name(PartType type)
+{
+    switch (type) {
+#undef S
+#define S(V, N)       \
+    case PartType::V: \
+        return N;
+        PARTTYPES(S)
+#undef S
+    }
+    UNREACHABLE();
+}
+
+std::optional<PartType> PartType_by_name(std::string_view name)
+{
+#undef S
+#define S(V, N)    \
+    if (name == N) \
+        return PartType::V;
+    PARTTYPES(S)
+#undef S
+    return { };
+}
+
+char const *TyrePosition_name(TyrePosition at)
+{
+    switch (at) {
+#undef S
+#define S(V, N)           \
+    case TyrePosition::V: \
+        return N;
+        TYREPOSITIONS(S)
+#undef S
+    }
+    UNREACHABLE();
+}
+
+std::optional<TyrePosition> TyrePosition_by_name(std::string_view name)
+{
+#undef S
+#define S(V, N)    \
+    if (name == N) \
+        return TyrePosition::V;
+    TYREPOSITIONS(S)
+#undef S
+    return { };
+}
+
+bool goes_on_wheels(PartType type)
+{
+    return type == PartType::Cassette || type == PartType::Tyre;
+}
+
+bool Fitting::in_effect(chrono::year_month_day day) const
+{
+    return from <= day && (!until || day <= *until);
+}
+
 bool Gear::retired_on(chrono::year_month_day day) const
 {
     return retired && *retired < day;
@@ -106,6 +165,29 @@ std::expected<std::optional<chrono::year_month_day>, std::string> date_field(JSO
     return day;
 }
 
+// A wear or wax limit: a distance over 0, or none.
+std::expected<std::optional<float64>, std::string> limit_field(JSONValue const &entry, std::string_view field, std::string const &where)
+{
+    if (!entry.has(field)) {
+        return std::optional<float64> { };
+    }
+    auto const km = entry.try_get<float64>(field);
+    if (!km || *km <= 0) {
+        return Problem { std::format("{}'s `{}` isn't a number over 0", where, field) };
+    }
+    return std::optional { *km };
+}
+
+std::string part_type_names()
+{
+    std::vector<std::string> names;
+#undef S
+#define S(V, N) names.emplace_back(N);
+    PARTTYPES(S)
+#undef S
+    return join(names, ", ");
+}
+
 std::expected<Gear, std::string> decode_one(JSONValue const &entry, GearType type, std::string const &where)
 {
     if (!entry.is_object()) {
@@ -137,6 +219,17 @@ std::expected<Gear, std::string> decode_one(JSONValue const &entry, GearType typ
             return Problem { std::format("{}'s `start_km` isn't a number of 0 or more", where) };
         }
         ret.start_km = *km;
+    }
+    ret.max_km = TRY_EVAL(limit_field(entry, "max_km", where));
+    ret.wax_km = TRY_EVAL(limit_field(entry, "wax_km", where));
+    if (type == GearType::Part) {
+        ret.part = PartType_by_name(TRY_EVAL(text_field(entry, "type", where)));
+        if (!ret.part) {
+            return Problem { std::format("{}'s `type` isn't one of {}", where, part_type_names()) };
+        }
+    }
+    if (ret.wax_km && ret.part != PartType::Chain) {
+        return Problem { std::format("{} has a `wax_km`, but it isn't a chain", where) };
     }
     return ret;
 }
@@ -190,8 +283,9 @@ std::expected<void, std::string> decode_defaults(JSONValue const &json, GearList
         if (!kind) {
             return Problem { std::format("{}'s `for` isn't one of {}", where, kind_names()) };
         }
-        auto gear = TRY_EVAL(text_field(entry, "gear", where));
-        if (into.find(gear) == nullptr) {
+        auto        gear = TRY_EVAL(text_field(entry, "gear", where));
+        auto const *found = into.find(gear);
+        if (found == nullptr || found->type == GearType::Part) {
             return Problem { std::format("{}'s `gear`, `{}`, isn't in `shoes` or `bikes`", where, gear) };
         }
         auto const from = TRY_EVAL(date_field(entry, "from", where));
@@ -206,6 +300,130 @@ std::expected<void, std::string> decode_defaults(JSONValue const &json, GearList
     return { };
 }
 
+// A fitting's part and place, checked: a part goes on a bike, or, for a
+// cassette or a tyre, on wheels, and a tyre says where.
+std::expected<void, std::string> check_fitting(GearList const &list, Fitting const &fitting, std::string const &where)
+{
+    auto const *part = list.find(fitting.part);
+    if (part == nullptr || !part->part) {
+        return Problem { std::format("{}'s `part`, `{}`, isn't in `parts`", where, fitting.part) };
+    }
+    auto const *place = list.find(fitting.on);
+    if (place == nullptr) {
+        return Problem { std::format("{}'s `on`, `{}`, isn't a bike or wheels", where, fitting.on) };
+    }
+    if (goes_on_wheels(*part->part)) {
+        if (place->part != PartType::Wheels) {
+            return Problem { std::format("{}: a {} goes on wheels, and `{}` isn't wheels", where, PartType_name(*part->part), fitting.on) };
+        }
+    } else if (place->type != GearType::Bike) {
+        return Problem { std::format("{}: a {} goes on a bike, and `{}` isn't a bike", where, PartType_name(*part->part), fitting.on) };
+    }
+    if (part->part == PartType::Tyre && !fitting.at) {
+        return Problem { std::format("{}: a tyre needs `at`, \"front\" or \"rear\"", where) };
+    }
+    if (part->part != PartType::Tyre && fitting.at) {
+        return Problem { std::format("{} has an `at`, but only a tyre has one", where) };
+    }
+    if (fitting.until && *fitting.until < fitting.from) {
+        return Problem { std::format("{}'s `until` is before its `from`", where) };
+    }
+    return { };
+}
+
+std::expected<void, std::string> decode_fitted(JSONValue const &json, GearList &into)
+{
+    auto const list = json.get("fitted");
+    if (!list) {
+        return { };
+    }
+    if (!list->is_array()) {
+        return Problem { "`fitted` isn't a list" };
+    }
+    for (auto ix = 0uz; ix < list->size(); ++ix) {
+        auto const &entry = (*list)[static_cast<unsigned>(ix)];
+        auto const  where = entry_name("fitted", ix);
+        if (!entry.is_object()) {
+            return Problem { std::format("{} isn't an object", where) };
+        }
+        Fitting fitting {
+            .part = TRY_EVAL(text_field(entry, "part", where)),
+            .on = TRY_EVAL(text_field(entry, "on", where)),
+        };
+        if (entry.has("at")) {
+            fitting.at = TyrePosition_by_name(TRY_EVAL(text_field(entry, "at", where)));
+            if (!fitting.at) {
+                return Problem { std::format("{}'s `at` isn't \"front\" or \"rear\"", where) };
+            }
+        }
+        auto const from = TRY_EVAL(date_field(entry, "from", where));
+        if (!from) {
+            return Problem { std::format("{} has no `from`, the date it's fitted from, {}", where, DateExample) };
+        }
+        fitting.from = *from;
+        fitting.until = TRY_EVAL(date_field(entry, "until", where));
+        TRY(check_fitting(into, fitting, where));
+        into.fitted.push_back(std::move(fitting));
+    }
+    std::ranges::stable_sort(into.fitted, std::less { }, &Fitting::from);
+    return { };
+}
+
+// A wax's `on`: a day, which counts from the next one, or a day and a
+// time, "2026-11-20T08:00", which counts from then.
+std::optional<std::pair<chrono::year_month_day, chrono::local_seconds>> parse_wax_time(std::string_view text)
+{
+    auto const t = text.find('T');
+    auto const day = parse_day(text.substr(0, t));
+    if (!day) {
+        return { };
+    }
+    auto const midnight = chrono::local_seconds { chrono::local_days { *day } };
+    if (t == std::string_view::npos) {
+        return std::pair { *day, midnight + chrono::days { 1 } };
+    }
+    auto const clock = split(text.substr(t + 1), ':');
+    if (clock.size() != 2) {
+        return { };
+    }
+    auto const hour = string_to_integer<unsigned>(clock[0], 10);
+    auto const minute = string_to_integer<unsigned>(clock[1], 10);
+    if (!hour || !minute || *hour > 23 || *minute > 59) {
+        return { };
+    }
+    return std::pair { *day, midnight + chrono::hours { *hour } + chrono::minutes { *minute } };
+}
+
+std::expected<void, std::string> decode_waxed(JSONValue const &json, GearList &into)
+{
+    auto const list = json.get("waxed");
+    if (!list) {
+        return { };
+    }
+    if (!list->is_array()) {
+        return Problem { "`waxed` isn't a list" };
+    }
+    for (auto ix = 0uz; ix < list->size(); ++ix) {
+        auto const &entry = (*list)[static_cast<unsigned>(ix)];
+        auto const  where = entry_name("waxed", ix);
+        if (!entry.is_object()) {
+            return Problem { std::format("{} isn't an object", where) };
+        }
+        auto        chain = TRY_EVAL(text_field(entry, "chain", where));
+        auto const *found = into.find(chain);
+        if (found == nullptr || found->part != PartType::Chain) {
+            return Problem { std::format("{}'s `chain`, `{}`, isn't a chain in `parts`", where, chain) };
+        }
+        auto const when = parse_wax_time(TRY_EVAL(text_field(entry, "on", where)));
+        if (!when) {
+            return Problem { std::format("{}'s `on` isn't a date, {}, or a date and time, as \"2026-03-14T08:00\"", where, DateExample) };
+        }
+        into.waxed.push_back(Wax { .chain = std::move(chain), .day = when->first, .counts_from = when->second });
+    }
+    std::ranges::stable_sort(into.waxed, std::less { }, &Wax::counts_from);
+    return { };
+}
+
 }
 
 std::expected<GearList, std::string> decode_gear(JSONValue const &json)
@@ -216,15 +434,19 @@ std::expected<GearList, std::string> decode_gear(JSONValue const &json)
     // The file is written by hand: a misspelt list, "shoe", would
     // otherwise leave its gear out without a word. Unknown fields in an
     // entry are fine, for notes.
+    static constexpr std::array Keys { "shoes", "bikes", "parts", "defaults", "fitted", "waxed" };
     for (auto const &[key, value] : json.to_object().value_or(JSONValue::Object { })) {
-        if (key != "shoes" && key != "bikes" && key != "defaults") {
-            return Problem { std::format("`{}` isn't one of shoes, bikes or defaults", key) };
+        if (std::ranges::find(Keys, key) == Keys.end()) {
+            return Problem { std::format("`{}` isn't one of shoes, bikes, parts, defaults, fitted or waxed", key) };
         }
     }
     GearList ret;
     TRY(decode_gear_list(json, GearType::Shoes, ret));
     TRY(decode_gear_list(json, GearType::Bike, ret));
+    TRY(decode_gear_list(json, GearType::Part, ret));
     TRY(decode_defaults(json, ret));
+    TRY(decode_fitted(json, ret));
+    TRY(decode_waxed(json, ret));
     return ret;
 }
 
@@ -317,7 +539,10 @@ std::optional<ActivityGear> activity_gear(GearList const &list, std::optional<Ge
         if (!pick->name) {
             return { };
         }
-        return ActivityGear { .name = *pick->name, .unknown = list.find(*pick->name) == nullptr };
+        // A part is never an activity's gear: only a hand-edited sidecar
+        // could pick one.
+        auto const *gear = list.find(*pick->name);
+        return ActivityGear { .name = *pick->name, .unknown = gear == nullptr || gear->part.has_value() };
     }
     return default_gear(list, kinds, day).transform([](std::string name) {
         return ActivityGear { .name = std::move(name), .from_default = true };
@@ -344,6 +569,9 @@ GearChoices gear_choices(GearList const &list, std::vector<GearKind> const &kind
     auto const shoes = kinds.empty() || kinds.front() == GearKind::Running;
     auto const bikes = kinds.empty() || kinds.front() != GearKind::Running;
     for (auto const &gear : list.gear) {
+        if (gear.type == GearType::Part) {
+            continue;
+        }
         auto const fits = (gear.type == GearType::Shoes) ? shoes : bikes;
         auto const is_pick = gear.name == picked;
         if (!is_pick && (!fits || gear.retired_on(day))) {
@@ -355,7 +583,7 @@ GearChoices gear_choices(GearList const &list, std::vector<GearKind> const &kind
         ret.choices.push_back(GearChoice { .text = gear.name, .pick = GearPick { .name = gear.name } });
     }
     // A pick of gear renamed or taken out of the file stays its choice.
-    if (picked && list.find(*picked) == nullptr) {
+    if (auto const *gear = picked ? list.find(*picked) : nullptr; picked && (gear == nullptr || gear->part)) {
         ret.current = ret.choices.size();
         ret.choices.push_back(GearChoice {
             .text = gear_text(ActivityGear { .name = *picked, .unknown = true }),

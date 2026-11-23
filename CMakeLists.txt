@@ -1202,6 +1202,26 @@ target_include_directories(gear_test PRIVATE src/App)
 target_link_libraries(gear_test PRIVATE ${CURL_LIBRARIES})
 
 sweattrails_test(
+        gear_parts_test
+        test/GearPartsTest.cpp
+        src/App/storage/Gear.cpp
+        src/App/storage/Activity.cpp
+        src/App/storage/Legs.cpp
+        src/App/storage/Devices.cpp
+        src/App/storage/Laps.cpp
+        src/App/storage/Storage.cpp
+        src/App/storage/Stubs.cpp
+        src/App/storage/Volume.cpp
+        src/App/storage/Types.cpp
+        src/App/fit/FIT.cpp
+        src/App/fit/Profile.cpp
+        src/App/Coordinates.cpp
+        src/App/Map.cpp
+)
+target_include_directories(gear_parts_test PRIVATE src/App)
+target_link_libraries(gear_parts_test PRIVATE ${CURL_LIBRARIES})
+
+sweattrails_test(
         gear_screen_test
         test/GearScreenTest.cpp
         src/App/widget/Gear.cpp
