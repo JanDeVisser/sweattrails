@@ -26,7 +26,7 @@
 namespace ST {
 
 [[nodiscard]] std::vector<TableColumn> gear_columns();
-// "Pegasus blue", "Nike Pegasus 41", "2026-03-14", "42", "512 km"; an
+// "Pegasus blue", "Nike Pegasus 41" (brand, model and version), "2026-03-14", "42", "512 km"; an
 // unknown name's "Unknown: Old Canyon", with only its numbers.
 [[nodiscard]] std::vector<TableRow> gear_rows(std::vector<GearTotal> const &totals);
 // Retired gear's rows.

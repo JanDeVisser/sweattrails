@@ -542,8 +542,8 @@ says where):
 ```json
 {
   "shoes": [
-    { "name": "Pegasus blue", "brand": "Nike", "model": "Pegasus 41",
-      "model_number": "FD2722-401", "colourway": "Blue",
+    { "name": "Pegasus blue", "brand": "Nike", "model": "Pegasus",
+      "version": "41", "colourway": "Blue",
       "purchased": "2026-03-14", "where": "Running Room", "price": "179.99",
       "start_km": 0, "retired": "2026-11-01" }
   ],
@@ -566,7 +566,9 @@ says where):
   it's unique over shoes and bikes. Renaming gear leaves the activities
   picked under the old name on gear that isn't there, shown as
   `Old Canyon (unknown)`, until you name it back.
-- Everything else is optional. Dates are `YYYY-MM-DD`, and `price` is
+- Everything else is optional. `version` is the model's, as makers
+  bring out a new one most years: the 5 of a Saucony Endorphin Speed 5.
+  It's text, for a "v3" or a "Pro 4". Dates are `YYYY-MM-DD`, and `price` is
   text, so you can write a currency with it. `start_km` is what the gear
   did before SweatTrails knew about it. `retired` is the day it went out
   of use. Fields of your own in an entry, such as a note, are left

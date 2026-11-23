@@ -29,7 +29,7 @@ namespace {
 std::string brand_and_model(Gear const &gear)
 {
     std::vector<std::string> parts;
-    for (auto const *part : { &gear.brand, &gear.model }) {
+    for (auto const *part : { &gear.brand, &gear.model, &gear.version }) {
         if (!part->empty()) {
             parts.push_back(*part);
         }

@@ -33,8 +33,8 @@ namespace {
 // The spec's example.
 constexpr char const Example[] = R"({
   "shoes": [
-    { "name": "Pegasus blue", "brand": "Nike", "model": "Pegasus 41",
-      "model_number": "FD2722-401", "colourway": "Blue",
+    { "name": "Pegasus blue", "brand": "Nike", "model": "Pegasus",
+      "version": "41", "colourway": "Blue",
       "purchased": "2026-03-14", "where": "Running Room", "price": "179.99",
       "start_km": 0, "retired": "2026-11-01" }
   ],
@@ -102,7 +102,8 @@ void test_decode_the_example()
     if (shoes != nullptr) {
         CHECK(shoes->type == GearType::Shoes);
         CHECK_EQ(shoes->brand, "Nike");
-        CHECK_EQ(shoes->model_number, "FD2722-401");
+        CHECK_EQ(shoes->model, "Pegasus");
+        CHECK_EQ(shoes->version, "41");
         CHECK_EQ(shoes->colourway, "Blue");
         CHECK_EQ(shoes->where, "Running Room");
         CHECK_EQ(shoes->price, "179.99");

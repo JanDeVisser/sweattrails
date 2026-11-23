@@ -25,7 +25,10 @@ chain needs waxing again.
 
 Running: shoes, per pair:
 
-- Brand, model, model number, colourway
+- Brand, model, model number, colourway. The model number is the
+  model's version, as makers bring out a new one most years: the 5 of
+  a Saucony Endorphin Speed 5. It's `version` in `gear.json`, text, and
+  shown after the model. The maker's article code isn't kept.
 - Date purchased, where, price
 - Mileage
 
@@ -83,8 +86,8 @@ keeps up to date.
 ```json
 {
   "shoes": [
-    { "name": "Pegasus blue", "brand": "Nike", "model": "Pegasus 41",
-      "model_number": "FD2722-401", "colourway": "Blue",
+    { "name": "Pegasus blue", "brand": "Nike", "model": "Pegasus",
+      "version": "41", "colourway": "Blue",
       "purchased": "2026-03-14", "where": "Running Room", "price": "179.99",
       "start_km": 0, "retired": "2026-11-01" }
   ],
@@ -243,7 +246,7 @@ Everything that decides which gear an activity uses, and the distance on
 each, is here, as pure functions a test reaches without a window.
 
 - `struct Gear`: `type` (`GearType::Shoes` or `Bike`), `name`, `brand`,
-  `model`, `model_number`, `colourway`, `year` (optional), `purchased`,
+  `model`, `version`, `colourway`, `year` (optional), `purchased`,
   `retired` (optional `year_month_day`), `where`, `price` (text),
   `start_km`.
 - `GearKind`, an X-macro with names: `running`, `road`, `gravel`,

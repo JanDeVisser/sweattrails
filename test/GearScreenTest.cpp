@@ -28,7 +28,7 @@ GearList list()
 {
     return GearList {
         .gear = {
-            Gear { .type = GearType::Shoes, .name = "Pegasus blue", .brand = "Nike", .model = "Pegasus 41", .purchased = chrono::year { 2026 } / 3 / 14 },
+            Gear { .type = GearType::Shoes, .name = "Pegasus blue", .brand = "Nike", .model = "Pegasus", .version = "41", .purchased = chrono::year { 2026 } / 3 / 14 },
             Gear { .type = GearType::Shoes, .name = "Ghost", .retired = chrono::year { 2026 } / 3 / 1 },
             Gear { .type = GearType::Bike, .name = "Canyon", .brand = "Canyon", .start_km = 4300 },
         },
@@ -72,6 +72,11 @@ void test_rows()
     CHECK(rows == expected);
     CHECK((gear_dimmed(totals) == std::vector<bool> { false, true, false, false }));
     CHECK_EQ(gear_columns().size(), 5uz);
+    // The version after the model, and what's left out isn't there.
+    GearTotal const speed { .name = "Speedy", .gear = Gear { .brand = "Saucony", .model = "Endorphin Speed", .version = "5" } };
+    GearTotal const no_brand { .name = "Old", .gear = Gear { .model = "Ghost", .version = "15" } };
+    auto const      versions = gear_rows({ speed, no_brand });
+    CHECK(versions.size() == 2 && versions[0][1] == "Saucony Endorphin Speed 5" && versions[1][1] == "Ghost 15");
 }
 
 void test_note()

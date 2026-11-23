@@ -118,7 +118,7 @@ std::expected<Gear, std::string> decode_one(JSONValue const &entry, GearType typ
     }
     ret.brand = TRY_EVAL(text_field(entry, "brand", where));
     ret.model = TRY_EVAL(text_field(entry, "model", where));
-    ret.model_number = TRY_EVAL(text_field(entry, "model_number", where));
+    ret.version = TRY_EVAL(text_field(entry, "version", where));
     ret.colourway = TRY_EVAL(text_field(entry, "colourway", where));
     ret.where = TRY_EVAL(text_field(entry, "where", where));
     ret.price = TRY_EVAL(text_field(entry, "price", where));

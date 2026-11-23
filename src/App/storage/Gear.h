@@ -66,7 +66,7 @@ struct Gear {
     std::string                                name { }; // Its key: unique over shoes and bikes
     std::string                                brand { };
     std::string                                model { };
-    std::string                                model_number { };
+    std::string                                version { }; // The model's: the 5 of an Endorphin Speed 5
     std::string                                colourway { };
     std::optional<int>                         year { }; // A bike's model year
     std::optional<std::chrono::year_month_day> purchased { };
