@@ -47,9 +47,10 @@ struct TestBox : public ActivityInfoBox {
     std::vector<int>         steps { };
     std::vector<fs::path>    revealed { };
     std::vector<std::string> copied { };
+    int                      gear_picks { 0 };
 
     TestBox()
-        : ActivityInfoBox(nullptr, nullptr, nullptr, nullptr)
+        : ActivityInfoBox(nullptr, nullptr, nullptr, nullptr, nullptr)
     {
         describe_fnc = [this]() -> std::optional<ActivityInfo> { return recording(shown); };
         switch_fnc = [this](int step) {
@@ -58,6 +59,7 @@ struct TestBox : public ActivityInfoBox {
         };
         reveal_fnc = [this](fs::path const &file) { revealed.push_back(file); };
         copy_fnc = [this](std::string const &text) { copied.push_back(text); };
+        pick_gear_fnc = [this]() { ++gear_picks; };
     }
 
     void resize() override
@@ -85,6 +87,32 @@ void test_rows()
         { .kind = Details, .line = { .small = "Serial 3615618938 · Battery ok" } },
     };
     CHECK(rows == expected);
+}
+
+// The gear under the file, dimmed when it comes from a default, and a
+// link, as the file is.
+void test_gear_rows()
+{
+    using enum InfoRow::Kind;
+    auto info = recording(1);
+    info.gear = ActivityGear { .name = "Canyon", .from_default = true };
+    auto const rows = info_rows(info);
+    CHECK_EQ(rows.size(), 9uz);
+    CHECK_EQ(gear_row(info).value_or(0), 3uz);
+    if (rows.size() == 9) {
+        CHECK((rows[2] == InfoRow { .kind = Heading, .line = { .text = "Gear" } }));
+        CHECK((rows[3] == InfoRow { .kind = Entry, .line = { .text = "Canyon" }, .link = true, .dim = true }));
+        CHECK((rows[4] == InfoRow { .kind = Heading, .line = { .text = "Recorded with" } }));
+    }
+    info.gear = ActivityGear { .name = "Old Canyon", .unknown = true };
+    CHECK((info_rows(info)[3] == InfoRow { .kind = Entry, .line = { .text = "Old Canyon (unknown)" }, .link = true }));
+    // Without a file, it's at the top.
+    info.file.clear();
+    CHECK_EQ(gear_row(info).value_or(0), 1uz);
+    auto const without_file = info_rows(info);
+    CHECK_EQ(without_file[1].line.text, "Old Canyon (unknown)");
+    info.gear.reset();
+    CHECK(!gear_row(info).has_value());
 }
 
 void test_rows_without_file_or_sensors()
@@ -232,6 +260,29 @@ void test_clicks()
     box->hide();
 }
 
+// A click on the gear's line picks gear; one on the file's still copies.
+void test_click_on_the_gear()
+{
+    auto box = std::make_shared<TestBox>();
+    box->describe_fnc = []() -> std::optional<ActivityInfo> {
+        auto info = recording(1);
+        info.gear = ActivityGear { .name = "Canyon" };
+        return info;
+    };
+    box->open();
+    box->links = {
+        InfoLink { .row = 1, .area = Rectangle { .x = 100, .y = 100, .width = 200, .height = 20 } },
+        InfoLink { .row = 3, .area = Rectangle { .x = 100, .y = 140, .width = 200, .height = 20 } },
+    };
+    box->handle_input(ScrollInput { .mouse = { .x = 150, .y = 150 }, .pressed = true, .time = 5.0 });
+    CHECK_EQ(box->gear_picks, 1);
+    CHECK(box->copied.empty());
+    box->handle_input(ScrollInput { .mouse = { .x = 150, .y = 110 }, .pressed = true, .time = 6.0 });
+    CHECK_EQ(box->gear_picks, 1);
+    CHECK_EQ(box->copied.size(), 1uz);
+    box->hide();
+}
+
 void test_other_keys_are_not_taken()
 {
     auto box = std::make_shared<TestBox>();
@@ -251,6 +302,8 @@ int main()
     ScopedTestApp app;
     test_rows();
     test_rows_without_file_or_sensors();
+    test_gear_rows();
+    test_click_on_the_gear();
     test_a_sensor_without_details_has_no_details_row();
     test_title_and_hint();
     test_esc_closes();

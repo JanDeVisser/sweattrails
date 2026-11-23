@@ -19,6 +19,7 @@
 
 #include <storage/Activity.h>
 #include <storage/Devices.h>
+#include <storage/Gear.h>
 
 namespace ST {
 
@@ -37,6 +38,9 @@ struct ActivityInfo {
     std::string             recording { }; // "Recording 2 of 2", for one of several
     InfoLine                device { };
     std::vector<SensorInfo> sensors { }; // None says NoSensors
+    // The gear it uses, as a pick or by default; none without gear, and
+    // for the whole of a multisport activity, whose legs have theirs.
+    std::optional<ActivityGear> gear { };
 
     bool operator==(ActivityInfo const &) const = default;
 };
@@ -45,8 +49,12 @@ struct ActivityInfo {
 // monitor", "power meter", ... or "sensor" for a type it doesn't know.
 std::string sensor_type_name(Sensor const &sensor);
 
+// The gear `activity` uses, with the gear in `list`: for the leg on a
+// leg's tab, and none for the whole of a multisport activity.
+std::optional<ActivityGear> gear_of(Activity const &activity, GearList const &list);
+
 // The popup's text for `activity`, its file named from `store`, the
-// store's folder.
-ActivityInfo describe(Activity const &activity, std::filesystem::path const &store);
+// store's folder, and its gear from `gear`.
+ActivityInfo describe(Activity const &activity, std::filesystem::path const &store, GearList const &gear = { });
 
 }

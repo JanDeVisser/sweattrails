@@ -394,6 +394,7 @@ void Activity::read_whole_names(SidecarTitles const &names)
         auto      &the_leg = legs[ix];
         auto const name = leg_name(*this, ix);
         take_names(the_leg, leg_names(name, titles_of_leg(names, ix)));
+        the_leg.gear_pick = titles_of_leg(names, ix).gear;
         if (the_leg.sport == FIT::sport::Transition) {
             continue;
         }

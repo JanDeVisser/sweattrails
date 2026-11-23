@@ -545,6 +545,7 @@ sweattrails_test(
         activity_info_test
         test/ActivityInfoTest.cpp
         src/App/widget/ActivityInfo.cpp
+        src/App/storage/Gear.cpp
         src/App/storage/Thresholds.cpp
         src/App/storage/Volume.cpp
         src/App/widget/DataFields.cpp
@@ -569,6 +570,7 @@ sweattrails_test(
         test/ActivityInfoBoxTest.cpp
         src/App/widget/ActivityInfoBox.cpp
         src/App/widget/ActivityInfo.cpp
+        src/App/storage/Gear.cpp
         src/App/storage/Thresholds.cpp
         src/App/storage/Volume.cpp
         src/App/widget/DataFields.cpp

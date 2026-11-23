@@ -2256,7 +2256,7 @@ void cmd_activity_info(pSweatTrails const &sweattrails, JSONValue const &)
         }
     };
     auto const copy = [](std::string const &text) { SetClipboardText(text.c_str()); };
-    auto const box = Widget::make<ActivityInfoBox>(describe_shown, switch_recording, reveal, copy);
+    auto const box = Widget::make<ActivityInfoBox>(describe_shown, switch_recording, reveal, copy, [] { });
     box->show();
 }
 

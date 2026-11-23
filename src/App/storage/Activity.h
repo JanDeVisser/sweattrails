@@ -260,6 +260,8 @@ struct Leg {
     std::string original_title { }; // Without the name the user gave it
     std::string notes { };
     std::string original_notes { }; // Without the user's description: Strava's
+    // The gear picked for it in the sidecar.
+    std::optional<GearPick> gear_pick { };
 };
 
 // Which leg an activity shown on a leg's tab is: its name, and its
