@@ -35,6 +35,7 @@ struct Table : public Widget {
 
     std::vector<TableColumn>    columns { };
     std::vector<TableRow>       rows { };
+    std::vector<bool>           dimmed { }; // By row: drawn in grey, such as what's out of use
     std::optional<size_t>       selection { };
     ScrollRange                 scroll { };
     Scrollbar                   scrollbar { };
@@ -51,8 +52,11 @@ struct Table : public Widget {
     // stretches shows as many as fit its height.
     Table(pWidget const &parent, int visible_rows);
 
-    // New rows, with nothing selected, scrolled to the top.
-    void set_rows(std::vector<TableColumn> new_columns, std::vector<TableRow> new_rows);
+    // New rows, with nothing selected, scrolled to the top, and which of
+    // them are dimmed: none, without.
+    void set_rows(std::vector<TableColumn> new_columns, std::vector<TableRow> new_rows, std::vector<bool> dimmed_rows = { });
+
+    [[nodiscard]] bool is_dimmed(size_t row) const;
 
     // Selects a row, or none, and scrolls it into view.
     void select(std::optional<size_t> row);

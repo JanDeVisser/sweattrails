@@ -126,7 +126,7 @@ std::string ActivityInfoBox::hint_text(double now) const
     return info_hint(info);
 }
 
-void ActivityInfoBox::click_link(double now)
+void ActivityInfoBox::click_link(size_t, double now)
 {
     copy(now);
 }

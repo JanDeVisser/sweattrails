@@ -217,7 +217,7 @@ void test_clicks()
 {
     auto box = std::make_shared<TestBox>();
     box->open();
-    box->link_area = Rectangle { .x = 100, .y = 100, .width = 200, .height = 20 };
+    box->links = { InfoLink { .row = 1, .area = Rectangle { .x = 100, .y = 100, .width = 200, .height = 20 } } };
     box->hint_area = Rectangle { .x = 100, .y = 300, .width = 300, .height = 15 };
     box->handle_input(ScrollInput { .mouse = { .x = 150, .y = 110 }, .time = 5.0 });
     box->handle_input(ScrollInput { .mouse = { .x = 150, .y = 200 }, .pressed = true, .time = 5.0 });

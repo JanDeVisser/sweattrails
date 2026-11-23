@@ -18,6 +18,7 @@ namespace {
 constexpr float Margin = 10.0f; // Left of the first column
 constexpr Color HeaderColor = LIGHTGRAY;
 constexpr Color RowColor = RAYWHITE;
+constexpr Color DimmedColor = GRAY;
 constexpr Color SelectedBackground = RAYWHITE;
 constexpr Color SelectedColor = DARKGRAY;
 
@@ -29,14 +30,20 @@ Table::Table(pWidget const &parent, int visible_rows)
     scroll.lines = visible_rows;
 }
 
-void Table::set_rows(std::vector<TableColumn> new_columns, std::vector<TableRow> new_rows)
+void Table::set_rows(std::vector<TableColumn> new_columns, std::vector<TableRow> new_rows, std::vector<bool> dimmed_rows)
 {
     columns = std::move(new_columns);
     rows = std::move(new_rows);
+    dimmed = std::move(dimmed_rows);
     selection.reset();
     scroll.count = static_cast<int>(rows.size());
     scroll.top_line = 0;
     column_widths.clear();
+}
+
+bool Table::is_dimmed(size_t row) const
+{
+    return row < dimmed.size() && dimmed[row];
 }
 
 void Table::select(std::optional<size_t> row)
@@ -176,7 +183,7 @@ void Table::draw()
             break;
         }
         auto const y = row_height * static_cast<float>(line + 1);
-        auto       color = RowColor;
+        auto       color = is_dimmed(row) ? DimmedColor : RowColor;
         if (row == selection) {
             draw_rectangle(Margin / 2, y, rows_width - Margin, row_height, SelectedBackground);
             color = SelectedColor;

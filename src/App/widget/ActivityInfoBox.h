@@ -72,7 +72,7 @@ struct ActivityInfoBox : public InfoBox {
 
     // A click on the file's line copies its path, and one on the hint
     // shows the file.
-    void               click_link(double now) override;
+    void               click_link(size_t row, double now) override;
     void               click_hint() override;
     [[nodiscard]] bool hint_clickable() const override;
 
