@@ -3,10 +3,11 @@
  *
  * SPDX-License-Identifier: MIT
  *
- * The Gear screen (specs/67-gear.md): a row per piece of gear in
- * gear.json, shoes then bikes, with the activities it was used for and
- * the distance on it, and a row per name picked in sidecars that isn't in
- * the file.
+ * The Gear screen (specs/67-gear.md, specs/68-bike-components.md): a row
+ * per piece of gear in gear.json, shoes, bikes then parts, with the
+ * activities it was used for and the distance on it, where a part is
+ * fitted and a chain's distance since its wax, and a row per name picked
+ * in sidecars that isn't in the file.
  */
 
 #pragma once
@@ -15,6 +16,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -26,12 +28,29 @@
 
 namespace ST {
 
+// The Gear screen's columns, by their index in a row.
+struct GearColumn {
+    static constexpr size_t Name = 0;
+    static constexpr size_t Model = 1;
+    static constexpr size_t Since = 2;
+    static constexpr size_t On = 3;
+    static constexpr size_t Activities = 4;
+    static constexpr size_t Distance = 5;
+    static constexpr size_t Waxed = 6;
+};
+
 [[nodiscard]] std::vector<TableColumn> gear_columns();
-// "Pegasus blue", "Nike Pegasus 41" (brand, model and version), "2026-03-14", "42", "512 km"; an
-// unknown name's "Unknown: Old Canyon", with only its numbers.
+// "Pegasus blue", "Nike Pegasus 41" (brand, model and version),
+// "2026-03-14", "", "42", "512 km", "". A part's On is where it's fitted,
+// "Canyon", "Race wheels, rear", or "–"; a chain's Waxed is "212 km (20
+// Nov)", or "–" if it was never waxed. An unknown name's "Unknown: Old
+// Canyon", with only its numbers.
 [[nodiscard]] std::vector<TableRow> gear_rows(std::vector<GearTotal> const &totals);
 // Retired gear's rows.
 [[nodiscard]] std::vector<bool> gear_dimmed(std::vector<GearTotal> const &totals);
+// The cells in orange: the distance of gear past its max_km, and the
+// distance since its wax of a chain past its wax_km.
+[[nodiscard]] std::set<TableCell> gear_highlights(std::vector<GearTotal> const &totals);
 
 // What the screen knows so far.
 struct GearState {
