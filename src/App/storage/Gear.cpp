@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <ranges>
 #include <set>
 #include <system_error>
 
@@ -530,6 +531,75 @@ std::optional<std::string> default_gear(GearList const &list, std::vector<GearKi
         return latest->gear;
     }
     return { };
+}
+
+namespace {
+
+// A part's latest entry in effect on `day`, retired or not.
+Fitting const *latest_fitting(GearList const &list, std::string_view part, chrono::year_month_day day)
+{
+    Fitting const *ret = nullptr;
+    for (auto const &fitting : list.fitted) {
+        if (fitting.from > day) {
+            break;
+        }
+        if (fitting.part == part && fitting.in_effect(day)) {
+            ret = &fitting;
+        }
+    }
+    return ret;
+}
+
+}
+
+Fitting const *fitting_of(GearList const &list, std::string_view part, chrono::year_month_day day)
+{
+    auto const *gear = list.find(part);
+    if (gear == nullptr || gear->retired_on(day)) {
+        return nullptr;
+    }
+    return latest_fitting(list, part, day);
+}
+
+Gear const *part_at(GearList const &list, std::string_view place, PartType type, std::optional<TyrePosition> at, chrono::year_month_day day)
+{
+    // Latest first: the fittings are in order of their dates, and the
+    // file's order on a day, so the later in the file wins.
+    for (auto const &fitting : list.fitted | std::views::reverse) {
+        if (fitting.on != place || fitting.at != at || !fitting.in_effect(day)) {
+            continue;
+        }
+        auto const *part = list.find(fitting.part);
+        if (part == nullptr || part->part != type || latest_fitting(list, fitting.part, day) != &fitting) {
+            continue;
+        }
+        return part->retired_on(day) ? nullptr : part;
+    }
+    return nullptr;
+}
+
+std::vector<Gear const *> parts_used(GearList const &list, std::string_view bike, chrono::year_month_day day, bool indoor)
+{
+    std::vector<Gear const *> ret;
+    auto const                add = [&ret](Gear const *part) {
+        if (part != nullptr) {
+            ret.push_back(part);
+        }
+    };
+    add(part_at(list, bike, PartType::Chainset, { }, day));
+    add(part_at(list, bike, PartType::Chain, { }, day));
+    if (indoor) {
+        return ret;
+    }
+    auto const *wheels = part_at(list, bike, PartType::Wheels, { }, day);
+    if (wheels == nullptr) {
+        return ret;
+    }
+    add(wheels);
+    add(part_at(list, wheels->name, PartType::Cassette, { }, day));
+    add(part_at(list, wheels->name, PartType::Tyre, TyrePosition::Front, day));
+    add(part_at(list, wheels->name, PartType::Tyre, TyrePosition::Rear, day));
+    return ret;
 }
 
 std::optional<ActivityGear> activity_gear(GearList const &list, std::optional<GearPick> const &pick,

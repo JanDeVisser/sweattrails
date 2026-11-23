@@ -192,6 +192,22 @@ struct GearList {
 // default.
 [[nodiscard]] std::optional<std::string> default_gear(GearList const &list, std::vector<GearKind> const &kinds, std::chrono::year_month_day day);
 
+// Where `part` is fitted on `day`: its latest entry in effect. None if it
+// isn't fitted, or was retired before `day`.
+[[nodiscard]] Fitting const *fitting_of(GearList const &list, std::string_view part, std::chrono::year_month_day day);
+
+// The part of `type` fitted on `place` on `day`, at `at` for a tyre: of
+// the entries in effect there, the latest whose part is still there. None
+// if there's none, or if that part was retired before `day`: the part it
+// replaced doesn't come back.
+[[nodiscard]] Gear const *part_at(GearList const &list, std::string_view place, PartType type,
+    std::optional<TyrePosition> at, std::chrono::year_month_day day);
+
+// The parts a ride on `bike` wears on `day`: its chainset, chain and
+// wheels, and the wheels' cassette and tyres. Only the chainset and chain
+// `indoor`, as the wheels don't turn on a direct-drive trainer.
+[[nodiscard]] std::vector<Gear const *> parts_used(GearList const &list, std::string_view bike, std::chrono::year_month_day day, bool indoor);
+
 // The gear an activity uses, as shown.
 struct ActivityGear {
     std::string name { };
