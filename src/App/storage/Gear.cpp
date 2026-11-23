@@ -213,6 +213,14 @@ std::expected<GearList, std::string> decode_gear(JSONValue const &json)
     if (!json.is_object()) {
         return Problem { "it isn't an object" };
     }
+    // The file is written by hand: a misspelt list, "shoe", would
+    // otherwise leave its gear out without a word. Unknown fields in an
+    // entry are fine, for notes.
+    for (auto const &[key, value] : json.to_object().value_or(JSONValue::Object { })) {
+        if (key != "shoes" && key != "bikes" && key != "defaults") {
+            return Problem { std::format("`{}` isn't one of shoes, bikes or defaults", key) };
+        }
+    }
     GearList ret;
     TRY(decode_gear_list(json, GearType::Shoes, ret));
     TRY(decode_gear_list(json, GearType::Bike, ret));

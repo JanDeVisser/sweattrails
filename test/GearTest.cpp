@@ -133,6 +133,10 @@ void test_empty_and_missing_lists()
 void test_decode_errors()
 {
     CHECK_EQ(error_of("[]"), "it isn't an object");
+    CHECK_EQ(error_of(R"({"shoe": []})"), "`shoe` isn't one of shoes, bikes or defaults");
+    CHECK_EQ(error_of(R"({"bikes": [], "default": []})"), "`default` isn't one of shoes, bikes or defaults");
+    // A field an entry doesn't use is the user's, such as a note.
+    CHECK_EQ(error_of(R"({"bikes": [{"name": "A", "note": "New chain in May"}]})"), "");
     CHECK_EQ(error_of(R"({"shoes": 12})"), "`shoes` isn't a list");
     CHECK_EQ(error_of(R"({"shoes": [12]})"), "shoes 1 isn't an object");
     CHECK_EQ(error_of(R"({"bikes": [{"brand": "Canyon"}]})"), "bikes 1 has no `name`");

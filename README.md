@@ -569,7 +569,9 @@ says where):
 - Everything else is optional. Dates are `YYYY-MM-DD`, and `price` is
   text, so you can write a currency with it. `start_km` is what the gear
   did before SweatTrails knew about it. `retired` is the day it went out
-  of use.
+  of use. Fields of your own in an entry, such as a note, are left
+  alone, but anything besides `shoes`, `bikes` and `defaults` at the top
+  is taken for a typo, and the file isn't read.
 - `defaults` says which gear an activity uses when you haven't picked
   any: from its date on, until a later entry for the same kind. The kinds
   are `running`; `road`, `gravel`, `mountain` and `tt` rides, which fall
