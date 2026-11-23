@@ -439,3 +439,22 @@ counted once per piece of gear; leg picks read back after `show_tab()`
 isn't fooled by a stale copy); the info box's `weak_ptr` holder; the row
 index of the gear link; the day of a summary and of an activity are the
 same `DateTime`.
+
+### Resolution
+
+1. Fixed in 5f72899: `st-delete-activity` uses `showing_activity()`. No
+   test: the tasks' conditions are wired in `SweatTrails::initialize()`,
+   which tests can't reach.
+2. Fixed in 1e47959, in the app rather than the screen: the Gear screen
+   gets new summaries only while it shows, and opening it gives it the
+   latest.
+3. Left as it is, with Jan: harmless, and the second read's picks win.
+4. Fixed in 163015c: a key at the top of `gear.json` besides `shoes`,
+   `bikes` and `defaults` is an error on the status line. Fields of the
+   user's own in an entry are still fine. `gear_test` checks both.
+5. Kept.
+
+Also, from Jan after the review: the spec's "model number" is the
+model's version (the 5 of a Saucony Endorphin Speed 5), not the maker's
+article code. In 6fab1a2, `model_number` became `version`, shown after
+the model on the Gear screen, and the article code was dropped.
