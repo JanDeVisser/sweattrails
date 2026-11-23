@@ -12,7 +12,9 @@
 
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <raylib.h>
@@ -30,12 +32,16 @@ struct TableColumn {
 // A cell per column.
 using TableRow = std::vector<std::string>;
 
+// A cell, by its row and column.
+using TableCell = std::pair<size_t, size_t>;
+
 struct Table : public Widget {
     static constexpr float ScrollbarWidth = 10.0f;
 
     std::vector<TableColumn>    columns { };
     std::vector<TableRow>       rows { };
-    std::vector<bool>           dimmed { }; // By row: drawn in grey, such as what's out of use
+    std::vector<bool>           dimmed { };      // By row: drawn in grey, such as what's out of use
+    std::set<TableCell>         highlighted { }; // Drawn in orange: a value that needs attention
     std::optional<size_t>       selection { };
     ScrollRange                 scroll { };
     Scrollbar                   scrollbar { };
@@ -52,11 +58,13 @@ struct Table : public Widget {
     // stretches shows as many as fit its height.
     Table(pWidget const &parent, int visible_rows);
 
-    // New rows, with nothing selected, scrolled to the top, and which of
-    // them are dimmed: none, without.
-    void set_rows(std::vector<TableColumn> new_columns, std::vector<TableRow> new_rows, std::vector<bool> dimmed_rows = { });
+    // New rows, with nothing selected, scrolled to the top, which of them
+    // are dimmed, and which cells are highlighted: none, without.
+    void set_rows(std::vector<TableColumn> new_columns, std::vector<TableRow> new_rows, std::vector<bool> dimmed_rows = { },
+        std::set<TableCell> highlighted_cells = { });
 
     [[nodiscard]] bool is_dimmed(size_t row) const;
+    [[nodiscard]] bool is_highlighted(size_t row, size_t column) const;
 
     // Selects a row, or none, and scrolls it into view.
     void select(std::optional<size_t> row);
@@ -82,7 +90,8 @@ struct Table : public Widget {
 
 private:
     void measure_columns();
-    void draw_row(TableRow const &row, float y, Color color) const;
+    // `row_ix` is none for the header.
+    void draw_row(TableRow const &row, float y, Color color, std::optional<size_t> row_ix = { }) const;
 };
 
 }

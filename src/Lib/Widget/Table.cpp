@@ -21,6 +21,7 @@ constexpr Color RowColor = RAYWHITE;
 constexpr Color DimmedColor = GRAY;
 constexpr Color SelectedBackground = RAYWHITE;
 constexpr Color SelectedColor = DARKGRAY;
+constexpr Color HighlightedColor = ORANGE;
 
 }
 
@@ -30,11 +31,13 @@ Table::Table(pWidget const &parent, int visible_rows)
     scroll.lines = visible_rows;
 }
 
-void Table::set_rows(std::vector<TableColumn> new_columns, std::vector<TableRow> new_rows, std::vector<bool> dimmed_rows)
+void Table::set_rows(std::vector<TableColumn> new_columns, std::vector<TableRow> new_rows, std::vector<bool> dimmed_rows,
+    std::set<TableCell> highlighted_cells)
 {
     columns = std::move(new_columns);
     rows = std::move(new_rows);
     dimmed = std::move(dimmed_rows);
+    highlighted = std::move(highlighted_cells);
     selection.reset();
     scroll.count = static_cast<int>(rows.size());
     scroll.top_line = 0;
@@ -44,6 +47,11 @@ void Table::set_rows(std::vector<TableColumn> new_columns, std::vector<TableRow>
 bool Table::is_dimmed(size_t row) const
 {
     return row < dimmed.size() && dimmed[row];
+}
+
+bool Table::is_highlighted(size_t row, size_t column) const
+{
+    return highlighted.contains({ row, column });
 }
 
 void Table::select(std::optional<size_t> row)
@@ -188,15 +196,16 @@ void Table::draw()
             draw_rectangle(Margin / 2, y, rows_width - Margin, row_height, SelectedBackground);
             color = SelectedColor;
         }
-        draw_row(rows[row], y + text_offset, color);
+        draw_row(rows[row], y + text_offset, color, row);
     }
     Scrollbar::draw(track(), scroll);
     EndScissorMode();
 }
 
 // The cells side by side, a gap of two characters between columns, the
-// right-aligned ones flush with their column's right edge.
-void Table::draw_row(TableRow const &row, float y, Color color) const
+// right-aligned ones flush with their column's right edge. A highlighted
+// cell stands out whether its row is dimmed or selected.
+void Table::draw_row(TableRow const &row, float y, Color color, std::optional<size_t> row_ix) const
 {
     auto const gap = 2 * App::the()->char_size().x;
     auto       x = Margin;
@@ -205,7 +214,7 @@ void Table::draw_row(TableRow const &row, float y, Color color) const
         if (columns[ix].right_aligned) {
             cell_x += column_widths[ix] - App::measure_text(row[ix].c_str(), FontSize::Medium).x;
         }
-        render_text(cell_x, y, row[ix], FontSize::Medium, color);
+        render_text(cell_x, y, row[ix], FontSize::Medium, row_ix && is_highlighted(*row_ix, ix) ? HighlightedColor : color);
         x += column_widths[ix] + gap;
     }
 }
