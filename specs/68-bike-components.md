@@ -336,6 +336,23 @@ No new dependencies, files or widgets beyond the above.
    time, indoor rides skip wheels, cassette and tyres, and the build and
    all 90 tests passed before my test was added.
 
+### Second review (front and rear wheels)
+
+Reviewed ef2dd75, 3425897 and c3f91c1. The placement rules, `fits_on()`,
+`check_fitting()`, `part_at()` and `parts_used()` are correct, and no
+`wheels`, `at` or `TyrePosition` is left in the code, tests, README or
+spec (the remaining "wheels" are plain English).
+
+1. **Missing test (added).** `test_parts_follow_their_wheel` in
+   `test/GearPartsTest.cpp`: a rear wheel moved to another bike takes its
+   cassette with it and leaves the first bike its front wheel and tyre;
+   a tyre on a wheel that's on no bike is still fitted on the wheel
+   (`fitting_of()`), but counts for no ride. It passes.
+2. **Suggestion.** A `gear.json` from before this change fails to load
+   with a `type` error naming the new types, which is right, but an
+   old `"at"` on a `fitted` entry is silently ignored. Harmless once the
+   wheels are split, so no change needed.
+
 
 ### Resolution
 

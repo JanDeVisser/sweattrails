@@ -352,6 +352,44 @@ void test_tyre_moves_to_the_front()
     CHECK(fitted && fitted->on == "Canyon front");
 }
 
+// A tyre goes where its wheel goes, and a part on a wheel that's on no
+// bike counts for no ride, though it's still fitted on the wheel.
+void test_parts_follow_their_wheel()
+{
+    auto const list = decode_text(R"({
+  "bikes": [ { "name": "Road" }, { "name": "TT" } ],
+  "parts": [
+    { "name": "Race front", "type": "front wheel" },
+    { "name": "Race rear", "type": "rear wheel" },
+    { "name": "Race cassette", "type": "cassette" },
+    { "name": "Race tyre", "type": "tyre" },
+    { "name": "Spare rear", "type": "rear wheel" },
+    { "name": "Spare tyre", "type": "tyre" }
+  ],
+  "fitted": [
+    { "part": "Race front", "on": "Road", "from": "2026-01-01" },
+    { "part": "Race rear", "on": "Road", "from": "2026-01-01" },
+    { "part": "Race cassette", "on": "Race rear", "from": "2026-01-01" },
+    { "part": "Race tyre", "on": "Race front", "from": "2026-01-01" },
+    { "part": "Spare tyre", "on": "Spare rear", "from": "2026-01-01" },
+    { "part": "Race rear", "on": "TT", "from": "2026-03-01" }
+  ]
+})")
+                          .value_or(GearList { });
+    // The rear wheel's cassette goes with it to the TT bike, and the road
+    // bike keeps its front wheel.
+    CHECK(names(parts_used(list, "Road", day(2026, 2, 1), false)) == (Names { "Race front", "Race tyre", "Race rear", "Race cassette" }));
+    CHECK(names(parts_used(list, "Road", day(2026, 3, 1), false)) == (Names { "Race front", "Race tyre" }));
+    CHECK(names(parts_used(list, "TT", day(2026, 3, 1), false)) == (Names { "Race rear", "Race cassette" }));
+    // The spare wheel is on no bike: its tyre is on it, but not used.
+    auto const *fitting = fitting_of(list, "Spare tyre", day(2026, 3, 1));
+    CHECK(fitting != nullptr && fitting->on == "Spare rear");
+    auto const totals = gear_totals(list, { ride(day(2026, 3, 5), 40) }, { }, Today);
+    CHECK_EQ(total_of(totals, "Spare tyre").km, 0.0);
+    CHECK_EQ(total_of(totals, "Spare rear").km, 0.0);
+    CHECK_EQ(total_of(totals, "Race cassette").km, 0.0);
+}
+
 void test_totals()
 {
     auto const               list = example();
@@ -467,6 +505,7 @@ int main()
     test_parts_used();
     test_totals();
     test_tyre_moves_to_the_front();
+    test_parts_follow_their_wheel();
     test_wax_at_a_time();
     test_limits();
     test_pick_of_a_part();
