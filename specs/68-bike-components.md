@@ -179,7 +179,9 @@ dates are on the parts.)*
 - **Two new columns**, blank for the rows they don't apply to:
   - **On**: where the part is today, swaps included: `Roadie`, or
     `Flo45 rear` for a cassette or tyre; `–` for a part in `unfitted`
-    (or on a wheel in `unfitted`) and for a retired part.
+    (or on a wheel in `unfitted`) and for a retired part. On its
+    `retired` day a part is still where it was, as that day's rides
+    count for it; it's `–` from the next day.
   - **Waxed**: for a chain, the distance since the last wax and its
     day, `212 km (20 Nov)`; `–` for a chain never waxed.
 - A flat group with an On column rather than a tree under each bike:
@@ -427,3 +429,14 @@ and the README matches the spec. The build and all 90 tests pass.
 4. **Suggestion.** A swap without a `part` or `on` says
    ``swap 1's `part`, ``, isn't a part...`` with empty backticks; a
    message naming the missing field would read better. Cosmetic.
+
+### Resolution of the third review
+
+1. The test stays.
+2. As Jan chose, the code stays and the spec's On column now says that
+   a part is still where it was on its `retired` day, and `–` from the
+   next.
+3. Nothing to change.
+4. Fixed in 9d1fb96, as Jan chose: a swap without a `part` or `on` says
+   ``swap 1 has no `part`, the part it swaps in``, and likewise for `on`.
+   The new checks in `test_swap_errors` fail against the old code.
