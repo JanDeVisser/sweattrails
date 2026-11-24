@@ -1,6 +1,6 @@
 # Bike components
 
-Status: In review, on branch feature/68-bike-components
+Status: Draft (back from development; branch feature/68-bike-components has the dated-list version)
 
 <!--
 Status is one of:
@@ -174,7 +174,58 @@ parts of a temporary swap, such as `Cassette: 10-28` on a race, is
 
 ## Open questions
 
-None.
+Back from development, 2026-11-24. Editing `gear.json` by hand, Jan
+found the dated `fitted` list, which names parts and places across the
+file, awkward and error prone. He proposes nesting parts where they
+are: under a bike's `fitted`, a wheel's parts under the wheel's own
+`fitted`, a chain's waxes as a list of dates on the chain, and spares in
+a top-level `unfitted` list:
+
+```json
+"bikes": [
+  { "name": "Roadie", "brand": "Cervélo", "model": "S2", "year": 2018,
+    "fitted": [
+      { "name": "SRAM Force AXS 48/34 w/ Quarq", "type": "chainset" },
+      { "name": "Flo45 front", "type": "front wheel",
+        "fitted": [ { "name": "GP5000 Flo45 front", "type": "tyre" } ] },
+      { "name": "Flo45 rear", "type": "rear wheel",
+        "fitted": [ { "name": "GP5000 Flo45 rear", "type": "tyre" },
+                    { "name": "SRAM AXS 10-30", "type": "cassette" } ] },
+      { "name": "SRAM Force AXS Chain (S2)", "type": "chain",
+        "max_km": 3000, "wax_km": 300, "waxed": ["2026-11-20", "2026-08-16"] }
+    ] }
+],
+"unfitted": [
+  { "name": "Flo Disk", "type": "rear wheel",
+    "fitted": [ { "name": "GP5000 Flo Disk", "type": "tyre" },
+                { "name": "SRAM AXS 10-28", "type": "cassette" } ] }
+]
+```
+
+The tree says where parts are now, but a part's distance needs where
+they were on each past ride. To settle:
+
+1. **History of replacements**: with a new chain in the tree, which
+   rides are the old chain's? The Developer's suggestion: each part
+   gets an optional `since` (rides before it don't count for it), and a
+   replaced part stays in its place with `retired`, so a place's
+   history is in the place.
+2. **Temporary swaps** (Flo Disk and its 10-28 for a race) without a
+   dated `until` list: the Developer's suggestion is a per-activity pick
+   of wheels in the sidecar, as the bike is picked, which is what Jan
+   asked for in spec 67 ("different wheels can be selected per
+   activity"). That brings the deferred wheel picker into this spec.
+   Picking a cassette per activity too, or only wheels?
+3. **A part that moves for good** (a wheel to another bike): moved in
+   the tree, it takes its past rides with it to the new bike. Acceptable
+   as rare, or does it need a `since` with more?
+4. Does anything from the dated-list version stay (`until`, `fitted` as
+   a list)? The rest of what's built carries over: `Table`'s orange
+   cells, waxing by date or time, `max_km`/`wax_km`, the totals, the
+   Gear screen's On and Waxed columns, front and rear wheels.
+5. Waxes as a list of dates on the chain: in any order (the app sorts
+   them), and still `"2026-11-20T08:00"` for a wax before that day's
+   ride?
 
 ## Architecture
 
