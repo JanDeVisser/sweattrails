@@ -573,9 +573,8 @@ says where):
   text, so you can write a currency with it. `start_km` is what the gear
   did before SweatTrails knew about it. `retired` is the day it went out
   of use. Fields of your own in an entry, such as a note, are left
-  alone, but anything besides `shoes`, `bikes`, `parts`, `defaults`,
-  `fitted` and `waxed` at the top is taken for a typo, and the file
-  isn't read.
+  alone, but anything besides `shoes`, `bikes`, `unfitted`, `defaults`
+  and `swaps` at the top is taken for a typo, and the file isn't read.
 - `defaults` says which gear an activity uses when you haven't picked
   any: from its date on, until a later entry for the same kind. The kinds
   are `running`; `road`, `gravel`, `mountain` and `tt` rides, which fall
@@ -601,53 +600,66 @@ activity's gear is picked per leg, on the leg's tab.
 ### A bike's parts
 
 A bike's chainset, wheels, cassettes, chains and tyres are gear too,
-in `parts`, with the same fields as a bike and a `type`: `chainset`,
-`front wheel`, `rear wheel`, `cassette`, `chain` or `tyre`. A pair of
-wheels is two parts, a front wheel and a rear wheel. Where each is fitted is a
-dated list, `fitted`, and a chain's waxes are in `waxed`:
+with the same fields as a bike and a `type`: `chainset`, `front wheel`,
+`rear wheel`, `cassette`, `chain` or `tyre`. A pair of wheels is two
+parts, a front wheel and a rear wheel. A part is listed where it's
+fitted, in a bike's `fitted`, or a wheel's; parts that aren't on
+anything, such as a spare race wheel, are in `unfitted`, with what's
+fitted on them:
 
 ```json
-"parts": [
-  { "name": "Ultegra 52/36", "type": "chainset" },
-  { "name": "Canyon front", "type": "front wheel" },
-  { "name": "Canyon rear", "type": "rear wheel" },
-  { "name": "105 11-28", "type": "cassette" },
-  { "name": "105 11-34", "type": "cassette" },
-  { "name": "GP5000 front", "type": "tyre" },
-  { "name": "GP5000 rear", "type": "tyre", "max_km": 4000 },
-  { "name": "KMC blue", "type": "chain", "max_km": 3000, "wax_km": 300 }
+"bikes": [
+  { "name": "Roadie", "brand": "Cervélo", "model": "S2", "year": 2018,
+    "fitted": [
+      { "name": "SRAM Force AXS 48/34 w/ Quarq", "type": "chainset" },
+      { "name": "Flo45 front", "type": "front wheel",
+        "fitted": [ { "name": "GP5000 Flo45 front", "type": "tyre" } ] },
+      { "name": "Flo45 rear", "type": "rear wheel",
+        "fitted": [ { "name": "GP5000 Flo45 rear", "type": "tyre", "max_km": 4000 },
+                    { "name": "SRAM AXS 10-30", "type": "cassette" } ] },
+      { "name": "KMC old", "type": "chain", "retired": "2026-06-01" },
+      { "name": "SRAM Force AXS Chain (S2)", "type": "chain",
+        "since": "2026-06-01", "max_km": 3000, "wax_km": 300,
+        "waxed": ["2026-11-20", "2026-08-16"] }
+    ] }
 ],
-"fitted": [
-  { "part": "Ultegra 52/36", "on": "Canyon", "from": "2022-05-01" },
-  { "part": "Canyon front", "on": "Canyon", "from": "2022-05-01" },
-  { "part": "Canyon rear", "on": "Canyon", "from": "2022-05-01" },
-  { "part": "105 11-28", "on": "Canyon rear", "from": "2022-05-01" },
-  { "part": "GP5000 front", "on": "Canyon front", "from": "2026-03-01" },
-  { "part": "GP5000 rear", "on": "Canyon rear", "from": "2026-03-01" },
-  { "part": "KMC blue", "on": "Canyon", "from": "2026-06-01" },
-  { "part": "105 11-34", "on": "Canyon rear", "from": "2026-07-01", "until": "2026-07-12" }
+"unfitted": [
+  { "name": "Flo Disk", "type": "rear wheel",
+    "fitted": [ { "name": "GP5000 Flo Disk", "type": "tyre" },
+                { "name": "SRAM AXS 10-28", "type": "cassette" } ] }
 ],
-"waxed": [ { "chain": "KMC blue", "on": "2026-11-20" } ]
+"swaps": [
+  { "part": "Flo Disk", "on": "Roadie", "from": "2026-08-30", "until": "2026-08-30" }
+]
 ```
 
-- A chainset, a chain or a wheel is fitted `on` a bike, a cassette on a
-  rear wheel, and a tyre on either wheel. Moving a tyre from the rear
-  to the front is a `fitted` line, and it keeps its distance.
-- From its `from` on, a part takes the place of the part of the same
-  type that was there. With an `until`, the
-  last day it applies, the part before it is back afterwards: a
-  cassette for a week in the mountains is one line. A part is in one
-  place at a time, so moving a wheel to another bike takes it off the
-  first, which has the wheel it had before again, if that's still
-  free.
+- A chainset, a chain or a wheel is fitted on a bike, a cassette on a
+  rear wheel, and a tyre on either wheel. In `unfitted`, anything goes.
+- `since` is the day a part was fitted where it's listed: rides there
+  before it don't count for it. Without one, it's the day the part was
+  `purchased`, and without either, the part has always been there, so
+  most parts don't need one.
+- A replaced part stays where it was, with a `retired` day, and the new
+  one gets a `since`: of the parts of a type in a place, the one with
+  the latest `since` is there, and on the day of a replacement that's
+  the new one. A retired part with no replacement leaves its place
+  without one.
+- A part that moves for good, such as a wheel to another bike, is moved
+  in the file and gets a `since` for the day it moved; add the distance
+  it did so far, from the Gear screen, to its `start_km`. Without the
+  `since` it would take the new bike's past rides.
+- `swaps` put a part on another bike or wheel for a few days, from
+  `from` to `until`, both included: the race wheel for a race day, or a
+  10-34 on the rear wheel for a week in the mountains. A wheel brings
+  what's fitted on it, and the part's own place is without it for those
+  days. A lasting change goes in the tree instead.
 - A ride counts for the parts on its bike that day, the bike it was
   picked for or the default. An indoor ride counts for the chain and
   chainset only: on a direct-drive trainer the wheels don't turn.
-- A retired part counts no more after its `retired` day, and the part
-  it replaced doesn't come back: add a `fitted` entry for the new one.
-- A wax counts from the next day, as a chain is usually waxed after the
-  day's ride. To count that day's rides too, give it a time:
-  `"on": "2026-11-20T08:00"`.
+- A chain's `waxed` lists the days it was waxed, in any order. A wax
+  counts from the next day, as a chain is usually waxed after the day's
+  ride. To count that day's rides too, give it a time:
+  `"2026-11-20T08:00"`.
 - Any gear can have a `max_km`, and a chain a `wax_km`. Past them, its
   distance, or a chain's distance since its wax, is orange on the Gear
   screen.
@@ -658,7 +670,8 @@ dated list, `fitted`, and a chain's waxes are in `waxed`:
 shoes, then bikes, then parts, retired gear dimmed at the bottom of
 each, with the activities it was used for and the distance on it,
 `start_km` included. A part's row says where it is today (`On`): a
-bike, or for a cassette or tyre its wheel. A chain's row says how far
+bike, or for a cassette or tyre its wheel, or `–` if it isn't on a
+bike. Parts are in the order of the file. A chain's row says how far
 it went since its last wax (`Waxed`).
 Names picked for activities that aren't in `gear.json` have a row of
 their own. Escape goes back to the activity.
