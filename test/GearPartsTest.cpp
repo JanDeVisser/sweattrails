@@ -454,6 +454,52 @@ ActivitySummaries rides()
     };
 }
 
+// A wheel swapped onto another bike takes its cassette and tyre along, and
+// leaves its own bike without a rear wheel; a cassette swapped onto the
+// swapped-in wheel is what it brings; a chain swapped to another bike
+// counts indoors too; a retired part swapped in is none.
+void test_swapped_between_bikes()
+{
+    auto const list = decoded(R"({"bikes": [
+  { "name": "Road", "fitted": [ { "name": "Road chain", "type": "chain" },
+                                { "name": "Road rear", "type": "rear wheel",
+                                  "fitted": [ { "name": "Road cassette", "type": "cassette" },
+                                              { "name": "Road tyre", "type": "tyre" } ] } ] },
+  { "name": "Gravel", "fitted": [ { "name": "Gravel chain", "type": "chain" },
+                                  { "name": "Gravel rear", "type": "rear wheel",
+                                    "fitted": [ { "name": "Gravel cassette", "type": "cassette" } ] } ] }
+], "unfitted": [ { "name": "Wide cassette", "type": "cassette" },
+                 { "name": "Dead chain", "type": "chain", "retired": "2026-01-01" } ],
+"swaps": [
+  { "part": "Gravel rear", "on": "Road", "from": "2026-05-01", "until": "2026-05-03" },
+  { "part": "Wide cassette", "on": "Gravel rear", "from": "2026-05-02", "until": "2026-05-02" },
+  { "part": "Gravel chain", "on": "Road", "from": "2026-06-01", "until": "2026-06-01" },
+  { "part": "Dead chain", "on": "Gravel", "from": "2026-07-01", "until": "2026-07-01" }
+]})");
+    CHECK(names(parts_used(list, "Road", day(2026, 5, 1), false)) == (Names { "Road chain", "Gravel rear", "Gravel cassette" }));
+    CHECK(names(parts_used(list, "Road", day(2026, 5, 2), false)) == (Names { "Road chain", "Gravel rear", "Wide cassette" }));
+    CHECK(names(parts_used(list, "Gravel", day(2026, 5, 2), false)) == (Names { "Gravel chain" }));
+    CHECK(names(parts_used(list, "Road", day(2026, 5, 4), false)) == (Names { "Road chain", "Road rear", "Road cassette", "Road tyre" }));
+    CHECK_EQ(place(list, "Road tyre", day(2026, 5, 2)), "Road rear"); // On its wheel, which is off the bike
+    CHECK_EQ(place(list, "Road cassette", day(2026, 5, 2)), "Road rear");
+    CHECK_EQ(place(list, "Gravel cassette", day(2026, 5, 2)), "none"); // Replaced by the wide one
+    CHECK_EQ(place(list, "Gravel cassette", day(2026, 5, 4)), "Gravel rear");
+    // Indoors, a swapped chain still counts for the bike it's on.
+    CHECK(names(parts_used(list, "Road", day(2026, 6, 1), true)) == (Names { "Gravel chain" }));
+    CHECK(names(parts_used(list, "Gravel", day(2026, 6, 1), true)).empty());
+    // A retired part swapped in is nothing.
+    CHECK(names(parts_used(list, "Gravel", day(2026, 7, 1), true)).empty());
+    CHECK_EQ(place(list, "Dead chain", day(2026, 7, 1)), "none");
+
+    // The On text on a swap's day: the wheel on the other bike, and its
+    // cassette on the wheel.
+    auto const totals = gear_totals(list, { }, { }, day(2026, 5, 1));
+    CHECK_EQ(total_of(totals, "Gravel rear").on, "Road");
+    CHECK_EQ(total_of(totals, "Gravel cassette").on, "Gravel rear");
+    CHECK_EQ(total_of(totals, "Road rear").on, "");
+    CHECK_EQ(total_of(totals, "Road tyre").on, "");
+}
+
 void test_totals()
 {
     auto const list = example();
@@ -585,6 +631,7 @@ int main()
     test_parts_used();
     test_moved_for_good();
     test_totals();
+    test_swapped_between_bikes();
     test_on();
     test_wax_at_a_time();
     test_limits();

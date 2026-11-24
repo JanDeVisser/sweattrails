@@ -393,3 +393,37 @@ spec (the remaining "wheels" are plain English).
    ride counts for no part. The unknown names are kept apart from the
    gear in `gear_totals()`. `test_pick_of_a_part` also checks the row.
 2. Nothing to change.
+
+### Third review (nested parts)
+
+Reviewed b744087, d1dbd30, b17629e and fb702e0. `resident_at()`,
+`part_at()` and `place_of()` follow the spec's rules: the latest `since`
+wins, `purchased` stands in, a tie goes to the later in the file, a part
+retired before the day leaves the place empty, a swap is inclusive at
+both ends and leaves its part's own place without it, and a swapped
+wheel brings its cassette and tyre, leaving its bike's wheel place to the
+swapped-in one. Every decode error the spec lists is there, with the
+overlap rules (one part twice, one type on one place) and back-to-back
+swaps allowed. The On text is blank for a part on a wheel in `unfitted`,
+and the README matches the spec. The build and all 90 tests pass.
+
+1. **Missing test (added).** `test_swapped_between_bikes` in
+   `test/GearPartsTest.cpp`: a rear wheel swapped from one bike to
+   another takes its cassette along and leaves its own bike without a
+   wheel; a cassette swapped onto a swapped-in wheel replaces the wheel's
+   own; a chain swapped to another bike counts indoors there and not on
+   its own bike; a retired part swapped in is nothing; the On text on the
+   swap's day (the wheel on the other bike, its cassette on the wheel, the
+   wheel it left and its tyre `–`). It passes.
+2. **Suggestion.** A part with `retired` equal to today still shows its
+   bike in On (`retired_on()` is `retired < day`, so it still counts for
+   today's rides), where the spec says `–` for a retired part. It's
+   consistent with the distances, and gone tomorrow, so no change
+   needed; say so in the spec if that's the intent.
+3. **Suggestion.** `place_of()` for a part on a wheel that is itself off
+   the bike returns the wheel, as the architecture says; only
+   `gear_totals()`'s `on_a_bike()` turns that into `–`. That's right, but
+   worth knowing when `place_of()` is used elsewhere.
+4. **Suggestion.** A swap without a `part` or `on` says
+   ``swap 1's `part`, ``, isn't a part...`` with empty backticks; a
+   message naming the missing field would read better. Cosmetic.
