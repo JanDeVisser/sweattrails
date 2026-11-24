@@ -1,6 +1,6 @@
 # Bike components
 
-Status: Draft (back from development; branch feature/68-bike-components has the dated-list version)
+Status: Ready
 
 <!--
 Status is one of:
@@ -51,62 +51,100 @@ tracks shoes and bikes as whole items.
 
 ### Parts, and where they're fitted
 
-- **Parts are gear too**, in a new `parts` list in `gear.json`, with the
-  same fields as a bike (name, brand, model, purchased, where, price,
-  `start_km`, `retired`) and a `type`: `chainset`, `front wheel`,
-  `rear wheel`, `cassette`, `chain` or `tyre`. Tyres were added to what
-  spec 67 listed: they wear out as the rest do. The name is unique over
-  shoes, bikes and parts.
+*(Changed after the first round of development, 2026-11-24. The first
+version had a top-level `parts` list and a dated `fitted` list naming
+parts and places across the file; editing it by hand, Jan found it
+awkward and error prone. Parts are now nested where they are, and the
+dates are on the parts.)*
+
+- **Parts are gear too**, with the same fields as a bike (name, brand,
+  model, purchased, where, price, `start_km`, `retired`) and a `type`:
+  `chainset`, `front wheel`, `rear wheel`, `cassette`, `chain` or
+  `tyre`. Tyres were added to what spec 67 listed: they wear out as the
+  rest do. The name is unique over shoes, bikes and parts, wherever
+  they're nested.
 - **Wheels are front and rear, not pairs.** Wheels come as a pair, or a
   front or a rear wheel on its own; modelling both pairs and single
-  wheels is more than it's worth, so a pair is two parts. That's two
-  `fitted` lines to change a pair, which is rare. *(Changed during
-  development, from a `wheels` type with a tyre's `at`.)*
-- **Where a part is fitted is a dated list**, `fitted`, like `defaults`:
+  wheels is more than it's worth, so a pair is two parts.
+- **A part is listed where it's fitted**: in a bike's `fitted` list, or
+  a wheel's. Parts that aren't on anything, such as a spare race wheel,
+  are in a top-level `unfitted` list, with what's fitted on them:
 
   ```json
-  "fitted": [
-    { "part": "Ultegra 52/36", "on": "Canyon", "from": "2022-05-01" },
-    { "part": "Canyon front", "on": "Canyon", "from": "2022-05-01" },
-    { "part": "Canyon rear", "on": "Canyon", "from": "2022-05-01" },
-    { "part": "105 11-28", "on": "Canyon rear", "from": "2022-05-01" },
-    { "part": "GP5000 front", "on": "Canyon front", "from": "2026-03-01" },
-    { "part": "GP5000 rear", "on": "Canyon rear", "from": "2026-03-01" },
-    { "part": "KMC blue", "on": "Canyon", "from": "2026-06-01" },
-    { "part": "105 11-34", "on": "Canyon rear", "from": "2026-07-01", "until": "2026-07-12" }
+  "bikes": [
+    { "name": "Roadie", "brand": "Cervélo", "model": "S2", "year": 2018,
+      "fitted": [
+        { "name": "SRAM Force AXS 48/34 w/ Quarq", "type": "chainset" },
+        { "name": "Flo45 front", "type": "front wheel",
+          "fitted": [ { "name": "GP5000 Flo45 front", "type": "tyre" } ] },
+        { "name": "Flo45 rear", "type": "rear wheel",
+          "fitted": [ { "name": "GP5000 Flo45 rear", "type": "tyre" },
+                      { "name": "SRAM AXS 10-30", "type": "cassette" } ] },
+        { "name": "KMC old", "type": "chain", "retired": "2026-06-01" },
+        { "name": "SRAM Force AXS Chain (S2)", "type": "chain",
+          "since": "2026-06-01", "max_km": 3000, "wax_km": 300,
+          "waxed": ["2026-11-20", "2026-08-16"] }
+      ] }
+  ],
+  "unfitted": [
+    { "name": "Flo Disk", "type": "rear wheel",
+      "fitted": [ { "name": "GP5000 Flo Disk", "type": "tyre" },
+                  { "name": "SRAM AXS 10-28", "type": "cassette" } ] }
+  ],
+  "swaps": [
+    { "part": "Flo Disk", "on": "Roadie", "from": "2026-08-30", "until": "2026-08-30" }
   ]
   ```
 
   A chainset, chain or wheel is fitted on a bike, a cassette on a rear
-  wheel, and a tyre on either wheel: the wheel says where the tyre is.
-  Moving a tyre from the rear to the front is one line, and it keeps
-  its distance.
-- **From its date on, a part is where its entry puts it**, taking the
-  place of the part of the same type that was there, until a later entry. `until` is optional: after that day
-  the entry no longer applies, and what was there before it is back.
-  That's a temporary swap in one line: a 10-28 on the race rear wheel
-  for a flat race, or a 10-34 on the road bike's rear wheel for a week
-  in the mountains. Dates rather than per-activity picks, because a swap lasts
-  more than one ride (warm-up, race and cool-down, or a whole trip).
-- **A part is in one place at a time**: on a day, it's where its latest
-  entry in effect puts it, and a place has the part of the latest entry
-  in effect there whose part is still there. So moving a wheel to
-  another bike takes it off the first, which then has the wheel it had
-  before, if that hasn't moved on as well.
-- **Why a dated list, and not parts listed under each bike**: a part
-  that moves between bikes, such as a wheel, keeps its whole
-  history in one list, and the rule is the same "from this day on" as
-  `defaults`. Swaps are rare (Jan doesn't rotate chains), so editing
-  `fitted` by hand is fine; an in-app "swap chain" isn't needed.
+  wheel, and a tyre on either wheel. In `unfitted`, any type can be
+  listed, with a wheel's parts nested in it.
+- **A part's `since`** is the day it was fitted where it's listed; rides
+  there before it don't count for it. It's optional and defaults to
+  `purchased`, as a part can't have been ridden before it was bought, so
+  most parts don't need one. Without either, the part has always been
+  there.
+- **A replaced part stays in its place, with `retired`**, so a place's
+  history is in the place. For a ride, a place has, of its parts of a
+  type, the one with the latest `since` on or before the ride's day,
+  unless that part was retired before that day. On the day of a
+  replacement, the new part wins. A retired part with no replacement
+  leaves the place without one, until there is. Old chains pile up under
+  the bike over the years, which is accepted: it's what keeps the
+  history.
+- **A part that moves for good** (a wheel to another bike) is moved in
+  the tree, gets a `since` for the day it moved, and its distance so
+  far, read from the Gear screen, is added to its `start_km` by hand.
+  This is rare. Without the `since`, it would quietly take the new
+  bike's past rides.
+- **What the tree can't say** is A, then B, then A again in one place,
+  as a part has one `since`. If a part comes off for good and goes back
+  on for good later, its first stint is lost unless it's added to
+  `start_km`. Rare enough to accept.
+- **Temporary swaps** are a top-level `swaps` list:
+  `{ "part", "on", "from", "until" }`, with `until` required (a lasting
+  change is made in the tree). From `from` to `until`, both inclusive,
+  the part is on that place instead of the part of its type that's
+  there, and takes its own nested parts along: a swapped-in rear wheel
+  brings its cassette and tyre. The part's own place, if it has one, is
+  without it for those days. This covers the 10-28 on the race wheel for
+  a flat race, the Flo Disk for a race day, and a 10-34 on the road
+  bike's rear wheel for a week in the mountains. Dates rather than
+  per-activity picks, because a swap lasts more than one ride (warm-up,
+  race and cool-down, or a whole trip), and picking a cassette ride by
+  ride for a week is a chore.
 - **A part's distance** is `start_km` plus the distance of every ride on
   a bike it was on that day, directly or, for a cassette or tyre, on a
   wheel that was on the bike. The bike of a ride is the one spec 67
   settles: picked, or the default.
 - **Errors**, as for the rest of `gear.json` (a message box the first
-  time, the status line after): a `fitted` entry naming a part or place
-  that isn't there, a part on the wrong kind of place (a cassette on a
-  bike or a front wheel, a chain on a wheel, a tyre on a bike), or
-  `until` before `from`.
+  time, the status line after): a part without a known `type`; a part
+  on the wrong kind of place (a cassette on a bike or a front wheel, a
+  chain or wheel on a wheel, a tyre on a bike, anything nested in a
+  chainset, chain, cassette or tyre); a swap naming a part or place that
+  isn't there, putting a part on the wrong kind of place, or with
+  `until` before `from` or missing; two swaps of one part, or onto one
+  place for one type, that overlap.
 - **Indoor rides** (the `indoor` kind: trainer, Zwift) count for the
   chain and the chainset, not for the wheels, their cassette or tyres: on a
   direct-drive trainer they don't turn. The trainer's own cassette isn't
@@ -114,19 +152,16 @@ tracks shoes and bikes as whole items.
 
 ### Waxing
 
-- **A `waxed` list** in `gear.json`, an entry per wax:
-
-  ```json
-  "waxed": [ { "chain": "KMC blue", "on": "2026-11-20" } ]
-  ```
-
+- **A chain's `waxed`** is a list of the days it was waxed, in any order
+  (the app sorts them): `"waxed": ["2026-11-20", "2026-08-16"]`.
 - **A wax counts from the next day on**, as chains are usually waxed
   after the day's ride. For a wax before a ride that day, the entry can
-  have a time: `"on": "2026-11-20T08:00"`, and rides that start after
-  it count as after the wax.
+  have a time: `"2026-11-20T08:00"`, and rides that start after it
+  count as after the wax.
 - **The distance since the last wax** is that of the rides the chain
   did after it. A chain never waxed has none: it's just its distance.
-- A `waxed` entry naming a part that isn't a chain is an error.
+- `waxed` on anything but a chain, or an entry that isn't a date or a
+  date and time, is an error.
 
 ### Wear limits
 
@@ -139,15 +174,17 @@ tracks shoes and bikes as whole items.
 ### The Gear screen
 
 - **Parts are a third group**, after shoes and bikes, in the order of
-  the file, retired parts dimmed at the bottom, as for the rest.
+  the file (bike by bike, each wheel followed by its parts, then
+  `unfitted`), retired parts dimmed at the bottom, as for the rest.
 - **Two new columns**, blank for the rows they don't apply to:
-  - **On**: where the part is today, `Canyon`, or `Race rear` for a
-    cassette or tyre; `–` for a part that isn't fitted.
+  - **On**: where the part is today, swaps included: `Roadie`, or
+    `Flo45 rear` for a cassette or tyre; `–` for a part in `unfitted`
+    (or on a wheel in `unfitted`) and for a retired part.
   - **Waxed**: for a chain, the distance since the last wax and its
     day, `212 km (20 Nov)`; `–` for a chain never waxed.
-- A flat group rather than parts listed under their bike: a part
-  that's off every bike, or has moved between bikes, has no single
-  place under a bike.
+- A flat group with an On column rather than a tree under each bike:
+  the file's order already reads bike by bike, and a swap puts a part
+  under another bike for a few days.
 - The distances are updated as the bikes' are: from the summaries, and
   the sidecars' picks of bikes.
 
@@ -160,74 +197,33 @@ parts of a temporary swap, such as `Cassette: 10-28` on a race, is
 
 ### Version 1 scope
 
-- Parts, `fitted` with `until`, waxing, wear limits, and the parts on
-  the Gear screen.
+- Parts nested in `fitted` and `unfitted`, `since`, `swaps`, waxing,
+  wear limits, and the parts on the Gear screen.
 - Picking parts per activity in the app, with sidecar keys, as the bike
   is picked, is *(deferred)*. Jan asked for different wheels and
   chainsets per activity, and swaps cassettes more often than
   chainsets: a 10-28 on the race wheels (usually a 10-33) for a flat
   race, a 10-33 or 10-36 on the road bike (usually a 10-28) for the
-  mountains. `fitted` with `until` covers those, and pickers can come if
-  editing the file becomes a chore.
-- The README's `gear.json` section gets parts, `fitted`, `waxed`,
-  `max_km` and `wax_km`.
+  mountains. `swaps` covers those, and pickers can come if editing the
+  file becomes a chore.
+- The README's `gear.json` section gets `fitted`, `unfitted`, `since`,
+  `swaps`, `waxed`, `max_km` and `wax_km`.
+- **What carries over from the branch** (the dated-list version): front
+  and rear wheels, `max_km`/`wax_km`, waxing by date or time, the
+  totals, `Table`'s orange cells, and the Gear screen's On and Waxed
+  columns. What goes: the top-level `parts`, `fitted` and `waxed` lists.
+  `until` survives in `swaps`.
 
 ## Open questions
 
-Back from development, 2026-11-24. Editing `gear.json` by hand, Jan
-found the dated `fitted` list, which names parts and places across the
-file, awkward and error prone. He proposes nesting parts where they
-are: under a bike's `fitted`, a wheel's parts under the wheel's own
-`fitted`, a chain's waxes as a list of dates on the chain, and spares in
-a top-level `unfitted` list:
-
-```json
-"bikes": [
-  { "name": "Roadie", "brand": "Cervélo", "model": "S2", "year": 2018,
-    "fitted": [
-      { "name": "SRAM Force AXS 48/34 w/ Quarq", "type": "chainset" },
-      { "name": "Flo45 front", "type": "front wheel",
-        "fitted": [ { "name": "GP5000 Flo45 front", "type": "tyre" } ] },
-      { "name": "Flo45 rear", "type": "rear wheel",
-        "fitted": [ { "name": "GP5000 Flo45 rear", "type": "tyre" },
-                    { "name": "SRAM AXS 10-30", "type": "cassette" } ] },
-      { "name": "SRAM Force AXS Chain (S2)", "type": "chain",
-        "max_km": 3000, "wax_km": 300, "waxed": ["2026-11-20", "2026-08-16"] }
-    ] }
-],
-"unfitted": [
-  { "name": "Flo Disk", "type": "rear wheel",
-    "fitted": [ { "name": "GP5000 Flo Disk", "type": "tyre" },
-                { "name": "SRAM AXS 10-28", "type": "cassette" } ] }
-]
-```
-
-The tree says where parts are now, but a part's distance needs where
-they were on each past ride. To settle:
-
-1. **History of replacements**: with a new chain in the tree, which
-   rides are the old chain's? The Developer's suggestion: each part
-   gets an optional `since` (rides before it don't count for it), and a
-   replaced part stays in its place with `retired`, so a place's
-   history is in the place.
-2. **Temporary swaps** (Flo Disk and its 10-28 for a race) without a
-   dated `until` list: the Developer's suggestion is a per-activity pick
-   of wheels in the sidecar, as the bike is picked, which is what Jan
-   asked for in spec 67 ("different wheels can be selected per
-   activity"). That brings the deferred wheel picker into this spec.
-   Picking a cassette per activity too, or only wheels?
-3. **A part that moves for good** (a wheel to another bike): moved in
-   the tree, it takes its past rides with it to the new bike. Acceptable
-   as rare, or does it need a `since` with more?
-4. Does anything from the dated-list version stay (`until`, `fitted` as
-   a list)? The rest of what's built carries over: `Table`'s orange
-   cells, waxing by date or time, `max_km`/`wax_km`, the totals, the
-   Gear screen's On and Waxed columns, front and rear wheels.
-5. Waxes as a list of dates on the chain: in any order (the app sorts
-   them), and still `"2026-11-20T08:00"` for a wax before that day's
-   ride?
+None.
 
 ## Architecture
+
+> **Out of date**: this section describes the dated-list version built
+> on the branch. The Developer revises it for the nested `gear.json`;
+> much of it (`PARTTYPES`, `fits_on()`, waxes, totals, `Table`, the
+> Gear screen) carries over. The Test plan likewise.
 
 ### Parts, fittings and waxes (`storage/Gear.h`, `.cpp`)
 
