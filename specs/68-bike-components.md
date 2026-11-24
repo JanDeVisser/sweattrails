@@ -1,6 +1,6 @@
 # Bike components
 
-Status: Ready
+Status: In progress, on branch feature/68-bike-components
 
 <!--
 Status is one of:
@@ -220,146 +220,131 @@ None.
 
 ## Architecture
 
-> **Out of date**: this section describes the dated-list version built
-> on the branch. The Developer revises it for the nested `gear.json`;
-> much of it (`PARTTYPES`, `fits_on()`, waxes, totals, `Table`, the
-> Gear screen) carries over. The Test plan likewise.
+*(Revised 2026-11-24 for the nested `gear.json`. What carries over from
+the dated-list version is unchanged: `PARTTYPES`, `fits_on()`, `max_km`
+and `wax_km`, parsing a wax's date or time, `parts_used()`, `worn()` and
+`needs_wax()`, `Table`'s orange cells, and the Gear screen's columns.)*
 
-### Parts, fittings and waxes (`storage/Gear.h`, `.cpp`)
+### Parts, places and swaps (`storage/Gear.h`, `.cpp`)
 
-Parts are gear, so they go in the same `GearList`, and everything that
-decides where a part is and what it did stays pure functions, as in
-spec 67.
+The tree is read into the same flat `GearList` as before, each part
+knowing the name of the place it's listed in. Everything that decides
+where a part is on a day stays a pure function of the list and the day.
 
-- `GEARTYPES` gets `Part`, `"parts"`, after `Bike`. `GearList::gear`
-  keeps shoes, bikes, then parts, each in the file's order, and `find()`
-  covers them all, so a name stays unique over the three.
-- `PARTTYPES`, an X-macro: `Chainset` `"chainset"`, `FrontWheel`
-  `"front wheel"`, `RearWheel` `"rear wheel"`, `Cassette` `"cassette"`,
-  `Chain` `"chain"`, `Tyre` `"tyre"`, with `PartType_name()`,
-  `PartType_by_name()`, and `fits_on(PartType, Gear const &place)`: a
-  chainset, chain or wheel on a bike, a cassette on a rear wheel, a
-  tyre on either wheel.
-- `Gear` gets `std::optional<PartType> part` (set for parts only),
-  `std::optional<float64> max_km`, for any gear, and
-  `std::optional<float64> wax_km`, for a chain.
-- `struct Fitting { std::string part; std::string on; year_month_day from; std::optional<year_month_day> until; }`
-  with `in_effect(day)`: `from <= day <= until`.
-- `struct Wax { std::string chain; year_month_day day; std::chrono::local_seconds counts_from; }`.
-  `counts_from` is midnight after `day` for `"2026-11-20"`, the time
-  itself for `"2026-11-20T08:00"`; a ride counts after the wax if its
-  start, in local time, is at or after it. `day` is for the screen.
-- `GearList` gets `std::vector<Fitting> fitted` and
-  `std::vector<Wax> waxed`, each sorted by date, the file's order among
-  those of one day (as `defaults`).
-- `decode_gear()` reads `parts` (as a bike, plus `type`), `fitted`,
-  `waxed`, `max_km` and `wax_km`, and accepts the three new top-level
-  keys. New errors: a part without a known `type`; a `fitted` entry
-  naming a part that isn't a part, or a place that isn't there, or the
-  wrong kind of place; `until` before `from`; a `waxed` entry naming anything but a
-  chain, or an `on` that isn't a date or a date and time; a `max_km` or
-  `wax_km` that isn't a number over 0, or a `wax_km` on anything but a
-  chain. A default naming a part is an error too ("isn't in `shoes` or
-  `bikes`").
-- `fitting_of(list, part, day) -> Fitting const *`: the part's latest
-  entry in effect on `day`, none if it isn't fitted, or if a later part
-  has taken its place there (the 11-28 during the 11-34's week).
-- `part_at(list, place, type, day) -> Gear const *`: the part in a
-  place: of the entries in effect there for that type, latest first, the first whose part's `fitting_of()` is that entry.
-  This is the spec's "a place has the part of the latest entry in
-  effect there whose part is still there".
-- `parts_used(list, bike, day, indoor) -> std::vector<Gear const *>`: the
-  parts a ride on `bike` wears that day: the bike's chainset, chain and
-  wheels, the front wheel's tyre, and the rear wheel's cassette and
-  tyre; only chainset and chain when `indoor`.
-- **A retired part** isn't counted for rides after its `retired` day,
-  and isn't "on" anything after it, as a default's gear stops counting
-  once it's retired. The part it replaced doesn't come back: retiring a
-  chain without fitting a new one leaves the bike without a chain in
-  the numbers, until there's a `fitted` entry. *(A decision of mine;
-  the spec doesn't say.)*
-- A sidecar pick naming a part (only by hand) is shown as unknown, and
-  the picker never offers parts.
-- `GearTotal` gets `std::string on` (where the part is today, empty for
-  shoes and bikes) and `std::optional<WaxTotal> wax` for a chain
-  (`std::optional<year_month_day> last`, `float64 km` since it), and
-  `worn()` (over `max_km`) and `needs_wax()` (over `wax_km` since the
-  last wax, or in all for a chain never waxed), both false for retired
-  gear. `gear_totals()` takes `today`, for the On column
-  and the wax: for each ride it finds the bike as before, then adds the
-  ride to each of `parts_used()`, and to a chain's wax total if it
-  started after the chain's last wax. Parts come after bikes, retired
-  last, as the rest.
-- The ride's local start, for the wax, is
-  `local_start(summary) -> local_seconds`, in `storage/Volume` next to
-  `start_day()`, from the same `DateTime::from_timestamp()`.
-- Cost: each ride looks through `fitted` a few times; with a few dozen
-  entries and 6,000 rides that's well under the sidecar read the screen
-  already waits on, so no index.
+- `GEARTYPES` keeps `Part`, though there's no top-level `parts` any
+  more. `GearList::gear` keeps shoes, then bikes, then parts. Parts are in the
+  file's order, depth first: bike by bike, a wheel followed by its
+  parts, then `unfitted`. That is the order of the Gear screen.
+- `PARTTYPES`, `PartType_name()`, `PartType_by_name()` and
+  `fits_on(PartType, Gear const &place)` are unchanged.
+- `Gear` loses nothing and gets, for parts only:
+  - `std::string place`: the name of the bike or wheel it's listed in;
+    empty for a part at the top of `unfitted`.
+  - `std::optional<year_month_day> since`, as written, and
+    `fitted_since() -> std::optional<year_month_day>`: `since`, else
+    `purchased`, else none (it's always been there).
+  - `std::vector<Wax> waxed`, for a chain, sorted by when they count
+    from. `Wax` loses its `chain`: `{ day, counts_from }`.
+- `struct Swap { std::string part; std::string on; year_month_day from; year_month_day until; }`
+  with `in_effect(day)`, both ends inclusive. `GearList` gets
+  `std::vector<Swap> swaps`, in the file's order, and loses `fitted` and
+  `waxed`. `Fitting` goes.
+- `decode_gear()`:
+  - Top-level keys: `shoes`, `bikes`, `unfitted`, `defaults`, `swaps`.
+    An old file's `parts`, `fitted` or `waxed` is "not one of" these, so
+    it fails loudly rather than losing its parts.
+  - Shoes, then bikes, are read as now. Then each bike's `fitted`, then
+    `unfitted`, recursively, a part read as a bike plus `type`, `since`
+    and `waxed`, and its own `fitted` if it's a wheel.
+  - Where an entry is, in errors: `bikes 2`, `unfitted 1`, and for a
+    nested one, by its place's name: ``fitted 3 on `Roadie` ``. Errors
+    about a part with a name use its name: ``` `SRAM AXS 10-30`, a
+    cassette, goes on a rear wheel, and `Roadie` isn't one ```.
+  - New errors: `fitted` on shoes, or on a chainset, chain, cassette or
+    tyre (``` `KMC`, a chain, has `fitted`, but only bikes and wheels
+    do ```); a part on the wrong kind of place; `waxed` that isn't a
+    list, on anything but a chain, or with an entry that isn't a date or
+    a date and time; a swap whose `part` isn't a part, whose `on` isn't
+    a bike or a wheel, which puts the part on the wrong kind of place,
+    which has no `from` or `until`, or `until` before `from`; two swaps
+    of one part that overlap; two swaps that overlap putting parts of
+    one type on one place. The rest is as before (unknown part `type`,
+    `max_km`, `wax_km` on a non-chain, names unique over everything,
+    wherever nested; a default naming a part).
+  - `since`, `type` and `waxed` on shoes or bikes are ignored, as any
+    unknown field in an entry is (for notes); `fitted` on shoes isn't,
+    as it's surely a mistake. *(A decision of mine; the spec doesn't
+    say.)*
+- Where a part is, on a day:
+  - `resident_at(list, place, type, day) -> Gear const *` (in the
+    `.cpp`): of the parts of `type` listed in `place` whose
+    `fitted_since()` is none or on or before `day`, the one with the
+    latest; on a tie, the later in the file. None if it was retired
+    before `day`.
+  - `part_at(list, place, type, day) -> Gear const *`: the part of a
+    swap in effect onto `place` for `type`, if there is one; else the
+    resident, unless the resident is swapped onto somewhere else that
+    day. None for a retired part.
+  - `place_of(list, part, day) -> Gear const *`, replacing
+    `fitting_of()`: the bike or wheel the part is on, a swap's place if
+    one is in effect, else its own place if `part_at()` there is the
+    part. None if it's on nothing, or retired.
+  - A part nested in a wheel follows the wheel with no extra work:
+    `parts_used()` (unchanged) asks for the bike's rear wheel, then that
+    wheel's cassette, so a swapped-in Flo Disk brings its 10-28.
+- `gear_totals()`: `GearTotal::fitted` becomes `std::string on`, where a
+  part is today: its `place_of()`, if that's a bike, or a wheel that's
+  on a bike today; empty otherwise (shown as `–`). So a tyre on a wheel
+  in `unfitted` is on `–`, as the spec says. A chain's waxes come from
+  its own `waxed`. The rest is unchanged.
+- Cost: `resident_at()` looks through the parts, `part_at()` through the
+  swaps; a few dozen of each, seven parts per ride, 6,000 rides: well
+  under the sidecar read the screen already waits for.
 
 ### The widget library
 
-- `Table` gets cells drawn in orange, for a value that needs attention:
-  `std::set<std::pair<size_t, size_t>> highlighted` (row, column),
-  passed to `set_rows()` as a fourth argument, and
-  `is_highlighted(row, column)`. It wins over dimmed and selected.
-  Per cell rather than per row: only the distance, or the waxed
-  column, is over its limit.
+Nothing new: `Table`'s orange cells are on the branch already.
 
 ### The Gear screen (`widget/Gear.h`, `.cpp`)
 
-- Columns: Gear, Brand and model, In use since, **On**, Activities,
-  Distance, **Waxed**. On is `Canyon`, `Race rear`, or `–`;
-  Waxed is `212 km (20 Nov)`, or `–` for a chain never waxed; both blank
-  for the rest.
-- `GearColumn` names the columns' indexes.
-- `gear_highlights(totals)` gives the table's orange cells: Distance
-  for `worn()`, Waxed for `needs_wax()`, or Distance for a chain never
-  waxed, which has no Waxed to show it on.
-- The note counts parts too, when there are any:
-  `2 pairs of shoes, 2 bikes, 7 parts`.
-- `GearScreen::open()` takes today, the computer's local day, as
-  `SummariesScreen::open()` does.
-- Until the picks are read, Waxed is blank with the other numbers.
+Unchanged but for `on_text()`, which reads `GearTotal::on`.
 
 ### README
 
-The `gear.json` section gets `parts`, `fitted` (with `until`), `waxed`, `max_km` and `wax_km`, with the spec's example.
+The `gear.json` section's "A bike's parts" is rewritten for `fitted`,
+`unfitted`, `since`, `retired` keeping the history, `swaps`, `waxed`,
+`max_km` and `wax_km`, with the spec's example.
 
-No new dependencies, files or widgets beyond the above.
+No new files, dependencies or widgets.
 
 ## Test plan
 
-- `gear_parts_test` (new, as `gear_test` is long enough):
-  - `decode_gear()`: the spec's example with parts, `fitted` and
-    `waxed`; each new error: unknown part type, fitted part unknown or
-    not a part, unknown place, a cassette on a bike or a front wheel, a
-    chain on a wheel, a wheel on a wheel, a tyre on a bike, `until`
-    before `from`, a wax of
-    a cassette, a bad wax date, `wax_km` on a bike, a default naming a
-    part; the new top-level keys accepted.
-  - `fitting_of()` / `part_at()`: the latest entry wins; `until` ends a
-    swap and the part before is back (inclusive of the `until` day);
-    a wheel moved to another bike leaves the first with the wheel it
-    had before; both moved on leaves it with none; two entries on one day,
-    the later in the file wins.
-  - `parts_used()`: a road ride wears chainset, chain, both wheels,
-    cassette, both tyres; a tyre moved from the rear wheel to the front
-    keeps its distance; an indoor ride only chainset and chain; the swap
-    cassette during its `until` window.
-  - `gear_totals()`: part distances from rides on the bike (picked and
-    default), `start_km` added, indoor rides not on the wheels, a
-    retired part not counted after its day; the On text; wax since a
-    date (not counting that day's ride) and since a time (counting a
-    later ride that day); a chain never waxed; `worn()`/`needs_wax()`,
-    and not for retired gear.
-  - `gear_choices()`: parts are never offered.
-- `gear_screen_test`: the On and Waxed cells, `–`s, blanks for shoes and
-  bikes, the orange cells, the note with parts.
-- `table_test`: `highlighted` follows `set_rows()`.
-- By hand: the spec's example in `gear.json`, the Gear screen's parts,
-  an orange distance after lowering a `max_km`, and a broken `fitted`
-  entry's message box.
+- `gear_parts_test`, rewritten for the nested file:
+  - `decode_gear()`: the spec's example (parts in the file's order,
+    their places, `since`, waxes, the swap); each new error: a part
+    without a known `type`, each wrong place (a cassette on a bike or a
+    front wheel, a chain or a wheel on a wheel, a tyre on a bike),
+    `fitted` in a chainset, chain, cassette or tyre and on shoes, a part
+    named twice in two trees, `waxed` on a cassette or with a bad entry,
+    each swap error, both kinds of overlap (and a swap ending the day
+    before another starts is fine); `parts`, `fitted` and `waxed` at
+    the top are errors.
+  - `part_at()` / `place_of()`: the latest `since` wins, `purchased`
+    standing in for it, a part without either always there; on the day
+    of a replacement the new part; a retired part leaves its place
+    empty; a swap from `from` to `until` inclusive, its part's own place
+    empty meanwhile, and the swapped-out part off; a swapped-in wheel
+    brings its cassette and tyre.
+  - `parts_used()`: a road ride, an indoor ride, during a swap.
+  - `gear_totals()`: the distances (start_km, indoor, retired, a
+    replaced chain's history, a swap's days), the On text (a bike, a
+    wheel, `–` for `unfitted` and a tyre on an unfitted wheel, a swap's
+    place today), waxes by date and by time, a chain never waxed.
+  - Carried over: limits, the picker leaving out parts, a pick of a
+    part shown as unknown.
+- `gear_screen_test`: the On cell from `on`; the rest unchanged.
+- By hand: Jan's `gear.json` on the Gear screen, a swap, and a broken
+  part's message box.
 
 ## Review notes
 
