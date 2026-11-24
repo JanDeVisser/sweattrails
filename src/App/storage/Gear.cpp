@@ -506,6 +506,12 @@ std::expected<void, std::string> decode_swaps(JSONValue const &json, GearList &i
             .from = *from,
             .until = *until,
         };
+        if (strip(swap.part).empty()) {
+            return Problem { std::format("{} has no `part`, the part it swaps in", where) };
+        }
+        if (strip(swap.on).empty()) {
+            return Problem { std::format("{} has no `on`, the bike or wheel it swaps the part onto", where) };
+        }
         TRY(check_swap(into, swap, where));
         into.swaps.push_back(std::move(swap));
     }

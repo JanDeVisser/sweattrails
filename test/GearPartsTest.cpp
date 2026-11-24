@@ -269,6 +269,9 @@ std::string swap_error(std::string_view swaps)
 void test_swap_errors()
 {
     CHECK_EQ(swap_error(""), "");
+    CHECK_EQ(swap_error(R"({ "on": "Canyon", "from": "2026-01-01", "until": "2026-01-02" })"), "swap 1 has no `part`, the part it swaps in");
+    CHECK_EQ(swap_error(R"({ "part": "Spare chain", "from": "2026-01-01", "until": "2026-01-02" })"),
+        "swap 1 has no `on`, the bike or wheel it swaps the part onto");
     CHECK_EQ(swap_error(R"({ "part": "Nope", "on": "Canyon", "from": "2026-01-01", "until": "2026-01-02" })"),
         "swap 1's `part`, `Nope`, isn't a part in `bikes` or `unfitted`");
     CHECK_EQ(swap_error(R"({ "part": "Canyon", "on": "Canyon", "from": "2026-01-01", "until": "2026-01-02" })"),
