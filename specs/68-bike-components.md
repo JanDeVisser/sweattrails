@@ -1,6 +1,6 @@
 # Bike components
 
-Status: In progress, on branch feature/68-bike-components
+Status: In review
 
 <!--
 Status is one of:
