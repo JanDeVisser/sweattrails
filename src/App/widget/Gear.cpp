@@ -54,10 +54,7 @@ std::string on_text(GearTotal const &total)
     if (!total.gear->part) {
         return { };
     }
-    if (!total.fitted) {
-        return NotThere;
-    }
-    return total.fitted->on;
+    return total.on.empty() ? NotThere : total.on;
 }
 
 // A chain's distance since its wax; blank for anything else.

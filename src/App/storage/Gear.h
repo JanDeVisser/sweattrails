@@ -5,8 +5,8 @@
  *
  * The user's gear, shoes, bikes and the bikes' parts, from `gear.json` in
  * the data directory, which the user writes by hand: which gear an
- * activity uses, picked or by default, where each part is fitted, and
- * the distance on each. See specs/67-gear.md and
+ * activity uses, picked or by default, where each part is fitted on a
+ * day, and the distance on each. See specs/67-gear.md and
  * specs/68-bike-components.md.
  */
 
@@ -84,13 +84,23 @@ std::optional<PartType> PartType_by_name(std::string_view name);
 
 struct Gear;
 
+// A chain waxed on `day`. Rides that start at or after `counts_from`, in
+// local time, are after the wax: the next midnight, as a chain is waxed
+// after the day's ride, or the time the file gives.
+struct Wax {
+    std::chrono::year_month_day day { };
+    std::chrono::local_seconds  counts_from { };
+
+    bool operator==(Wax const &) const = default;
+};
+
 // Whether a part of this type is fitted on `place`: a chainset, chain or
 // wheel on a bike, a cassette on a rear wheel, a tyre on either wheel.
 [[nodiscard]] bool fits_on(PartType type, Gear const &place);
 
 struct Gear {
     GearType                                   type { GearType::Shoes };
-    std::string                                name { }; // Its key: unique over shoes and bikes
+    std::string                                name { }; // Its key: unique over shoes, bikes and parts
     std::string                                brand { };
     std::string                                model { };
     std::string                                version { }; // The model's: the 5 of an Endorphin Speed 5
@@ -104,9 +114,16 @@ struct Gear {
     std::optional<PartType>                    part { };   // A part's type; none for shoes and bikes
     std::optional<float64>                     max_km { }; // When it's worn out
     std::optional<float64>                     wax_km { }; // When a chain needs waxing again
+    std::string                                place { };  // The bike or wheel a part is listed in; none in `unfitted`
+    std::optional<std::chrono::year_month_day> since { };  // The day a part was fitted in its place
+    std::vector<Wax>                           waxed { };  // A chain's, in order
 
     // Whether it was out of use on `day`: retired before it.
     [[nodiscard]] bool retired_on(std::chrono::year_month_day day) const;
+    // The day a part was fitted in its place: its `since`, else the day it
+    // was bought, as it can't have been ridden before. None if it has
+    // always been there.
+    [[nodiscard]] std::optional<std::chrono::year_month_day> fitted_since() const;
 
     bool operator==(Gear const &) const = default;
 };
@@ -121,35 +138,24 @@ struct GearDefault {
     bool operator==(GearDefault const &) const = default;
 };
 
-// From `from` on, until `until` if it has one, `part` is fitted on `on`,
-// a bike or a wheel.
-struct Fitting {
-    std::string                                part { };
-    std::string                                on { };
-    std::chrono::year_month_day                from { };
-    std::optional<std::chrono::year_month_day> until { }; // The last day it applies
+// From `from` to `until`, both inclusive, `part` is on `on`, a bike or a
+// wheel, instead of the part of its type there, and its own place is
+// without it.
+struct Swap {
+    std::string                 part { };
+    std::string                 on { };
+    std::chrono::year_month_day from { };
+    std::chrono::year_month_day until { };
 
     [[nodiscard]] bool in_effect(std::chrono::year_month_day day) const;
 
-    bool operator==(Fitting const &) const = default;
-};
-
-// A chain waxed on `day`. Rides that start at or after `counts_from`, in
-// local time, are after the wax: the next midnight, as a chain is waxed
-// after the day's ride, or the time the file gives.
-struct Wax {
-    std::string                 chain { };
-    std::chrono::year_month_day day { };
-    std::chrono::local_seconds  counts_from { };
-
-    bool operator==(Wax const &) const = default;
+    bool operator==(Swap const &) const = default;
 };
 
 struct GearList {
     std::vector<Gear>        gear { };     // Shoes, then bikes, then parts, each as in the file
-    std::vector<GearDefault> defaults { }; // These three in order of their dates
-    std::vector<Fitting>     fitted { };
-    std::vector<Wax>         waxed { };
+    std::vector<GearDefault> defaults { }; // In order of their dates
+    std::vector<Swap>        swaps { };
 
     [[nodiscard]] Gear const *find(std::string_view name) const;
 
@@ -159,8 +165,8 @@ struct GearList {
 // `gear.json`'s contents, or what's wrong with them: a field of the wrong
 // type, a date that isn't YYYY-MM-DD, a kind or part type it doesn't
 // know, two pieces of gear of the same name, a default naming gear that
-// isn't shoes or a bike, a part fitted on what it can't go on, or a wax
-// of something that isn't a chain.
+// isn't shoes or a bike, a part in or swapped onto what it can't go on,
+// a wax of something that isn't a chain, or swaps that overlap.
 [[nodiscard]] std::expected<GearList, std::string> decode_gear(JSONValue const &json);
 
 [[nodiscard]] std::filesystem::path gear_path(Storage const &storage);
@@ -180,16 +186,15 @@ struct GearList {
 // default.
 [[nodiscard]] std::optional<std::string> default_gear(GearList const &list, std::vector<GearKind> const &kinds, std::chrono::year_month_day day);
 
-// Where `part` is fitted on `day`: its latest entry in effect, if no later
-// part has taken its place there. None if it isn't fitted, or was
-// retired before `day`.
-[[nodiscard]] Fitting const *fitting_of(GearList const &list, std::string_view part, std::chrono::year_month_day day);
-
-// The part of `type` fitted on `place` on `day`: of the entries in effect
-// there, the latest whose part is still there. None if there's none, or
-// if that part was retired before `day`: the part it replaced doesn't
-// come back.
+// The part of `type` on `place` on `day`: a swap's, if one is in effect,
+// else the one listed there with the latest `fitted_since()` on or before
+// `day`, unless it's swapped elsewhere. None if there's none, or if that
+// part was retired before `day`: the part it replaced doesn't come back.
 [[nodiscard]] Gear const *part_at(GearList const &list, std::string_view place, PartType type, std::chrono::year_month_day day);
+
+// The bike or wheel `part` is on on `day`, swaps included. None if it's
+// on nothing, or retired before `day`.
+[[nodiscard]] Gear const *place_of(GearList const &list, std::string_view part, std::chrono::year_month_day day);
 
 // The parts a ride on `bike` wears on `day`: its chainset, chain and
 // wheels, the front wheel's tyre, and the rear wheel's cassette and tyre.
@@ -270,7 +275,7 @@ struct GearTotal {
     std::optional<Gear>     gear { }; // None for a name that isn't in the list
     size_t                  activities { 0 };
     float64                 km { 0 };
-    std::optional<Fitting>  fitted { };
+    std::string             on { }; // A part's bike or wheel today, if it's on a bike
     std::optional<WaxTotal> wax { };
 
     [[nodiscard]] bool unknown() const { return !gear.has_value(); }

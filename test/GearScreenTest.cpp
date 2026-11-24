@@ -97,14 +97,14 @@ void test_part_rows()
     auto const tyre = GearTotal {
         .name = "GP5000 rear",
         .gear = part("GP5000 rear", PartType::Tyre),
-        .fitted = Fitting { .part = "GP5000 rear", .on = "Race rear" },
+        .on = "Race rear",
     };
     auto const chain = GearTotal {
         .name = "KMC blue",
         .gear = part("KMC blue", PartType::Chain),
         .activities = 12,
         .km = 812.4,
-        .fitted = Fitting { .part = "KMC blue", .on = "Canyon" },
+        .on = "Canyon",
         .wax = WaxTotal { .day = Nov20, .km = 212.3 },
     };
     auto const spare = GearTotal { .name = "Spare chain", .gear = part("Spare chain", PartType::Chain) };
@@ -188,9 +188,9 @@ void test_highlights_come_with_the_picks()
     auto          gear = list();
     gear.gear[2].max_km = 4000;
     auto chain = part("Chain", PartType::Chain);
+    chain.place = "Canyon";
+    chain.waxed.push_back(Wax { .day = chrono::year { 2026 } / 1 / 1, .counts_from = chrono::local_days { chrono::year { 2026 } / 1 / 2 } });
     gear.gear.push_back(chain);
-    gear.fitted.push_back(Fitting { .part = "Chain", .on = "Canyon", .from = chrono::year { 2026 } / 1 / 1 });
-    gear.waxed.push_back(Wax { .chain = "Chain", .day = chrono::year { 2026 } / 1 / 1, .counts_from = chrono::local_days { chrono::year { 2026 } / 1 / 2 } });
     screen->open(gear, "/data/gear.json", Today);
     CHECK(screen->table->highlighted.empty());
     CHECK(screen->table->rows.size() == 4 && screen->table->rows[3][GearColumn::Waxed].empty());

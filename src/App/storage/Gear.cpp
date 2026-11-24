@@ -112,14 +112,19 @@ char const *place_name(PartType type)
 
 }
 
-bool Fitting::in_effect(chrono::year_month_day day) const
+bool Swap::in_effect(chrono::year_month_day day) const
 {
-    return from <= day && (!until || day <= *until);
+    return from <= day && day <= until;
 }
 
 bool Gear::retired_on(chrono::year_month_day day) const
 {
     return retired && *retired < day;
+}
+
+std::optional<chrono::year_month_day> Gear::fitted_since() const
+{
+    return since ? since : purchased;
 }
 
 Gear const *GearList::find(std::string_view name) const
@@ -189,6 +194,52 @@ std::string part_type_names()
     return join(names, ", ");
 }
 
+// A wax: a day, which counts from the next one, or a day and a
+// time, "2026-11-20T08:00", which counts from then.
+std::optional<std::pair<chrono::year_month_day, chrono::local_seconds>> parse_wax_time(std::string_view text)
+{
+    auto const t = text.find('T');
+    auto const day = parse_day(text.substr(0, t));
+    if (!day) {
+        return { };
+    }
+    auto const midnight = chrono::local_seconds { chrono::local_days { *day } };
+    if (t == std::string_view::npos) {
+        return std::pair { *day, midnight + chrono::days { 1 } };
+    }
+    auto const clock = split(text.substr(t + 1), ':');
+    if (clock.size() != 2) {
+        return { };
+    }
+    auto const hour = string_to_integer<unsigned>(clock[0], 10);
+    auto const minute = string_to_integer<unsigned>(clock[1], 10);
+    if (!hour || !minute || *hour > 23 || *minute > 59) {
+        return { };
+    }
+    return std::pair { *day, midnight + chrono::hours { *hour } + chrono::minutes { *minute } };
+}
+
+// A chain's waxes, in order.
+std::expected<std::vector<Wax>, std::string> decode_waxes(JSONValue const &entry, std::string const &where)
+{
+    auto const list = entry.get("waxed");
+    if (!list->is_array()) {
+        return Problem { std::format("{}'s `waxed` isn't a list", where) };
+    }
+    std::vector<Wax> ret;
+    for (auto ix = 0uz; ix < list->size(); ++ix) {
+        auto const &wax = (*list)[static_cast<unsigned>(ix)];
+        auto const  text = wax.is_string() ? wax.to_string() : std::string { };
+        auto const  when = parse_wax_time(text);
+        if (!when) {
+            return Problem { std::format("{}'s `waxed` {} isn't a date, {}, or a date and time, as \"2026-03-14T08:00\"", where, ix + 1, DateExample) };
+        }
+        ret.push_back(Wax { .day = when->first, .counts_from = when->second });
+    }
+    std::ranges::stable_sort(ret, std::less { }, &Wax::counts_from);
+    return ret;
+}
+
 std::expected<Gear, std::string> decode_one(JSONValue const &entry, GearType type, std::string const &where)
 {
     if (!entry.is_object()) {
@@ -228,11 +279,27 @@ std::expected<Gear, std::string> decode_one(JSONValue const &entry, GearType typ
         if (!ret.part) {
             return Problem { std::format("{}'s `type` isn't one of {}", where, part_type_names()) };
         }
+        ret.since = TRY_EVAL(date_field(entry, "since", where));
     }
     if (ret.wax_km && ret.part != PartType::Chain) {
         return Problem { std::format("{} has a `wax_km`, but it isn't a chain", where) };
     }
+    if (entry.has("waxed")) {
+        if (ret.part != PartType::Chain) {
+            return Problem { std::format("{} has `waxed`, but it isn't a chain", where) };
+        }
+        ret.waxed = TRY_EVAL(decode_waxes(entry, where));
+    }
     return ret;
+}
+
+std::expected<void, std::string> add_gear(Gear gear, GearList &into)
+{
+    if (into.find(gear.name) != nullptr) {
+        return Problem { std::format("there are two pieces of gear called `{}`", gear.name) };
+    }
+    into.gear.push_back(std::move(gear));
+    return { };
 }
 
 std::expected<void, std::string> decode_gear_list(JSONValue const &json, GearType type, GearList &into)
@@ -246,11 +313,76 @@ std::expected<void, std::string> decode_gear_list(JSONValue const &json, GearTyp
         return Problem { std::format("`{}` isn't a list", list_name) };
     }
     for (auto ix = 0uz; ix < list->size(); ++ix) {
-        auto gear = TRY_EVAL(decode_one((*list)[static_cast<unsigned>(ix)], type, entry_name(list_name, ix)));
-        if (into.find(gear.name) != nullptr) {
-            return Problem { std::format("there are two pieces of gear called `{}`", gear.name) };
+        TRY(add_gear(TRY_EVAL(decode_one((*list)[static_cast<unsigned>(ix)], type, entry_name(list_name, ix))), into));
+    }
+    return { };
+}
+
+std::expected<void, std::string> decode_fitted(JSONValue const &holder, Gear const &place, GearList &into);
+
+// A part, listed in `place`, or at the top of `unfitted` without one, and
+// the parts listed in it.
+std::expected<void, std::string> decode_part(JSONValue const &entry, Gear const *place, std::string const &where, GearList &into)
+{
+    auto part = TRY_EVAL(decode_one(entry, GearType::Part, where));
+    if (place != nullptr) {
+        if (!fits_on(*part.part, *place)) {
+            return Problem { std::format("`{}`, a {}, goes on {}, and `{}` isn't one", part.name, PartType_name(*part.part), place_name(*part.part), place->name) };
         }
-        into.gear.push_back(std::move(gear));
+        part.place = place->name;
+    }
+    auto const self = part; // `into.gear` may move as the nested parts are added
+    TRY(add_gear(std::move(part), into));
+    return decode_fitted(entry, self, into);
+}
+
+// The parts listed in `place`'s `fitted`, `holder` being its entry, and in
+// theirs, depth first.
+std::expected<void, std::string> decode_fitted(JSONValue const &holder, Gear const &place, GearList &into)
+{
+    auto const list = holder.get("fitted");
+    if (!list) {
+        return { };
+    }
+    auto const holds_parts = place.type == GearType::Bike || place.part == PartType::FrontWheel || place.part == PartType::RearWheel;
+    if (!holds_parts) {
+        return Problem { std::format("`{}` has `fitted`, but only bikes and wheels do", place.name) };
+    }
+    if (!list->is_array()) {
+        return Problem { std::format("`{}`'s `fitted` isn't a list", place.name) };
+    }
+    for (auto ix = 0uz; ix < list->size(); ++ix) {
+        TRY(decode_part((*list)[static_cast<unsigned>(ix)], &place, std::format("fitted {} on `{}`", ix + 1, place.name), into));
+    }
+    return { };
+}
+
+// The parts fitted on each of the shoes or bikes, after all of them.
+std::expected<void, std::string> decode_trees(JSONValue const &json, GearType type, GearList &into)
+{
+    auto const list = json.get(GearType_name(type));
+    if (!list) {
+        return { };
+    }
+    for (auto ix = 0uz; ix < list->size(); ++ix) {
+        auto const &entry = (*list)[static_cast<unsigned>(ix)];
+        auto const  holder = *into.find(entry.try_get<std::string>("name").value_or(""));
+        TRY(decode_fitted(entry, holder, into));
+    }
+    return { };
+}
+
+std::expected<void, std::string> decode_unfitted(JSONValue const &json, GearList &into)
+{
+    auto const list = json.get("unfitted");
+    if (!list) {
+        return { };
+    }
+    if (!list->is_array()) {
+        return Problem { "`unfitted` isn't a list" };
+    }
+    for (auto ix = 0uz; ix < list->size(); ++ix) {
+        TRY(decode_part((*list)[static_cast<unsigned>(ix)], nullptr, entry_name("unfitted", ix), into));
     }
     return { };
 }
@@ -301,112 +433,83 @@ std::expected<void, std::string> decode_defaults(JSONValue const &json, GearList
     return { };
 }
 
-// A fitting's part and place, checked: a part goes on a bike, or, for a
-// cassette on a rear wheel, a tyre on either wheel.
-std::expected<void, std::string> check_fitting(GearList const &list, Fitting const &fitting, std::string const &where)
+// A swap's part and place, checked: what `fits_on()` allows, with a last
+// day on or after its first.
+std::expected<void, std::string> check_swap(GearList const &list, Swap const &swap, std::string const &where)
 {
-    auto const *part = list.find(fitting.part);
+    auto const *part = list.find(swap.part);
     if (part == nullptr || !part->part) {
-        return Problem { std::format("{}'s `part`, `{}`, isn't in `parts`", where, fitting.part) };
+        return Problem { std::format("{}'s `part`, `{}`, isn't a part in `bikes` or `unfitted`", where, swap.part) };
     }
-    auto const *place = list.find(fitting.on);
-    if (place == nullptr) {
-        return Problem { std::format("{}'s `on`, `{}`, isn't a bike or a wheel", where, fitting.on) };
+    auto const *place = list.find(swap.on);
+    if (place == nullptr || !(place->type == GearType::Bike || place->part == PartType::FrontWheel || place->part == PartType::RearWheel)) {
+        return Problem { std::format("{}'s `on`, `{}`, isn't a bike or a wheel", where, swap.on) };
     }
     if (!fits_on(*part->part, *place)) {
-        return Problem { std::format("{}: a {} goes on {}, and `{}` isn't one", where, PartType_name(*part->part), place_name(*part->part), fitting.on) };
+        return Problem { std::format("{}: a {} goes on {}, and `{}` isn't one", where, PartType_name(*part->part), place_name(*part->part), swap.on) };
     }
-    if (fitting.until && *fitting.until < fitting.from) {
+    if (swap.until < swap.from) {
         return Problem { std::format("{}'s `until` is before its `from`", where) };
     }
     return { };
 }
 
-std::expected<void, std::string> decode_fitted(JSONValue const &json, GearList &into)
+// Two swaps at once of one part, or onto one place for one type, would
+// leave it unclear where the part is, or which part is there.
+std::expected<void, std::string> check_overlaps(GearList const &list)
 {
-    auto const list = json.get("fitted");
+    for (auto ix = 0uz; ix < list.swaps.size(); ++ix) {
+        auto const &swap = list.swaps[ix];
+        for (auto earlier = 0uz; earlier < ix; ++earlier) {
+            auto const &other = list.swaps[earlier];
+            if (other.until < swap.from || swap.until < other.from) {
+                continue;
+            }
+            if (other.part == swap.part) {
+                return Problem { std::format("swap {} and swap {} put `{}` in two places at once", earlier + 1, ix + 1, swap.part) };
+            }
+            auto const type = list.find(swap.part)->part;
+            if (other.on == swap.on && list.find(other.part)->part == type) {
+                return Problem { std::format("swap {} and swap {} both put a {} on `{}` at once", earlier + 1, ix + 1, PartType_name(*type), swap.on) };
+            }
+        }
+    }
+    return { };
+}
+
+std::expected<void, std::string> decode_swaps(JSONValue const &json, GearList &into)
+{
+    auto const list = json.get("swaps");
     if (!list) {
         return { };
     }
     if (!list->is_array()) {
-        return Problem { "`fitted` isn't a list" };
+        return Problem { "`swaps` isn't a list" };
     }
     for (auto ix = 0uz; ix < list->size(); ++ix) {
         auto const &entry = (*list)[static_cast<unsigned>(ix)];
-        auto const  where = entry_name("fitted", ix);
+        auto const  where = entry_name("swap", ix);
         if (!entry.is_object()) {
             return Problem { std::format("{} isn't an object", where) };
         }
-        Fitting fitting {
-            .part = TRY_EVAL(text_field(entry, "part", where)),
-            .on = TRY_EVAL(text_field(entry, "on", where)),
-        };
         auto const from = TRY_EVAL(date_field(entry, "from", where));
         if (!from) {
-            return Problem { std::format("{} has no `from`, the date it's fitted from, {}", where, DateExample) };
+            return Problem { std::format("{} has no `from`, its first day, {}", where, DateExample) };
         }
-        fitting.from = *from;
-        fitting.until = TRY_EVAL(date_field(entry, "until", where));
-        TRY(check_fitting(into, fitting, where));
-        into.fitted.push_back(std::move(fitting));
-    }
-    std::ranges::stable_sort(into.fitted, std::less { }, &Fitting::from);
-    return { };
-}
-
-// A wax's `on`: a day, which counts from the next one, or a day and a
-// time, "2026-11-20T08:00", which counts from then.
-std::optional<std::pair<chrono::year_month_day, chrono::local_seconds>> parse_wax_time(std::string_view text)
-{
-    auto const t = text.find('T');
-    auto const day = parse_day(text.substr(0, t));
-    if (!day) {
-        return { };
-    }
-    auto const midnight = chrono::local_seconds { chrono::local_days { *day } };
-    if (t == std::string_view::npos) {
-        return std::pair { *day, midnight + chrono::days { 1 } };
-    }
-    auto const clock = split(text.substr(t + 1), ':');
-    if (clock.size() != 2) {
-        return { };
-    }
-    auto const hour = string_to_integer<unsigned>(clock[0], 10);
-    auto const minute = string_to_integer<unsigned>(clock[1], 10);
-    if (!hour || !minute || *hour > 23 || *minute > 59) {
-        return { };
-    }
-    return std::pair { *day, midnight + chrono::hours { *hour } + chrono::minutes { *minute } };
-}
-
-std::expected<void, std::string> decode_waxed(JSONValue const &json, GearList &into)
-{
-    auto const list = json.get("waxed");
-    if (!list) {
-        return { };
-    }
-    if (!list->is_array()) {
-        return Problem { "`waxed` isn't a list" };
-    }
-    for (auto ix = 0uz; ix < list->size(); ++ix) {
-        auto const &entry = (*list)[static_cast<unsigned>(ix)];
-        auto const  where = entry_name("waxed", ix);
-        if (!entry.is_object()) {
-            return Problem { std::format("{} isn't an object", where) };
+        auto const until = TRY_EVAL(date_field(entry, "until", where));
+        if (!until) {
+            return Problem { std::format("{} has no `until`, its last day, {}: a lasting change goes in `fitted`", where, DateExample) };
         }
-        auto        chain = TRY_EVAL(text_field(entry, "chain", where));
-        auto const *found = into.find(chain);
-        if (found == nullptr || found->part != PartType::Chain) {
-            return Problem { std::format("{}'s `chain`, `{}`, isn't a chain in `parts`", where, chain) };
-        }
-        auto const when = parse_wax_time(TRY_EVAL(text_field(entry, "on", where)));
-        if (!when) {
-            return Problem { std::format("{}'s `on` isn't a date, {}, or a date and time, as \"2026-03-14T08:00\"", where, DateExample) };
-        }
-        into.waxed.push_back(Wax { .chain = std::move(chain), .day = when->first, .counts_from = when->second });
+        Swap swap {
+            .part = TRY_EVAL(text_field(entry, "part", where)),
+            .on = TRY_EVAL(text_field(entry, "on", where)),
+            .from = *from,
+            .until = *until,
+        };
+        TRY(check_swap(into, swap, where));
+        into.swaps.push_back(std::move(swap));
     }
-    std::ranges::stable_sort(into.waxed, std::less { }, &Wax::counts_from);
-    return { };
+    return check_overlaps(into);
 }
 
 }
@@ -419,19 +522,21 @@ std::expected<GearList, std::string> decode_gear(JSONValue const &json)
     // The file is written by hand: a misspelt list, "shoe", would
     // otherwise leave its gear out without a word. Unknown fields in an
     // entry are fine, for notes.
-    static constexpr std::array Keys { "shoes", "bikes", "parts", "defaults", "fitted", "waxed" };
+    static constexpr std::array Keys { "shoes", "bikes", "unfitted", "defaults", "swaps" };
     for (auto const &[key, value] : json.to_object().value_or(JSONValue::Object { })) {
         if (std::ranges::find(Keys, key) == Keys.end()) {
-            return Problem { std::format("`{}` isn't one of shoes, bikes, parts, defaults, fitted or waxed", key) };
+            return Problem { std::format("`{}` isn't one of shoes, bikes, unfitted, defaults or swaps", key) };
         }
     }
     GearList ret;
     TRY(decode_gear_list(json, GearType::Shoes, ret));
     TRY(decode_gear_list(json, GearType::Bike, ret));
-    TRY(decode_gear_list(json, GearType::Part, ret));
+    // Shoes have no parts, but `fitted` on them gets its error here.
+    TRY(decode_trees(json, GearType::Shoes, ret));
+    TRY(decode_trees(json, GearType::Bike, ret));
+    TRY(decode_unfitted(json, ret));
     TRY(decode_defaults(json, ret));
-    TRY(decode_fitted(json, ret));
-    TRY(decode_waxed(json, ret));
+    TRY(decode_swaps(json, ret));
     return ret;
 }
 
@@ -519,16 +624,45 @@ std::optional<std::string> default_gear(GearList const &list, std::vector<GearKi
 
 namespace {
 
-// A part's latest entry in effect on `day`, retired or not.
-Fitting const *latest_fitting(GearList const &list, std::string_view part, chrono::year_month_day day)
+bool holds(Gear const &gear, PartType type)
 {
-    Fitting const *ret = nullptr;
-    for (auto const &fitting : list.fitted) {
-        if (fitting.from > day) {
-            break;
+    return gear.part == type;
+}
+
+// The swap in effect on `day` that puts a part of `type` on `place`.
+Swap const *swap_onto(GearList const &list, std::string_view place, PartType type, chrono::year_month_day day)
+{
+    auto const it = std::ranges::find_if(list.swaps, [&](Swap const &swap) {
+        return swap.on == place && swap.in_effect(day) && holds(*list.find(swap.part), type);
+    });
+    return it == list.swaps.end() ? nullptr : &*it;
+}
+
+// The swap in effect on `day` that takes `part` elsewhere.
+Swap const *swap_of(GearList const &list, std::string_view part, chrono::year_month_day day)
+{
+    auto const it = std::ranges::find_if(list.swaps, [&](Swap const &swap) {
+        return swap.part == part && swap.in_effect(day);
+    });
+    return it == list.swaps.end() ? nullptr : &*it;
+}
+
+// Of the parts of `type` listed in `place`, the one fitted there last on
+// or before `day`; the later in the file of two fitted on one day.
+Gear const *resident_at(GearList const &list, std::string_view place, PartType type, chrono::year_month_day day)
+{
+    Gear const *ret = nullptr;
+    for (auto const &gear : list.gear) {
+        if (place.empty() || gear.place != place || !holds(gear, type)) {
+            continue;
         }
-        if (fitting.part == part && fitting.in_effect(day)) {
-            ret = &fitting;
+        auto const since = gear.fitted_since();
+        if (since && *since > day) {
+            continue;
+        }
+        // An optional without a day compares before any day: always there.
+        if (ret == nullptr || since >= ret->fitted_since()) {
+            ret = &gear;
         }
     }
     return ret;
@@ -536,34 +670,33 @@ Fitting const *latest_fitting(GearList const &list, std::string_view part, chron
 
 }
 
-Fitting const *fitting_of(GearList const &list, std::string_view part, chrono::year_month_day day)
+Gear const *part_at(GearList const &list, std::string_view place, PartType type, chrono::year_month_day day)
+{
+    Gear const *ret = nullptr;
+    if (auto const *swap = swap_onto(list, place, type, day); swap != nullptr) {
+        ret = list.find(swap->part);
+    } else {
+        ret = resident_at(list, place, type, day);
+        if (ret != nullptr && swap_of(list, ret->name, day) != nullptr) {
+            return nullptr;
+        }
+    }
+    return (ret == nullptr || ret->retired_on(day)) ? nullptr : ret;
+}
+
+Gear const *place_of(GearList const &list, std::string_view part, chrono::year_month_day day)
 {
     auto const *gear = list.find(part);
     if (gear == nullptr || !gear->part || gear->retired_on(day)) {
         return nullptr;
     }
-    auto const *fitting = latest_fitting(list, part, day);
-    if (fitting == nullptr || part_at(list, fitting->on, *gear->part, day) != gear) {
+    if (auto const *swap = swap_of(list, part, day); swap != nullptr) {
+        return list.find(swap->on);
+    }
+    if (part_at(list, gear->place, *gear->part, day) != gear) {
         return nullptr;
     }
-    return fitting;
-}
-
-Gear const *part_at(GearList const &list, std::string_view place, PartType type, chrono::year_month_day day)
-{
-    // Latest first: the fittings are in order of their dates, and the
-    // file's order on a day, so the later in the file wins.
-    for (auto const &fitting : list.fitted | std::views::reverse) {
-        if (fitting.on != place || !fitting.in_effect(day)) {
-            continue;
-        }
-        auto const *part = list.find(fitting.part);
-        if (part == nullptr || part->part != type || latest_fitting(list, fitting.part, day) != &fitting) {
-            continue;
-        }
-        return part->retired_on(day) ? nullptr : part;
-    }
-    return nullptr;
+    return list.find(gear->place);
 }
 
 std::vector<Gear const *> parts_used(GearList const &list, std::string_view bike, chrono::year_month_day day, bool indoor)
@@ -691,16 +824,27 @@ bool GearTotal::needs_wax() const
 
 namespace {
 
-// The last wax of each chain on or before `today`, when it counts from.
-std::map<std::string, Wax const *> last_waxes(GearList const &list, chrono::year_month_day today)
+// A chain's last wax on or before `today`.
+Wax const *last_wax(Gear const &chain, chrono::year_month_day today)
 {
-    std::map<std::string, Wax const *> ret;
-    for (auto const &wax : list.waxed) {
+    Wax const *ret = nullptr;
+    for (auto const &wax : chain.waxed) {
         if (wax.day <= today) {
-            ret[wax.chain] = &wax; // In order, so the last is the latest
+            ret = &wax; // In order, so the last is the latest
         }
     }
     return ret;
+}
+
+// Where a part is on `today`, if that's on a bike: the bike, or the wheel
+// on it. Empty for a part on nothing, or on a wheel that's on nothing.
+std::string on_a_bike(GearList const &list, Gear const &part, chrono::year_month_day today)
+{
+    auto const *place = place_of(list, part.name, today);
+    if (place == nullptr || (place->type != GearType::Bike && place_of(list, place->name, today) == nullptr)) {
+        return { };
+    }
+    return place->name;
 }
 
 }
@@ -714,14 +858,15 @@ std::vector<GearTotal> gear_totals(GearList const &list, ActivitySummaries const
     std::map<std::string, GearTotal>             unknown;
     std::map<std::string, std::set<std::string>> files; // To count a multisport file once
     std::map<std::string, std::set<std::string>> unknown_files;
-    auto const                                   waxes = last_waxes(list, today);
+    std::map<std::string, Wax const *>           waxes;
     for (auto const &gear : list.gear) {
         auto &total = by_name[gear.name] = GearTotal { .name = gear.name, .gear = gear, .km = gear.start_km };
-        if (auto const *fitting = fitting_of(list, gear.name, today); fitting != nullptr) {
-            total.fitted = *fitting;
+        if (gear.part) {
+            total.on = on_a_bike(list, gear, today);
         }
-        if (auto const wax = waxes.find(gear.name); wax != waxes.end()) {
-            total.wax = WaxTotal { .day = wax->second->day };
+        if (auto const *wax = last_wax(gear, today); wax != nullptr) {
+            total.wax = WaxTotal { .day = wax->day };
+            waxes[gear.name] = wax;
         }
     }
     auto const add = [&](std::string const &name, ActivitySummary const &summary, bool is_unknown = false) -> GearTotal & {

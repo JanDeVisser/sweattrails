@@ -261,8 +261,7 @@ where a part is on a day stays a pure function of the list and the day.
     about a part with a name use its name: ``` `SRAM AXS 10-30`, a
     cassette, goes on a rear wheel, and `Roadie` isn't one ```.
   - New errors: `fitted` on shoes, or on a chainset, chain, cassette or
-    tyre (``` `KMC`, a chain, has `fitted`, but only bikes and wheels
-    do ```); a part on the wrong kind of place; `waxed` that isn't a
+    tyre (``` `KMC` has `fitted`, but only bikes and wheels do ```); a part on the wrong kind of place; `waxed` that isn't a
     list, on anything but a chain, or with an entry that isn't a date or
     a date and time; a swap whose `part` isn't a part, whose `on` isn't
     a bike or a wheel, which puts the part on the wrong kind of place,
@@ -271,9 +270,10 @@ where a part is on a day stays a pure function of the list and the day.
     one type on one place. The rest is as before (unknown part `type`,
     `max_km`, `wax_km` on a non-chain, names unique over everything,
     wherever nested; a default naming a part).
-  - `since`, `type` and `waxed` on shoes or bikes are ignored, as any
-    unknown field in an entry is (for notes); `fitted` on shoes isn't,
-    as it's surely a mistake. *(A decision of mine; the spec doesn't
+  - `since` and `type` on shoes or bikes are ignored, as any unknown
+    field in an entry is (for notes); `fitted` on shoes isn't, as it's
+    surely a mistake, nor is `waxed`, which the spec says is an error on
+    anything but a chain. *(A decision of mine; the spec doesn't
     say.)*
 - Where a part is, on a day:
   - `resident_at(list, place, type, day) -> Gear const *` (in the
