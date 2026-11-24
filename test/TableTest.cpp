@@ -75,6 +75,19 @@ void test_dimmed_rows()
     CHECK(!table->is_dimmed(1));
 }
 
+// Cells can be highlighted, and new rows without say have none.
+void test_highlighted_cells()
+{
+    auto table = make_table(8);
+    table->set_rows({ { .header = "Gear" }, { .header = "Distance" } },
+        { { "Canyon", "4300 km" }, { "KMC blue", "3100 km" } }, { }, { { 1, 1 } });
+    CHECK(table->is_highlighted(1, 1));
+    CHECK(!table->is_highlighted(1, 0));
+    CHECK(!table->is_highlighted(0, 1));
+    table->set_rows({ { .header = "Gear" }, { .header = "Distance" } }, { { "Canyon", "4300 km" }, { "KMC blue", "3100 km" } });
+    CHECK(!table->is_highlighted(1, 1));
+}
+
 void test_select_scrolls()
 {
     auto table = make_table(12);
@@ -271,6 +284,7 @@ int main()
     test_fit_rows();
     test_set_rows();
     test_dimmed_rows();
+    test_highlighted_cells();
     test_select_scrolls();
     test_row_at();
     test_click();

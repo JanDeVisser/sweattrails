@@ -73,6 +73,8 @@ std::optional<Metric>      Metric_by_name(std::string_view name);
 // files it.
 [[nodiscard]] std::chrono::year_month_day start_day(ActivitySummary const &summary);
 [[nodiscard]] std::chrono::year_month_day day_of(DateTime const &time);
+// When an activity starts, as the computer's clock says it.
+[[nodiscard]] std::chrono::local_seconds local_start(ActivitySummary const &summary);
 // A day as the settings write it, "2024-03-01"; none for anything else.
 [[nodiscard]] std::optional<std::chrono::year_month_day> parse_day(std::string_view text);
 

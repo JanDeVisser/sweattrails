@@ -533,8 +533,9 @@ count. The pace is as run: hills aren't taken into account.
 
 ## Gear
 
-SweatTrails keeps track of your shoes and bikes, and the distance on
-each, for example to know when a pair of shoes is worn out. You write
+SweatTrails keeps track of your shoes, bikes and the bikes' parts, and
+the distance on each, for example to know when a pair of shoes or a
+chain is worn out, or a chain needs waxing. You write
 the gear in `gear.json` in the data directory, next to `summaries.json`
 (`~/Library/Application Support/sweattrails` on macOS; the Gear screen
 says where):
@@ -563,7 +564,7 @@ says where):
 ```
 
 - `name` is what the app shows, and what an activity's pick refers to:
-  it's unique over shoes and bikes. Renaming gear leaves the activities
+  it's unique over shoes, bikes and parts. Renaming gear leaves the activities
   picked under the old name on gear that isn't there, shown as
   `Old Canyon (unknown)`, until you name it back.
 - Everything else is optional. `version` is the model's, as makers
@@ -572,8 +573,8 @@ says where):
   text, so you can write a currency with it. `start_km` is what the gear
   did before SweatTrails knew about it. `retired` is the day it went out
   of use. Fields of your own in an entry, such as a note, are left
-  alone, but anything besides `shoes`, `bikes` and `defaults` at the top
-  is taken for a typo, and the file isn't read.
+  alone, but anything besides `shoes`, `bikes`, `unfitted`, `defaults`
+  and `swaps` at the top is taken for a typo, and the file isn't read.
 - `defaults` says which gear an activity uses when you haven't picked
   any: from its date on, until a later entry for the same kind. The kinds
   are `running`; `road`, `gravel`, `mountain` and `tt` rides, which fall
@@ -596,9 +597,82 @@ the default, or **None** for no gear, such as for a run in borrowed
 shoes. The pick is saved in the activity's sidecar. A multisport
 activity's gear is picked per leg, on the leg's tab.
 
+### A bike's parts
+
+A bike's chainset, wheels, cassettes, chains and tyres are gear too,
+with the same fields as a bike and a `type`: `chainset`, `front wheel`,
+`rear wheel`, `cassette`, `chain` or `tyre`. A pair of wheels is two
+parts, a front wheel and a rear wheel. A part is listed where it's
+fitted, in a bike's `fitted`, or a wheel's; parts that aren't on
+anything, such as a spare race wheel, are in `unfitted`, with what's
+fitted on them:
+
+```json
+"bikes": [
+  { "name": "Roadie", "brand": "Cervélo", "model": "S2", "year": 2018,
+    "fitted": [
+      { "name": "SRAM Force AXS 48/34 w/ Quarq", "type": "chainset" },
+      { "name": "Flo45 front", "type": "front wheel",
+        "fitted": [ { "name": "GP5000 Flo45 front", "type": "tyre" } ] },
+      { "name": "Flo45 rear", "type": "rear wheel",
+        "fitted": [ { "name": "GP5000 Flo45 rear", "type": "tyre", "max_km": 4000 },
+                    { "name": "SRAM AXS 10-30", "type": "cassette" } ] },
+      { "name": "KMC old", "type": "chain", "retired": "2026-06-01" },
+      { "name": "SRAM Force AXS Chain (S2)", "type": "chain",
+        "since": "2026-06-01", "max_km": 3000, "wax_km": 300,
+        "waxed": ["2026-11-20", "2026-08-16"] }
+    ] }
+],
+"unfitted": [
+  { "name": "Flo Disk", "type": "rear wheel",
+    "fitted": [ { "name": "GP5000 Flo Disk", "type": "tyre" },
+                { "name": "SRAM AXS 10-28", "type": "cassette" } ] }
+],
+"swaps": [
+  { "part": "Flo Disk", "on": "Roadie", "from": "2026-08-30", "until": "2026-08-30" }
+]
+```
+
+- A chainset, a chain or a wheel is fitted on a bike, a cassette on a
+  rear wheel, and a tyre on either wheel. In `unfitted`, anything goes.
+- `since` is the day a part was fitted where it's listed: rides there
+  before it don't count for it. Without one, it's the day the part was
+  `purchased`, and without either, the part has always been there, so
+  most parts don't need one.
+- A replaced part stays where it was, with a `retired` day, and the new
+  one gets a `since`: of the parts of a type in a place, the one with
+  the latest `since` is there, and on the day of a replacement that's
+  the new one. A retired part with no replacement leaves its place
+  without one.
+- A part that moves for good, such as a wheel to another bike, is moved
+  in the file and gets a `since` for the day it moved; add the distance
+  it did so far, from the Gear screen, to its `start_km`. Without the
+  `since` it would take the new bike's past rides.
+- `swaps` put a part on another bike or wheel for a few days, from
+  `from` to `until`, both included: the race wheel for a race day, or a
+  10-34 on the rear wheel for a week in the mountains. A wheel brings
+  what's fitted on it, and the part's own place is without it for those
+  days. A lasting change goes in the tree instead.
+- A ride counts for the parts on its bike that day, the bike it was
+  picked for or the default. An indoor ride counts for the chain and
+  chainset only: on a direct-drive trainer the wheels don't turn.
+- A chain's `waxed` lists the days it was waxed, in any order. A wax
+  counts from the next day, as a chain is usually waxed after the day's
+  ride. To count that day's rides too, give it a time:
+  `"2026-11-20T08:00"`.
+- Any gear can have a `max_km`, and a chain a `wax_km`. Past them, its
+  distance, or a chain's distance since its wax, is orange on the Gear
+  screen.
+
+### The Gear screen
+
 **Gear** in the menu, or **Gear: list** in the palette, lists the gear:
-shoes, then bikes, retired gear dimmed at the bottom of each, with the
-activities it was used for and the distance on it, `start_km` included.
+shoes, then bikes, then parts, retired gear dimmed at the bottom of
+each, with the activities it was used for and the distance on it,
+`start_km` included. A part's row says where it is today (`On`): a
+bike, or for a cassette or tyre its wheel, or `–` if it isn't on a
+bike. Parts are in the order of the file. A chain's row says how far
+it went since its last wax (`Waxed`).
 Names picked for activities that aren't in `gear.json` have a row of
 their own. Escape goes back to the activity.
 
